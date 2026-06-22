@@ -1,0 +1,6 @@
+schema_version: "0.1"
+case_id: "mock_lqcd_goal"
+source_kind: "synthetic_placeholder"
+physics_goal: "Plan a mock-only pion quasi-DA analysis support run."
+notes:
+  - "This file is a placeholder and contains no raw numeric LQCD data."

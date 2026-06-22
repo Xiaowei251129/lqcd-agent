@@ -1,0 +1,11 @@
+schema_version: "0.1"
+case_id: "phase8_eval_good"
+physics_goal: "Run a synthetic good Phase 8 evaluation case."
+synthetic_review: "good"
+expected_risk_level: "low"
+expected_recommended_action: "accept_mock_result"
+expected_human_approval_required: false
+expected_status: "success"
+expected_current_node: "memory_report"
+expected_memory_status: "accepted"
+expected_approval_packet: false

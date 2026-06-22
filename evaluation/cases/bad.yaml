@@ -1,0 +1,11 @@
+schema_version: "0.1"
+case_id: "phase8_eval_bad"
+physics_goal: "Run a synthetic bad Phase 8 evaluation case."
+synthetic_review: "bad"
+expected_risk_level: "high"
+expected_recommended_action: "pending_human_approval"
+expected_human_approval_required: true
+expected_status: "pending"
+expected_current_node: "memory_report"
+expected_memory_status: "pending"
+expected_approval_packet: true

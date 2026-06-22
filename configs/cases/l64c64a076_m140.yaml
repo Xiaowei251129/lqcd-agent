@@ -1,0 +1,20 @@
+schema_version: "0.1"
+case_id: "l64c64a076_m140"
+source_kind: "golden_example_mock"
+physics_goal: "Run a conservative mock golden demo for the l64c64a076_m140 pion quasi-DA example."
+golden_example_root: "../lat-hadron-analysis/examples/l64c64a076_m140"
+golden_reference_files:
+  - "analysis/README.md"
+  - "input_files/README.md"
+  - "input_files/0-effective-mass/meff_k0.txt"
+  - "input_files/2-bm/da_nstate_k6.txt"
+  - "analysis/1-c2pt-fit/results_nstate_fit_2state_rerun/l64c64a076_m140_fit_pz5/l64c64a076_m140_fit_pz5_symmetric_summary.txt"
+  - "analysis/3-normalize/l64c64a076_m140_fit_pz5/l64c64a076_m140_fit_pz5_T5_eta0_bT0_mode3_real_2state_summary.txt"
+  - "analysis/4-FT/l64c64a076_m140_fit_pz5/tables/l64c64a076_m140_fit_pz5_T5_eta0_bT0_mode3_real_2state_fourier.txt"
+analysis_commands:
+  - "mock:write_golden_example_matrix_elements"
+expected_outputs:
+  - "analysis_outputs/synthetic_matrix_elements.json"
+notes:
+  - "The sibling golden example is read only provenance for this Phase 9 demo."
+  - "The analysis artifact remains synthetic and intentionally carries a severe demo flag to exercise approval gating."
