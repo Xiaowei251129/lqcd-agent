@@ -6,7 +6,7 @@
 
 ## Current Status
 
-The project has completed source-of-truth documentation, the repository skeleton, the initial real LangGraph mock runtime skeleton, a standalone deterministic Method Planner module, Phase 2B Method Planner graph integration, Phase 3 Codex Handoff integration, Phase 4 Analysis Engineer integration, Phase 5 Scientific Reviewer diagnostics, Phase 6 Decision Coordinator risk rubric, Phase 6 maintenance for output policy, timestamp default run ids, and stale-documentation discipline, Phase 7 Human Approval Gate integration, Phase 8 Memory, Final Report, and Synthetic Evaluation Harness implementation, Phase 9 Golden Example productization, Phase 7-9 maintenance for decision-route audit fields, approved-decision report text, evaluation cleanup guarding, and documentation synchronization, and Phase 9 GitHub-ready cleanup of ignored local artifacts. The package is installable in editable mode, and focused tests cover state initialization, routing, context summarization, graph execution, standalone method planning, integrated planner graph outcomes, task-packet validation, the handoff test runner, Codex Handoff routing, safe analysis command execution, golden mock command execution, output validation, provenance manifest generation, evidence-backed scientific review diagnostics, structured decision coordination, approval packet generation and parsing, risk-safe memory behavior, final report generation, synthetic evaluation summary reporting, automatic CLI run ids, protected-artifact run reuse refusal, guarded evaluation cleanup, and the conservative golden demo path.
+The project has completed source-of-truth documentation, the repository skeleton, the initial real LangGraph mock runtime skeleton, a standalone deterministic Method Planner module, Phase 2B Method Planner graph integration, Phase 3 Codex Handoff integration, Phase 4 Analysis Engineer integration, Phase 5 Scientific Reviewer diagnostics, Phase 6 Decision Coordinator risk rubric, Phase 6 maintenance for output policy, timestamp default run ids, and stale-documentation discipline, Phase 7 Human Approval Gate integration, Phase 8 Memory, Final Report, and Synthetic Evaluation Harness implementation, Phase 9 Golden Example productization, Phase 7-9 maintenance for decision-route audit fields, approved-decision report text, evaluation cleanup guarding, and documentation synchronization, Phase 9 GitHub-ready cleanup of ignored local artifacts, and independent GitHub repository initialization for the Phase 9 baseline. The package is installable in editable mode, and focused tests cover state initialization, routing, context summarization, graph execution, standalone method planning, integrated planner graph outcomes, task-packet validation, the handoff test runner, Codex Handoff routing, safe analysis command execution, golden mock command execution, output validation, provenance manifest generation, evidence-backed scientific review diagnostics, structured decision coordination, approval packet generation and parsing, risk-safe memory behavior, final report generation, synthetic evaluation summary reporting, automatic CLI run ids, protected-artifact run reuse refusal, guarded evaluation cleanup, and the conservative golden demo path.
 
 Existing source:
 
@@ -74,7 +74,7 @@ Existing source:
 - Canonical output policy: actual run artifacts live under `<output_root>/<case_id>/<run_id>/`. `outputs/` is the repo-local actual-run output root and is ignored except for `.gitkeep`; existing historical files under `outputs/` are generated artifacts, not reference outputs or schema acceptance evidence.
 - Verification output policy: Codex and automated checks should prefer a temporary output root such as `/private/tmp/lqcd-agent-...` or a unique `--run-id`. If `--run-id` is omitted, the CLI generates a timestamp run id. Explicit repeated run ids are refused once protected completed or decision artifacts exist.
 - Evaluation output policy: Phase 8 synthetic evaluation actual-run artifacts and `evaluation_summary.csv` default to `/private/tmp/lqcd-agent-phase8-evaluation`. Future curated reference outputs belong under `evaluation/reference_outputs/`, and expected risk/action/warning behavior belongs under `evaluation/expected_behavior/`; neither should be mixed into `outputs/`.
-- Repository boundary: the current Git top-level is outside `lqcd-agent`; making this folder an independent Git repository remains a separate user-confirmed step after cleanup verification and does not block the current mock runtime.
+- Repository boundary: `lqcd-agent` is now an independent Git repository rooted at `/Users/chengxiaowei/Desktop/LQCD/lqcd-agent`. The `main` branch tracks `origin/main` at `git@github.com:Xiaowei251129/lqcd-agent.git`; parent-repo commits under `/Users/chengxiaowei` are not used for this project.
 - Deferred MVP work: provider integration, raw-data-backed evaluation cases, and real approval-node follow-through beyond Phase 7 route intent.
 
 ## Verification Status
@@ -99,15 +99,15 @@ Existing source:
 - `python evaluation/run_evaluation.py` succeeds and writes `/private/tmp/lqcd-agent-phase8-evaluation/evaluation_summary.csv`.
 - `bash scripts/run_langgraph_demo.sh` succeeds and writes a high-risk pending golden mock demo under `outputs/l64c64a076_m140/<run_id>/`.
 - Phase 9 GitHub-ready cleanup dry-runs and removes ignored generated artifacts; after cleanup, `outputs/` contains only `.gitkeep`, `.DS_Store`, `__pycache__/`, `.pytest_cache/`, and `src/lqcd_agent.egg-info/` are absent before verification commands regenerate local caches.
+- Independent Git setup completed: `git rev-parse --show-toplevel` resolves to `/Users/chengxiaowei/Desktop/LQCD/lqcd-agent`, `git remote -v` points to `git@github.com:Xiaowei251129/lqcd-agent.git`, and `git status --short --branch` shows `main` tracking `origin/main`.
 
 ## Next Work
 
-The next repository-management step is optional user-confirmed independent Git initialization and GitHub push preparation. The next implementation step is Phase 10: add the provider abstraction and secure dry-run configuration while preserving deterministic mock defaults. Later tickets add provider-backed agent wiring and raw-data library work after explicit authorization.
+The repository-management setup for the Phase 9 baseline is complete. The next implementation step is Phase 10: add the provider abstraction and secure dry-run configuration while preserving deterministic mock defaults. Later tickets add Phase 10B provider-backed agent wiring, Phase 10C scenario-based end-to-end rehearsal, and then Phase 11 raw-data library work after explicit authorization and data readiness.
 
 ## Blockers and TODOs
 
 - TODO(owner:provider-integration, reason:provider-specific OpenAI/DeepSeek environment variables are deferred until the provider phase).
-- TODO(owner:repo-boundary, reason:make `lqcd-agent` an independent Git repository only after explicit user confirmation).
 
 ## Related Documents
 

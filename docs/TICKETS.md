@@ -46,11 +46,13 @@ pytest -q
 - Phase 8: Memory, Final Report, and Synthetic Evaluation Harness completed; dedicated memory/report modules now write `memory_update.json` and `final_report.md`, and synthetic good, ambiguous, and bad eval cases write `evaluation_summary.csv`.
 - Phase 9: Golden Example and Productization completed; the `l64c64a076_m140` golden mock demo writes read-only provenance, high-risk approval artifacts, pending memory, and a final report through one demo command.
 - Phase 7-9 maintenance: decision-route audit fields, approved-decision report text, evaluation cleanup guard, and documentation synchronization completed.
-- Phase 9 GitHub-ready cleanup: ignored historical `outputs/` artifacts, `.DS_Store`, Python caches, pytest cache, and egg-info cleanup completed; independent Git initialization remains a separate user-confirmed step.
+- Phase 9 GitHub-ready cleanup: ignored historical `outputs/` artifacts, `.DS_Store`, Python caches, pytest cache, and egg-info cleanup completed.
+- Independent Git repository setup: initialized `lqcd-agent` as its own repository, committed the Phase 9 baseline, and pushed `main` to `git@github.com:Xiaowei251129/lqcd-agent.git`.
 
 ## Later Backlog
 
-- Phase 11: read-only raw-data manifests and curated evaluation case library after explicit data readiness.
+- Phase 10C: scenario-based end-to-end rehearsal for the provider-backed multi-agent system after Phase 10B is complete.
+- Phase 11: read-only raw-data manifests and curated evaluation case library after Phase 10C and explicit data readiness.
 
 ## Cleanup / Policy Tickets
 
@@ -81,6 +83,8 @@ This ticket should also verify that future smoke tests use `/private/tmp/...` or
 
 ### Independent Git Repository Setup
 
+Status: completed.
+
 Goal: initialize `lqcd-agent` as an independent Git repository and prepare a GitHub push only after explicit user confirmation.
 
-Do not do this automatically as part of cleanup. Before initialization, verify that cleanup checks pass, `outputs/.gitkeep` is present, generated artifacts remain ignored, and tests/demo commands pass.
+Completed outcome: `lqcd-agent` is rooted at `/Users/chengxiaowei/Desktop/LQCD/lqcd-agent`, `main` tracks `origin/main`, and `origin` points to `git@github.com:Xiaowei251129/lqcd-agent.git`. Do not use the parent repository under `/Users/chengxiaowei` for future `lqcd-agent` commits or pushes.

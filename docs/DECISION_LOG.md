@@ -291,11 +291,11 @@ Confirmed:
 - Historical `outputs/` run artifacts are local actual-run outputs, not reference outputs or schema acceptance evidence.
 - `outputs/.gitkeep` is the only file that should remain under repo-local `outputs/` after cleanup.
 - `.DS_Store`, `__pycache__/`, `.pytest_cache/`, and `*.egg-info/` are local/generated artifacts and should not be committed.
-- The current Git top-level remains `/Users/chengxiaowei`; this ticket does not initialize or push a GitHub repository.
+- At cleanup-ticket time, before the later independent-repository setup, the Git top-level remained `/Users/chengxiaowei`; the cleanup ticket did not initialize or push a GitHub repository.
 
 Rejected Alternatives:
 
-- Initializing an independent Git repository during cleanup: rejected because Git setup and GitHub remote choices require explicit user confirmation.
+- Initializing an independent repository during cleanup: rejected because Git setup and GitHub remote choices require explicit user confirmation.
 - Preserving historical `outputs/` runs in the repository: rejected because verification should use `/private/tmp/...` or fresh explicit run ids, and reference outputs are deferred to future `evaluation/reference_outputs/`.
 
 Related Documents:
@@ -303,3 +303,29 @@ Related Documents:
 - [Tickets](TICKETS.md)
 - [Repository Current State](REPO_CURRENT_STATE.md)
 - [Security and Data Policy](SECURITY_AND_DATA_POLICY.md)
+
+## 2026-06-22: Initialize Independent Git Repository and Push Phase 9 Baseline
+
+Decision:
+
+- Initialize `/Users/chengxiaowei/Desktop/LQCD/lqcd-agent` as its own Git repository after cleanup verification and explicit user confirmation.
+- Commit the cleaned Phase 9 baseline and push `main` to the user-provided GitHub remote.
+- Keep all future `lqcd-agent` staging, commits, and pushes inside the `lqcd-agent` repository boundary.
+
+Confirmed:
+
+- The Git repository root is `/Users/chengxiaowei/Desktop/LQCD/lqcd-agent`.
+- The initial baseline commit is `4d0dbac` with message `Phase 9 baseline mock agent system`.
+- `origin` is `git@github.com:Xiaowei251129/lqcd-agent.git`.
+- `main` tracks `origin/main`.
+- The parent repository under `/Users/chengxiaowei` is not used for `lqcd-agent` commits or pushes.
+
+Rejected Alternatives:
+
+- Committing `lqcd-agent` through the parent repository: rejected because this project now has its own GitHub repository and repo-local generated artifact policy.
+- Reusing cleanup-only documentation as current status: rejected because the repository boundary changed after explicit GitHub setup.
+
+Related Documents:
+
+- [Tickets](TICKETS.md)
+- [Repository Current State](REPO_CURRENT_STATE.md)

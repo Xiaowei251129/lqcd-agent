@@ -20,7 +20,7 @@
 
 - 所有 Codex prompt：统一改成 ticket contract，包括 Read First、Allowed Files、Do Not Touch、Requirements、Non-goals、Acceptance Criteria、Verification Commands、Stop Conditions、End-of-task Updates。
 
-- Phase 10/11：前九个 phase 跑通后，再接入真实 LLM provider 和 raw_data/evaluation case library；真实密钥只通过本地 .env，raw data 只读。
+- Phase 10/10B/10C/11：前九个 phase 跑通后，先接入真实 LLM provider，再做 provider-backed multi-agent rehearsal，最后才进入 raw_data/evaluation case library；真实密钥只通过本地 .env，raw data 只读。
 
 # 1. 第一原则：不要先写代码，先冻结可审查规格
 
@@ -100,7 +100,7 @@ AI 边界应写入 AGENTS.md 和 docs/AGENT_ROLES_AND_BOUNDARIES.md。它不是�
 
 - manifest.json 至少包含 run_id、case_id、timestamp、git commit/status、config hash、input files、output files、commands、tool versions、environment summary、warnings/errors。
 
-- Phase 11 才正式引入 raw_data/ case library；Phase 0–10 可以预留路径和 policy，但不得创建或修改真实 raw data。
+- Phase 11 才正式引入 raw_data/ case library；Phase 0–10C 可以预留路径和 policy，但不得创建或修改真实 raw data。
 
 - good/ambiguous/bad 的标签和 expected behavior 应保存在 evaluation/ 下，不应混入 raw_data/；raw_data/ 只保存 immutable input data、manifest 和 checksums。
 
@@ -426,7 +426,7 @@ Stop and ask if:
 
 # 11. 分阶段执行计划：统一 prompt 版本
 
-以下采用 pre-phase0 + Phase 0–11 的统一 prompt 合同。建议每个 phase 单独执行、单独 review、单独 commit。不要让 Codex 一次性实现整个系统。Phase 10 和 Phase 11 是后置阶段：只有 Phase 0–9 的 mock/golden path 跑通后，才接入真实 LLM provider 与 raw_data-backed evaluation library。
+以下采用 pre-phase0 + Phase 0–11 的统一 prompt 合同。建议每个 phase 单独执行、单独 review、单独 commit。不要让 Codex 一次性实现整个系统。Phase 10、10B、10C 和 Phase 11 是后置阶段：只有 Phase 0–9 的 mock/golden path 跑通后，才接入真实 LLM provider、执行 provider-backed scenario rehearsal，并最终进入 raw_data-backed evaluation library。
 
 Global phase rules:
 
@@ -1366,6 +1366,8 @@ Requirements:
 - Create or update .env.example with placeholder variable names only.
 - Do not create, print, commit, or request actual API keys.
 - Add .env and .env.* to .gitignore, except .env.example.
+- Define the local environment loading behavior explicitly: provider configuration must read already-exported environment variables and may load a repo-local .env file without overriding exported variables; never print or log loaded values.
+- Do not add a dotenv dependency unless explicitly approved; if automatic .env loading is not implemented, docs must show the required shell export/source command before live tests.
 - Support two provider configs: configs/runtime/openai.yaml and configs/runtime/deepseek.yaml.
 - Implement a provider abstraction so Method Planner, Scientific Reviewer, and Decision Coordinator can later switch between mock, OpenAI, and DeepSeek providers.
 - Keep mock provider as the default in tests.
@@ -1391,6 +1393,7 @@ Acceptance Criteria:
 - Live test is skipped unless RUN_LIVE_LLM_TESTS=1.
 - No test output prints API keys or secrets.
 - docs/SECURITY_AND_DATA_POLICY.md explains how the user should create a local .env safely.
+- docs/SECURITY_AND_DATA_POLICY.md and docs/VERIFICATION_GUIDE.md state whether .env is loaded automatically or must be sourced/exported before live tests.
 - docs/VERIFICATION_GUIDE.md documents dry-run and optional live-test commands.
 
 Verification Commands:
@@ -1485,17 +1488,152 @@ Stop if live API access is required, if a real API key is needed, if provider ou
 End-of-task Updates:
 - Update docs/SECURITY_AND_DATA_POLICY.md if provider usage policy changes.
 - Update docs/VERIFICATION_GUIDE.md with provider-backed dry-run checks.
-- Update docs/TICKETS.md with Phase 10B status and the Phase 11 readiness criteria.
+- Update docs/TICKETS.md with Phase 10B status and the Phase 10C ticket/readiness criteria.
 - Update docs/REPO_CURRENT_STATE.md.
 - Update docs/DECISION_LOG.md if agent-provider wiring changes architecture.
 - Final response: Changed / Why / Verified / Next
+````
+
+### Phase 10C：Scenario-based End-to-End Rehearsal for Provider-backed Multi-Agent System
+
+````text
+Task:
+Implement Phase 10C only: add a synthetic scenario-based end-to-end rehearsal suite after Phase 10B and before Phase 11. The goal is to demonstrate that the provider-backed multi-agent system works as designed on small, controlled research-like tasks. Each scenario gives the system a physics or simple scientific goal plus synthetic data, then checks whether the graph produces coherent method planning, analysis execution, fitting, diagnostics, decision coordination, Human Approval Gate behavior when needed, memory/report artifacts, and a reasonable final report.
+
+Timing:
+- Start this ticket only after Phase 10 provider abstraction and Phase 10B provider-backed agent wiring are complete and verified.
+- Keep Phase 11 raw-data-backed examples and domain-background case libraries deferred.
+- When updating documentation, use the actual implementation date and do not mark Phase 10C complete before verification succeeds.
+
+Read First:
+- AGENTS.md
+- docs/PROJECT_SPEC.md
+- docs/ARCHITECTURE.md
+- docs/AGENT_ROLES_AND_BOUNDARIES.md
+- docs/STATE_SCHEMA.md
+- docs/ARTIFACT_CONTRACTS.md
+- docs/SECURITY_AND_DATA_POLICY.md
+- docs/EVALS_AND_OBSERVABILITY.md
+- docs/VERIFICATION_GUIDE.md
+- docs/PROMPT_PLAYBOOK.md
+- docs/TICKETS.md
+- Phase 10 and 10B provider files, schemas, structured-output validators, agent wiring, routing, diagnostics, and evaluation harness.
+
+Allowed Files:
+- evaluation/synthetic_benchmarks/**/*.yaml
+- evaluation/synthetic_benchmarks/**/*.json
+- evaluation/synthetic_benchmarks/**/*.csv
+- evaluation/synthetic_benchmarks/run_synthetic_benchmarks.py
+- evaluation/run_evaluation.py, only to keep Phase 8 compatibility or delegate to the new runner
+- evaluation/cases/*.yaml, only if Phase 8 cases need compatibility updates
+- src/lqcd_agent/analysis/synthetic_benchmark_models.py
+- src/lqcd_agent/analysis/correlator_diagnostics.py
+- src/lqcd_agent/analysis/fit_diagnostics.py
+- src/lqcd_agent/analysis/matrix_element_diagnostics.py
+- src/lqcd_agent/agents/analysis_engineer.py, only if benchmark artifacts require an adapter to existing analysis outputs
+- src/lqcd_agent/agents/scientific_reviewer.py
+- src/lqcd_agent/agents/decision_coordinator.py, only if existing structured decisions cannot express a required rehearsal outcome
+- src/lqcd_agent/tools/command_runner.py
+- src/lqcd_agent/tools/output_validator.py, only if new benchmark artifact validation is needed
+- src/lqcd_agent/tools/manifest.py, only if benchmark provenance fields need to be recorded
+- src/lqcd_agent/graph/nodes.py, only for wiring existing graph nodes to benchmark artifacts without changing topology
+- src/lqcd_agent/graph/routing.py, only if tests reveal a bug in existing structured route handling
+- pyproject.toml, only if real fitting requires a minimal numerical dependency
+- tests/test_synthetic_benchmarks.py
+- focused existing tests for evaluation, graph smoke, reviewer, decision coordinator, analysis engineer, output validator, manifest, and provider mock behavior
+- relevant docs listed in End-of-task Updates
+
+Do Not Touch:
+- raw_data/
+- accepted_results/
+- real .env files or secrets
+- human decision files from real runs
+- production deployment files
+- graph topology unless a Phase 10B-compatible routing bug requires a documented fix
+- provider credentials or live-provider default behavior
+- repo-local outputs/ artifacts unless explicitly authorized
+
+Requirements:
+- Add a separate evaluation/synthetic_benchmarks/ rehearsal area instead of folding all 10C logic into the Phase 8 good/ambiguous/bad harness.
+- Provide at least two runner modes:
+  - primary live-provider rehearsal mode, explicitly enabled, using the real provider-backed agents from Phase 10B
+  - mock-provider regression mode, network-free, for ordinary pytest and CI-style checks
+- Live-provider rehearsal must require explicit opt-in and must not run during normal pytest -q.
+- The ordinary test suite must pass without API keys, network access, or paid provider calls.
+- Benchmark cases should be simple enough for the current agents to solve without Phase 11 case examples or domain-background libraries.
+- Cases may use simple synthetic math or physics scenarios, including exponential decay, noisy fits, plateau behavior, normalization checks, covariance/uncertainty issues, or other small scientific tasks.
+- Each case must produce advisor-readable artifacts: input scenario, generated or provided synthetic data, method plan, analysis/run log, fit summary, scientific review, decision log, route decisions, memory update, and final report.
+- Truth or generation metadata may exist as instructor-only notes or generator provenance, but must not be passed to agents as input and must not appear as the main evidence in final_report.md.
+- Do not use "100% pass rate" as the primary demonstration claim. Use a demonstration checklist focused on whether each agent and route behaved as designed.
+- Allow real fitting. If standard-library fitting is insufficient, add a minimal numerical dependency with clear justification and tests.
+- Preserve structured routing: provider-backed agents may affect graph behavior only through validated structured outputs.
+- Free-form provider text must never decide routing.
+- Invalid provider output must write a structured error artifact and stop safely.
+- Phase 10C does not produce accepted physics results, accepted real-data results, paper-level claims, or final physics conclusions. It may produce accepted mock memory or rehearsal status only.
+
+Scenario Coverage:
+- clean synthetic fit: recover a known simple parameter pattern and produce low-risk reporting
+- noisy but valid fit: avoid excessive warnings while reporting uncertainty
+- fit-window or excited-state-like contamination: reviewer identifies dependence or recommends follow-up
+- plateau or ratio instability: reviewer records a non-severe or rerun-oriented concern
+- normalization violation: severe warning and Human Approval Gate behavior
+- bad covariance, invalid uncertainty, or non-positive error: safe high-risk or failed-analysis handling
+- missing input: safe stop without unsafe downstream claims
+- code_needed branch: Method Planner creates an implementation-gap handoff packet
+- code_fix branch: controlled case triggers failure_type=code or code_fix_requested=true through existing structured fields
+- targeted rerun branch: controlled case records rerun intent through structured decision fields
+- report and memory branches: low-risk accepted mock memory, medium/high pending memory, and final report generation
+- Human Approval Gate branch: high-risk case writes approval packet and blocks accepted memory without valid approval
+
+Acceptance Criteria:
+- The live-provider rehearsal runner can execute selected scenarios when explicitly enabled and configured.
+- The mock-provider regression runner can execute without network access and validates the rehearsal infrastructure.
+- Each scenario writes a demonstration checklist rather than only a binary pass/fail row.
+- Checklist items include: input understood, method plan written, analysis command recorded, fit summary produced where applicable, reviewer findings grounded in artifacts, decision reasons structured, expected route observed, Human Gate behavior correct when applicable, memory status correct, final report coherent.
+- Existing Phase 8 evaluation behavior remains compatible or is migrated with equivalent coverage.
+- New artifacts and benchmark provenance are documented separately from Phase 11 raw-data-backed evaluation cases.
+- A top-level advisor-facing summary artifact named synthetic_rehearsal_summary.md is written for each rehearsal run.
+- synthetic_rehearsal_summary.md summarizes each case_id, scenario goal, route path, key fit result, reviewer findings, decision/risk/action, memory status, artifact inspection paths, and advisor checklist.
+
+Verification Commands:
+```bash
+pytest tests/test_synthetic_benchmarks.py -q
+pytest tests/test_evaluation.py tests/test_graph_smoke.py tests/test_scientific_reviewer.py tests/test_decision_coordinator.py tests/test_analysis_engineer.py -q
+python evaluation/synthetic_benchmarks/run_synthetic_benchmarks.py --provider mock --case-set demo --output-dir /private/tmp/lqcd-agent-phase10c-mock
+pytest -q
+git diff --check
+```
+
+Optional Live Rehearsal Command:
+```bash
+RUN_LIVE_LLM_TESTS=1 python evaluation/synthetic_benchmarks/run_synthetic_benchmarks.py \
+  --provider-config <phase10b-provider-config> \
+  --case-set demo \
+  --output-dir /private/tmp/lqcd-agent-phase10c-live
+```
+
+Case Sets:
+- --case-set demo runs 3-5 representative advisor-demo scenarios: clean synthetic fit, two-state or fit-window contamination, normalization violation plus Human Gate, missing input safe stop, and code_needed or targeted rerun.
+- --case-set full runs the complete rehearsal suite.
+
+Stop Conditions:
+Stop and ask if implementation would require real raw numeric data, real secrets, live provider calls during ordinary tests, routing based on free-form text, changing human approval policy, changing graph topology for convenience, or adding a numerical dependency without a clear benchmark need.
+
+End-of-task Updates:
+- Update docs/EVALS_AND_OBSERVABILITY.md with Phase 10C scenario rehearsal purpose, runner modes, scenario categories, demonstration checklist, and output policy.
+- Update docs/ARTIFACT_CONTRACTS.md if new synthetic data, fit summary, instructor-note, or benchmark checklist artifacts are introduced.
+- Update docs/VERIFICATION_GUIDE.md with mock regression and optional live-provider rehearsal commands.
+- Update docs/TICKETS.md so Phase 10C appears after completed Phase 10B and before Phase 11 readiness.
+- Update docs/REPO_CURRENT_STATE.md with actual status, date, and verification results.
+- Update docs/DECISION_LOG.md only if Phase 10C changes architecture, risk semantics, provider policy, dependency policy, or artifact contracts.
+- Final response format: Changed / Why / Verified / Next
 ````
 
 ### Phase 11：Raw Data and Evaluation Case Library（后续构想）
 
 ```text
 Purpose:
-After the core graph, golden example, and real LLM provider integration are stable, create a read-only raw_data/ library and curated evaluation case library. Because the real data and examples are not prepared yet, this phase should remain a concrete concept for now, not an immediate implementation ticket.
+After the core graph, golden example, real LLM provider integration, provider-backed agent wiring, and Phase 10C scenario rehearsal are stable, create a read-only raw_data/ library and curated evaluation case library. Because the real data and examples are not prepared yet, this phase should remain a concrete concept for now, not an immediate implementation ticket.
 
 Recommended Directory Concept:
 raw_data/
