@@ -73,6 +73,114 @@ Related Documents:
 - [Tickets](TICKETS.md)
 - [Verification Guide](VERIFICATION_GUIDE.md)
 
+## 2026-06-22: Add Secure LLM Provider Abstraction
+
+Decision:
+
+- Add a Phase 10 LLM provider abstraction with deterministic mock defaults and secure dry-run configuration for OpenAI and DeepSeek.
+
+Confirmed:
+
+- Mock provider behavior remains the default test path.
+- Provider configuration may load a repo-local `.env` file without overriding exported environment variables.
+- `.env` and `.env.*` are ignored, while `.env.example` remains tracked with placeholder names only.
+- Live provider calls require `RUN_LIVE_LLM_TESTS=1` and provider-specific key/model environment variables.
+- Dry-run readiness output may include missing environment variable names but must not print loaded values.
+- Provider output must be parsed as structured JSON before it can affect future routing or agent artifacts.
+
+Rejected Alternatives:
+
+- Adding a dotenv dependency: rejected because Phase 10 can safely parse simple local `.env` files without a new dependency.
+- Wiring live providers into graph agents in Phase 10: rejected because Phase 10B is the dedicated provider-backed agent wiring ticket.
+- Requiring live API calls for verification: rejected because normal tests must pass without network access or secrets.
+
+Related Documents:
+
+- [Security and Data Policy](SECURITY_AND_DATA_POLICY.md)
+- [Verification Guide](VERIFICATION_GUIDE.md)
+- [Repository Current State](REPO_CURRENT_STATE.md)
+
+## 2026-06-22: Wire Provider-backed Agents Through Explicit Graph Config
+
+Decision:
+
+- Add Phase 10B provider-backed Method Planner, Scientific Reviewer, and Decision Coordinator execution behind explicit runner/provider injection and graph `--llm-provider-config`.
+
+Confirmed:
+
+- Deterministic agent paths remain the default when no provider config is supplied.
+- `AnalysisState` carries `llm_provider_config_path` so graph nodes can select provider-backed execution without changing graph topology.
+- Provider-backed output must be valid JSON and pass strict artifact schema checks before it can affect artifacts or routing.
+- Invalid provider output writes structured failed artifacts and routes only through conservative structured fields.
+- Normal tests and mock-provider graph smoke checks do not require network access or secrets.
+
+Rejected Alternatives:
+
+- Environment-only provider selection: rejected because it is less explicit and less auditable than a state-carried config path.
+- Free-form provider text for routing: rejected because routing must use validated structured fields.
+- Requiring live provider calls for Phase 10B verification: rejected because ordinary verification must remain network-free.
+
+Related Documents:
+
+- [Architecture](ARCHITECTURE.md)
+- [State Schema](STATE_SCHEMA.md)
+- [Security and Data Policy](SECURITY_AND_DATA_POLICY.md)
+- [Verification Guide](VERIFICATION_GUIDE.md)
+
+## 2026-06-23: Preserve Local Risk Floor for Provider-backed Decisions
+
+Decision:
+
+- Provider-backed Scientific Reviewer and Decision Coordinator paths must preserve deterministic local safety evidence. A provider may raise risk or add structured reasoning, but it must not lower severe warnings, severe diagnostic flags, failed runs, unusable artifacts, or high/critical local evidence into low-risk accepted memory.
+
+Confirmed:
+
+- Provider prompts use bounded artifact summaries instead of raw numeric data or unbounded logs.
+- Decision Coordinator computes a local deterministic safety floor before accepting provider output.
+- If provider output proposes a lower risk than the local floor, `decision_log.json` records `provider_safety_floor` and routes through the conservative local risk path.
+- The `l64c64a076_m140` golden demo remains pending and Human-Gate-routed even when run through `configs/runtime/mock_llm.yaml`.
+
+Rejected Alternatives:
+
+- Trusting schema-valid provider output alone: rejected because schema validity does not prove that high-risk local evidence was preserved.
+- Letting mock provider always return low risk: rejected because mock-provider graph checks must exercise provider-backed safety semantics, not only provider plumbing.
+- Passing full raw data to providers: rejected because Phase 10B must preserve the no-raw-numeric-data prompt boundary.
+
+Related Documents:
+
+- [Architecture](ARCHITECTURE.md)
+- [Security and Data Policy](SECURITY_AND_DATA_POLICY.md)
+- [Verification Guide](VERIFICATION_GUIDE.md)
+- [Repository Current State](REPO_CURRENT_STATE.md)
+
+## 2026-06-23: Strengthen Phase 10C into an Advisor-demo Benchmark
+
+Decision:
+
+- Define Phase 10C as an advisor-demo benchmark over controlled synthetic scientific scenarios, not only a provider-backed infrastructure rehearsal.
+
+Confirmed:
+
+- Phase 10C remains synthetic-only and does not read real raw numeric data.
+- Phase 10C does not produce accepted physics results, accepted real-data results, paper-level claims, or final LQCD physics conclusions.
+- Analysis Engineer must consume scenario-provided synthetic data or generated fixtures and produce case-specific analysis and fit artifacts.
+- Each scenario must include instructor-only expected behavior with expected conclusions, tolerances where applicable, risk/action/route expectations, warning expectations, memory status, and Human Approval Gate expectations.
+- Instructor-only expected behavior must not be passed to agents as input.
+- Live-provider rehearsal must produce an advisor-facing report comparing actual agent conclusions and routes against expected behavior.
+
+Rejected Alternatives:
+
+- Treating Phase 10C as a generic LLM question-answer benchmark: rejected because it would test the provider model more than the multi-agent artifact workflow.
+- Letting the existing fixed mock matrix-element payload satisfy all Phase 10C cases unchanged: rejected because the advisor demo must show scenario-specific analysis behavior.
+- Moving raw-data-backed evidence chains into Phase 10C: rejected because Phase 11 is the dedicated phase for raw-data-backed evaluation and deeper physics capability.
+
+Related Documents:
+
+- [Codex Build Plan](CODEX_BUILD_PLAN.md)
+- [Evals and Observability](EVALS_AND_OBSERVABILITY.md)
+- [Artifact Contracts](ARTIFACT_CONTRACTS.md)
+- [Verification Guide](VERIFICATION_GUIDE.md)
+
 ## 2026-06-01: Implement Initial Mock LangGraph Runtime
 
 Decision:
@@ -301,6 +409,62 @@ Rejected Alternatives:
 Related Documents:
 
 - [Tickets](TICKETS.md)
+- [Repository Current State](REPO_CURRENT_STATE.md)
+
+## 2026-06-30: Verify Phase 10C with Live Provider and Evidence-grounded Provider Risk
+
+Decision:
+
+- Use `analysis:run_synthetic_benchmark:<scenario_path>` as the Phase 10C statistical Analysis Engineer command for generated benchmark cases.
+- Keep `synthetic_benchmark_input.json`, `synthetic_data.csv`, and `fit_summary.json` as audit support files, while only `synthetic_matrix_elements.json` enters the Phase 4 expected-output acceptance contract.
+- Constrain provider-backed reviewer warnings to structured, evidence-grounded warnings; context-only or ungrounded non-severe cautions do not affect routing.
+- Constrain provider-backed Decision Coordinator output with local evidence policy: provider output cannot downgrade deterministic severe/high evidence, and unsupported Human Gate escalation is reduced to the local low/medium policy route.
+
+Confirmed:
+
+- The live OpenAI-compatible Phase 10C demo case set completed with all five demo cases passing expected risk, route, memory, warning, and Human Gate checks.
+- Deterministic and mock-provider paths remain network-free and continue to pass the full test suite.
+- No raw numeric production data is read; Phase 10C remains synthetic-only.
+
+Rejected Alternatives:
+
+- Treating every provider caution as route-changing warning evidence: rejected because it allowed ungrounded synthetic-context warnings to block low-risk accepted memory.
+- Letting provider decisions force Human Gate for non-severe evidence: rejected because Human Gate should require deterministic severe/high evidence or valid local policy support.
+
+Related Documents:
+
+- [Architecture](ARCHITECTURE.md)
+- [Security and Data Policy](SECURITY_AND_DATA_POLICY.md)
+- [Verification Guide](VERIFICATION_GUIDE.md)
+- [Repository Current State](REPO_CURRENT_STATE.md)
+
+## 2026-06-23: Implement Phase 10C Synthetic Advisor-demo Contracts
+
+Decision:
+
+- Add `evaluation/synthetic_benchmarks/` as a separate Phase 10C rehearsal area with agent-visible scenario inputs, instructor-only expected sidecars, synthetic CSV fixtures, demo/full case sets, and a dedicated runner.
+- Use the existing graph topology and provider-backed agent wiring; the runner generates temporary case YAML files and performs actual-vs-expected checks after graph completion.
+- Add `fit_summary.json`, `synthetic_benchmark_input.json`, `synthetic_data.csv`, `demonstration_checklist.json`, `synthetic_rehearsal_summary.md`, and live-only `advisor_demo_report.md` as synthetic benchmark artifacts.
+- Treat `targeted_rerun_recommended` as a structured medium-risk rerun intent and keep invalid synthetic uncertainty as severe provider-backed evidence.
+
+Confirmed:
+
+- Phase 10C remains synthetic-only and does not read real raw numeric data.
+- Hidden expected behavior is never passed to agents and must not appear as final-report evidence.
+- Mock-provider regression is network-free; live-provider rehearsal requires `RUN_LIVE_LLM_TESTS=1`.
+- No `AnalysisState` fields, graph topology, status values, or dependencies changed.
+
+Rejected Alternatives:
+
+- Reusing the Phase 8 good/ambiguous/bad harness for advisor-demo scenarios: rejected because Phase 10C needs separate actual-vs-expected checklist and advisor report artifacts.
+- Passing expected behavior into provider prompts: rejected because it would grade against leaked answers rather than agent conclusions.
+- Adding a numerical dependency for the first synthetic fits: rejected because standard-library log-linear fitting is sufficient for controlled demo fixtures.
+
+Related Documents:
+
+- [Artifact Contracts](ARTIFACT_CONTRACTS.md)
+- [Evals and Observability](EVALS_AND_OBSERVABILITY.md)
+- [Verification Guide](VERIFICATION_GUIDE.md)
 - [Repository Current State](REPO_CURRENT_STATE.md)
 - [Security and Data Policy](SECURITY_AND_DATA_POLICY.md)
 

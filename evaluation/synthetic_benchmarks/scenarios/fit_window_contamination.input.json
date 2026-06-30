@@ -1,0 +1,19 @@
+{
+  "schema_version": "0.1",
+  "case_id": "phase10c_fit_window_contamination",
+  "category": "fit_window_contamination",
+  "goal": "Identify a controlled fit-window dependence in synthetic data.",
+  "data_path": "data/contaminated_decay.csv",
+  "diagnostic_flags": [
+    {
+      "code": "fit_window_dependence",
+      "severity": "warning",
+      "message": "Early-time synthetic points indicate fit-window sensitivity."
+    }
+  ],
+  "matrix_element": {
+    "Pz": 1.0,
+    "normalization": "mock_unit",
+    "diagnostic_flags": ["fit_window_dependence"]
+  }
+}

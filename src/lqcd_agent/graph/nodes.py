@@ -56,6 +56,7 @@ def method_planner_node(state: AnalysisState) -> AnalysisState:
         repo_inventory=build_repo_inventory(repo_root),
         output_dir=state["output_dir"],
         run_id=state["run_id"],
+        provider_config_path=state["llm_provider_config_path"],
     )
     method_plan = result["method_plan"]
     state["method_plan_path"] = result["method_plan_path"]
@@ -271,6 +272,7 @@ def scientific_reviewer_node(state: AnalysisState) -> AnalysisState:
         run_result_path=state["run_result_path"],
         analysis_outputs_dir=state["analysis_outputs_dir"],
         method_plan_path=state["method_plan_path"],
+        provider_config_path=state["llm_provider_config_path"],
     )
     report = result["report"]
     state["scientific_review_report_path"] = result["scientific_review_report_path"]
@@ -288,13 +290,29 @@ def scientific_reviewer_node(state: AnalysisState) -> AnalysisState:
         }
         for warning in report["warnings"]
     )
-    if any(warning.get("severity") == "severe" for warning in report["warnings"]):
+    state["errors"].extend(
+        {
+            "node": "scientific_reviewer",
+            "field": error.get("field") or error.get("code"),
+            "message": error.get("message"),
+        }
+        for error in result.get("errors", [])
+    )
+    if result["status"] != "success":
+        state["risk_level"] = "critical"
+        state["status"] = "pending"
+    elif any(warning.get("severity") == "severe" for warning in report["warnings"]):
         state["risk_level"] = "high"
     elif report["warnings"]:
         state["risk_level"] = "medium"
     else:
         state["risk_level"] = "low"
-    append_event(state, node="scientific_reviewer", kind="node_complete", summary=report["summary"])
+    append_event(
+        state,
+        node="scientific_reviewer",
+        kind="node_complete" if result["status"] == "success" else "node_pending",
+        summary=report["summary"],
+    )
     save_graph_state(state)
     return state
 
@@ -311,6 +329,7 @@ def decision_coordinator_node(state: AnalysisState) -> AnalysisState:
         method_plan_path=state["method_plan_path"],
         run_result_path=state["run_result_path"],
         scientific_review_report_path=state["scientific_review_report_path"],
+        provider_config_path=state["llm_provider_config_path"],
     )
     decision_log = result["decision_log"]
     state["decision_log_path"] = result["decision_log_path"]

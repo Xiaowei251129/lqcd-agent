@@ -41,10 +41,9 @@ TASK_PACKET_NON_EMPTY_LIST_FIELDS = [
 ]
 
 DEFAULT_ALLOWED_FILES = [
-    "src/lqcd_agent/agents/method_planner.py",
-    "src/lqcd_agent/tools/repo_inventory.py",
+    "src/lqcd_agent/analysis_programs/",
     "src/lqcd_agent/coder/task_packet.py",
-    "tests/test_method_planner_mock.py",
+    "tests/",
     "docs/ARTIFACT_CONTRACTS.md",
     "docs/REPO_CURRENT_STATE.md",
 ]
@@ -94,14 +93,18 @@ def build_coder_task_packet(
         "allowed_files": repo_inventory.get("allowed_files") or DEFAULT_ALLOWED_FILES,
         "forbidden_paths": ["raw_data/", "accepted_results/", "real LLM provider files"],
         "requirements": [
+            "Prefer reusing existing functions in src/lqcd_agent/analysis_programs before adding new code.",
+            "When new analysis code is required, put it under src/lqcd_agent/analysis_programs with a stable function entrypoint.",
+            "Register reusable analysis programs in src/lqcd_agent/analysis_programs/registry.py.",
+            "Add or update focused tests for reusable analysis program behavior.",
             "Keep mock LLM behavior deterministic and replaceable.",
             "Do not call real LLM providers.",
-            "Do not write analysis implementation code unless requested by a separate coding task.",
         ],
         "acceptance_criteria": [
             "Method planner emits a valid method_plan.json.",
             "Required code handoff emits coder_task_packet.yaml.",
             "Missing critical inputs return needs_more_info.",
+            "Reusable analysis code can be imported by future similar cases.",
         ],
         "verification_commands": verification_commands or ["pytest tests/test_method_planner_mock.py -q"],
         "context_artifacts": ["method_plan.json"],

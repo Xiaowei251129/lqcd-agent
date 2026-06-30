@@ -7,6 +7,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from lqcd_agent.llm.base import LLMProvider
+from lqcd_agent.llm.prompts import build_decision_coordinator_request
+from lqcd_agent.llm.provider_factory import create_provider_from_config_path
+from lqcd_agent.llm.schemas import validate_decision_log_payload
+from lqcd_agent.llm.structured_output import (
+    parse_json_object,
+    provider_exception_artifact,
+    validation_error_artifact,
+)
+
 
 RISK_RUBRIC = {
     "schema_version": "0.1",
@@ -34,6 +44,7 @@ RISK_RUBRIC = {
         },
     ],
 }
+RISK_SEVERITY = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
 
 def utc_now() -> str:
@@ -167,6 +178,16 @@ def _read_json_artifact(
                     "message": f"{artifact_name} {field} does not match the active run.",
                 }
             )
+    if payload.get("status") == "failed":
+        errors.append(
+            {
+                "artifact": artifact_name,
+                "path": str(artifact_path),
+                "field": "status",
+                "value": "failed",
+                "message": f"{artifact_name} is a failed artifact and cannot be used for low-risk routing.",
+            }
+        )
     return payload, evidence, errors
 
 
@@ -205,6 +226,16 @@ def _warning_evidence(warnings: list[dict[str, Any]]) -> list[dict[str, Any]]:
         }
         for warning in warnings
     ]
+
+
+def _targeted_rerun_warnings(warnings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    matches: list[dict[str, Any]] = []
+    for warning in warnings:
+        code = str(warning.get("code", "")).lower()
+        value = str(warning.get("value", "")).lower()
+        if "targeted_rerun" in code or "targeted_rerun" in value:
+            matches.append(warning)
+    return matches
 
 
 def _review_structured_evidence(review: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -341,6 +372,28 @@ def _classify_decision(
             "proposed_follow_up_route": "memory_report",
         }
 
+    targeted_rerun = _targeted_rerun_warnings(warnings)
+    if targeted_rerun:
+        return {
+            "risk_level": "medium",
+            "recommended_action": "targeted_rerun",
+            "human_approval_required": False,
+            "reasons": [
+                _reason(
+                    "targeted_rerun_recommended",
+                    "Structured reviewer warnings request a targeted synthetic rerun.",
+                    source="scientific_review_report",
+                    field="warnings",
+                    value=len(targeted_rerun),
+                )
+            ],
+            "rerun_requested": True,
+            "rerun_target": "analysis_engineer",
+            "code_fix_requested": False,
+            "requested_route": "memory_report",
+            "proposed_follow_up_route": "analysis_engineer",
+        }
+
     confidence = review.get("confidence")
     review_evidence = _as_list(review.get("evidence"))
     if warnings or confidence == "medium" or not review_evidence:
@@ -444,11 +497,100 @@ def write_decision_log(output_dir: str | Path, decision_log: dict[str, Any]) -> 
     return str(path)
 
 
-def run_decision_coordinator(
+def _method_plan_summary(payload: dict[str, Any] | None, *, path: str | Path | None) -> dict[str, Any]:
+    if payload is None:
+        return {"exists": bool(path and Path(path).exists()), "path": str(path) if path else None}
+    return {
+        "exists": True,
+        "path": str(path) if path else None,
+        "schema_version": payload.get("schema_version"),
+        "status": payload.get("status"),
+        "warnings": payload.get("warnings", []),
+        "errors": payload.get("errors", []),
+        "code_needed": payload.get("code_needed"),
+        "implementation_gap_count": len(payload.get("implementation_gaps", []))
+        if isinstance(payload.get("implementation_gaps"), list)
+        else None,
+    }
+
+
+def _run_result_summary(payload: dict[str, Any] | None, *, path: str | Path | None) -> dict[str, Any]:
+    if payload is None:
+        return {"exists": bool(path and Path(path).exists()), "path": str(path) if path else None}
+    return {
+        "exists": True,
+        "path": str(path) if path else None,
+        "schema_version": payload.get("schema_version"),
+        "status": payload.get("status"),
+        "warnings": payload.get("warnings", []),
+        "errors": payload.get("errors", []),
+        "run_success": payload.get("run_success"),
+        "failure_type": payload.get("failure_type"),
+        "analysis_outputs_dir": payload.get("analysis_outputs_dir"),
+        "produced_output_count": len(payload.get("produced_outputs", []))
+        if isinstance(payload.get("produced_outputs"), list)
+        else None,
+    }
+
+
+def _scientific_review_summary(payload: dict[str, Any] | None, *, path: str | Path | None) -> dict[str, Any]:
+    if payload is None:
+        return {"exists": bool(path and Path(path).exists()), "path": str(path) if path else None}
+    return {
+        "exists": True,
+        "path": str(path) if path else None,
+        "schema_version": payload.get("schema_version"),
+        "status": payload.get("status"),
+        "warnings": payload.get("warnings", []),
+        "errors": payload.get("errors", []),
+        "confidence": payload.get("confidence"),
+        "evidence_count": len(payload.get("evidence", [])) if isinstance(payload.get("evidence"), list) else None,
+    }
+
+
+def _build_decision_log(
     *,
     run_id: str,
     case_id: str,
-    output_dir: str | Path,
+    decision: dict[str, Any],
+    review: dict[str, Any] | None,
+    artifact_errors: list[dict[str, Any]],
+    evidence: list[dict[str, Any]],
+    summary: str | None = None,
+) -> dict[str, Any]:
+    status = "success" if decision["risk_level"] == "low" else "pending"
+    actual_route = "human_approval_gate" if decision["human_approval_required"] else "memory_report"
+    return {
+        **_base_artifact(run_id=run_id, case_id=case_id, status=status, summary=summary or _summary(decision)),
+        "warnings": _review_warnings(review),
+        "errors": artifact_errors,
+        "risk_rubric": RISK_RUBRIC,
+        "risk_level": decision["risk_level"],
+        "recommended_action": decision["recommended_action"],
+        "human_approval_required": decision["human_approval_required"],
+        "reasons": decision["reasons"],
+        "evidence": evidence,
+        "next_actions": [_next_action(decision)],
+        "routing_decision": {
+            "actual_route": actual_route,
+            "requested_route": decision["requested_route"],
+            "proposed_follow_up_route": decision["proposed_follow_up_route"],
+            "fields": {
+                "risk_level": decision["risk_level"],
+                "recommended_action": decision["recommended_action"],
+                "human_approval_required": decision["human_approval_required"],
+                "rerun_requested": decision["rerun_requested"],
+                "rerun_target": decision["rerun_target"],
+                "code_fix_requested": decision["code_fix_requested"],
+            },
+        },
+    }
+
+
+def _local_decision_context(
+    *,
+    run_id: str,
+    case_id: str,
     method_plan_path: str | Path | None,
     run_result_path: str | Path | None,
     scientific_review_report_path: str | Path | None,
@@ -485,42 +627,362 @@ def run_decision_coordinator(
         + _review_structured_evidence(review)
         + _warning_evidence(_review_warnings(review))
     )
-    status = "success" if decision["risk_level"] == "low" else "pending"
-    actual_route = "human_approval_gate" if decision["human_approval_required"] else "memory_report"
-    decision_log = {
-        **_base_artifact(run_id=run_id, case_id=case_id, status=status, summary=_summary(decision)),
-        "warnings": _review_warnings(review),
-        "errors": artifact_errors,
+    decision_log = _build_decision_log(
+        run_id=run_id,
+        case_id=case_id,
+        decision=decision,
+        review=review,
+        artifact_errors=artifact_errors,
+        evidence=evidence,
+    )
+    return {
+        "method_plan": method_plan,
+        "run_result": run_result,
+        "review": review,
+        "decision": decision,
+        "decision_log": decision_log,
+        "method_plan_summary": _method_plan_summary(method_plan, path=method_plan_path),
+        "run_result_summary": _run_result_summary(run_result, path=run_result_path),
+        "scientific_review_summary": _scientific_review_summary(review, path=scientific_review_report_path),
+    }
+
+
+def _risk_is_lower_than_floor(candidate: str, floor: str) -> bool:
+    return RISK_SEVERITY.get(candidate, -1) < RISK_SEVERITY.get(floor, -1)
+
+
+def _risk_is_higher_than_floor(candidate: str, floor: str) -> bool:
+    return RISK_SEVERITY.get(candidate, -1) > RISK_SEVERITY.get(floor, -1)
+
+
+def _apply_provider_safety_floor(
+    *,
+    provider_log: dict[str, Any],
+    local_context: dict[str, Any],
+) -> dict[str, Any]:
+    floor_log = local_context["decision_log"]
+    floor_risk = floor_log["risk_level"]
+    provider_risk = str(provider_log.get("risk_level"))
+    if not _risk_is_lower_than_floor(provider_risk, str(floor_risk)):
+        if (
+            provider_log.get("human_approval_required") is True
+            and floor_log.get("human_approval_required") is False
+            and _risk_is_higher_than_floor(provider_risk, str(floor_risk))
+        ):
+            adjusted = dict(floor_log)
+            adjusted["summary"] = (
+                "Provider-backed decision was constrained by the local evidence policy: "
+                f"{floor_log['summary']}"
+            )
+            adjusted["reasons"] = [
+                _reason(
+                    "provider_unsupported_human_gate",
+                    "Provider output requested Human Gate without deterministic high-risk evidence.",
+                    source="decision_coordinator",
+                    field="risk_level",
+                    value={
+                        "provider": provider_log.get("risk_level"),
+                        "local_policy": floor_risk,
+                    },
+                ),
+                *floor_log["reasons"],
+            ]
+            adjusted["evidence"] = [
+                *floor_log["evidence"],
+                {
+                    "artifact": "provider_decision_log",
+                    "field": "risk_level",
+                    "value": provider_log.get("risk_level"),
+                },
+                {
+                    "artifact": "provider_decision_log",
+                    "field": "recommended_action",
+                    "value": provider_log.get("recommended_action"),
+                },
+            ]
+            return adjusted
+        return provider_log
+
+    adjusted = dict(floor_log)
+    adjusted["summary"] = (
+        "Provider-backed decision was raised by the local safety floor: "
+        f"{floor_log['summary']}"
+    )
+    adjusted["reasons"] = [
+        _reason(
+            "provider_safety_floor",
+            "Provider output proposed a lower risk than deterministic artifact evidence allows.",
+            source="decision_coordinator",
+            field="risk_level",
+            value={
+                "provider": provider_log.get("risk_level"),
+                "floor": floor_risk,
+            },
+        ),
+        *floor_log["reasons"],
+    ]
+    adjusted["evidence"] = [
+        *floor_log["evidence"],
+        {
+            "artifact": "provider_decision_log",
+            "field": "risk_level",
+            "value": provider_log.get("risk_level"),
+        },
+        {
+            "artifact": "provider_decision_log",
+            "field": "recommended_action",
+            "value": provider_log.get("recommended_action"),
+        },
+    ]
+    return adjusted
+
+
+def _provider_failure_decision_log(
+    *,
+    run_id: str,
+    case_id: str,
+    artifact: dict[str, Any],
+) -> dict[str, Any]:
+    errors = artifact.get("errors", [])
+    return {
+        **_base_artifact(
+            run_id=run_id,
+            case_id=case_id,
+            status="pending",
+            summary="Decision Coordinator rejected invalid provider output and requires human approval.",
+        ),
+        "errors": errors if isinstance(errors, list) else [],
         "risk_rubric": RISK_RUBRIC,
-        "risk_level": decision["risk_level"],
-        "recommended_action": decision["recommended_action"],
-        "human_approval_required": decision["human_approval_required"],
-        "reasons": decision["reasons"],
-        "evidence": evidence,
-        "next_actions": [_next_action(decision)],
+        "risk_level": "critical",
+        "recommended_action": "pending_human_approval",
+        "human_approval_required": True,
+        "reasons": [
+            _reason(
+                "provider_output_invalid",
+                artifact.get("summary", "Provider output was invalid."),
+                source="decision_coordinator",
+                field="provider_output",
+            )
+        ],
+        "evidence": [],
+        "next_actions": [
+            {
+                "action": "pending_human_approval",
+                "primary": True,
+                "target": "human_approval_gate",
+                "status": "pending",
+            }
+        ],
         "routing_decision": {
-            "actual_route": actual_route,
-            "requested_route": decision["requested_route"],
-            "proposed_follow_up_route": decision["proposed_follow_up_route"],
+            "actual_route": "human_approval_gate",
+            "requested_route": "human_approval_gate",
+            "proposed_follow_up_route": "memory_report",
             "fields": {
-                "risk_level": decision["risk_level"],
-                "recommended_action": decision["recommended_action"],
-                "human_approval_required": decision["human_approval_required"],
-                "rerun_requested": decision["rerun_requested"],
-                "rerun_target": decision["rerun_target"],
-                "code_fix_requested": decision["code_fix_requested"],
+                "risk_level": "critical",
+                "recommended_action": "pending_human_approval",
+                "human_approval_required": True,
+                "rerun_requested": False,
+                "rerun_target": None,
+                "code_fix_requested": False,
             },
         },
     }
+
+
+def _normalize_provider_decision_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(payload)
+    risk_level = normalized.get("risk_level")
+    action_text = str(normalized.get("recommended_action", "")).lower()
+    if "targeted" in action_text and "rerun" in action_text:
+        normalized["recommended_action"] = "targeted_rerun"
+    elif "code" in action_text and ("fix" in action_text or "change" in action_text):
+        normalized["recommended_action"] = "code_fix"
+    elif risk_level in {"high", "critical"} or "human gate" in action_text:
+        normalized["recommended_action"] = "pending_human_approval"
+    elif risk_level == "medium" or "review" in action_text:
+        normalized["recommended_action"] = "human_review_recommended"
+    elif "approval" in action_text:
+        normalized["recommended_action"] = "pending_human_approval"
+    elif risk_level == "low":
+        normalized["recommended_action"] = "accept_mock_result"
+    if risk_level in {"high", "critical"}:
+        normalized["human_approval_required"] = True
+    human_approval_required = bool(normalized.get("human_approval_required", False))
+    if normalized.get("status") == "success" and risk_level != "low":
+        normalized["status"] = "pending"
+
+    routing = normalized.get("routing_decision")
+    if not isinstance(routing, dict):
+        routing = {}
+    fields = routing.get("fields")
+    if not isinstance(fields, dict):
+        fields = {}
+    recommended_action = normalized.get("recommended_action")
+    rerun_requested = bool(fields.get("rerun_requested", False)) or recommended_action == "targeted_rerun"
+    rerun_target = fields.get("rerun_target")
+    if recommended_action == "targeted_rerun":
+        rerun_target = "analysis_engineer"
+    fields.update(
+        {
+            "risk_level": risk_level,
+            "recommended_action": recommended_action,
+            "human_approval_required": human_approval_required,
+            "rerun_requested": rerun_requested,
+            "rerun_target": rerun_target,
+            "code_fix_requested": bool(fields.get("code_fix_requested", False)) or recommended_action == "code_fix",
+        }
+    )
+    actual_route = "human_approval_gate" if human_approval_required else "memory_report"
+    proposed_follow_up_route = routing.get("proposed_follow_up_route") or actual_route
+    if recommended_action == "targeted_rerun":
+        proposed_follow_up_route = "analysis_engineer"
+    routing.update(
+        {
+            "actual_route": actual_route,
+            "requested_route": routing.get("requested_route") or actual_route,
+            "proposed_follow_up_route": proposed_follow_up_route,
+            "fields": fields,
+        }
+    )
+    normalized["routing_decision"] = routing
+    return normalized
+
+
+def _run_provider_decision_coordinator(
+    *,
+    run_id: str,
+    case_id: str,
+    output_dir: str | Path,
+    method_plan_path: str | Path | None,
+    run_result_path: str | Path | None,
+    scientific_review_report_path: str | Path | None,
+    provider: LLMProvider,
+) -> dict[str, Any]:
+    local_context = _local_decision_context(
+        run_id=run_id,
+        case_id=case_id,
+        method_plan_path=method_plan_path,
+        run_result_path=run_result_path,
+        scientific_review_report_path=scientific_review_report_path,
+    )
+    request = build_decision_coordinator_request(
+        run_id=run_id,
+        case_id=case_id,
+        method_plan_path=str(method_plan_path) if method_plan_path else None,
+        run_result_path=str(run_result_path) if run_result_path else None,
+        scientific_review_report_path=str(scientific_review_report_path) if scientific_review_report_path else None,
+        method_plan_summary=local_context["method_plan_summary"],
+        run_result_summary=local_context["run_result_summary"],
+        scientific_review_summary=local_context["scientific_review_summary"],
+    )
+    try:
+        response = provider.generate(request)
+    except Exception as exc:
+        decision_log = _provider_failure_decision_log(
+            run_id=run_id,
+            case_id=case_id,
+            artifact=provider_exception_artifact(
+                producer="decision_coordinator",
+                run_id=run_id,
+                case_id=case_id,
+                code=getattr(exc, "code", "provider_call_failed"),
+                message=str(exc),
+            ),
+        )
+        decision_log_path = write_decision_log(output_dir, decision_log)
+        return _decision_result(decision_log, decision_log_path)
+
+    payload, parse_error = parse_json_object(
+        response.content,
+        producer="decision_coordinator",
+        run_id=run_id,
+        case_id=case_id,
+    )
+    if parse_error is not None:
+        decision_log = _provider_failure_decision_log(run_id=run_id, case_id=case_id, artifact=parse_error)
+        decision_log_path = write_decision_log(output_dir, decision_log)
+        return _decision_result(decision_log, decision_log_path)
+
+    assert payload is not None
+    payload = _normalize_provider_decision_payload(payload)
+    validation_errors = validate_decision_log_payload(payload, run_id=run_id, case_id=case_id)
+    if validation_errors:
+        decision_log = _provider_failure_decision_log(
+            run_id=run_id,
+            case_id=case_id,
+            artifact=validation_error_artifact(
+                producer="decision_coordinator",
+                run_id=run_id,
+                case_id=case_id,
+                errors=validation_errors,
+            ),
+        )
+        decision_log_path = write_decision_log(output_dir, decision_log)
+        return _decision_result(decision_log, decision_log_path)
+
+    payload.setdefault("risk_rubric", RISK_RUBRIC)
+    decision_log = _apply_provider_safety_floor(provider_log=payload, local_context=local_context)
     decision_log_path = write_decision_log(output_dir, decision_log)
+    return _decision_result(decision_log, decision_log_path)
+
+
+def _decision_result(decision_log: dict[str, Any], decision_log_path: str) -> dict[str, Any]:
+    routing_fields = decision_log.get("routing_decision", {}).get("fields", {})
+    if not isinstance(routing_fields, dict):
+        routing_fields = {}
     return {
-        "status": status,
+        "status": decision_log["status"],
         "decision_log_path": decision_log_path,
         "decision_log": decision_log,
-        "risk_level": decision["risk_level"],
-        "recommended_action": decision["recommended_action"],
-        "human_approval_required": decision["human_approval_required"],
-        "rerun_requested": decision["rerun_requested"],
-        "rerun_target": decision["rerun_target"],
-        "code_fix_requested": decision["code_fix_requested"],
+        "risk_level": decision_log["risk_level"],
+        "recommended_action": decision_log["recommended_action"],
+        "human_approval_required": decision_log["human_approval_required"],
+        "rerun_requested": bool(routing_fields.get("rerun_requested", False)),
+        "rerun_target": routing_fields.get("rerun_target"),
+        "code_fix_requested": bool(routing_fields.get("code_fix_requested", False)),
+    }
+
+
+def run_decision_coordinator(
+    *,
+    run_id: str,
+    case_id: str,
+    output_dir: str | Path,
+    method_plan_path: str | Path | None,
+    run_result_path: str | Path | None,
+    scientific_review_report_path: str | Path | None,
+    provider: LLMProvider | None = None,
+    provider_config_path: str | Path | None = None,
+) -> dict[str, Any]:
+    if provider is None and provider_config_path is not None:
+        provider = create_provider_from_config_path(provider_config_path)
+    if provider is not None:
+        return _run_provider_decision_coordinator(
+            run_id=run_id,
+            case_id=case_id,
+            output_dir=output_dir,
+            method_plan_path=method_plan_path,
+            run_result_path=run_result_path,
+            scientific_review_report_path=scientific_review_report_path,
+            provider=provider,
+        )
+
+    decision_log = _local_decision_context(
+        run_id=run_id,
+        case_id=case_id,
+        method_plan_path=method_plan_path,
+        run_result_path=run_result_path,
+        scientific_review_report_path=scientific_review_report_path,
+    )["decision_log"]
+    decision_log_path = write_decision_log(output_dir, decision_log)
+    return {
+        "status": decision_log["status"],
+        "decision_log_path": decision_log_path,
+        "decision_log": decision_log,
+        "risk_level": decision_log["risk_level"],
+        "recommended_action": decision_log["recommended_action"],
+        "human_approval_required": decision_log["human_approval_required"],
+        "rerun_requested": decision_log["routing_decision"]["fields"]["rerun_requested"],
+        "rerun_target": decision_log["routing_decision"]["fields"]["rerun_target"],
+        "code_fix_requested": decision_log["routing_decision"]["fields"]["code_fix_requested"],
     }

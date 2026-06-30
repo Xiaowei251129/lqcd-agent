@@ -3,4 +3,4 @@ provider: "mock"
 mode: "deterministic"
 notes:
   - "This placeholder does not configure any external API provider."
-  - "TODO(owner:provider-integration, reason:add provider-specific settings in the later provider phase)."
+  - "OpenAI and DeepSeek dry-run configs live in openai.yaml and deepseek.yaml."

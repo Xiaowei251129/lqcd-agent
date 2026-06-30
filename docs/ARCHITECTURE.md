@@ -33,7 +33,7 @@ The current implementation wires a real LangGraph `StateGraph` with deterministi
 - Human Approval Gate
 - Memory and Report Node
 
-The Codex Handoff Node is file-based: it reads `coder_task_packet.yaml`, `tests_status.json`, and `code_change_summary.md`, but it never calls Codex programmatically. The Human Approval Gate is also file-based: it writes an approval packet and reads `approval_packet/07_human_decision.yaml`, but it never rewrites human decisions. The current runtime does not call an LLM provider or external API.
+The Codex Handoff Node is file-based: it reads `coder_task_packet.yaml`, `tests_status.json`, and `code_change_summary.md`, but it never calls Codex programmatically. The Human Approval Gate is also file-based: it writes an approval packet and reads `approval_packet/07_human_decision.yaml`, but it never rewrites human decisions. The current runtime uses deterministic agents by default and calls an LLM provider only when an explicit provider config is supplied.
 
 Phase 2 added a standalone deterministic Method Planner module. Phase 2B wired that module into the graph method planner node. Phase 3 wired the file-based Codex Handoff path into `code_needed=true` and code-failure retry routes. Phase 7 wired high and critical risk outcomes into the Human Approval Gate. Phase 8 replaced the placeholder Memory and Report behavior with dedicated memory and final-report modules. Phase 9 added the conservative `l64c64a076_m140` golden mock demo, which uses sibling example files as read-only provenance and keeps analysis output synthetic. In the current runtime, planner `code_needed=false` continues to Analysis Engineer, planner `needs_more_info` stops safely as `pending` with structured state errors, and planner `code_needed=true` routes to Codex Handoff. If required handoff result files are missing, Codex Handoff stops safely as `pending`.
 
@@ -85,7 +85,7 @@ Checkpointing and LLM context are separate concerns.
 
 ## Command Boundary
 
-The MVP allows only allowlisted mock, test, and smoke commands. The Phase 9 golden demo uses `mock:write_golden_example_matrix_elements`, which writes synthetic matrix-element evidence with read-only golden-example provenance and an intentional severe demo flag. Every command execution must record command, working directory, return code, timeout, stdout/stderr summary, and output paths in the manifest.
+The MVP allows only allowlisted mock, test, smoke, and internal statistical benchmark commands. The Phase 9 golden demo uses `mock:write_golden_example_matrix_elements`, which writes synthetic matrix-element evidence with read-only golden-example provenance and an intentional severe demo flag. Phase 10C generated cases use the exact-allowlisted `analysis:run_synthetic_benchmark:<scenario_path>` command, which runs a weighted log-linear synthetic fit and writes support artifacts plus a validated matrix-element JSON output. Every command execution must record command, working directory, return code, timeout, stdout/stderr summary, and output paths in the manifest.
 
 ## Output Boundary
 
@@ -95,7 +95,9 @@ When the CLI is invoked without `--run-id`, it generates a timestamp run id. Whe
 
 ## Provider Boundary
 
-The default provider is deterministic mock output. Real providers such as OpenAI or DeepSeek are deferred until the provider integration phase and must not be required for tests or MVP verification.
+The default provider behavior is deterministic and network-free. Phase 10 adds a provider abstraction and secure dry-run configuration for OpenAI and DeepSeek. Phase 10B wires Method Planner, Scientific Reviewer, and Decision Coordinator to provider-backed structured output through the explicit `llm_provider_config_path` state field and CLI `--llm-provider-config` option. If the option is omitted, the graph uses the existing deterministic agent paths. Provider output must pass strict JSON schema validation before it can write artifacts or affect routing; invalid output writes a structured failure artifact and routes only through conservative structured fields.
+
+Provider-backed decisions also obey a local evidence policy. Before the Scientific Reviewer and Decision Coordinator call a provider, they pass bounded artifact summaries rather than raw numeric data. Before a provider-backed decision is accepted, the Decision Coordinator computes the deterministic risk implied by local artifacts. Provider output may add structured reasoning, but it cannot lower high or critical local evidence, severe review warnings, failed runs, or unusable artifacts into low-risk accepted memory. When provider output is lower than the local floor, `decision_log.json` records a `provider_safety_floor` reason and routes through the conservative local risk path. Provider output also cannot force Human Gate from unsupported non-severe evidence; context-only or ungrounded non-severe reviewer cautions are filtered out of route-changing warning evidence.
 
 ## Related Documents
 

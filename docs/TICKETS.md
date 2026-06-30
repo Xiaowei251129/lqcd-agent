@@ -8,27 +8,8 @@ Every ticket should follow the reusable contract in [PROMPT_PLAYBOOK.md](PROMPT_
 
 ## Active Ticket
 
-### Phase 10: Provider Abstraction and Secure Dry-run Configuration
-
-Goal: add the provider abstraction and secure local configuration without changing the deterministic mock default.
-
-Primary verification:
-
-```bash
-pytest tests/test_llm_config.py tests/test_llm_mock_provider.py -q
-```
-
-## Next Ticket
-
-### Phase 10B: Provider-backed Agent Wiring
-
-Goal: wire provider-backed agent calls behind the Phase 10 abstraction while keeping deterministic mock behavior as the default test path.
-
-Primary verification:
-
-```bash
-pytest -q
-```
+No active implementation ticket is open. Phase 11 remains deferred until raw-data
+readiness and explicit authorization.
 
 ## Completed Summary
 
@@ -48,10 +29,13 @@ pytest -q
 - Phase 7-9 maintenance: decision-route audit fields, approved-decision report text, evaluation cleanup guard, and documentation synchronization completed.
 - Phase 9 GitHub-ready cleanup: ignored historical `outputs/` artifacts, `.DS_Store`, Python caches, pytest cache, and egg-info cleanup completed.
 - Independent Git repository setup: initialized `lqcd-agent` as its own repository, committed the Phase 9 baseline, and pushed `main` to `git@github.com:Xiaowei251129/lqcd-agent.git`.
+- Phase 10: Provider abstraction and secure dry-run configuration completed; OpenAI and DeepSeek configs load without live calls, `.env` handling preserves exported values, and deterministic mock provider tests remain the default.
+- Phase 10B: Provider-backed agent wiring completed; Method Planner, Scientific Reviewer, and Decision Coordinator can use explicit provider-backed structured output through runner injection or graph `--llm-provider-config`, while deterministic paths remain the default.
+- Phase 10B safety-floor hardening: provider-backed reviewer and decision paths now use bounded artifact summaries, and provider decisions cannot downgrade severe local evidence into low-risk accepted memory.
+- Phase 10C: Provider-backed advisor-demo scenario benchmark completed on 2026-06-23 and live OpenAI-compatible provider demo verification completed on 2026-06-30; `evaluation/synthetic_benchmarks/` contains scenario inputs, instructor-only expected behavior, synthetic fixtures, demo/full case sets, a mock-provider runner, per-case demonstration checklists, `synthetic_rehearsal_summary.md`, optional live-provider `advisor_demo_report.md` generation, and an exact-allowlisted statistical Analysis Engineer benchmark command.
 
 ## Later Backlog
 
-- Phase 10C: scenario-based end-to-end rehearsal for the provider-backed multi-agent system after Phase 10B is complete.
 - Phase 11: read-only raw-data manifests and curated evaluation case library after Phase 10C and explicit data readiness.
 
 ## Cleanup / Policy Tickets

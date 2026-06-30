@@ -1,0 +1,18 @@
+{
+  "schema_version": "0.1",
+  "case_id": "phase10c_fit_window_contamination",
+  "hidden_expected_conclusion_summary": "The contaminated synthetic case should be flagged as fit-window sensitive and kept pending or review-recommended.",
+  "expected_qualitative_conclusion": "fit_window_dependence_identified",
+  "expected_risk_level": "medium",
+  "expected_recommended_action": "human_review_recommended",
+  "expected_route_contains": ["method_planner", "analysis_engineer", "scientific_reviewer", "decision_coordinator", "memory_report"],
+  "expected_memory_status": "pending",
+  "expected_human_approval_required": false,
+  "expected_approval_packet": false,
+  "required_warning_codes": ["upstream_diagnostic_flag"],
+  "required_warning_values": ["fit_window_dependence"],
+  "forbidden_warning_codes": ["severe_normalization_violation", "invalid_uncertainty"],
+  "numeric_tolerances": {
+    "mass": {"expected": 0.30, "absolute_tolerance": 0.25}
+  }
+}

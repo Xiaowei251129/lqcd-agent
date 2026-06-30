@@ -1,0 +1,19 @@
+{
+  "schema_version": "0.1",
+  "case_id": "phase10c_targeted_rerun",
+  "category": "targeted_rerun",
+  "goal": "Record a structured targeted-rerun recommendation for a controlled synthetic case.",
+  "data_path": "data/targeted_rerun.csv",
+  "diagnostic_flags": [
+    {
+      "code": "targeted_rerun_recommended",
+      "severity": "warning",
+      "message": "Repeat the synthetic fit with a later fit window before accepting the mock result."
+    }
+  ],
+  "matrix_element": {
+    "Pz": 1.0,
+    "normalization": "mock_unit",
+    "diagnostic_flags": ["targeted_rerun_recommended"]
+  }
+}

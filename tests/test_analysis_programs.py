@@ -1,0 +1,39 @@
+from lqcd_agent.analysis_programs import find_programs, program_inventory
+from lqcd_agent.analysis_programs.matrix_element import check_matrix_element_normalization
+from lqcd_agent.analysis_programs.two_point_fit import single_exponential_effective_mass
+from lqcd_agent.tools.repo_inventory import build_repo_inventory
+
+
+def test_program_registry_exposes_reusable_programs() -> None:
+    inventory = program_inventory()
+
+    assert any(program["category"] == "two_point_fit" for program in inventory)
+    assert any(program["category"] == "matrix_element" for program in inventory)
+    assert find_programs(category="matrix_element")[0].name == "matrix_element_normalization_check"
+
+
+def test_two_point_effective_mass_program() -> None:
+    result = single_exponential_effective_mass([0, 1, 2], [1.0, 0.5, 0.25])
+
+    assert result["status"] == "success"
+    assert result["effective_mass_estimates"][0]["effective_mass"] > 0
+
+
+def test_matrix_element_normalization_program() -> None:
+    result = check_matrix_element_normalization(
+        [
+            {"z": 0, "Pz": 5, "component": "real", "value": 1.01},
+            {"z": 1, "Pz": 5, "component": "real", "value": 0.7},
+        ]
+    )
+
+    assert result["status"] == "success"
+    assert result["all_passed"] is True
+
+
+def test_repo_inventory_guides_codex_to_analysis_programs(tmp_path) -> None:
+    inventory = build_repo_inventory(tmp_path, required_files=[], allowed_files=None)
+
+    assert "src/lqcd_agent/analysis_programs/" in inventory["allowed_files"]
+    assert inventory["analysis_programs"]
+    assert "Reuse existing analysis_programs" in inventory["analysis_program_guidance"]

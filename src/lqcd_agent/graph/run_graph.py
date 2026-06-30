@@ -71,7 +71,13 @@ def _raise_if_protected_run_exists(run_output_dir: Path) -> None:
     )
 
 
-def run_mock_graph(*, case_path: str, output_dir: str, run_id: str | None = None) -> dict[str, Any]:
+def run_mock_graph(
+    *,
+    case_path: str,
+    output_dir: str,
+    run_id: str | None = None,
+    llm_provider_config_path: str | None = None,
+) -> dict[str, Any]:
     case_config_path = Path(case_path)
     requested_output_dir = Path(output_dir)
     case_data = _read_mock_case(case_config_path)
@@ -90,6 +96,7 @@ def run_mock_graph(*, case_path: str, output_dir: str, run_id: str | None = None
             output_dir=str(run_output_dir),
             checkpoint_backend="sqlite",
             checkpoint_db_path=str(checkpoint_db_path),
+            llm_provider_config_path=llm_provider_config_path,
         )
         app = compile_analysis_graph(checkpointer)
         config = {"configurable": {"thread_id": state["checkpoint_thread_id"]}}
@@ -104,9 +111,19 @@ def main() -> None:
     parser.add_argument("--case", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--run-id", default=None)
+    parser.add_argument(
+        "--llm-provider-config",
+        default=None,
+        help="Optional explicit provider config path. Omit to use deterministic agents.",
+    )
     args = parser.parse_args()
     try:
-        result = run_mock_graph(case_path=args.case, output_dir=args.output_dir, run_id=args.run_id)
+        result = run_mock_graph(
+            case_path=args.case,
+            output_dir=args.output_dir,
+            run_id=args.run_id,
+            llm_provider_config_path=args.llm_provider_config,
+        )
     except FileExistsError as exc:
         parser.exit(status=2, message=f"error: {exc}\n")
     state = result["state"]

@@ -44,6 +44,39 @@ def test_golden_mock_command_writes_synthetic_output_with_high_risk_flag(tmp_pat
     assert "severe_demo_requires_human_approval" in payload["diagnostic_flags"]
 
 
+def test_statistical_synthetic_benchmark_analysis_command_requires_allowlist(tmp_path: Path) -> None:
+    output_dir = tmp_path / "phase10c_clean_fit" / "run_a"
+    scenario_path = Path("evaluation/synthetic_benchmarks/scenarios/clean_fit.input.json").resolve()
+    command = f"analysis:run_synthetic_benchmark:{scenario_path}"
+
+    blocked = run_command(
+        command=command,
+        cwd=Path.cwd(),
+        output_dir=output_dir,
+        run_id="run_a",
+        case_id="phase10c_clean_fit",
+    )
+    assert blocked["status"] == "blocked"
+    assert "allowlist" in blocked["stderr"]
+
+    result = run_command(
+        command=command,
+        cwd=Path.cwd(),
+        output_dir=output_dir,
+        run_id="run_a",
+        case_id="phase10c_clean_fit",
+        allowed_commands=[command],
+    )
+    fit_summary = json.loads((output_dir / "analysis_outputs" / "fit_summary.json").read_text(encoding="utf-8"))
+
+    assert result["status"] == "passed"
+    assert result["command_kind"] == "analysis"
+    assert result["produced_files"] == [str(output_dir / "analysis_outputs" / "synthetic_matrix_elements.json")]
+    assert str(output_dir / "analysis_outputs" / "synthetic_data.csv") in result["support_files"]
+    assert fit_summary["model"] == "single_exponential_log_linear"
+    assert fit_summary["parameter_estimates"]["mass"] > 0
+
+
 def test_local_command_requires_exact_allowlist(tmp_path: Path) -> None:
     result = run_command(
         command="python -c 'print(1)'",

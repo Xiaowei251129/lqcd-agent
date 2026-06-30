@@ -1,0 +1,11 @@
+{
+  "schema_version": "0.1",
+  "case_id": "phase10c_missing_input",
+  "category": "missing_input",
+  "goal": "Stop safely when a synthetic input fixture is missing.",
+  "data_path": "data/does_not_exist.csv",
+  "matrix_element": {
+    "Pz": 1.0,
+    "normalization": "mock_unit"
+  }
+}

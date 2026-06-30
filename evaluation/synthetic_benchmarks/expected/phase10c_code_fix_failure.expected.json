@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "case_id": "phase10c_code_fix_failure",
+  "hidden_expected_conclusion_summary": "A controlled command failure should enter the existing Codex Handoff retry branch and stop pending external handoff files.",
+  "expected_qualitative_conclusion": "code_failure_branch_reached",
+  "expected_risk_level": "unknown",
+  "expected_recommended_action": null,
+  "expected_route_contains": ["method_planner", "analysis_engineer", "codex_handoff"],
+  "expected_memory_status": "none",
+  "expected_human_approval_required": false,
+  "expected_approval_packet": false,
+  "required_warning_codes": [],
+  "forbidden_warning_codes": []
+}

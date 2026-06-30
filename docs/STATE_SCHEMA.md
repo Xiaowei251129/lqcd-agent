@@ -15,6 +15,7 @@ class AnalysisState(TypedDict):
     output_dir: str
     current_node: str
     status: str  # running | success | failed | pending | halted
+    llm_provider_config_path: str | None
 
     checkpoint_thread_id: str
     checkpoint_backend: str  # memory | sqlite
@@ -61,6 +62,7 @@ class AnalysisState(TypedDict):
 ## Invariants
 
 - `run_id`, `case_id`, `user_goal`, `case_config_path`, and `output_dir` are required for every run.
+- `llm_provider_config_path` is optional; when omitted, Method Planner, Scientific Reviewer, and Decision Coordinator use deterministic agent paths.
 - `checkpoint_backend` is `sqlite` for local CLI MVP runs and `memory` for unit and smoke tests.
 - `checkpoint_thread_id` is stable for a given `case_id` and `run_id`.
 - `retry_count` must never exceed `max_retry`.
@@ -75,6 +77,7 @@ class AnalysisState(TypedDict):
 LLM-facing prompts may include:
 
 - Selected identifiers and status fields.
+- Optional provider config path metadata, never provider secrets.
 - Paths to relevant artifacts.
 - Bounded summaries of method, run, review, decision, and event-log artifacts.
 
@@ -87,7 +90,7 @@ LLM-facing prompts must not include:
 
 ## Current Mock Runtime Behavior
 
-The initial graph runtime uses deterministic mock nodes and persists `graph_state.json` after meaningful node completions and route decisions. The full state is also persisted in LangGraph checkpoints.
+The graph runtime uses deterministic agent paths by default and persists `graph_state.json` after meaningful node completions and route decisions. The full state is also persisted in LangGraph checkpoints. Phase 10B adds optional provider-backed Method Planner, Scientific Reviewer, and Decision Coordinator execution through `llm_provider_config_path`; provider-backed output must validate structurally before it can affect artifacts or routing.
 
 High and critical risk outcomes route to the Human Approval Gate. The gate sets
 `approval_packet_dir` and `human_decision_path` when it writes

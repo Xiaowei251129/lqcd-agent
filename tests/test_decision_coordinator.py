@@ -2,6 +2,17 @@ import json
 from pathlib import Path
 
 from lqcd_agent.agents.decision_coordinator import run_decision_coordinator
+from lqcd_agent.llm.base import LLMProviderConfig, LLMRequest, LLMResponse
+from lqcd_agent.llm.mock_provider import MockLLMProvider
+
+
+class StaticProvider:
+    def __init__(self, content: str) -> None:
+        self.content = content
+        self.config = LLMProviderConfig(schema_version="0.1", provider="static", dry_run_only=True)
+
+    def generate(self, request: LLMRequest) -> LLMResponse:
+        return LLMResponse(provider="static", model="static", content=self.content)
 
 
 def _method_plan(*, run_id: str = "run_a", case_id: str = "case_a") -> dict[str, object]:
@@ -177,3 +188,319 @@ def test_critical_risk_for_missing_required_review_artifact(tmp_path: Path) -> N
     assert decision_log["routing_decision"]["actual_route"] == "human_approval_gate"
     assert decision_log["routing_decision"]["requested_route"] == "human_approval_gate"
     _assert_one_primary_next_action(decision_log)
+
+
+def test_provider_backed_decision_coordinator_accepts_valid_mock_output(tmp_path: Path) -> None:
+    method_path, run_path, review_path = _write_artifacts(tmp_path)
+
+    result = run_decision_coordinator(
+        run_id="run_a",
+        case_id="case_a",
+        output_dir=tmp_path,
+        method_plan_path=method_path,
+        run_result_path=run_path,
+        scientific_review_report_path=review_path,
+        provider=MockLLMProvider(),
+    )
+    decision_log = result["decision_log"]
+
+    assert result["status"] == "success"
+    assert decision_log["producer"] == "decision_coordinator"
+    assert decision_log["risk_level"] == "low"
+    assert decision_log["routing_decision"]["actual_route"] == "memory_report"
+    _assert_one_primary_next_action(decision_log)
+
+
+def test_invalid_provider_decision_output_cannot_force_low_risk_route(tmp_path: Path) -> None:
+    method_path, run_path, review_path = _write_artifacts(tmp_path)
+
+    result = run_decision_coordinator(
+        run_id="run_a",
+        case_id="case_a",
+        output_dir=tmp_path,
+        method_plan_path=method_path,
+        run_result_path=run_path,
+        scientific_review_report_path=review_path,
+        provider=StaticProvider('{"risk_level": "low", "recommended_action": "accept_mock_result"}'),
+    )
+    decision_log = result["decision_log"]
+
+    assert result["status"] == "pending"
+    assert decision_log["risk_level"] == "critical"
+    assert decision_log["human_approval_required"] is True
+    assert decision_log["routing_decision"]["actual_route"] == "human_approval_gate"
+    assert decision_log["errors"][0]["code"] == "provider_schema_error"
+
+
+def test_provider_decision_cannot_lower_severe_review_floor(tmp_path: Path) -> None:
+    review = _review_report()
+    review["warnings"] = [
+        {
+            "section": "matrix_element",
+            "code": "upstream_diagnostic_flag",
+            "severity": "severe",
+            "decision_coordinator_flag": True,
+            "message": "Severe diagnostic flag requires human approval.",
+            "path": "analysis_outputs/synthetic_matrix_elements.json",
+            "field": "diagnostic_flags[0]",
+            "value": "severe_demo_requires_human_approval",
+        }
+    ]
+    review["confidence"] = "low"
+    method_path, run_path, review_path = _write_artifacts(tmp_path, review_report=review)
+    provider_low_decision = {
+        "schema_version": "0.1",
+        "run_id": "run_a",
+        "case_id": "case_a",
+        "created_at": "2026-06-10T00:00:00+00:00",
+        "producer": "decision_coordinator",
+        "status": "success",
+        "summary": "Provider tried to classify the run as low risk.",
+        "warnings": [],
+        "errors": [],
+        "risk_level": "low",
+        "recommended_action": "accept_mock_result",
+        "human_approval_required": False,
+        "reasons": [{"code": "provider_low", "message": "Provider proposed low risk."}],
+        "evidence": [],
+        "next_actions": [
+            {
+                "action": "accept_mock_result",
+                "primary": True,
+                "target": "memory_report",
+                "status": "ready",
+            }
+        ],
+        "routing_decision": {
+            "actual_route": "memory_report",
+            "requested_route": "memory_report",
+            "proposed_follow_up_route": "memory_report",
+            "fields": {
+                "risk_level": "low",
+                "recommended_action": "accept_mock_result",
+                "human_approval_required": False,
+                "rerun_requested": False,
+                "rerun_target": None,
+                "code_fix_requested": False,
+            },
+        },
+    }
+
+    result = run_decision_coordinator(
+        run_id="run_a",
+        case_id="case_a",
+        output_dir=tmp_path,
+        method_plan_path=method_path,
+        run_result_path=run_path,
+        scientific_review_report_path=review_path,
+        provider=StaticProvider(json.dumps(provider_low_decision)),
+    )
+    decision_log = result["decision_log"]
+
+    assert result["status"] == "pending"
+    assert decision_log["risk_level"] == "high"
+    assert decision_log["human_approval_required"] is True
+    assert decision_log["routing_decision"]["actual_route"] == "human_approval_gate"
+    assert decision_log["reasons"][0]["code"] == "provider_safety_floor"
+
+
+def test_provider_decision_cannot_raise_nonsevere_warning_to_human_gate(tmp_path: Path) -> None:
+    review = _review_report()
+    review["warnings"] = [
+        {
+            "section": "matrix_element",
+            "code": "upstream_diagnostic_flag",
+            "severity": "warning",
+            "decision_coordinator_flag": False,
+            "message": "Non-severe fit-window dependence requires review but not Human Gate.",
+            "path": "analysis_outputs/synthetic_matrix_elements.json",
+            "field": "diagnostic_flags[0]",
+            "value": "fit_window_dependence",
+        }
+    ]
+    method_path, run_path, review_path = _write_artifacts(tmp_path, review_report=review)
+    provider_high_decision = {
+        "schema_version": "0.1",
+        "run_id": "run_a",
+        "case_id": "case_a",
+        "created_at": "2026-06-10T00:00:00+00:00",
+        "producer": "decision_coordinator",
+        "status": "pending",
+        "summary": "Provider over-routes a non-severe warning.",
+        "warnings": [],
+        "errors": [],
+        "risk_level": "high",
+        "recommended_action": "pending_human_approval",
+        "human_approval_required": True,
+        "reasons": [{"code": "provider_high", "message": "Provider requests Human Gate."}],
+        "evidence": [],
+        "next_actions": [{"action": "pending_human_approval", "primary": True, "target": "human_approval_gate"}],
+        "routing_decision": {
+            "actual_route": "human_approval_gate",
+            "requested_route": "human_approval_gate",
+            "proposed_follow_up_route": "memory_report",
+            "fields": {
+                "risk_level": "high",
+                "human_approval_required": True,
+                "rerun_requested": False,
+                "rerun_target": None,
+                "code_fix_requested": False,
+            },
+        },
+    }
+
+    result = run_decision_coordinator(
+        run_id="run_a",
+        case_id="case_a",
+        output_dir=tmp_path,
+        method_plan_path=method_path,
+        run_result_path=run_path,
+        scientific_review_report_path=review_path,
+        provider=StaticProvider(json.dumps(provider_high_decision)),
+    )
+    decision_log = result["decision_log"]
+
+    assert decision_log["risk_level"] == "medium"
+    assert decision_log["recommended_action"] == "human_review_recommended"
+    assert decision_log["human_approval_required"] is False
+    assert decision_log["reasons"][0]["code"] == "provider_unsupported_human_gate"
+
+
+def test_provider_decision_route_fields_are_normalized(tmp_path: Path) -> None:
+    method_path, run_path, review_path = _write_artifacts(tmp_path)
+    payload = {
+        "schema_version": "0.1",
+        "run_id": "run_a",
+        "case_id": "case_a",
+        "created_at": "2026-06-10T00:00:00+00:00",
+        "producer": "decision_coordinator",
+        "status": "success",
+        "summary": "Provider low-risk decision with inconsistent route fields.",
+        "warnings": [],
+        "errors": [],
+        "risk_level": "low",
+        "recommended_action": "accept_mock_result",
+        "human_approval_required": False,
+        "reasons": [{"code": "low", "message": "Low risk."}],
+        "evidence": [],
+        "next_actions": [{"action": "accept_mock_result", "primary": True, "target": "memory_report"}],
+        "routing_decision": {
+            "actual_route": "memory_report",
+            "requested_route": "memory_report",
+            "proposed_follow_up_route": "memory_report",
+            "fields": {
+                "risk_level": "medium",
+                "human_approval_required": True,
+                "rerun_requested": False,
+                "rerun_target": None,
+                "code_fix_requested": False,
+            },
+        },
+    }
+
+    result = run_decision_coordinator(
+        run_id="run_a",
+        case_id="case_a",
+        output_dir=tmp_path,
+        method_plan_path=method_path,
+        run_result_path=run_path,
+        scientific_review_report_path=review_path,
+        provider=StaticProvider(json.dumps(payload)),
+    )
+    decision_log = result["decision_log"]
+
+    assert result["status"] == "success"
+    assert decision_log["routing_decision"]["fields"]["risk_level"] == "low"
+    assert decision_log["routing_decision"]["fields"]["human_approval_required"] is False
+
+
+def test_provider_medium_approval_action_normalizes_to_human_review(tmp_path: Path) -> None:
+    method_path, run_path, review_path = _write_artifacts(tmp_path)
+    payload = {
+        "schema_version": "0.1",
+        "run_id": "run_a",
+        "case_id": "case_a",
+        "created_at": "2026-06-10T00:00:00+00:00",
+        "producer": "decision_coordinator",
+        "status": "pending",
+        "summary": "Provider requests pending human approval for a medium-risk case.",
+        "warnings": [],
+        "errors": [],
+        "risk_level": "medium",
+        "recommended_action": "pending_human_approval",
+        "human_approval_required": False,
+        "reasons": [{"code": "medium", "message": "Medium risk."}],
+        "evidence": [],
+        "next_actions": [{"action": "pending_human_approval", "primary": True, "target": "memory_report"}],
+        "routing_decision": {
+            "actual_route": "memory_report",
+            "requested_route": "memory_report",
+            "proposed_follow_up_route": "memory_report",
+            "fields": {
+                "risk_level": "medium",
+                "human_approval_required": False,
+                "rerun_requested": False,
+                "rerun_target": None,
+                "code_fix_requested": False,
+            },
+        },
+    }
+
+    result = run_decision_coordinator(
+        run_id="run_a",
+        case_id="case_a",
+        output_dir=tmp_path,
+        method_plan_path=method_path,
+        run_result_path=run_path,
+        scientific_review_report_path=review_path,
+        provider=StaticProvider(json.dumps(payload)),
+    )
+
+    assert result["decision_log"]["recommended_action"] == "human_review_recommended"
+
+
+def test_provider_targeted_rerun_target_is_canonical(tmp_path: Path) -> None:
+    method_path, run_path, review_path = _write_artifacts(tmp_path)
+    payload = {
+        "schema_version": "0.1",
+        "run_id": "run_a",
+        "case_id": "case_a",
+        "created_at": "2026-06-10T00:00:00+00:00",
+        "producer": "decision_coordinator",
+        "status": "pending",
+        "summary": "Provider requests a targeted rerun of an artifact.",
+        "warnings": [],
+        "errors": [],
+        "risk_level": "medium",
+        "recommended_action": "targeted rerun",
+        "human_approval_required": False,
+        "reasons": [{"code": "targeted_rerun", "message": "Targeted rerun requested."}],
+        "evidence": [],
+        "next_actions": [{"action": "targeted_rerun", "primary": True, "target": "analysis_outputs/result.json"}],
+        "routing_decision": {
+            "actual_route": "memory_report",
+            "requested_route": "memory_report",
+            "proposed_follow_up_route": "memory_report",
+            "fields": {
+                "risk_level": "medium",
+                "human_approval_required": False,
+                "rerun_requested": False,
+                "rerun_target": "analysis_outputs/result.json",
+                "code_fix_requested": False,
+            },
+        },
+    }
+
+    result = run_decision_coordinator(
+        run_id="run_a",
+        case_id="case_a",
+        output_dir=tmp_path,
+        method_plan_path=method_path,
+        run_result_path=run_path,
+        scientific_review_report_path=review_path,
+        provider=StaticProvider(json.dumps(payload)),
+    )
+
+    assert result["recommended_action"] == "targeted_rerun"
+    assert result["rerun_requested"] is True
+    assert result["rerun_target"] == "analysis_engineer"

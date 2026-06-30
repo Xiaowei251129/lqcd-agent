@@ -1,0 +1,15 @@
+{
+  "schema_version": "0.1",
+  "case_id": "phase10c_bad_uncertainty",
+  "hidden_expected_conclusion_summary": "Invalid uncertainty should be high risk and require Human Approval Gate.",
+  "expected_qualitative_conclusion": "invalid_uncertainty_high_risk",
+  "expected_risk_level": "high",
+  "expected_recommended_action": "pending_human_approval",
+  "expected_route_contains": ["method_planner", "analysis_engineer", "scientific_reviewer", "decision_coordinator", "human_approval_gate", "memory_report"],
+  "expected_memory_status": "pending",
+  "expected_human_approval_required": true,
+  "expected_approval_packet": true,
+  "required_warning_codes": ["upstream_diagnostic_flag"],
+  "required_warning_values": ["invalid_uncertainty"],
+  "forbidden_warning_codes": []
+}

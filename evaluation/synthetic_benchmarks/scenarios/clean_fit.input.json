@@ -1,0 +1,11 @@
+{
+  "schema_version": "0.1",
+  "case_id": "phase10c_clean_fit",
+  "category": "clean_synthetic_fit",
+  "goal": "Recover a simple exponential decay pattern from clean synthetic data.",
+  "data_path": "data/clean_decay.csv",
+  "matrix_element": {
+    "Pz": 1.0,
+    "normalization": "mock_unit"
+  }
+}

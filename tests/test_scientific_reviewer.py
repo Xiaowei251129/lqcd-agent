@@ -2,6 +2,17 @@ import json
 from pathlib import Path
 
 from lqcd_agent.agents.scientific_reviewer import run_scientific_reviewer
+from lqcd_agent.llm.base import LLMProviderConfig, LLMRequest, LLMResponse
+from lqcd_agent.llm.mock_provider import MockLLMProvider
+
+
+class StaticProvider:
+    def __init__(self, content: str) -> None:
+        self.content = content
+        self.config = LLMProviderConfig(schema_version="0.1", provider="static", dry_run_only=True)
+
+    def generate(self, request: LLMRequest) -> LLMResponse:
+        return LLMResponse(provider="static", model="static", content=self.content)
 
 
 def _good_matrix_payload(*, run_id: str = "run_a", case_id: str = "case_a") -> dict[str, object]:
@@ -127,3 +138,114 @@ def test_bad_mock_table_has_severe_warning_for_decision_coordinator(tmp_path: Pa
     assert severe_warnings[0]["decision_coordinator_flag"] is True
     assert severe_warnings[0]["field"] == "matrix_elements[0].error"
     assert severe_warnings[0]["value"] == -0.01
+
+
+def test_provider_backed_scientific_reviewer_accepts_valid_mock_output(tmp_path: Path) -> None:
+    run_dir, run_result_path, method_plan_path = _write_run_artifacts(tmp_path, _good_matrix_payload())
+
+    result = run_scientific_reviewer(
+        run_id="run_a",
+        case_id="case_a",
+        run_output_dir=run_dir,
+        run_result_path=run_result_path,
+        method_plan_path=method_plan_path,
+        provider=MockLLMProvider(),
+    )
+    report = json.loads((run_dir / "scientific_review_report.json").read_text(encoding="utf-8"))
+
+    assert result["status"] == "success"
+    assert report["producer"] == "scientific_reviewer"
+    assert report["confidence"] == "high"
+    assert report["summary"].startswith("Provider-backed mock")
+
+
+def test_invalid_provider_scientific_reviewer_cannot_inject_warnings(tmp_path: Path) -> None:
+    run_dir, run_result_path, method_plan_path = _write_run_artifacts(tmp_path, _good_matrix_payload())
+    result = run_scientific_reviewer(
+        run_id="run_a",
+        case_id="case_a",
+        run_output_dir=run_dir,
+        run_result_path=run_result_path,
+        method_plan_path=method_plan_path,
+        provider=StaticProvider(
+            '{"status": "success", "warnings": [{"message": "free form severe route"}]}'
+        ),
+    )
+    report = json.loads((run_dir / "scientific_review_report.json").read_text(encoding="utf-8"))
+
+    assert result["status"] == "failed"
+    assert report["status"] == "failed"
+    assert report["warnings"] == []
+    assert "free form severe route" not in json.dumps(report)
+
+
+def test_provider_scientific_reviewer_rejects_string_warning_items(tmp_path: Path) -> None:
+    run_dir, run_result_path, method_plan_path = _write_run_artifacts(tmp_path, _good_matrix_payload())
+    valid_except_warning_shape = {
+        "schema_version": "0.1",
+        "run_id": "run_a",
+        "case_id": "case_a",
+        "created_at": "2026-06-10T00:00:00+00:00",
+        "producer": "scientific_reviewer",
+        "status": "success",
+        "summary": "Invalid warning shape.",
+        "warnings": ["warning text is not structured evidence"],
+        "errors": [],
+        "correlator_diagnostics": {"status": "not_populated_mvp"},
+        "fit_diagnostics": {"status": "not_populated_mvp"},
+        "matrix_element_diagnostics": {"status": "pass"},
+        "findings": [{"code": "checked"}],
+        "evidence": [{"field": "x", "value": "y"}],
+        "recommended_checks": [],
+        "confidence": "high",
+    }
+
+    result = run_scientific_reviewer(
+        run_id="run_a",
+        case_id="case_a",
+        run_output_dir=run_dir,
+        run_result_path=run_result_path,
+        method_plan_path=method_plan_path,
+        provider=StaticProvider(json.dumps(valid_except_warning_shape)),
+    )
+    report = json.loads((run_dir / "scientific_review_report.json").read_text(encoding="utf-8"))
+
+    assert result["status"] == "failed"
+    assert report["errors"][0]["code"] == "provider_schema_error"
+
+
+def test_provider_scientific_reviewer_filters_context_only_warnings(tmp_path: Path) -> None:
+    run_dir, run_result_path, method_plan_path = _write_run_artifacts(tmp_path, _good_matrix_payload())
+    payload = {
+        "schema_version": "0.1",
+        "run_id": "run_a",
+        "case_id": "case_a",
+        "created_at": "2026-06-10T00:00:00+00:00",
+        "producer": "scientific_reviewer",
+        "status": "success",
+        "summary": "Synthetic benchmark output is usable.",
+        "warnings": [
+            {"type": "context", "message": "Matrix elements are synthetic with mock_unit normalization."},
+            {"code": "warning_monitoring", "message": "Monitor fit stability."},
+        ],
+        "errors": [],
+        "correlator_diagnostics": {"status": "not_populated_mvp"},
+        "fit_diagnostics": {"status": "not_populated_mvp"},
+        "matrix_element_diagnostics": {"status": "pass"},
+        "findings": [{"code": "checked"}],
+        "evidence": [{"field": "x", "value": "y"}],
+        "recommended_checks": [],
+        "confidence": "high",
+    }
+
+    result = run_scientific_reviewer(
+        run_id="run_a",
+        case_id="case_a",
+        run_output_dir=run_dir,
+        run_result_path=run_result_path,
+        method_plan_path=method_plan_path,
+        provider=StaticProvider(json.dumps(payload)),
+    )
+
+    assert result["status"] == "success"
+    assert result["warnings"] == []

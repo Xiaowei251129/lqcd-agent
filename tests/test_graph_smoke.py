@@ -1,5 +1,7 @@
 import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -8,6 +10,16 @@ import pytest
 from lqcd_agent.graph.analysis_graph import compile_analysis_graph
 from lqcd_agent.graph.run_graph import run_mock_graph
 from lqcd_agent.graph.state import initialize_state
+from lqcd_agent.llm.base import LLMProviderConfig, LLMRequest, LLMResponse
+
+
+class StaticProvider:
+    def __init__(self, content: str) -> None:
+        self.content = content
+        self.config = LLMProviderConfig(schema_version="0.1", provider="static", dry_run_only=True)
+
+    def generate(self, request: LLMRequest) -> LLMResponse:
+        return LLMResponse(provider="static", model="static", content=self.content)
 
 
 def test_run_mock_graph_generates_timestamp_run_id(tmp_path: Path) -> None:
@@ -39,6 +51,80 @@ def test_run_mock_graph_refuses_reused_completed_run_id(tmp_path: Path) -> None:
         )
 
     assert decision_log_path.read_text(encoding="utf-8") == original_decision_log
+
+
+def test_run_mock_graph_accepts_mock_provider_config(tmp_path: Path) -> None:
+    result = run_mock_graph(
+        case_path="configs/cases/mock_lqcd_goal.yaml",
+        output_dir=str(tmp_path),
+        run_id="provider_mock",
+        llm_provider_config_path="configs/runtime/mock_llm.yaml",
+    )
+    state = result["state"]
+    run_dir = tmp_path / "mock_lqcd_goal" / "provider_mock"
+    method_plan = json.loads((run_dir / "method_plan.json").read_text(encoding="utf-8"))
+    decision_log = json.loads((run_dir / "decision_log.json").read_text(encoding="utf-8"))
+
+    assert state["status"] == "success"
+    assert state["llm_provider_config_path"] == "configs/runtime/mock_llm.yaml"
+    assert method_plan["summary"].startswith("Provider-backed mock")
+    assert decision_log["summary"].startswith("Provider-backed mock")
+    assert decision_log["routing_decision"]["actual_route"] == "memory_report"
+
+
+def test_graph_invalid_provider_output_stops_safely(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "lqcd_agent.agents.method_planner.create_provider_from_config_path",
+        lambda path: StaticProvider('{"status": "success", "free_text_route": "analysis_engineer"}'),
+    )
+    run_dir = tmp_path / "mock_lqcd_goal" / "invalid_provider"
+    state = initialize_state(
+        case_id="mock_lqcd_goal",
+        run_id="invalid_provider",
+        user_goal="Plan a mock-only pion quasi-DA analysis support run.",
+        case_config_path="configs/cases/mock_lqcd_goal.yaml",
+        output_dir=str(run_dir),
+        checkpoint_backend="memory",
+        llm_provider_config_path="invalid-provider.yaml",
+    )
+    config = {"configurable": {"thread_id": state["checkpoint_thread_id"]}}
+    app = compile_analysis_graph(MemorySaver())
+
+    final_state = app.invoke(state, config=config)
+    method_plan = json.loads((run_dir / "method_plan.json").read_text(encoding="utf-8"))
+
+    assert final_state["status"] == "halted"
+    assert final_state["current_node"] == "method_planner"
+    assert final_state["route_decisions"][-1]["route"] == "end"
+    assert method_plan["status"] == "failed"
+    assert method_plan["errors"][0]["code"] == "provider_schema_error"
+
+
+def test_cli_accepts_mock_provider_config(tmp_path: Path) -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "lqcd_agent.graph.run_graph",
+            "--case",
+            "configs/cases/mock_lqcd_goal.yaml",
+            "--output-dir",
+            str(tmp_path),
+            "--run-id",
+            "cli_provider_mock",
+            "--llm-provider-config",
+            "configs/runtime/mock_llm.yaml",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "status=success" in result.stdout
+    decision_log = json.loads(
+        (tmp_path / "mock_lqcd_goal" / "cli_provider_mock" / "decision_log.json").read_text(encoding="utf-8")
+    )
+    assert decision_log["summary"].startswith("Provider-backed mock")
 
 
 def test_mock_graph_runs_to_end_and_checkpoint_can_be_inspected(tmp_path: Path) -> None:
@@ -300,6 +386,31 @@ def test_golden_demo_graph_writes_pending_report_and_approval_packet(tmp_path: P
             output_dir=str(tmp_path),
             run_id="golden",
         )
+
+
+def test_provider_golden_demo_keeps_human_gate_and_pending_memory(tmp_path: Path) -> None:
+    result = run_mock_graph(
+        case_path="configs/cases/l64c64a076_m140.yaml",
+        output_dir=str(tmp_path),
+        run_id="provider_golden",
+        llm_provider_config_path="configs/runtime/mock_llm.yaml",
+    )
+    state = result["state"]
+    run_dir = tmp_path / "l64c64a076_m140" / "provider_golden"
+    decision_log = json.loads((run_dir / "decision_log.json").read_text(encoding="utf-8"))
+    memory_update = json.loads((run_dir / "memory_update.json").read_text(encoding="utf-8"))
+    review_report = json.loads((run_dir / "scientific_review_report.json").read_text(encoding="utf-8"))
+
+    assert state["status"] == "pending"
+    assert state["risk_level"] == "high"
+    assert state["human_approval_required"] is True
+    assert state["approval_packet_dir"] == str(run_dir / "approval_packet")
+    assert decision_log["routing_decision"]["actual_route"] == "human_approval_gate"
+    assert decision_log["recommended_action"] == "pending_human_approval"
+    assert memory_update["accepted_result"] is False
+    assert memory_update["memory_status"] == "pending"
+    assert review_report["warnings"][0]["severity"] == "severe"
+    assert (run_dir / "approval_packet" / "approval_packet.json").exists()
 
 
 def test_graph_stops_when_planner_needs_more_info(tmp_path: Path) -> None:

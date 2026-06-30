@@ -1,0 +1,11 @@
+{
+  "schema_version": "0.1",
+  "case_id": "phase10c_noisy_valid_fit",
+  "category": "noisy_but_valid_fit",
+  "goal": "Fit a noisy but valid synthetic decay without severe warnings.",
+  "data_path": "data/noisy_decay.csv",
+  "matrix_element": {
+    "Pz": 1.0,
+    "normalization": "mock_unit"
+  }
+}

@@ -116,6 +116,76 @@ Each matrix-element row should include `z`, `Pz`, `component`, `value`, `error`,
 
 The Phase 9 `l64c64a076_m140` demo may also include a `golden_example` provenance object. This metadata links the synthetic artifact to read-only sibling example files; it is not a claim that the mock artifact contains final physics results.
 
+## Phase 10C Synthetic Benchmark Artifacts
+
+Phase 10C advisor-demo benchmark artifacts were implemented on 2026-06-23 as
+synthetic-only contracts. They remain separate from Phase 11 raw-data-backed
+reference outputs and must not be treated as accepted physics results.
+
+`evaluation/synthetic_benchmarks/scenarios/*.input.json` records:
+
+- general scenario metadata, including `case_id`, scenario category, and user-facing goal
+- synthetic input-data path or generator configuration
+- fields that agents may read during the run
+
+`evaluation/synthetic_benchmarks/expected/*.expected.json` records the
+instructor-only hidden grading contract:
+
+- expected qualitative conclusion
+- numeric tolerances where applicable
+- expected risk level and recommended action
+- expected graph route and route branch
+- required or forbidden reviewer warnings
+- expected memory status
+- Human Approval Gate expectations
+
+Expected behavior must not be passed to agents as input and must not be used as
+the main evidence in `final_report.md`.
+
+`analysis_outputs/synthetic_benchmark_input.json` is the per-run copy of the
+agent-visible scenario input. It must not contain instructor-only expected
+behavior.
+
+`analysis_outputs/synthetic_data.csv` is the per-run synthetic fixture consumed
+by the Analysis Engineer.
+
+`analysis_outputs/fit_summary.json` records case-specific analysis results
+produced from the scenario synthetic data:
+
+- general artifact metadata with `producer: analysis_engineer`
+- input scenario and synthetic-data references
+- model or fit method
+- fitted parameters and uncertainties
+- fit quality or residual diagnostics where applicable
+- warnings and errors
+
+`demonstration_checklist.json` records the per-scenario advisor-demo judgment:
+
+- input understood
+- method plan written
+- Analysis Engineer consumed scenario-specific data
+- analysis command recorded
+- fit summary produced where applicable
+- reviewer findings grounded in artifacts
+- decision reasons structured
+- expected conclusion observed
+- expected route observed
+- Human Approval Gate behavior correct when applicable
+- memory status correct
+- final report coherent
+- actual-vs-expected status and notes
+
+`synthetic_rehearsal_summary.md` is the run-level summary. It must list each
+scenario, route path, key fit result, reviewer findings, decision/risk/action,
+memory status, artifact inspection paths, advisor checklist status, and
+actual-vs-expected status.
+
+`advisor_demo_report.md` is the live-provider demonstration handoff. It must
+compare each scenario question, hidden expected conclusion summary, actual
+agent conclusion, expected and actual route, expected and actual risk/action,
+required or forbidden warnings, memory status, Human Gate behavior, pass/fail
+or review-needed status, and links to the supporting artifacts.
+
 ## Run Result and Manifest
 
 `run_result.json` is written by the Analysis Engineer under the canonical run directory:

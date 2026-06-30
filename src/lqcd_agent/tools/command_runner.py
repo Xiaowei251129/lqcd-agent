@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
+from lqcd_agent.analysis.synthetic_benchmark_models import write_synthetic_benchmark_artifacts
+
 
 COMMAND_STATUS_VALUES = {"passed", "failed", "blocked", "timeout"}
 FORBIDDEN_PATH_PARTS = {"raw_data", "accepted_results"}
@@ -158,6 +160,95 @@ def _golden_example_matrix_elements_payload(*, run_id: str, case_id: str) -> dic
     return payload
 
 
+def _resolve_synthetic_benchmark_input(*, command: str, prefix: str, cwd: Path) -> tuple[Path | None, str | None]:
+    raw_path = command[len(prefix) + 1 :] if command.startswith(prefix + ":") else ""
+    if not raw_path:
+        return None, "Synthetic benchmark command requires a scenario input path."
+    scenario_path = Path(raw_path)
+    if not scenario_path.is_absolute():
+        scenario_path = cwd / scenario_path
+    scenario_path = scenario_path.resolve()
+    benchmark_root = (cwd / "evaluation" / "synthetic_benchmarks").resolve()
+    try:
+        scenario_path.relative_to(benchmark_root)
+    except ValueError:
+        return None, "Synthetic benchmark scenario input must stay under evaluation/synthetic_benchmarks."
+    if not scenario_path.exists():
+        return None, "Synthetic benchmark scenario input does not exist."
+    return scenario_path, None
+
+
+def _run_synthetic_benchmark_analysis(
+    *,
+    command_id: str,
+    command: str,
+    prefix: str,
+    cwd: Path,
+    output_dir: Path,
+    timeout_seconds: int,
+    started_at: str,
+    run_id: str,
+    case_id: str,
+    force: bool,
+    command_kind: str,
+) -> dict[str, Any]:
+    scenario_path, scenario_error = _resolve_synthetic_benchmark_input(
+        command=command,
+        prefix=prefix,
+        cwd=cwd,
+    )
+    if scenario_error or scenario_path is None:
+        return _blocked_result(
+            command_id=command_id,
+            command=command,
+            cwd=cwd,
+            timeout_seconds=timeout_seconds,
+            started_at=started_at,
+            message=scenario_error or "Invalid synthetic benchmark scenario input.",
+        )
+    try:
+        result = write_synthetic_benchmark_artifacts(
+            scenario_input_path=scenario_path,
+            output_dir=output_dir,
+            run_id=run_id,
+            case_id=case_id,
+            force=force,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        return _blocked_result(
+            command_id=command_id,
+            command=command,
+            cwd=cwd,
+            timeout_seconds=timeout_seconds,
+            started_at=started_at,
+            message=str(exc),
+        )
+    except FileExistsError as exc:
+        return _blocked_result(
+            command_id=command_id,
+            command=command,
+            cwd=cwd,
+            timeout_seconds=timeout_seconds,
+            started_at=started_at,
+            message=str(exc),
+        )
+    return {
+        "command_id": command_id,
+        "command": command,
+        "command_kind": command_kind,
+        "working_directory": str(cwd),
+        "timeout_seconds": timeout_seconds,
+        "started_at": started_at,
+        "completed_at": utc_now(),
+        "return_code": 0,
+        "stdout": f"Wrote statistical synthetic benchmark artifacts for {case_id}.\n",
+        "stderr": "",
+        "produced_files": result["produced_files"],
+        "support_files": result.get("support_files", []),
+        "status": "passed",
+    }
+
+
 def _run_mock_command(
     *,
     command_id: str,
@@ -207,6 +298,22 @@ def _run_mock_command(
         "mock:write_synthetic_matrix_elements": _synthetic_matrix_elements_payload,
         "mock:write_golden_example_matrix_elements": _golden_example_matrix_elements_payload,
     }
+    synthetic_benchmark_prefix = "mock:run_synthetic_benchmark"
+    if command == synthetic_benchmark_prefix or command.startswith(synthetic_benchmark_prefix + ":"):
+        return _run_synthetic_benchmark_analysis(
+            command_id=command_id,
+            command=command,
+            prefix=synthetic_benchmark_prefix,
+            cwd=cwd,
+            output_dir=output_dir,
+            timeout_seconds=timeout_seconds,
+            started_at=started_at,
+            run_id=run_id,
+            case_id=case_id,
+            force=force,
+            command_kind="mock",
+        )
+
     matching_prefix = next(
         (prefix for prefix in writers if command == prefix or command.startswith(prefix + ":")),
         None,
@@ -311,6 +418,31 @@ def run_command(
             run_id=run_id,
             case_id=case_id,
             force=force,
+        )
+
+    analysis_benchmark_prefix = "analysis:run_synthetic_benchmark"
+    if command_display == analysis_benchmark_prefix or command_display.startswith(analysis_benchmark_prefix + ":"):
+        if not _local_command_is_allowed(command_display, allowed_commands):
+            return _blocked_result(
+                command_id=command_id,
+                command=command_display,
+                cwd=cwd_path,
+                timeout_seconds=timeout_seconds,
+                started_at=started_at,
+                message="Statistical analysis command is not in the exact configured allowlist.",
+            )
+        return _run_synthetic_benchmark_analysis(
+            command_id=command_id,
+            command=command_display,
+            prefix=analysis_benchmark_prefix,
+            cwd=cwd_path,
+            output_dir=output_path,
+            timeout_seconds=timeout_seconds,
+            started_at=started_at,
+            run_id=run_id,
+            case_id=case_id,
+            force=force,
+            command_kind="analysis",
         )
 
     parts, parse_error = _split_local_command(command_display)

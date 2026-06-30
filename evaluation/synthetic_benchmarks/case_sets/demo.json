@@ -1,0 +1,10 @@
+{
+  "schema_version": "0.1",
+  "case_ids": [
+    "phase10c_clean_fit",
+    "phase10c_noisy_valid_fit",
+    "phase10c_fit_window_contamination",
+    "phase10c_normalization_violation",
+    "phase10c_targeted_rerun"
+  ]
+}

@@ -5,11 +5,21 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from lqcd_agent.analysis_programs import program_inventory
+
 
 DEFAULT_REQUIRED_FILES = [
     "src/lqcd_agent/graph/nodes.py",
     "src/lqcd_agent/graph/run_graph.py",
+    "src/lqcd_agent/analysis_programs/registry.py",
     "docs/ARTIFACT_CONTRACTS.md",
+]
+
+DEFAULT_ALLOWED_FILES = [
+    "src/lqcd_agent/analysis_programs/",
+    "tests/",
+    "docs/ARTIFACT_CONTRACTS.md",
+    "docs/REPO_CURRENT_STATE.md",
 ]
 
 
@@ -28,5 +38,10 @@ def build_repo_inventory(
         "required_files": required,
         "missing_files": missing_files,
         "implementation_gaps": [f"Missing required file: {path}" for path in missing_files],
-        "allowed_files": allowed_files or [],
+        "allowed_files": allowed_files or DEFAULT_ALLOWED_FILES,
+        "analysis_programs": program_inventory(),
+        "analysis_program_guidance": (
+            "Reuse existing analysis_programs entries when possible. Add new reusable programs "
+            "under src/lqcd_agent/analysis_programs/ only when no suitable program exists."
+        ),
     }

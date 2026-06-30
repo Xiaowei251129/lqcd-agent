@@ -426,7 +426,7 @@ Stop and ask if:
 
 # 11. 分阶段执行计划：统一 prompt 版本
 
-以下采用 pre-phase0 + Phase 0–11 的统一 prompt 合同。建议每个 phase 单独执行、单独 review、单独 commit。不要让 Codex 一次性实现整个系统。Phase 10、10B、10C 和 Phase 11 是后置阶段：只有 Phase 0–9 的 mock/golden path 跑通后，才接入真实 LLM provider、执行 provider-backed scenario rehearsal，并最终进入 raw_data-backed evaluation library。
+以下采用 pre-phase0 + Phase 0–11 的统一 prompt 合同。建议每个 phase 单独执行、单独 review、单独 commit。不要让 Codex 一次性实现整个系统。Phase 10、10B、10C 和 Phase 11 是后置阶段：只有 Phase 0–9 的 mock/golden path 跑通后，才接入真实 LLM provider、执行 provider-backed advisor-demo benchmark，并最终进入 raw_data-backed evaluation library。
 
 Global phase rules:
 
@@ -1494,11 +1494,11 @@ End-of-task Updates:
 - Final response: Changed / Why / Verified / Next
 ````
 
-### Phase 10C：Scenario-based End-to-End Rehearsal for Provider-backed Multi-Agent System
+### Phase 10C：Advisor-demo Scenario Benchmark for Provider-backed Multi-Agent System
 
 ````text
 Task:
-Implement Phase 10C only: add a synthetic scenario-based end-to-end rehearsal suite after Phase 10B and before Phase 11. The goal is to demonstrate that the provider-backed multi-agent system works as designed on small, controlled research-like tasks. Each scenario gives the system a physics or simple scientific goal plus synthetic data, then checks whether the graph produces coherent method planning, analysis execution, fitting, diagnostics, decision coordination, Human Approval Gate behavior when needed, memory/report artifacts, and a reasonable final report.
+Implement Phase 10C only: add a synthetic scenario-based advisor-demo benchmark after Phase 10B and before Phase 11. The goal is to demonstrate that the provider-backed multi-agent system works as designed on small, controlled research-like tasks with known expected behavior. Each scenario gives the system a physics or simple scientific goal plus synthetic data, then checks whether the graph produces coherent method planning, case-specific analysis execution, fitting, diagnostics, decision coordination, Human Approval Gate behavior when needed, memory/report artifacts, and a reasonable final report. The benchmark must show actual agent conclusions against instructor-only expected conclusions so an advisor can inspect whether the system reached the right outcome for the right structured reasons.
 
 Timing:
 - Start this ticket only after Phase 10 provider abstraction and Phase 10B provider-backed agent wiring are complete and verified.
@@ -1562,8 +1562,10 @@ Requirements:
 - The ordinary test suite must pass without API keys, network access, or paid provider calls.
 - Benchmark cases should be simple enough for the current agents to solve without Phase 11 case examples or domain-background libraries.
 - Cases may use simple synthetic math or physics scenarios, including exponential decay, noisy fits, plateau behavior, normalization checks, covariance/uncertainty issues, or other small scientific tasks.
+- Analysis Engineer must consume each scenario's provided synthetic data or generated fixture and produce case-specific analysis and fit artifacts. Existing fixed mock matrix-element payloads must not be reused unchanged as the satisfying output for Phase 10C scenarios.
 - Each case must produce advisor-readable artifacts: input scenario, generated or provided synthetic data, method plan, analysis/run log, fit summary, scientific review, decision log, route decisions, memory update, and final report.
-- Truth or generation metadata may exist as instructor-only notes or generator provenance, but must not be passed to agents as input and must not appear as the main evidence in final_report.md.
+- Each case must define instructor-only expected behavior. Expected behavior must include numeric tolerances where applicable, the expected qualitative conclusion, expected risk level, expected recommended action, expected graph route, required or forbidden reviewer warnings, expected memory status, and Human Approval Gate expectations.
+- Truth, generation metadata, and expected behavior may exist as instructor-only notes or generator provenance, but must not be passed to agents as input and must not appear as the main evidence in final_report.md.
 - Do not use "100% pass rate" as the primary demonstration claim. Use a demonstration checklist focused on whether each agent and route behaved as designed.
 - Allow real fitting. If standard-library fitting is insufficient, add a minimal numerical dependency with clear justification and tests.
 - Preserve structured routing: provider-backed agents may affect graph behavior only through validated structured outputs.
@@ -1589,11 +1591,12 @@ Acceptance Criteria:
 - The live-provider rehearsal runner can execute selected scenarios when explicitly enabled and configured.
 - The mock-provider regression runner can execute without network access and validates the rehearsal infrastructure.
 - Each scenario writes a demonstration checklist rather than only a binary pass/fail row.
-- Checklist items include: input understood, method plan written, analysis command recorded, fit summary produced where applicable, reviewer findings grounded in artifacts, decision reasons structured, expected route observed, Human Gate behavior correct when applicable, memory status correct, final report coherent.
+- Checklist items include: input understood, method plan written, Analysis Engineer consumed the scenario data, analysis command recorded, case-specific fit summary produced where applicable, reviewer findings grounded in artifacts, decision reasons structured, expected conclusion observed, expected route observed, Human Gate behavior correct when applicable, memory status correct, final report coherent.
 - Existing Phase 8 evaluation behavior remains compatible or is migrated with equivalent coverage.
 - New artifacts and benchmark provenance are documented separately from Phase 11 raw-data-backed evaluation cases.
 - A top-level advisor-facing summary artifact named synthetic_rehearsal_summary.md is written for each rehearsal run.
-- synthetic_rehearsal_summary.md summarizes each case_id, scenario goal, route path, key fit result, reviewer findings, decision/risk/action, memory status, artifact inspection paths, and advisor checklist.
+- `synthetic_rehearsal_summary.md` summarizes each case_id, scenario goal, route path, key fit result, reviewer findings, decision/risk/action, memory status, artifact inspection paths, advisor checklist, and actual-vs-expected status.
+- Live-provider rehearsal writes an advisor-facing `advisor_demo_report.md` that compares each scenario question, hidden expected conclusion summary, actual agent conclusion, expected and actual route, expected and actual risk/action, pass/fail or review-needed status, and artifact links.
 
 Verification Commands:
 ```bash
@@ -1612,6 +1615,8 @@ RUN_LIVE_LLM_TESTS=1 python evaluation/synthetic_benchmarks/run_synthetic_benchm
   --output-dir /private/tmp/lqcd-agent-phase10c-live
 ```
 
+The optional live run should produce `advisor_demo_report.md` in the selected output root. This report is the primary advisor-demo handoff; it must be readable without opening every JSON artifact, while still linking to the underlying method plan, run result, fit summary, scientific review, decision log, route trace, memory update, final report, and per-scenario checklist.
+
 Case Sets:
 - --case-set demo runs 3-5 representative advisor-demo scenarios: clean synthetic fit, two-state or fit-window contamination, normalization violation plus Human Gate, missing input safe stop, and code_needed or targeted rerun.
 - --case-set full runs the complete rehearsal suite.
@@ -1620,7 +1625,7 @@ Stop Conditions:
 Stop and ask if implementation would require real raw numeric data, real secrets, live provider calls during ordinary tests, routing based on free-form text, changing human approval policy, changing graph topology for convenience, or adding a numerical dependency without a clear benchmark need.
 
 End-of-task Updates:
-- Update docs/EVALS_AND_OBSERVABILITY.md with Phase 10C scenario rehearsal purpose, runner modes, scenario categories, demonstration checklist, and output policy.
+- Update docs/EVALS_AND_OBSERVABILITY.md with Phase 10C advisor-demo benchmark purpose, runner modes, scenario categories, demonstration checklist, actual-vs-expected reporting, and output policy.
 - Update docs/ARTIFACT_CONTRACTS.md if new synthetic data, fit summary, instructor-note, or benchmark checklist artifacts are introduced.
 - Update docs/VERIFICATION_GUIDE.md with mock regression and optional live-provider rehearsal commands.
 - Update docs/TICKETS.md so Phase 10C appears after completed Phase 10B and before Phase 11 readiness.
@@ -1633,7 +1638,7 @@ End-of-task Updates:
 
 ```text
 Purpose:
-After the core graph, golden example, real LLM provider integration, provider-backed agent wiring, and Phase 10C scenario rehearsal are stable, create a read-only raw_data/ library and curated evaluation case library. Because the real data and examples are not prepared yet, this phase should remain a concrete concept for now, not an immediate implementation ticket.
+After the core graph, golden example, real LLM provider integration, provider-backed agent wiring, and Phase 10C advisor-demo benchmark are stable, create a read-only raw_data/ library and curated evaluation case library. Because the real data and examples are not prepared yet, this phase should remain a concrete concept for now, not an immediate implementation ticket.
 
 Recommended Directory Concept:
 raw_data/

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LQCD Agent Chat Demo</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="chat-pane">
+        <header class="chat-header">
+          <div>
+            <p class="eyebrow">LangGraph multi-agent runtime</p>
+            <h1>LQCD Agent</h1>
+          </div>
+          <label class="context-control">
+            <span>Case config</span>
+            <select id="caseSelect"></select>
+          </label>
+        </header>
+
+        <div id="messages" class="messages" aria-live="polite">
+          <article class="message assistant">
+            <div class="bubble">
+              Ask a question, select a case config, and the server will run the local LangGraph agent system. The answer is summarized from the run artifacts on the right.
+            </div>
+          </article>
+        </div>
+
+        <form id="chatForm" class="composer">
+          <textarea
+            id="questionInput"
+            rows="3"
+            placeholder="例如：这个 normalization violation 是否可以接受？需要人审吗？"
+          ></textarea>
+          <button id="sendButton" type="submit">Ask</button>
+        </form>
+      </section>
+
+      <aside class="evidence-pane">
+        <div class="panel-head">
+          <h2>Run Evidence</h2>
+          <span id="statusText">Ready</span>
+        </div>
+        <dl id="summaryGrid" class="summary-grid"></dl>
+        <div class="route-box">
+          <h3>Agent Route</h3>
+          <ol id="routeTimeline" class="timeline"></ol>
+        </div>
+        <div class="artifact-box">
+          <h3>Artifacts</h3>
+          <div id="artifactLinks" class="artifact-links"></div>
+        </div>
+      </aside>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

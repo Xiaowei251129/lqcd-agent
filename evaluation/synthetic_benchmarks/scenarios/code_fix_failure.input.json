@@ -1,0 +1,11 @@
+{
+  "schema_version": "0.1",
+  "case_id": "phase10c_code_fix_failure",
+  "category": "code_fix_branch",
+  "goal": "Exercise the existing code-failure branch with a controlled command failure.",
+  "data_path": "data/clean_decay.csv",
+  "matrix_element": {
+    "Pz": 1.0,
+    "normalization": "mock_unit"
+  }
+}

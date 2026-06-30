@@ -11,10 +11,12 @@ def test_initialize_state_sets_checkpoint_metadata(tmp_path: Path) -> None:
         case_config_path="case.yaml",
         output_dir=str(tmp_path),
         checkpoint_backend="memory",
+        llm_provider_config_path="configs/runtime/mock_llm.yaml",
     )
 
     assert state["checkpoint_thread_id"] == "case_a:run_a"
     assert state["checkpoint_backend"] == "memory"
+    assert state["llm_provider_config_path"] == "configs/runtime/mock_llm.yaml"
     assert state["retry_count"] == 0
     assert state["max_retry"] == 1
     assert state["context_window_status"] == "normal"
@@ -38,6 +40,7 @@ def test_long_event_log_is_summarized_for_llm_context(tmp_path: Path) -> None:
     save_graph_state(state)
 
     assert context["context_window_status"] == "summarized"
+    assert context["llm_provider_config_path"] is None
     assert state["event_log_summary"]
     assert state["context_summary_path"]
     assert (tmp_path / "graph_state.json").exists()

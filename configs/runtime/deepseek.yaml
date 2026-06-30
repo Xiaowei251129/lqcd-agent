@@ -1,0 +1,10 @@
+schema_version: "0.1"
+provider: "deepseek"
+api_base: "https://api.deepseek.com/v1"
+api_key_env: "DEEPSEEK_API_KEY"
+model_env: "DEEPSEEK_MODEL"
+default_model: null
+timeout_seconds: 30
+max_tokens: 1000
+temperature: 0
+live_test_env: "RUN_LIVE_LLM_TESTS"

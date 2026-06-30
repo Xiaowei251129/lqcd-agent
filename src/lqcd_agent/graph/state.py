@@ -23,6 +23,7 @@ class AnalysisState(TypedDict):
     output_dir: str
     current_node: str
     status: Status
+    llm_provider_config_path: str | None
 
     checkpoint_thread_id: str
     checkpoint_backend: str
@@ -84,6 +85,7 @@ def initialize_state(
     checkpoint_backend: str = "memory",
     checkpoint_db_path: str | None = None,
     max_retry: int = 1,
+    llm_provider_config_path: str | None = None,
 ) -> AnalysisState:
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -95,6 +97,7 @@ def initialize_state(
         "output_dir": str(output_path),
         "current_node": "START",
         "status": "running",
+        "llm_provider_config_path": llm_provider_config_path,
         "checkpoint_thread_id": stable_checkpoint_thread_id(case_id, run_id),
         "checkpoint_backend": checkpoint_backend,
         "checkpoint_db_path": checkpoint_db_path,
@@ -222,6 +225,7 @@ def llm_context_view(state: AnalysisState) -> dict[str, Any]:
         "user_goal": state["user_goal"],
         "status": state["status"],
         "current_node": state["current_node"],
+        "llm_provider_config_path": state["llm_provider_config_path"],
         "method_plan_path": state["method_plan_path"],
         "run_result_path": state["run_result_path"],
         "scientific_review_report_path": state["scientific_review_report_path"],
