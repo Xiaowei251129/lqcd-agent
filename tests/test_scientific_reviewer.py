@@ -84,6 +84,80 @@ def _write_run_artifacts(tmp_path: Path, matrix_payload: dict[str, object]) -> t
     return run_dir, run_result_path, method_plan_path
 
 
+def _write_effective_mass_artifacts(
+    tmp_path: Path,
+    *,
+    estimates: object | None = None,
+    diagnostic_flags: list[str] | None = None,
+    run_id: str = "run_fit",
+    case_id: str = "case_fit",
+) -> tuple[Path, Path, Path]:
+    run_dir = tmp_path / case_id / run_id
+    analysis_dir = run_dir / "analysis_outputs"
+    analysis_dir.mkdir(parents=True)
+    output_path = analysis_dir / "effective_mass_estimates.json"
+    output_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "0.1",
+                "run_id": run_id,
+                "case_id": case_id,
+                "producer": "analysis_engineer",
+                "status": "success",
+                "program": "single_exponential_effective_mass",
+                "diagnostic_flags": diagnostic_flags or [],
+                "fit_window_diagnostics": {
+                    "status": "warning" if diagnostic_flags else "pass",
+                    "fit_window_dependence": "fit_window_dependence" in (diagnostic_flags or []),
+                },
+                "effective_mass_estimates": estimates
+                if estimates is not None
+                else [
+                    {"t_start": 0, "t_end": 1, "effective_mass": 0.3},
+                    {"t_start": 1, "t_end": 2, "effective_mass": 0.31},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    run_result = {
+        "schema_version": "0.1",
+        "run_id": run_id,
+        "case_id": case_id,
+        "created_at": "2026-06-10T00:00:00+00:00",
+        "producer": "analysis_engineer",
+        "status": "success",
+        "summary": "Analysis Engineer completed the effective-mass analysis run.",
+        "warnings": [],
+        "errors": [],
+        "run_success": True,
+        "failure_type": None,
+        "analysis_outputs_dir": str(analysis_dir),
+        "expected_outputs": ["analysis_outputs/effective_mass_estimates.json"],
+        "produced_outputs": [str(output_path)],
+        "validation_results": {"status": "success"},
+        "command_references": [],
+        "commands": [],
+        "run_log_path": str(run_dir / "run.log"),
+        "manifest_path": str(run_dir / "manifest.json"),
+    }
+    run_result_path = run_dir / "run_result.json"
+    run_result_path.write_text(json.dumps(run_result), encoding="utf-8")
+    method_plan = {
+        "schema_version": "0.1",
+        "run_id": run_id,
+        "case_id": case_id,
+        "producer": "method_planner",
+        "status": "success",
+        "target_observables": ["effective_mass_estimates"],
+        "required_outputs": ["analysis_outputs/effective_mass_estimates.json"],
+        "code_needed": False,
+    }
+    method_plan_path = run_dir / "method_plan.json"
+    method_plan_path.write_text(json.dumps(method_plan), encoding="utf-8")
+    return run_dir, run_result_path, method_plan_path
+
+
 def _run_review(tmp_path: Path, matrix_payload: dict[str, object]) -> dict[str, object]:
     run_dir, run_result_path, method_plan_path = _write_run_artifacts(tmp_path, matrix_payload)
     result = run_scientific_reviewer(
@@ -106,6 +180,95 @@ def test_good_mock_matrix_table_has_all_sections_without_warnings(tmp_path: Path
     assert report["matrix_element_diagnostics"]["status"] == "pass"
     assert report["findings"]
     assert report["evidence"]
+
+
+def test_effective_mass_case_marks_matrix_diagnostics_not_applicable(tmp_path: Path) -> None:
+    run_dir, run_result_path, method_plan_path = _write_effective_mass_artifacts(tmp_path)
+
+    result = run_scientific_reviewer(
+        run_id="run_fit",
+        case_id="case_fit",
+        run_output_dir=run_dir,
+        run_result_path=run_result_path,
+        method_plan_path=method_plan_path,
+    )
+    report = result["report"]
+
+    assert result["status"] == "success"
+    assert report["warnings"] == []
+    assert report["confidence"] == "high"
+    assert report["fit_diagnostics"]["status"] == "pass"
+    assert report["matrix_element_diagnostics"]["status"] == "not_applicable"
+    assert "synthetic_matrix_elements" not in json.dumps(report)
+
+
+def test_effective_mass_case_reports_malformed_estimates(tmp_path: Path) -> None:
+    run_dir, run_result_path, method_plan_path = _write_effective_mass_artifacts(
+        tmp_path,
+        estimates=[{"t_start": 0, "t_end": 1, "effective_mass": "bad"}],
+    )
+
+    result = run_scientific_reviewer(
+        run_id="run_fit",
+        case_id="case_fit",
+        run_output_dir=run_dir,
+        run_result_path=run_result_path,
+        method_plan_path=method_plan_path,
+    )
+    report = result["report"]
+
+    assert report["confidence"] == "low"
+    assert report["fit_diagnostics"]["status"] == "severe"
+    assert report["warnings"][0]["code"] == "invalid_effective_mass_value"
+    assert report["matrix_element_diagnostics"]["status"] == "not_applicable"
+
+
+def test_effective_mass_diagnostic_flags_become_structured_warnings(tmp_path: Path) -> None:
+    run_dir, run_result_path, method_plan_path = _write_effective_mass_artifacts(
+        tmp_path,
+        diagnostic_flags=["fit_window_dependence"],
+    )
+
+    result = run_scientific_reviewer(
+        run_id="run_fit",
+        case_id="case_fit",
+        run_output_dir=run_dir,
+        run_result_path=run_result_path,
+        method_plan_path=method_plan_path,
+    )
+    report = result["report"]
+
+    assert result["status"] == "success"
+    assert report["confidence"] == "medium"
+    assert report["fit_diagnostics"]["status"] == "warning"
+    assert report["matrix_element_diagnostics"]["status"] == "not_applicable"
+    assert report["warnings"][0]["code"] == "upstream_diagnostic_flag"
+    assert report["warnings"][0]["section"] == "fit_diagnostics"
+    assert report["warnings"][0]["severity"] == "warning"
+    assert report["warnings"][0]["decision_coordinator_flag"] is False
+    assert report["warnings"][0]["field"] == "diagnostic_flags[0]"
+    assert report["warnings"][0]["value"] == "fit_window_dependence"
+
+
+def test_provider_backed_effective_mass_flags_lower_confidence(tmp_path: Path) -> None:
+    run_dir, run_result_path, method_plan_path = _write_effective_mass_artifacts(
+        tmp_path,
+        diagnostic_flags=["fit_window_dependence"],
+    )
+
+    result = run_scientific_reviewer(
+        run_id="run_fit",
+        case_id="case_fit",
+        run_output_dir=run_dir,
+        run_result_path=run_result_path,
+        method_plan_path=method_plan_path,
+        provider=MockLLMProvider(),
+    )
+    report = result["report"]
+
+    assert result["status"] == "success"
+    assert report["confidence"] == "medium"
+    assert report["warnings"][0]["value"] == "fit_window_dependence"
 
 
 def test_ambiguous_mock_table_has_non_severe_evidence_warning(tmp_path: Path) -> None:
@@ -157,6 +320,26 @@ def test_provider_backed_scientific_reviewer_accepts_valid_mock_output(tmp_path:
     assert report["producer"] == "scientific_reviewer"
     assert report["confidence"] == "high"
     assert report["summary"].startswith("Provider-backed mock")
+
+
+def test_provider_backed_effective_mass_case_marks_matrix_not_applicable(tmp_path: Path) -> None:
+    run_dir, run_result_path, method_plan_path = _write_effective_mass_artifacts(tmp_path)
+
+    result = run_scientific_reviewer(
+        run_id="run_fit",
+        case_id="case_fit",
+        run_output_dir=run_dir,
+        run_result_path=run_result_path,
+        method_plan_path=method_plan_path,
+        provider=MockLLMProvider(),
+    )
+    report = json.loads((run_dir / "scientific_review_report.json").read_text(encoding="utf-8"))
+
+    assert result["status"] == "success"
+    assert report["confidence"] == "high"
+    assert report["fit_diagnostics"]["status"] == "pass"
+    assert report["matrix_element_diagnostics"]["status"] == "not_applicable"
+    assert "synthetic_matrix_elements" not in json.dumps(report["warnings"])
 
 
 def test_invalid_provider_scientific_reviewer_cannot_inject_warnings(tmp_path: Path) -> None:

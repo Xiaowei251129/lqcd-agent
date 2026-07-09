@@ -3,57 +3,96 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>LQCD Agent Chat Demo</title>
+    <title>LQCD Multi-Agent Console</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <main class="app-shell">
-      <section class="chat-pane">
-        <header class="chat-header">
-          <div>
-            <p class="eyebrow">LangGraph multi-agent runtime</p>
-            <h1>LQCD Agent</h1>
-          </div>
-          <label class="context-control">
-            <span>Case config</span>
-            <select id="caseSelect"></select>
-          </label>
+      <section class="config-pane">
+        <header>
+          <p class="eyebrow">LangGraph runtime</p>
+          <h1>LQCD Multi-Agent Console</h1>
         </header>
 
-        <div id="messages" class="messages" aria-live="polite">
-          <article class="message assistant">
-            <div class="bubble">
-              Ask a question, select a case config, and the server will run the local LangGraph agent system. The answer is summarized from the run artifacts on the right.
-            </div>
-          </article>
+        <label class="field">
+          <span>Repo case config</span>
+          <select id="configSelect"></select>
+        </label>
+
+        <div class="split-label">
+          <span>Custom case config</span>
+          <label class="file-button">
+            Upload YAML
+            <input id="configFile" type="file" accept=".yaml,.yml,text/yaml,text/plain" />
+          </label>
+        </div>
+        <textarea id="configText" class="config-text" spellcheck="false" placeholder="Paste a case config YAML here to run a generated config instead of the selected repo config."></textarea>
+
+        <div class="actions">
+          <button id="validateButton" type="button" class="secondary">Validate</button>
+          <button id="runButton" type="button">Run Graph</button>
         </div>
 
-        <form id="chatForm" class="composer">
-          <textarea
-            id="questionInput"
-            rows="3"
-            placeholder="例如：这个 normalization violation 是否可以接受？需要人审吗？"
-          ></textarea>
-          <button id="sendButton" type="submit">Ask</button>
-        </form>
+        <div id="configPreview" class="preview-box">Select or paste a config, then validate or run.</div>
       </section>
 
-      <aside class="evidence-pane">
+      <section class="graph-pane">
         <div class="panel-head">
-          <h2>Run Evidence</h2>
-          <span id="statusText">Ready</span>
+          <div>
+            <p class="eyebrow">Execution path</p>
+            <h2>Graph Route</h2>
+          </div>
+          <span id="runStatus">Idle</span>
+        </div>
+        <ol id="routeTimeline" class="timeline"></ol>
+        <div class="events-wrap">
+          <h3>Recent Events</h3>
+          <ul id="eventList" class="event-list"></ul>
+        </div>
+      </section>
+
+      <aside class="result-pane">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Result</p>
+            <h2>Run Summary</h2>
+          </div>
+          <button id="approvalButton" type="button" class="danger hidden">Human Approval</button>
         </div>
         <dl id="summaryGrid" class="summary-grid"></dl>
-        <div class="route-box">
-          <h3>Agent Route</h3>
-          <ol id="routeTimeline" class="timeline"></ol>
-        </div>
-        <div class="artifact-box">
-          <h3>Artifacts</h3>
-          <div id="artifactLinks" class="artifact-links"></div>
-        </div>
+        <h3>Final Report</h3>
+        <pre id="reportSummary" class="report-summary">No run yet.</pre>
+        <h3>Artifacts</h3>
+        <div id="artifactLinks" class="artifact-links"></div>
       </aside>
     </main>
+
+    <dialog id="approvalDialog" class="approval-dialog">
+      <form id="approvalForm" method="dialog">
+        <h2>Human Approval Required</h2>
+        <div id="approvalDetails" class="approval-details"></div>
+        <label class="field">
+          <span>Decision</span>
+          <select id="decisionSelect"></select>
+        </label>
+        <label class="field">
+          <span>Conditions</span>
+          <textarea id="decisionConditions" rows="3"></textarea>
+        </label>
+        <label class="field">
+          <span>Reason</span>
+          <textarea id="decisionReason" rows="3"></textarea>
+        </label>
+        <label class="field">
+          <span>Decided by</span>
+          <input id="decidedBy" type="text" value="local_user" />
+        </label>
+        <div class="dialog-actions">
+          <button id="cancelApproval" type="button" class="secondary">Cancel</button>
+          <button type="submit">Submit Decision</button>
+        </div>
+      </form>
+    </dialog>
 
     <script src="/app.js"></script>
   </body>

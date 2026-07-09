@@ -1,8 +1,10 @@
+import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 
+from lqcd_agent.llm.base import LLMRequest
 from lqcd_agent.llm.openai_client import LiveProviderError
 from lqcd_agent.llm.openai_client import OpenAIChatProvider
 from lqcd_agent.llm.provider_factory import (
@@ -23,6 +25,7 @@ def test_loads_openai_and_deepseek_configs_without_secrets() -> None:
     assert openai.provider == "openai"
     assert openai.api_key_env == "OPENAI_API_KEY"
     assert openai.model_env == "OPENAI_MODEL"
+    assert openai.max_tokens == 4000
     assert deepseek.provider == "deepseek"
     assert deepseek.api_key_env == "DEEPSEEK_API_KEY"
     assert deepseek.model_env == "DEEPSEEK_MODEL"
@@ -81,6 +84,106 @@ def test_openai_client_uses_completion_token_limit_for_gpt5_models() -> None:
 
     assert provider._max_tokens_field("gpt-5.4-mini") == "max_completion_tokens"
     assert provider._max_tokens_field("gpt-4.1-mini") == "max_tokens"
+
+
+def test_openai_client_sends_strict_json_schema_payload(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self) -> bytes:
+            return json.dumps(
+                {
+                    "model": "gpt-5.4-mini",
+                    "choices": [{"message": {"content": '{"status":"success"}'}, "finish_reason": "stop"}],
+                    "usage": {},
+                }
+            ).encode("utf-8")
+
+    def fake_urlopen(request, timeout):  # noqa: ANN001
+        captured["payload"] = json.loads(request.data.decode("utf-8"))
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setenv("RUN_LIVE_LLM_TESTS", "1")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-secret")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-5.4-mini")
+    monkeypatch.setattr("lqcd_agent.llm.openai_client.urlopen", fake_urlopen)
+    provider = OpenAIChatProvider(load_provider_config(ROOT / "configs/runtime/openai.yaml"))
+
+    response = provider.generate(
+        LLMRequest(
+            messages=[{"role": "user", "content": "Return JSON."}],
+            response_format="json_schema",
+            json_schema={
+                "name": "unit_schema",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {"status": {"type": "string"}},
+                    "required": ["status"],
+                    "additionalProperties": False,
+                },
+            },
+        )
+    )
+
+    payload = captured["payload"]
+    assert isinstance(payload, dict)
+    assert response.content == '{"status":"success"}'
+    assert payload["max_completion_tokens"] == 4000
+    assert payload["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "unit_schema",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {"status": {"type": "string"}},
+                "required": ["status"],
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
+def test_openai_client_rejects_length_truncated_completion(monkeypatch) -> None:
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self) -> bytes:
+            return json.dumps(
+                {
+                    "model": "gpt-5.4-mini",
+                    "choices": [{"message": {"content": '{"status":"success'}, "finish_reason": "length"}],
+                    "usage": {},
+                }
+            ).encode("utf-8")
+
+    def fake_urlopen(request, timeout):  # noqa: ANN001
+        return FakeResponse()
+
+    monkeypatch.setenv("RUN_LIVE_LLM_TESTS", "1")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-secret")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-5.4-mini")
+    monkeypatch.setattr("lqcd_agent.llm.openai_client.urlopen", fake_urlopen)
+    provider = OpenAIChatProvider(load_provider_config(ROOT / "configs/runtime/openai.yaml"))
+
+    try:
+        provider.generate(LLMRequest(messages=[{"role": "user", "content": "Return JSON."}]))
+    except LiveProviderError as exc:
+        assert exc.code == "finish_reason_length"
+    else:
+        raise AssertionError("Length-truncated provider output was not rejected.")
 
 
 def test_env_files_are_ignored_except_example() -> None:

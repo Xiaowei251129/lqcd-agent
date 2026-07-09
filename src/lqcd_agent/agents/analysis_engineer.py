@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import csv
+import importlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
+from lqcd_agent.analysis_programs.registry import available_programs
 from lqcd_agent.tools.command_runner import run_commands
 from lqcd_agent.tools.manifest import build_manifest, write_manifest_json
 from lqcd_agent.tools.output_validator import validate_expected_outputs
@@ -107,10 +110,15 @@ def _as_string_list(value: Any) -> list[str]:
 
 
 def _resolve_commands(case_config: dict[str, Any]) -> list[str]:
+    commands = _resolve_explicit_commands(case_config)
+    return commands or list(DEFAULT_ANALYSIS_COMMANDS)
+
+
+def _resolve_explicit_commands(case_config: dict[str, Any]) -> list[str]:
     commands = _as_string_list(case_config.get("analysis_commands"))
     if not commands:
         commands = _as_string_list(case_config.get("analysis_command"))
-    return commands or list(DEFAULT_ANALYSIS_COMMANDS)
+    return commands
 
 
 def _resolve_allowed_commands(case_config: dict[str, Any], commands: Sequence[str]) -> list[str]:
@@ -129,6 +137,316 @@ def _resolve_expected_outputs(case_config: dict[str, Any], task_config: dict[str
         required_outputs = _as_string_list(task_config.get("required_outputs"))
         expected = [output for output in required_outputs if output.startswith("analysis_outputs/")]
     return expected or list(DEFAULT_EXPECTED_OUTPUTS)
+
+
+def _selected_program_configs(task_config: dict[str, Any]) -> list[dict[str, Any]]:
+    selected = task_config.get("selected_analysis_programs", [])
+    if not isinstance(selected, list):
+        return []
+    return [program for program in selected if isinstance(program, dict)]
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return True
+
+
+def _resolve_raw_data_path(case_config: dict[str, Any], repo_root: Path) -> tuple[Path | None, str | None]:
+    raw_value = case_config.get("raw_data_path")
+    if not raw_value:
+        return None, "case_config.raw_data_path is required for selected analysis programs."
+    raw_path = Path(str(raw_value))
+    if raw_path.is_absolute():
+        return None, "raw_data_path must be relative to the repository root."
+    resolved = (repo_root / raw_path).resolve()
+    raw_root = (repo_root / "raw_data").resolve()
+    if not _is_within(resolved, raw_root):
+        return None, "raw_data_path must stay under raw_data/."
+    if not resolved.exists() or not resolved.is_file():
+        return None, "raw_data_path does not exist or is not a file."
+    return resolved, None
+
+
+def _read_raw_csv_columns(path: Path) -> tuple[dict[str, list[float]] | None, str | None]:
+    columns: dict[str, list[float]] = {}
+    try:
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            if not reader.fieldnames:
+                return None, "Raw CSV has no header row."
+            for field in reader.fieldnames:
+                columns[field] = []
+            for row_index, row in enumerate(reader, start=2):
+                for field in reader.fieldnames:
+                    try:
+                        columns[field].append(float(row[field]))
+                    except (TypeError, ValueError):
+                        return None, f"Raw CSV column {field} has a non-numeric value on row {row_index}."
+    except OSError as exc:
+        return None, str(exc)
+    return columns, None
+
+
+def _resolve_program_inputs(
+    *,
+    selected_program: dict[str, Any],
+    csv_columns: dict[str, list[float]],
+) -> tuple[dict[str, Any] | None, str | None]:
+    input_mapping = selected_program.get("input_mapping")
+    if not isinstance(input_mapping, dict):
+        return None, "selected_analysis_programs[].input_mapping must be an object."
+
+    inputs: dict[str, Any] = {}
+    for input_name, source in input_mapping.items():
+        source_text = str(source)
+        prefix = "raw_data_csv."
+        if not source_text.startswith(prefix):
+            return None, f"Unsupported input source: {source_text}."
+        column_name = source_text[len(prefix):]
+        if column_name not in csv_columns:
+            return None, f"Raw CSV column is missing: {column_name}."
+        inputs[str(input_name)] = csv_columns[column_name]
+    return inputs, None
+
+
+def _safe_analysis_output_path(run_output_dir: Path, relative_path: str) -> tuple[Path | None, str | None]:
+    output_path = Path(relative_path)
+    if output_path.is_absolute():
+        return None, "Analysis program output_path must be relative."
+    if any(part in {"raw_data", "accepted_results"} for part in output_path.parts):
+        return None, "Analysis program output_path must not target raw_data or accepted_results."
+    resolved = (run_output_dir / output_path).resolve()
+    if not _is_within(resolved, run_output_dir):
+        return None, "Analysis program output_path must stay under the run output directory."
+    return resolved, None
+
+
+def _registered_program_by_name() -> dict[str, Any]:
+    return {program.name: program for program in available_programs()}
+
+
+def _load_registered_callable(selected_program: dict[str, Any]) -> tuple[Any | None, str | None]:
+    name = str(selected_program.get("name", ""))
+    callable_path = str(selected_program.get("callable_path", ""))
+    registered = _registered_program_by_name().get(name)
+    if registered is None:
+        return None, f"Selected analysis program is not registered: {name}."
+    if registered.callable_path != callable_path:
+        return None, f"Selected analysis program callable_path does not match registry for {name}."
+    module_path, _, function_name = callable_path.rpartition(".")
+    if not module_path or not function_name:
+        return None, f"Invalid callable_path for selected analysis program: {callable_path}."
+    try:
+        module = importlib.import_module(module_path)
+    except ImportError as exc:
+        return None, str(exc)
+    function = getattr(module, function_name, None)
+    if not callable(function):
+        return None, f"Registered callable is not importable: {callable_path}."
+    return function, None
+
+
+def _program_result(
+    *,
+    command_id: str,
+    selected_program: dict[str, Any],
+    repo_root: Path,
+    timeout_seconds: int,
+    started_at: str,
+    status: str,
+    return_code: int | None,
+    stdout: str = "",
+    stderr: str = "",
+    produced_files: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "command_id": command_id,
+        "command": f"analysis_program:{selected_program.get('name', '')}",
+        "command_kind": "analysis_program",
+        "working_directory": str(repo_root),
+        "timeout_seconds": timeout_seconds,
+        "started_at": started_at,
+        "completed_at": utc_now(),
+        "return_code": return_code,
+        "stdout": stdout,
+        "stderr": stderr,
+        "produced_files": produced_files or [],
+        "status": status,
+    }
+
+
+def _run_selected_analysis_programs(
+    *,
+    selected_programs: Sequence[dict[str, Any]],
+    case_config: dict[str, Any],
+    repo_root: Path,
+    run_output_dir: Path,
+    run_id: str,
+    case_id: str,
+    timeout_seconds: int,
+    force: bool,
+) -> list[dict[str, Any]]:
+    raw_data_path, raw_error = _resolve_raw_data_path(case_config, repo_root)
+    if raw_error or raw_data_path is None:
+        return [
+            _program_result(
+                command_id="analysis_program_0",
+                selected_program=selected_programs[0] if selected_programs else {"name": "unknown"},
+                repo_root=repo_root,
+                timeout_seconds=timeout_seconds,
+                started_at=utc_now(),
+                status="blocked",
+                return_code=None,
+                stderr=raw_error or "Invalid raw data path.",
+            )
+        ]
+
+    csv_columns, csv_error = _read_raw_csv_columns(raw_data_path)
+    if csv_error or csv_columns is None:
+        return [
+            _program_result(
+                command_id="analysis_program_0",
+                selected_program=selected_programs[0] if selected_programs else {"name": "unknown"},
+                repo_root=repo_root,
+                timeout_seconds=timeout_seconds,
+                started_at=utc_now(),
+                status="blocked",
+                return_code=None,
+                stderr=csv_error or "Raw CSV could not be read.",
+            )
+        ]
+
+    results: list[dict[str, Any]] = []
+    for index, selected_program in enumerate(selected_programs):
+        command_id = f"analysis_program_{index}"
+        started_at = utc_now()
+        function, load_error = _load_registered_callable(selected_program)
+        if load_error or function is None:
+            results.append(
+                _program_result(
+                    command_id=command_id,
+                    selected_program=selected_program,
+                    repo_root=repo_root,
+                    timeout_seconds=timeout_seconds,
+                    started_at=started_at,
+                    status="blocked",
+                    return_code=None,
+                    stderr=load_error or "Selected analysis program could not be loaded.",
+                )
+            )
+            continue
+
+        output_path, output_error = _safe_analysis_output_path(
+            run_output_dir,
+            str(selected_program.get("output_path", "")),
+        )
+        if output_error or output_path is None:
+            results.append(
+                _program_result(
+                    command_id=command_id,
+                    selected_program=selected_program,
+                    repo_root=repo_root,
+                    timeout_seconds=timeout_seconds,
+                    started_at=started_at,
+                    status="blocked",
+                    return_code=None,
+                    stderr=output_error or "Invalid analysis program output path.",
+                )
+            )
+            continue
+        if output_path.exists() and not force:
+            results.append(
+                _program_result(
+                    command_id=command_id,
+                    selected_program=selected_program,
+                    repo_root=repo_root,
+                    timeout_seconds=timeout_seconds,
+                    started_at=started_at,
+                    status="blocked",
+                    return_code=None,
+                    stderr=f"Refusing to overwrite existing analysis program output: {output_path}",
+                )
+            )
+            continue
+
+        inputs, input_error = _resolve_program_inputs(selected_program=selected_program, csv_columns=csv_columns)
+        if input_error or inputs is None:
+            results.append(
+                _program_result(
+                    command_id=command_id,
+                    selected_program=selected_program,
+                    repo_root=repo_root,
+                    timeout_seconds=timeout_seconds,
+                    started_at=started_at,
+                    status="blocked",
+                    return_code=None,
+                    stderr=input_error or "Could not resolve selected analysis program inputs.",
+                )
+            )
+            continue
+
+        try:
+            payload = function(**inputs)
+        except Exception as exc:
+            results.append(
+                _program_result(
+                    command_id=command_id,
+                    selected_program=selected_program,
+                    repo_root=repo_root,
+                    timeout_seconds=timeout_seconds,
+                    started_at=started_at,
+                    status="failed",
+                    return_code=1,
+                    stderr=str(exc),
+                )
+            )
+            continue
+        if not isinstance(payload, dict):
+            results.append(
+                _program_result(
+                    command_id=command_id,
+                    selected_program=selected_program,
+                    repo_root=repo_root,
+                    timeout_seconds=timeout_seconds,
+                    started_at=started_at,
+                    status="failed",
+                    return_code=1,
+                    stderr="Selected analysis program did not return a JSON object payload.",
+                )
+            )
+            continue
+
+        payload = {
+            "schema_version": "0.1",
+            "run_id": run_id,
+            "case_id": case_id,
+            "created_at": utc_now(),
+            "producer": "analysis_engineer",
+            "source_kind": "raw_data_csv",
+            "raw_data_path": str(raw_data_path.relative_to(repo_root)),
+            **payload,
+        }
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        program_status = "passed" if payload.get("status") == "success" else "failed"
+        results.append(
+            _program_result(
+                command_id=command_id,
+                selected_program=selected_program,
+                repo_root=repo_root,
+                timeout_seconds=timeout_seconds,
+                started_at=started_at,
+                status=program_status,
+                return_code=0 if program_status == "passed" else 1,
+                stdout=f"Wrote analysis program output for {selected_program.get('name', '')}.\n",
+                stderr="" if program_status == "passed" else "Selected analysis program returned non-success status.",
+                produced_files=[str(output_path)],
+            )
+        )
+    return results
 
 
 def _resolve_case_reference_files(case_config: dict[str, Any], repo_root: Path) -> list[str]:
@@ -299,22 +617,48 @@ def run_analysis_engineer(
     run_dir.mkdir(parents=True, exist_ok=True)
     case_config = read_case_config(case_config_path)
     task_config = _read_task_config(method_plan_path)
-    commands = _resolve_commands(case_config)
-    allowed_commands = _resolve_allowed_commands(case_config, commands)
+    explicit_commands = _resolve_explicit_commands(case_config)
+    selected_programs = _selected_program_configs(task_config)
     expected_outputs = _resolve_expected_outputs(case_config, task_config)
-    repo_path = Path(repo_root) if repo_root is not None else Path(__file__).resolve().parents[3]
+    repo_path = (Path(repo_root) if repo_root is not None else Path(__file__).resolve().parents[3]).resolve()
     golden_reference_files = _resolve_case_reference_files(case_config, repo_path)
 
-    command_results = run_commands(
-        commands=commands,
-        cwd=repo_path,
-        output_dir=run_dir,
-        run_id=run_id,
-        case_id=case_id,
-        timeout_seconds=timeout_seconds,
-        allowed_commands=allowed_commands,
-        force=force,
-    )
+    if explicit_commands:
+        allowed_commands = _resolve_allowed_commands(case_config, explicit_commands)
+        command_results = run_commands(
+            commands=explicit_commands,
+            cwd=repo_path,
+            output_dir=run_dir,
+            run_id=run_id,
+            case_id=case_id,
+            timeout_seconds=timeout_seconds,
+            allowed_commands=allowed_commands,
+            force=force,
+        )
+    elif selected_programs:
+        command_results = _run_selected_analysis_programs(
+            selected_programs=selected_programs,
+            case_config=case_config,
+            repo_root=repo_path,
+            run_output_dir=run_dir,
+            run_id=run_id,
+            case_id=case_id,
+            timeout_seconds=timeout_seconds,
+            force=force,
+        )
+    else:
+        commands = _resolve_commands(case_config)
+        allowed_commands = _resolve_allowed_commands(case_config, commands)
+        command_results = run_commands(
+            commands=commands,
+            cwd=repo_path,
+            output_dir=run_dir,
+            run_id=run_id,
+            case_id=case_id,
+            timeout_seconds=timeout_seconds,
+            allowed_commands=allowed_commands,
+            force=force,
+        )
     validation_results = validate_expected_outputs(
         output_dir=run_dir,
         expected_outputs=expected_outputs,

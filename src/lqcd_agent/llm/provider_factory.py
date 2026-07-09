@@ -63,6 +63,7 @@ def load_flat_yaml(path: str | Path) -> dict[str, Any]:
 
 
 def config_from_dict(payload: dict[str, Any]) -> LLMProviderConfig:
+    max_tokens = payload.get("max_tokens", payload.get("max_completion_tokens", 1000))
     return LLMProviderConfig(
         schema_version=str(payload.get("schema_version", "0.1")),
         provider=str(payload.get("provider", "mock")),
@@ -71,7 +72,7 @@ def config_from_dict(payload: dict[str, Any]) -> LLMProviderConfig:
         model_env=str(payload["model_env"]) if payload.get("model_env") is not None else None,
         default_model=str(payload["default_model"]) if payload.get("default_model") is not None else None,
         timeout_seconds=float(payload.get("timeout_seconds", 30)),
-        max_tokens=int(payload.get("max_tokens", 1000)),
+        max_tokens=int(max_tokens),
         temperature=float(payload.get("temperature", 0)),
         live_test_env=str(payload.get("live_test_env", "RUN_LIVE_LLM_TESTS")),
         dry_run_only=bool(payload.get("dry_run_only", False)),

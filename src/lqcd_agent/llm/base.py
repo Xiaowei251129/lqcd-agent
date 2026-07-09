@@ -26,6 +26,7 @@ class LLMProviderConfig:
 class LLMRequest:
     messages: list[dict[str, str]]
     response_format: str = "json_object"
+    json_schema: dict[str, Any] | None = None
     temperature: float | None = None
     max_tokens: int | None = None
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ from lqcd_agent.agents.decision_coordinator import run_decision_coordinator
 from lqcd_agent.agents.method_planner import run_method_planner
 from lqcd_agent.agents.scientific_reviewer import run_scientific_reviewer
 from lqcd_agent.coder.codex_handoff import ensure_task_packet, read_handoff_results
+from lqcd_agent.coder.codex_handoff_worker import run_worker
 from lqcd_agent.coder.task_packet import TaskPacketValidationError
 from lqcd_agent.graph.approval_packet import (
     decision_route_target,
@@ -31,6 +33,9 @@ def _read_case_config(path: str) -> dict[str, Any] | None:
     case_path = Path(path)
     if not case_path.exists():
         return None
+
+    if case_path.suffix == ".json":
+        return json.loads(case_path.read_text(encoding="utf-8"))
 
     result: dict[str, Any] = {}
     for raw_line in case_path.read_text(encoding="utf-8").splitlines():
@@ -143,6 +148,51 @@ def codex_handoff_node(state: AnalysisState) -> AnalysisState:
     handoff = read_handoff_results(state["output_dir"])
     state["code_change_summary_path"] = handoff["code_change_summary_path"]
     state["tests_status_path"] = handoff["tests_status_path"]
+    if (
+        state.get("auto_codex_handoff") is True
+        and handoff["handoff_status"] == "pending"
+        and not state["code_change_summary_path"]
+        and not state["tests_status_path"]
+    ):
+        repo_root = Path(__file__).resolve().parents[3]
+        try:
+            worker_result = run_worker(
+                run_dir=state["output_dir"],
+                repo_root=repo_root,
+                codex_bin=state.get("codex_bin", "codex"),
+                codex_model=state.get("codex_model"),
+                timeout_seconds=int(state.get("codex_timeout_seconds", 900)),
+                verification_timeout_seconds=int(state.get("verification_timeout_seconds", 60)),
+                force=bool(state.get("force_codex_handoff", False)),
+                dry_run=bool(state.get("dry_run_codex", False)),
+            )
+        except Exception as exc:
+            state["status"] = "pending"
+            state["errors"].append(
+                {
+                    "node": "codex_handoff",
+                    "field": "auto_codex_handoff",
+                    "message": str(exc),
+                }
+            )
+            append_event(
+                state,
+                node="codex_handoff",
+                kind="node_pending",
+                summary="Automatic Codex handoff failed before structured result files were available.",
+                coder_task_packet_path=state["coder_task_packet_path"],
+            )
+            save_graph_state(state)
+            return state
+        append_event(
+            state,
+            node="codex_handoff",
+            kind="worker_complete" if worker_result.get("status") != "dry_run" else "worker_dry_run",
+            summary=f"Automatic Codex handoff worker returned {worker_result.get('status')}.",
+        )
+        handoff = read_handoff_results(state["output_dir"])
+        state["code_change_summary_path"] = handoff["code_change_summary_path"]
+        state["tests_status_path"] = handoff["tests_status_path"]
 
     if handoff["handoff_status"] == "halted":
         state["status"] = "halted"

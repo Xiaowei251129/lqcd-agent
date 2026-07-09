@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +27,7 @@ REQUIRED_PLAN_FIELDS = [
     "required_inputs",
     "required_outputs",
     "implementation_gaps",
+    "selected_analysis_programs",
     "code_needed",
     "coder_task_summary",
 ]
@@ -87,6 +89,233 @@ def _inventory_gaps(repo_inventory: dict[str, Any]) -> list[str]:
     return []
 
 
+def _as_string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list | tuple):
+        return [str(item) for item in value if str(item).strip()]
+    return [str(value)]
+
+
+def _program_inventory(repo_inventory: dict[str, Any]) -> list[dict[str, Any]]:
+    programs = repo_inventory.get("analysis_programs", [])
+    if not isinstance(programs, list):
+        return []
+    return [program for program in programs if isinstance(program, dict)]
+
+
+def _requested_tags(case_config: dict[str, Any]) -> set[str]:
+    tags = _as_string_list(case_config.get("analysis_program_tags"))
+    if not tags:
+        tags = _as_string_list(case_config.get("analysis_tags"))
+    return {tag.strip() for tag in tags if tag.strip()}
+
+
+def _requested_outputs(case_config: dict[str, Any]) -> set[str]:
+    outputs = _as_string_list(case_config.get("target_observables"))
+    outputs.extend(_as_string_list(case_config.get("analysis_outputs")))
+    return {output.strip() for output in outputs if output.strip()}
+
+
+def _program_satisfies_request(
+    program: dict[str, Any],
+    *,
+    requested_tags: set[str],
+    requested_outputs: set[str],
+) -> bool:
+    program_tags = {str(tag) for tag in _as_string_list(program.get("tags"))}
+    produced_outputs = {str(output) for output in _as_string_list(program.get("produced_outputs"))}
+    tag_match = bool(requested_tags) and requested_tags.issubset(program_tags)
+    output_match = bool(requested_outputs) and bool(requested_outputs & produced_outputs)
+    return tag_match or output_match
+
+
+def _raw_csv_has_column(
+    case_config: dict[str, Any],
+    repo_inventory: dict[str, Any] | None,
+    column_name: str,
+) -> bool:
+    raw_value = case_config.get("raw_data_path")
+    repo_root = (repo_inventory or {}).get("repo_root")
+    if not raw_value or not repo_root:
+        return False
+    raw_path = Path(str(raw_value))
+    if raw_path.is_absolute():
+        return False
+    resolved = (Path(str(repo_root)) / raw_path).resolve()
+    try:
+        with resolved.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            return bool(reader.fieldnames and column_name in reader.fieldnames)
+    except OSError:
+        return False
+
+
+def _raw_data_missing(case_config: dict[str, Any], repo_inventory: dict[str, Any] | None) -> bool:
+    raw_value = case_config.get("raw_data_path")
+    repo_root = (repo_inventory or {}).get("repo_root")
+    if not raw_value or not repo_root:
+        return False
+    raw_path = Path(str(raw_value))
+    if raw_path.is_absolute():
+        return False
+    resolved = (Path(str(repo_root)) / raw_path).resolve()
+    return not resolved.is_file()
+
+
+def _runtime_input_warning(case_config: dict[str, Any]) -> dict[str, Any]:
+    raw_value = str(case_config.get("raw_data_path", ""))
+    return {
+        "code": "runtime_input_validation_deferred_to_analysis_engineer",
+        "message": "Raw data availability is a runtime input check and will be validated by Analysis Engineer.",
+        "field": "raw_data_path",
+        "path": raw_value,
+        "value": raw_value,
+    }
+
+
+def _input_mapping_for_program(
+    program: dict[str, Any],
+    case_config: dict[str, Any],
+    repo_inventory: dict[str, Any] | None = None,
+) -> dict[str, str] | None:
+    required_inputs = set(_as_string_list(program.get("required_inputs")))
+    if not case_config.get("raw_data_path"):
+        return None
+    if required_inputs == {"times", "correlator_values"}:
+        mapping = {
+            "times": "raw_data_csv.t",
+            "correlator_values": "raw_data_csv.value",
+        }
+        if _raw_csv_has_column(case_config, repo_inventory, "error"):
+            mapping["correlator_errors"] = "raw_data_csv.error"
+        return mapping
+    return None
+
+
+def _canonical_program_selection(
+    program: dict[str, Any],
+    case_config: dict[str, Any],
+    repo_inventory: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    input_mapping = _input_mapping_for_program(program, case_config, repo_inventory)
+    if input_mapping is None:
+        return None
+    produced_outputs = _as_string_list(program.get("produced_outputs"))
+    output_name = produced_outputs[0] if produced_outputs else str(program.get("name", "analysis_program"))
+    return {
+        "name": str(program.get("name", "")),
+        "category": str(program.get("category", "")),
+        "callable_path": str(program.get("callable_path", "")),
+        "input_mapping": input_mapping,
+        "output_path": f"analysis_outputs/{output_name}.json",
+        "required_outputs": produced_outputs,
+    }
+
+
+def _selected_analysis_programs(
+    *,
+    case_config: dict[str, Any],
+    repo_inventory: dict[str, Any],
+) -> list[dict[str, Any]]:
+    requested_tags = _requested_tags(case_config)
+    requested_outputs = _requested_outputs(case_config)
+    selected: list[dict[str, Any]] = []
+    for program in _program_inventory(repo_inventory):
+        if not _program_satisfies_request(
+            program,
+            requested_tags=requested_tags,
+            requested_outputs=requested_outputs,
+        ):
+            continue
+        input_mapping = _input_mapping_for_program(program, case_config, repo_inventory)
+        if input_mapping is None:
+            continue
+        canonical = _canonical_program_selection(program, case_config, repo_inventory)
+        if canonical is not None:
+            selected.append(canonical)
+    return selected
+
+
+def _matching_inventory_program(
+    selected_program: dict[str, Any],
+    repo_inventory: dict[str, Any],
+) -> dict[str, Any] | None:
+    selected_name = str(selected_program.get("name", ""))
+    selected_callable = str(selected_program.get("callable_path", ""))
+    for program in _program_inventory(repo_inventory):
+        program_name = str(program.get("name", ""))
+        program_callable = str(program.get("callable_path", ""))
+        if selected_name and selected_name == program_name:
+            return program
+        if selected_callable and selected_callable == program_callable:
+            return program
+    return None
+
+
+def _append_warning(payload: dict[str, Any], warning: dict[str, Any]) -> None:
+    warnings = payload.get("warnings", [])
+    if not isinstance(warnings, list):
+        warnings = []
+    warnings.append(warning)
+    payload["warnings"] = warnings
+
+
+def _normalize_provider_selected_programs(
+    *,
+    payload: dict[str, Any],
+    case_config: dict[str, Any] | None,
+    repo_inventory: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if case_config is None or repo_inventory is None:
+        return payload
+
+    normalized = dict(payload)
+    selected = normalized.get("selected_analysis_programs", [])
+    if not isinstance(selected, list):
+        return normalized
+
+    canonical_selected: list[dict[str, Any]] = []
+    changed_programs: list[str] = []
+    for item in selected:
+        if not isinstance(item, dict):
+            continue
+        program = _matching_inventory_program(item, repo_inventory)
+        if program is None:
+            canonical_selected.append(item)
+            continue
+        canonical = _canonical_program_selection(program, case_config, repo_inventory)
+        if canonical is None:
+            canonical_selected.append(item)
+            continue
+        if item != canonical:
+            changed_programs.append(str(canonical["name"]))
+        canonical_selected.append(canonical)
+
+    if not canonical_selected:
+        inferred = _selected_analysis_programs(case_config=case_config, repo_inventory=repo_inventory)
+        if inferred:
+            canonical_selected = inferred
+            changed_programs.extend(str(program["name"]) for program in inferred)
+
+    if canonical_selected != selected:
+        normalized["selected_analysis_programs"] = canonical_selected
+        _append_warning(
+            normalized,
+            {
+                "code": "selected_analysis_programs_normalized",
+                "message": (
+                    "Provider selected registered analysis program(s), and the runtime normalized "
+                    "their executable input mappings from repo inventory."
+                ),
+                "programs": sorted(set(changed_programs)),
+            },
+        )
+    return normalized
+
+
 def build_method_plan(
     *,
     user_goal: str | None,
@@ -118,6 +347,7 @@ def build_method_plan(
             "required_inputs": [],
             "required_outputs": [],
             "implementation_gaps": [],
+            "selected_analysis_programs": [],
             "code_needed": False,
             "coder_task_summary": None,
         }
@@ -126,19 +356,26 @@ def build_method_plan(
     assert repo_inventory is not None
     physics_goal = str(case_config.get("physics_goal") or user_goal)
     gaps = _inventory_gaps(repo_inventory)
-    code_needed = bool(gaps)
+    selected_programs = _selected_analysis_programs(case_config=case_config, repo_inventory=repo_inventory)
+    program_requested = bool(case_config.get("raw_data_path")) and bool(
+        _requested_tags(case_config) or _requested_outputs(case_config)
+    )
+    missing_requested_program = program_requested and not selected_programs
+    code_needed = bool(gaps) or missing_requested_program
+    warnings: list[dict[str, Any]] = []
+    if selected_programs and _raw_data_missing(case_config, repo_inventory):
+        warnings.append(_runtime_input_warning(case_config))
     required_inputs = [
         "case_config",
         "repo_inventory",
-        "synthetic matrix-element case metadata",
+        "raw data" if selected_programs else "synthetic matrix-element case metadata",
     ]
-    required_outputs = [
-        "method_plan.json",
-        "run_result.json",
-        "analysis_outputs/synthetic_matrix_elements.json",
-        "scientific_review_report.json",
-        "decision_log.json",
-    ]
+    required_outputs = ["method_plan.json", "run_result.json"]
+    if selected_programs:
+        required_outputs.extend(str(program["output_path"]) for program in selected_programs)
+    else:
+        required_outputs.append("analysis_outputs/synthetic_matrix_elements.json")
+    required_outputs.extend(["scientific_review_report.json", "decision_log.json"])
 
     return {
         **_base_artifact(
@@ -146,27 +383,47 @@ def build_method_plan(
             case_id=case_id,
             producer="method_planner",
             status="success",
-            summary="Created deterministic mock method plan for a pion quasi-DA analysis support run.",
+            summary=(
+                "Selected registered analysis program(s) for deterministic mock planning."
+                if selected_programs
+                else "Created deterministic mock method plan for a pion quasi-DA analysis support run."
+            ),
+            warnings=warnings,
         ),
         "physics_goal": physics_goal,
-        "target_observables": [
-            "bare_matrix_elements_real_imag_vs_z_and_pz",
-            "normalized_matrix_elements_real_imag_vs_z_and_pz",
-            "matrix_element_uncertainties",
-            "diagnostic_flags",
-        ],
-        "method_steps": [
-            "Confirm the case uses synthetic placeholder inputs and does not require raw numeric data.",
-            "Plan deterministic matrix-element generation or validation versus Wilson-line separation z and hadron momentum Pz.",
-            "Plan structured review checks for monotonicity, uncertainty sanity, and diagnostic flags.",
-            "Route downstream decisions using structured status, code_needed, run_success, and risk fields.",
-        ],
+        "target_observables": (
+            _as_string_list(case_config.get("target_observables"))
+            or [
+                "bare_matrix_elements_real_imag_vs_z_and_pz",
+                "normalized_matrix_elements_real_imag_vs_z_and_pz",
+                "matrix_element_uncertainties",
+                "diagnostic_flags",
+            ]
+        ),
+        "method_steps": (
+            [
+                "Inspect repository inventory for reusable registered analysis programs.",
+                "Select registered programs whose tags and produced outputs satisfy the case request.",
+                "Map raw CSV columns to the selected program inputs before execution.",
+                "Validate generated analysis outputs before downstream scientific review.",
+            ]
+            if selected_programs
+            else [
+                "Confirm the case uses synthetic placeholder inputs and does not require raw numeric data.",
+                "Plan deterministic matrix-element generation or validation versus Wilson-line separation z and hadron momentum Pz.",
+                "Plan structured review checks for monotonicity, uncertainty sanity, and diagnostic flags.",
+                "Route downstream decisions using structured status, code_needed, run_success, and risk fields.",
+            ]
+        ),
         "required_inputs": required_inputs,
         "required_outputs": required_outputs,
         "implementation_gaps": gaps,
+        "selected_analysis_programs": selected_programs,
         "code_needed": code_needed,
         "coder_task_summary": (
-            "Implement or repair missing mock-only workflow support before analysis execution."
+            "Implement a reusable registered analysis program for the requested raw-data analysis."
+            if missing_requested_program
+            else "Implement or repair missing mock-only workflow support before analysis execution."
             if code_needed
             else None
         ),
@@ -203,6 +460,7 @@ def _provider_failure_plan(
         "required_inputs": [],
         "required_outputs": [],
         "implementation_gaps": [],
+        "selected_analysis_programs": [],
         "code_needed": False,
         "coder_task_summary": None,
     }
@@ -228,6 +486,68 @@ def _normalize_provider_method_plan(payload: dict[str, Any]) -> dict[str, Any]:
         )
         normalized["warnings"] = warnings
         normalized["status"] = "success"
+    return normalized
+
+
+def _provider_errors_are_only_missing_raw_data(payload: dict[str, Any], case_config: dict[str, Any]) -> bool:
+    errors = payload.get("errors", [])
+    if not isinstance(errors, list):
+        return False
+    if not errors:
+        return True
+    raw_value = str(case_config.get("raw_data_path", "")).lower()
+    for error in errors:
+        if not isinstance(error, dict):
+            return False
+        text = " ".join(
+            str(error.get(field, ""))
+            for field in ["field", "path", "value", "message", "code", "artifact"]
+            if error.get(field) is not None
+        ).lower()
+        if "raw_data_path" not in text and raw_value not in text:
+            return False
+        if "missing" not in text and "absent" not in text and "not exist" not in text and "unavailable" not in text:
+            return False
+    return True
+
+
+def _normalize_provider_deferred_runtime_inputs(
+    *,
+    payload: dict[str, Any],
+    case_config: dict[str, Any] | None,
+    repo_inventory: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if case_config is None or repo_inventory is None:
+        return payload
+    selected = payload.get("selected_analysis_programs", [])
+    if not selected or not isinstance(selected, list):
+        return payload
+    if not _raw_data_missing(case_config, repo_inventory):
+        return payload
+    if not _provider_errors_are_only_missing_raw_data(payload, case_config):
+        return payload
+    implementation_gaps = payload.get("implementation_gaps", [])
+    if isinstance(implementation_gaps, list) and implementation_gaps:
+        return payload
+
+    normalized = dict(payload)
+    original_errors = normalized.get("errors", [])
+    original_status = normalized.get("status")
+    original_code_needed = normalized.get("code_needed")
+    if original_status in {"pending", "needs_more_info"}:
+        normalized["status"] = "success"
+    normalized["errors"] = []
+    normalized["code_needed"] = False
+    normalized["coder_task_summary"] = None
+    _append_warning(
+        normalized,
+        {
+            **_runtime_input_warning(case_config),
+            "original_status": original_status,
+            "original_code_needed": original_code_needed,
+            "original_errors": original_errors if isinstance(original_errors, list) else [],
+        },
+    )
     return normalized
 
 
@@ -288,6 +608,16 @@ def _run_provider_method_planner(
 
     assert payload is not None
     payload = _normalize_provider_method_plan(payload)
+    payload = _normalize_provider_selected_programs(
+        payload=payload,
+        case_config=case_config,
+        repo_inventory=repo_inventory,
+    )
+    payload = _normalize_provider_deferred_runtime_inputs(
+        payload=payload,
+        case_config=case_config,
+        repo_inventory=repo_inventory,
+    )
     validation_errors = validate_method_plan_payload(payload, run_id=run_id, case_id=case_id)
     if validation_errors:
         plan = _provider_failure_plan(

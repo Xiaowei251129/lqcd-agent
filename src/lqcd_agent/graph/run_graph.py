@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,8 +23,12 @@ PROTECTED_RUN_ARTIFACTS = {
 }
 
 
-def _read_mock_case(path: Path) -> dict[str, str]:
-    result: dict[str, str] = {}
+def _read_mock_case(path: Path) -> dict[str, Any]:
+    if path.suffix == ".json":
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else {}
+
+    result: dict[str, Any] = {}
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or ":" not in line:
@@ -77,6 +82,13 @@ def run_mock_graph(
     output_dir: str,
     run_id: str | None = None,
     llm_provider_config_path: str | None = None,
+    auto_codex_handoff: bool = False,
+    codex_bin: str = "codex",
+    codex_model: str | None = None,
+    codex_timeout_seconds: int = 900,
+    verification_timeout_seconds: int = 60,
+    force_codex_handoff: bool = False,
+    dry_run_codex: bool = False,
 ) -> dict[str, Any]:
     case_config_path = Path(case_path)
     requested_output_dir = Path(output_dir)
@@ -97,6 +109,13 @@ def run_mock_graph(
             checkpoint_backend="sqlite",
             checkpoint_db_path=str(checkpoint_db_path),
             llm_provider_config_path=llm_provider_config_path,
+            auto_codex_handoff=auto_codex_handoff,
+            codex_bin=codex_bin,
+            codex_model=codex_model,
+            codex_timeout_seconds=codex_timeout_seconds,
+            verification_timeout_seconds=verification_timeout_seconds,
+            force_codex_handoff=force_codex_handoff,
+            dry_run_codex=dry_run_codex,
         )
         app = compile_analysis_graph(checkpointer)
         config = {"configurable": {"thread_id": state["checkpoint_thread_id"]}}
@@ -116,6 +135,13 @@ def main() -> None:
         default=None,
         help="Optional explicit provider config path. Omit to use deterministic agents.",
     )
+    parser.add_argument("--auto-codex-handoff", action="store_true")
+    parser.add_argument("--codex-bin", default="codex")
+    parser.add_argument("--codex-model", default=None)
+    parser.add_argument("--codex-timeout-seconds", type=int, default=900)
+    parser.add_argument("--verification-timeout-seconds", type=int, default=60)
+    parser.add_argument("--force-codex-handoff", action="store_true")
+    parser.add_argument("--dry-run-codex", action="store_true")
     args = parser.parse_args()
     try:
         result = run_mock_graph(
@@ -123,6 +149,13 @@ def main() -> None:
             output_dir=args.output_dir,
             run_id=args.run_id,
             llm_provider_config_path=args.llm_provider_config,
+            auto_codex_handoff=args.auto_codex_handoff,
+            codex_bin=args.codex_bin,
+            codex_model=args.codex_model,
+            codex_timeout_seconds=args.codex_timeout_seconds,
+            verification_timeout_seconds=args.verification_timeout_seconds,
+            force_codex_handoff=args.force_codex_handoff,
+            dry_run_codex=args.dry_run_codex,
         )
     except FileExistsError as exc:
         parser.exit(status=2, message=f"error: {exc}\n")

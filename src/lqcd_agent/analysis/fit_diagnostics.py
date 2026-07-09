@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -162,11 +163,161 @@ def _diagnose_fit_summary(path: Path) -> dict[str, Any]:
     }
 
 
+def _is_finite_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
+
+
+def _diagnose_effective_mass_estimates(path: Path) -> dict[str, Any]:
+    evidence = [{"path": str(path), "field": "exists", "value": path.exists()}]
+    warnings: list[dict[str, Any]] = []
+    findings: list[str] = []
+    recommended_checks: list[str] = []
+    if not path.exists():
+        return {
+            "status": "not_found",
+            "summary": "No effective_mass_estimates.json artifact was found.",
+            "evidence": evidence,
+            "findings": findings,
+            "warnings": warnings,
+            "recommended_checks": recommended_checks,
+        }
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        warnings.append(
+            _warning(
+                path=path,
+                field="$",
+                value=f"JSONDecodeError: {exc.msg}",
+                code="invalid_effective_mass_json",
+                severity="severe",
+                message="effective_mass_estimates.json is not valid JSON.",
+            )
+        )
+        return {
+            "status": "severe",
+            "summary": "Effective-mass estimates could not be parsed.",
+            "evidence": evidence,
+            "findings": findings,
+            "warnings": warnings,
+            "recommended_checks": ["Regenerate effective_mass_estimates.json before decision coordination."],
+        }
+
+    if not isinstance(payload, dict):
+        warnings.append(
+            _warning(
+                path=path,
+                field="$",
+                value=type(payload).__name__,
+                code="invalid_effective_mass_payload",
+                severity="severe",
+                message="effective_mass_estimates.json must contain a JSON object.",
+            )
+        )
+        return {
+            "status": "severe",
+            "summary": "Effective-mass artifact has an invalid shape.",
+            "evidence": evidence,
+            "findings": findings,
+            "warnings": warnings,
+            "recommended_checks": ["Regenerate effective_mass_estimates.json before decision coordination."],
+        }
+
+    estimates = payload.get("effective_mass_estimates")
+    diagnostic_flags = payload.get("diagnostic_flags", [])
+    evidence.extend(
+        [
+            {"path": str(path), "field": "status", "value": payload.get("status")},
+            {"path": str(path), "field": "program", "value": payload.get("program")},
+            {
+                "path": str(path),
+                "field": "diagnostic_flags",
+                "value": diagnostic_flags if isinstance(diagnostic_flags, list) else [],
+            },
+            {
+                "path": str(path),
+                "field": "effective_mass_estimates_count",
+                "value": len(estimates) if isinstance(estimates, list) else None,
+            },
+        ]
+    )
+    if not isinstance(estimates, list):
+        warnings.append(
+            _warning(
+                path=path,
+                field="effective_mass_estimates",
+                value=type(estimates).__name__,
+                code="invalid_effective_mass_estimates",
+                severity="severe",
+                message="effective_mass_estimates must be a list.",
+            )
+        )
+        estimates = []
+
+    for index, estimate in enumerate(estimates):
+        field = f"effective_mass_estimates[{index}]"
+        if not isinstance(estimate, dict):
+            warnings.append(
+                _warning(
+                    path=path,
+                    field=field,
+                    value=type(estimate).__name__,
+                    code="invalid_effective_mass_row",
+                    severity="severe",
+                    message="Each effective-mass estimate must be an object.",
+                )
+            )
+            continue
+        value = estimate.get("effective_mass")
+        if not _is_finite_number(value):
+            warnings.append(
+                _warning(
+                    path=path,
+                    field=f"{field}.effective_mass",
+                    value=value,
+                    code="invalid_effective_mass_value",
+                    severity="severe",
+                    message="Each effective_mass value must be finite numeric evidence.",
+                )
+            )
+
+    if isinstance(diagnostic_flags, list):
+        for index, flag in enumerate(diagnostic_flags):
+            severity = "severe" if "severe" in str(flag).lower() or "invalid" in str(flag).lower() else "warning"
+            warnings.append(
+                _warning(
+                    path=path,
+                    field=f"diagnostic_flags[{index}]",
+                    value=flag,
+                    code="upstream_diagnostic_flag",
+                    severity=severity,
+                    message="Effective-mass analysis artifact carries an upstream diagnostic flag.",
+                )
+            )
+
+    if estimates:
+        findings.append(f"Found {len(estimates)} effective-mass estimate(s).")
+    status = "severe" if any(warning["severity"] == "severe" for warning in warnings) else "warning" if warnings else "pass"
+    return {
+        "status": status,
+        "summary": "Effective-mass diagnostics found warnings." if warnings else "Effective-mass diagnostics passed.",
+        "evidence": evidence,
+        "findings": findings,
+        "warnings": warnings,
+        "recommended_checks": recommended_checks,
+    }
+
+
 def diagnose_fit_outputs(analysis_outputs_dir: str | Path) -> dict[str, Any]:
     output_dir = Path(analysis_outputs_dir)
     fit_summary = _diagnose_fit_summary(output_dir / "fit_summary.json")
     if fit_summary["status"] != "not_found":
         return fit_summary
+
+    effective_mass = _diagnose_effective_mass_estimates(output_dir / "effective_mass_estimates.json")
+    if effective_mass["status"] != "not_found":
+        return effective_mass
 
     artifacts = _discover_fit_artifacts(output_dir)
     evidence = [

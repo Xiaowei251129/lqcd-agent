@@ -1,4 +1,4 @@
-"""Standard-library HTTP server for the local scientific chat demo."""
+"""Standard-library HTTP server for the local multi-agent run console."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import json
 import mimetypes
 import sys
 import tempfile
+import threading
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -19,12 +20,24 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from lqcd_agent.agents.analysis_engineer import read_case_config
+from lqcd_agent.graph.approval_packet import (
+    APPROVAL_PACKET_FILENAME,
+    APPROVAL_SCHEMA_VERSION,
+    DECISION_OPTIONS,
+    HUMAN_DECISION_FILENAME,
+    read_flat_human_decision_yaml,
+)
+from lqcd_agent.graph.nodes import human_approval_gate_node, memory_report_node
 from lqcd_agent.graph.run_graph import run_mock_graph
+from lqcd_agent.graph.routing import route_after_human_approval_gate
 
 
 STATIC_ROOT = Path(__file__).resolve().parent / "static"
 DEFAULT_OUTPUT_ROOT = Path("/private/tmp/lqcd-agent-demo-ui")
 CASE_CONFIGS_ROOT = REPO_ROOT / "configs" / "cases"
+GENERATED_CONFIG_DIRNAME = "_generated_case_configs"
+RUN_JOBS: dict[tuple[str, str], dict[str, Any]] = {}
+RUN_JOBS_LOCK = threading.Lock()
 NODE_LABELS = {
     "START": "Start",
     "method_planner": "Method Planner",
@@ -48,6 +61,10 @@ class DemoServerError(Exception):
 
 def utc_run_prefix() -> str:
     return datetime.now(timezone.utc).strftime("ui_%Y%m%d_%H%M%S_%f")
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def read_json_file(path: Path) -> dict[str, Any] | None:
@@ -80,6 +97,86 @@ def case_config_record(config_id: str) -> dict[str, Any]:
         if config["config_id"] == config_id or config["case_id"] == config_id:
             return config
     raise DemoServerError(HTTPStatus.NOT_FOUND, f"Unknown case config: {config_id}")
+
+
+def as_string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    return [str(value)]
+
+
+def case_config_preview(path: str | Path) -> dict[str, Any]:
+    config_path = Path(path)
+    payload = read_case_config(config_path)
+    case_id = str(payload.get("case_id", config_path.stem))
+    commands = as_string_list(payload.get("analysis_commands") or payload.get("analysis_command"))
+    expected_outputs = as_string_list(payload.get("expected_outputs") or payload.get("analysis_expected_outputs"))
+    warnings: list[str] = []
+    if not payload.get("case_id"):
+        warnings.append("case_id is missing; the filename will be used as a fallback.")
+    if not payload.get("physics_goal"):
+        warnings.append("physics_goal is missing.")
+    if not commands:
+        warnings.append("analysis_commands is missing; Analysis Engineer will use its default mock command.")
+    if not expected_outputs:
+        warnings.append("expected_outputs is missing; Analysis Engineer will use its default expected output.")
+    return {
+        "case_id": case_id,
+        "config_name": config_path.name,
+        "path": str(config_path),
+        "physics_goal": payload.get("physics_goal"),
+        "source_kind": payload.get("source_kind"),
+        "analysis_commands": commands,
+        "expected_outputs": expected_outputs,
+        "warnings": warnings,
+    }
+
+
+def generated_config_root(output_root: str | Path) -> Path:
+    path = Path(output_root) / GENERATED_CONFIG_DIRNAME
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def write_generated_case_config(*, config_text: str, output_root: str | Path) -> Path:
+    text = config_text.strip()
+    if not text:
+        raise DemoServerError(HTTPStatus.BAD_REQUEST, "Case config text is empty.")
+    root = generated_config_root(output_root)
+    temp_path = root / f"pasted_{utc_run_prefix()}.yaml"
+    temp_path.write_text(text + "\n", encoding="utf-8")
+    preview = case_config_preview(temp_path)
+    case_id = str(preview["case_id"]).replace("/", "_").replace("..", "_")
+    final_path = root / f"{case_id}_{utc_run_prefix()}.yaml"
+    temp_path.replace(final_path)
+    return final_path
+
+
+def resolve_case_config_path(
+    *,
+    output_root: str | Path,
+    config_id: str | None = None,
+    config_text: str | None = None,
+) -> Path:
+    if config_text and config_text.strip():
+        return write_generated_case_config(config_text=config_text, output_root=output_root)
+    if not config_id:
+        raise DemoServerError(HTTPStatus.BAD_REQUEST, "Missing case config.")
+    record = case_config_record(config_id)
+    return Path(str(record["path"]))
+
+
+def validate_case_config_request(*, output_root: str | Path, body: dict[str, Any]) -> dict[str, Any]:
+    config_path = resolve_case_config_path(
+        output_root=output_root,
+        config_id=body.get("config_id") or body.get("case_id"),
+        config_text=body.get("config_text"),
+    )
+    return {"config": case_config_preview(config_path)}
 
 
 def artifact_url(path: str | None) -> str | None:
@@ -120,6 +217,8 @@ def artifact_entries_for_run(run_dir: Path, graph_state: dict[str, Any], checkli
         "decision_log": graph_state.get("decision_log_path") or str(run_dir / "decision_log.json"),
         "memory_update": graph_state.get("memory_update_path") or str(run_dir / "memory_update.json"),
         "final_report": graph_state.get("final_report_path") or str(run_dir / "final_report.md"),
+        "approval_packet": str(run_dir / "approval_packet" / APPROVAL_PACKET_FILENAME),
+        "human_decision": str(run_dir / "approval_packet" / HUMAN_DECISION_FILENAME),
         "graph_state": str(run_dir / "graph_state.json"),
     }
     for name, raw_path in known_paths.items():
@@ -164,6 +263,39 @@ def review_warning_codes(run_dir: Path) -> list[str]:
     return [str(warning.get("code")) for warning in payload["warnings"] if isinstance(warning, dict)]
 
 
+def approval_status(run_dir: Path) -> dict[str, Any]:
+    packet_path = run_dir / "approval_packet" / APPROVAL_PACKET_FILENAME
+    decision_path = run_dir / "approval_packet" / HUMAN_DECISION_FILENAME
+    packet = read_json_file(packet_path)
+    decision_payload: dict[str, Any] | None = None
+    if decision_path.exists():
+        try:
+            decision_payload = read_flat_human_decision_yaml(decision_path)
+        except (json.JSONDecodeError, ValueError):
+            decision_payload = {"decision": None, "invalid": True}
+    decision = decision_payload.get("decision") if decision_payload else None
+    return {
+        "required": bool(packet),
+        "pending": bool(packet and not decision),
+        "packet": packet,
+        "decision": decision_payload,
+        "packet_path": str(packet_path) if packet_path.exists() else None,
+        "decision_path": str(decision_path) if decision_path.exists() else None,
+    }
+
+
+def final_report_summary(final_report: str) -> str:
+    lines: list[str] = []
+    for raw_line in final_report.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        lines.append(line)
+        if len(lines) >= 10:
+            break
+    return "\n".join(lines)
+
+
 def run_dir_for(output_root: Path, case_id: str, run_id: str) -> Path:
     return output_root / case_id / run_id
 
@@ -179,6 +311,7 @@ def dashboard_payload(*, output_root: str | Path, case_id: str, run_id: str) -> 
     final_report_path = run_dir / "final_report.md"
     final_report = final_report_path.read_text(encoding="utf-8") if final_report_path.exists() else ""
     actual = checklist.get("actual", {}) if checklist else {}
+    approval = approval_status(run_dir)
 
     return {
         "case_id": case_id,
@@ -196,9 +329,13 @@ def dashboard_payload(*, output_root: str | Path, case_id: str, run_id: str) -> 
             "warning_codes": actual.get("warning_codes") or review_warning_codes(run_dir),
             "approval_packet": actual.get("approval_packet") if actual else (run_dir / "approval_packet" / "approval_packet.json").exists(),
         },
+        "events": graph_state.get("event_log", []),
+        "route_decisions": graph_state.get("route_decisions", []),
+        "approval": approval,
         "graph_state": graph_state,
         "checklist": checklist,
         "final_report": final_report,
+        "final_report_summary": final_report_summary(final_report),
         "artifacts": artifact_entries_for_run(run_dir, graph_state, checklist),
     }
 
@@ -288,6 +425,155 @@ def run_question_against_config(
     return dashboard_payload(output_root=output_root, case_id=case_id, run_id=run_id)
 
 
+def run_status_payload(*, output_root: str | Path, case_id: str, run_id: str) -> dict[str, Any]:
+    job_key = (case_id, run_id)
+    with RUN_JOBS_LOCK:
+        job = dict(RUN_JOBS.get(job_key, {}))
+    run_dir = run_dir_for(Path(output_root), case_id, run_id)
+    if (run_dir / "graph_state.json").exists():
+        payload = dashboard_payload(output_root=output_root, case_id=case_id, run_id=run_id)
+        payload["job_status"] = job.get("status", "completed")
+        if job.get("error"):
+            payload["job_error"] = job["error"]
+        return payload
+    if job:
+        return {
+            "case_id": case_id,
+            "run_id": run_id,
+            "run_dir": str(run_dir),
+            "job_status": job.get("status", "running"),
+            "summary": {"status": job.get("status", "running"), "route_nodes": []},
+            "events": [],
+            "route_decisions": [],
+            "approval": {"required": False, "pending": False, "packet": None, "decision": None},
+            "artifacts": [],
+            "final_report": "",
+            "final_report_summary": "",
+            "job_error": job.get("error"),
+        }
+    raise DemoServerError(HTTPStatus.NOT_FOUND, f"Run not found: {case_id}/{run_id}")
+
+
+def start_graph_run(
+    *,
+    output_root: str | Path,
+    config_id: str | None = None,
+    config_text: str | None = None,
+    run_id_prefix: str | None = None,
+    llm_provider_config_path: str | Path | None = None,
+) -> dict[str, Any]:
+    config_path = resolve_case_config_path(output_root=output_root, config_id=config_id, config_text=config_text)
+    preview = case_config_preview(config_path)
+    case_id = str(preview["case_id"])
+    run_id = f"{run_id_prefix or utc_run_prefix()}_{case_id}"
+    job_key = (case_id, run_id)
+    with RUN_JOBS_LOCK:
+        RUN_JOBS[job_key] = {
+            "status": "running",
+            "case_id": case_id,
+            "run_id": run_id,
+            "config_path": str(config_path),
+            "started_at": utc_now(),
+        }
+
+    def run_worker() -> None:
+        try:
+            run_mock_graph(
+                case_path=str(config_path),
+                output_dir=str(output_root),
+                run_id=run_id,
+                llm_provider_config_path=str(llm_provider_config_path) if llm_provider_config_path else None,
+            )
+            with RUN_JOBS_LOCK:
+                RUN_JOBS[job_key]["status"] = "completed"
+                RUN_JOBS[job_key]["completed_at"] = utc_now()
+        except Exception as exc:
+            with RUN_JOBS_LOCK:
+                RUN_JOBS[job_key]["status"] = "failed"
+                RUN_JOBS[job_key]["error"] = str(exc)
+                RUN_JOBS[job_key]["completed_at"] = utc_now()
+
+    thread = threading.Thread(target=run_worker, daemon=True)
+    thread.start()
+    return run_status_payload(output_root=output_root, case_id=case_id, run_id=run_id)
+
+
+def yaml_scalar(value: Any) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    text = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{text}"'
+
+
+def write_human_decision_file(
+    *,
+    path: Path,
+    run_id: str,
+    case_id: str,
+    decision: str,
+    conditions: str = "",
+    reason: str = "",
+    decided_by: str = "",
+) -> None:
+    allowed = {str(option["decision"]) for option in DECISION_OPTIONS}
+    if decision not in allowed:
+        raise DemoServerError(HTTPStatus.BAD_REQUEST, f"Unsupported human decision: {decision}")
+    payload = {
+        "schema_version": APPROVAL_SCHEMA_VERSION,
+        "run_id": run_id,
+        "case_id": case_id,
+        "decision": decision,
+        "conditions": conditions,
+        "reason": reason,
+        "decided_by": decided_by,
+        "decided_at": utc_now(),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(f"{key}: {yaml_scalar(value)}" for key, value in payload.items()) + "\n", encoding="utf-8")
+
+
+def apply_human_decision(
+    *,
+    output_root: str | Path,
+    case_id: str,
+    run_id: str,
+    decision: str,
+    conditions: str = "",
+    reason: str = "",
+    decided_by: str = "",
+) -> dict[str, Any]:
+    run_dir = run_dir_for(Path(output_root), case_id, run_id)
+    graph_state = read_json_file(run_dir / "graph_state.json")
+    if graph_state is None:
+        raise DemoServerError(HTTPStatus.NOT_FOUND, f"Run not found: {case_id}/{run_id}")
+    packet_path = run_dir / "approval_packet" / APPROVAL_PACKET_FILENAME
+    if not packet_path.exists():
+        raise DemoServerError(HTTPStatus.BAD_REQUEST, "This run does not have an approval packet.")
+    decision_path = run_dir / "approval_packet" / HUMAN_DECISION_FILENAME
+    write_human_decision_file(
+        path=decision_path,
+        run_id=run_id,
+        case_id=case_id,
+        decision=decision,
+        conditions=conditions,
+        reason=reason,
+        decided_by=decided_by,
+    )
+    state = dict(graph_state)
+    state["output_dir"] = str(run_dir)
+    state["human_decision_path"] = str(decision_path)
+    state["approval_packet_dir"] = str(packet_path.parent)
+    state = human_approval_gate_node(state)
+    route = route_after_human_approval_gate(state)
+    if route == "memory_report":
+        state = memory_report_node(state)
+    return dashboard_payload(output_root=output_root, case_id=case_id, run_id=run_id)
+
+
 def chat_response(
     *,
     message: str,
@@ -350,9 +636,7 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
                 parts = [part for part in parsed.path.split("/") if part]
                 if len(parts) != 4:
                     raise DemoServerError(HTTPStatus.NOT_FOUND, "Expected /api/runs/{case_id}/{run_id}.")
-                self.write_json(
-                    dashboard_payload(output_root=self.server.output_root, case_id=parts[2], run_id=parts[3])
-                )
+                self.write_json(run_status_payload(output_root=self.server.output_root, case_id=parts[2], run_id=parts[3]))
                 return
             if parsed.path == "/artifacts":
                 query = parse_qs(parsed.query)
@@ -371,6 +655,27 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
         try:
             parsed = urlparse(self.path)
             body = self.read_json_body()
+            if parsed.path == "/api/configs/validate":
+                self.write_json(validate_case_config_request(output_root=self.server.output_root, body=body))
+                return
+            if parsed.path.startswith("/api/runs/") and parsed.path.endswith("/human-decision"):
+                parts = [part for part in parsed.path.split("/") if part]
+                if len(parts) != 5:
+                    raise DemoServerError(
+                        HTTPStatus.NOT_FOUND,
+                        "Expected /api/runs/{case_id}/{run_id}/human-decision.",
+                    )
+                payload = apply_human_decision(
+                    output_root=self.server.output_root,
+                    case_id=parts[2],
+                    run_id=parts[3],
+                    decision=str(body.get("decision") or ""),
+                    conditions=str(body.get("conditions") or ""),
+                    reason=str(body.get("reason") or ""),
+                    decided_by=str(body.get("decided_by") or ""),
+                )
+                self.write_json(payload)
+                return
             if parsed.path == "/api/chat":
                 message = str(body.get("message", ""))
                 payload = chat_response(
@@ -383,17 +688,14 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
                 self.write_json(payload, status=HTTPStatus.CREATED)
                 return
             if parsed.path == "/api/runs":
-                config_id = str(body.get("config_id") or body.get("case_id") or "")
-                if not config_id:
-                    raise DemoServerError(HTTPStatus.BAD_REQUEST, "Missing config_id.")
-                payload = run_question_against_config(
-                    question=str(body.get("message") or "Run selected case config."),
-                    config_id=config_id,
+                payload = start_graph_run(
+                    config_id=body.get("config_id") or body.get("case_id"),
+                    config_text=body.get("config_text"),
                     output_root=self.server.output_root,
                     run_id_prefix=body.get("run_id_prefix"),
                     llm_provider_config_path=body.get("llm_provider_config_path") or self.server.llm_provider_config_path,
                 )
-                self.write_json(payload, status=HTTPStatus.CREATED)
+                self.write_json(payload, status=HTTPStatus.ACCEPTED)
                 return
             raise DemoServerError(HTTPStatus.NOT_FOUND, "Unknown endpoint.")
         except DemoServerError as exc:
@@ -490,7 +792,7 @@ def run_once_smoke(output_root: str | Path) -> dict[str, Any]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run the local Phase 10C scientific chat demo.")
+    parser = argparse.ArgumentParser(description="Run the local LQCD multi-agent console.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--output-root", default=str(DEFAULT_OUTPUT_ROOT))
@@ -515,7 +817,7 @@ def main() -> None:
         llm_provider_config_path=args.llm_provider_config,
     )
     url = f"http://{args.host}:{server.server_address[1]}"
-    print(f"Serving Phase 10C chat demo at {url}")
+    print(f"Serving LQCD multi-agent console at {url}")
     print(f"Writing demo artifacts under {Path(args.output_root)}")
     try:
         server.serve_forever()

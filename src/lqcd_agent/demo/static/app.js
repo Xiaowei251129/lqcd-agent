@@ -1,10 +1,11 @@
 const state = {
   configs: [],
-  busy: false,
   currentRun: null,
+  pollTimer: null,
 };
 
 const nodeLabels = {
+  START: "Start",
   method_planner: "Method Planner",
   analysis_engineer: "Analysis Engineer",
   scientific_reviewer: "Scientific Reviewer",
@@ -15,43 +16,36 @@ const nodeLabels = {
 };
 
 const els = {
-  caseSelect: document.querySelector("#caseSelect"),
-  chatForm: document.querySelector("#chatForm"),
-  questionInput: document.querySelector("#questionInput"),
-  sendButton: document.querySelector("#sendButton"),
-  messages: document.querySelector("#messages"),
-  statusText: document.querySelector("#statusText"),
-  summaryGrid: document.querySelector("#summaryGrid"),
+  configSelect: document.querySelector("#configSelect"),
+  configFile: document.querySelector("#configFile"),
+  configText: document.querySelector("#configText"),
+  validateButton: document.querySelector("#validateButton"),
+  runButton: document.querySelector("#runButton"),
+  configPreview: document.querySelector("#configPreview"),
+  runStatus: document.querySelector("#runStatus"),
   routeTimeline: document.querySelector("#routeTimeline"),
+  eventList: document.querySelector("#eventList"),
+  summaryGrid: document.querySelector("#summaryGrid"),
+  reportSummary: document.querySelector("#reportSummary"),
   artifactLinks: document.querySelector("#artifactLinks"),
+  approvalButton: document.querySelector("#approvalButton"),
+  approvalDialog: document.querySelector("#approvalDialog"),
+  approvalForm: document.querySelector("#approvalForm"),
+  approvalDetails: document.querySelector("#approvalDetails"),
+  decisionSelect: document.querySelector("#decisionSelect"),
+  decisionConditions: document.querySelector("#decisionConditions"),
+  decisionReason: document.querySelector("#decisionReason"),
+  decidedBy: document.querySelector("#decidedBy"),
+  cancelApproval: document.querySelector("#cancelApproval"),
 };
 
 function escapeHtml(value) {
-  return String(value)
+  return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
-}
-
-function setBusy(value, text) {
-  state.busy = value;
-  els.sendButton.disabled = value;
-  els.questionInput.disabled = value;
-  els.caseSelect.disabled = value;
-  els.statusText.textContent = text || (value ? "Running" : "Ready");
-}
-
-function addMessage(role, text) {
-  const article = document.createElement("article");
-  article.className = `message ${role}`;
-  const bubble = document.createElement("div");
-  bubble.className = "bubble";
-  bubble.textContent = text;
-  article.appendChild(bubble);
-  els.messages.appendChild(article);
-  els.messages.scrollTop = els.messages.scrollHeight;
 }
 
 async function requestJson(url, options = {}) {
@@ -66,10 +60,22 @@ async function requestJson(url, options = {}) {
   return payload;
 }
 
-async function loadCases() {
+function selectedRequestBody() {
+  const configText = els.configText.value.trim();
+  return configText ? { config_text: configText } : { config_id: els.configSelect.value };
+}
+
+function setBusy(isBusy) {
+  els.runButton.disabled = isBusy;
+  els.validateButton.disabled = isBusy;
+  els.configSelect.disabled = isBusy;
+  els.configText.disabled = isBusy;
+}
+
+async function loadConfigs() {
   const payload = await requestJson("/api/configs");
   state.configs = payload.configs || [];
-  els.caseSelect.innerHTML = state.configs
+  els.configSelect.innerHTML = state.configs
     .map(
       (item) =>
         `<option value="${escapeHtml(item.config_id)}">${escapeHtml(item.label)} - ${escapeHtml(
@@ -79,33 +85,61 @@ async function loadCases() {
     .join("");
   const golden = state.configs.find((item) => item.config_id === "l64c64a076_m140");
   if (golden) {
-    els.caseSelect.value = golden.config_id;
+    els.configSelect.value = golden.config_id;
   }
 }
 
-async function submitQuestion(event) {
-  event.preventDefault();
-  const question = els.questionInput.value.trim();
-  if (!question) {
-    return;
-  }
-  addMessage("user", question);
-  els.questionInput.value = "";
-  setBusy(true, "Running LangGraph");
+function renderConfigPreview(config) {
+  const warnings = config.warnings?.length ? `\nWarnings:\n- ${config.warnings.join("\n- ")}` : "";
+  els.configPreview.textContent = [
+    `case_id: ${config.case_id}`,
+    `physics_goal: ${config.physics_goal || "missing"}`,
+    `analysis_commands: ${(config.analysis_commands || []).join(", ") || "default"}`,
+    `expected_outputs: ${(config.expected_outputs || []).join(", ") || "default"}`,
+    warnings,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+async function validateConfig() {
+  els.configPreview.textContent = "Validating...";
+  const payload = await requestJson("/api/configs/validate", {
+    method: "POST",
+    body: JSON.stringify(selectedRequestBody()),
+  });
+  renderConfigPreview(payload.config);
+}
+
+async function startRun() {
+  clearInterval(state.pollTimer);
+  setBusy(true);
+  els.runStatus.textContent = "Starting";
+  els.reportSummary.textContent = "Run is starting...";
+  els.artifactLinks.innerHTML = "";
+  const payload = await requestJson("/api/runs", {
+    method: "POST",
+    body: JSON.stringify(selectedRequestBody()),
+  });
+  renderRun(payload);
+  state.pollTimer = setInterval(() => pollRun(payload.case_id, payload.run_id), 1200);
+}
+
+async function pollRun(caseId, runId) {
   try {
-    const payload = await requestJson("/api/chat", {
-      method: "POST",
-      body: JSON.stringify({
-        message: question,
-        config_id: els.caseSelect.value,
-      }),
-    });
-    addMessage("assistant", payload.content);
-    renderEvidence(payload);
-    setBusy(false, "Ready");
+    const payload = await requestJson(`/api/runs/${encodeURIComponent(caseId)}/${encodeURIComponent(runId)}`);
+    renderRun(payload);
+    const status = payload.summary?.status;
+    const jobStatus = payload.job_status;
+    if (jobStatus === "failed" || ["success", "pending", "halted", "failed"].includes(status)) {
+      clearInterval(state.pollTimer);
+      setBusy(false);
+    }
   } catch (error) {
-    addMessage("assistant", error.message || String(error));
-    setBusy(false, "Error");
+    clearInterval(state.pollTimer);
+    setBusy(false);
+    els.runStatus.textContent = "Error";
+    els.reportSummary.textContent = error.message || String(error);
   }
 }
 
@@ -115,17 +149,25 @@ function pill(value) {
   return `<span class="pill ${cls}">${escapeHtml(text)}</span>`;
 }
 
-function renderEvidence(payload) {
-  const run = payload.run;
-  state.currentRun = run;
-  if (!run) {
-    return;
-  }
-  const summary = run.summary || {};
+function renderRun(payload) {
+  state.currentRun = payload;
+  const summary = payload.summary || {};
+  els.runStatus.textContent = payload.job_status || summary.status || "running";
+  renderSummary(payload);
+  renderRoute(summary.route_nodes || []);
+  renderEvents(payload.events || []);
+  renderArtifacts(payload.artifacts || []);
+  els.reportSummary.textContent = payload.final_report_summary || payload.job_error || "Report not available yet.";
+  const needsApproval = payload.approval?.pending;
+  els.approvalButton.classList.toggle("hidden", !needsApproval);
+}
+
+function renderSummary(payload) {
+  const summary = payload.summary || {};
   const rows = [
-    ["Case", run.case_id],
-    ["Run", run.run_id],
-    ["Status", summary.status],
+    ["Case", payload.case_id],
+    ["Run", payload.run_id],
+    ["Status", summary.status || payload.job_status],
     ["Risk", summary.risk_level],
     ["Action", summary.recommended_action],
     ["Approval", summary.human_approval_required ? "required" : "not required"],
@@ -134,42 +176,114 @@ function renderEvidence(payload) {
   els.summaryGrid.innerHTML = rows
     .map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${pill(value)}</dd>`)
     .join("");
-  renderRoute(summary.route_nodes || []);
-  renderArtifacts(run.artifacts || []);
 }
 
 function renderRoute(routeNodes) {
-  els.routeTimeline.innerHTML = routeNodes.length
-    ? routeNodes
-        .map((node) => `<li><span>${escapeHtml(nodeLabels[node] || node)}</span></li>`)
+  const nodes = routeNodes.length ? routeNodes : ["START"];
+  els.routeTimeline.innerHTML = nodes
+    .map((node) => `<li><span>${escapeHtml(nodeLabels[node] || node)}</span></li>`)
+    .join("");
+}
+
+function renderEvents(events) {
+  const visible = events.slice(-8).reverse();
+  els.eventList.innerHTML = visible.length
+    ? visible
+        .map(
+          (event) =>
+            `<li><strong>${escapeHtml(nodeLabels[event.node] || event.node)}</strong><span>${escapeHtml(
+              event.summary || event.kind || ""
+            )}</span></li>`
+        )
         .join("")
-    : "<li><span>No route recorded</span></li>";
+    : "<li><span>No events yet.</span></li>";
 }
 
 function renderArtifacts(artifacts) {
-  const visible = artifacts.filter((item) =>
-    ["method_plan", "run_result", "scientific_review", "decision_log", "memory_update", "final_report", "checklist"].includes(
-      item.name
-    )
-  );
+  const visibleNames = new Set([
+    "method_plan",
+    "run_result",
+    "scientific_review",
+    "decision_log",
+    "approval_packet",
+    "human_decision",
+    "memory_update",
+    "final_report",
+    "graph_state",
+  ]);
+  const visible = artifacts.filter((item) => visibleNames.has(item.name));
   els.artifactLinks.innerHTML = visible.length
     ? visible
         .map((item) => {
-          const disabled = item.exists ? "" : "missing";
           const href = item.exists ? item.url : "#";
-          return `<a class="${disabled}" href="${escapeHtml(href)}" target="_blank" rel="noreferrer">${escapeHtml(
+          const cls = item.exists ? "" : "missing";
+          return `<a class="${cls}" href="${escapeHtml(href)}" target="_blank" rel="noreferrer">${escapeHtml(
             item.name
           )}</a>`;
         })
         .join("")
-    : "<span>No artifacts yet</span>";
+    : "<span>No artifacts yet.</span>";
 }
 
-els.chatForm.addEventListener("submit", submitQuestion);
-els.questionInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-    els.chatForm.requestSubmit();
+function openApprovalDialog() {
+  const approval = state.currentRun?.approval;
+  const packet = approval?.packet;
+  if (!packet) {
+    return;
+  }
+  const requested = packet.requested_decision || {};
+  els.approvalDetails.innerHTML = `
+    <p><strong>Risk:</strong> ${escapeHtml(requested.risk_level)}</p>
+    <p><strong>Recommended action:</strong> ${escapeHtml(requested.recommended_action)}</p>
+    <p><strong>Summary:</strong> ${escapeHtml(packet.human_summary || packet.summary || "")}</p>
+  `;
+  const options = packet.decision_options || [];
+  els.decisionSelect.innerHTML = options
+    .map((option) => `<option value="${escapeHtml(option.decision)}">${escapeHtml(option.decision)}</option>`)
+    .join("");
+  els.approvalDialog.showModal();
+}
+
+async function submitHumanDecision(event) {
+  event.preventDefault();
+  const run = state.currentRun;
+  if (!run) {
+    return;
+  }
+  const payload = await requestJson(
+    `/api/runs/${encodeURIComponent(run.case_id)}/${encodeURIComponent(run.run_id)}/human-decision`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        decision: els.decisionSelect.value,
+        conditions: els.decisionConditions.value,
+        reason: els.decisionReason.value,
+        decided_by: els.decidedBy.value,
+      }),
+    }
+  );
+  els.approvalDialog.close();
+  renderRun(payload);
+}
+
+els.validateButton.addEventListener("click", () => validateConfig().catch((error) => (els.configPreview.textContent = error.message)));
+els.runButton.addEventListener("click", () => startRun().catch((error) => {
+  setBusy(false);
+  els.runStatus.textContent = "Error";
+  els.reportSummary.textContent = error.message || String(error);
+}));
+els.configFile.addEventListener("change", async () => {
+  const file = els.configFile.files?.[0];
+  if (file) {
+    els.configText.value = await file.text();
   }
 });
+els.approvalButton.addEventListener("click", openApprovalDialog);
+els.cancelApproval.addEventListener("click", () => els.approvalDialog.close());
+els.approvalForm.addEventListener("submit", (event) => submitHumanDecision(event).catch((error) => {
+  els.approvalDetails.textContent = error.message || String(error);
+}));
 
-loadCases().catch((error) => addMessage("assistant", error.message || String(error)));
+loadConfigs().catch((error) => {
+  els.configPreview.textContent = error.message || String(error);
+});

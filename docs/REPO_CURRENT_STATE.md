@@ -20,7 +20,7 @@ Existing source:
 - `src/lqcd_agent/agents/scientific_reviewer.py` provides the standalone deterministic Scientific Reviewer module.
 - `src/lqcd_agent/analysis/` contains correlator, fit, matrix-element, and synthetic benchmark diagnostic/model helpers for the Scientific Reviewer and Phase 10C runner.
 - `src/lqcd_agent/coder/task_packet.py` validates and reads/writes mock coder handoff packets when code is needed.
-- `src/lqcd_agent/coder/codex_handoff.py` reads file-based handoff results without calling Codex programmatically.
+- `src/lqcd_agent/coder/codex_handoff.py` reads file-based handoff results; graph runs can explicitly opt in to automatic local Codex CLI handoff through the worker.
 - `src/lqcd_agent/coder/test_runner.py` runs allowlisted verification commands and writes `tests_status.json`.
 - `src/lqcd_agent/tools/command_runner.py` runs internal mock analysis commands, including the Phase 9 golden mock writer, the exact-allowlisted `analysis:run_synthetic_benchmark:<scenario>` statistical benchmark command, and exact-allowlisted local analysis commands.
 - `src/lqcd_agent/tools/output_validator.py` validates expected mock analysis outputs.

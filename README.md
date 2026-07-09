@@ -87,9 +87,9 @@ bash scripts/run_langgraph_demo.sh
 
 With `--output-dir outputs --run-id phase8_smoke`, the mock case writes to `outputs/mock_lqcd_goal/phase8_smoke/`. `bash scripts/run_langgraph_demo.sh` writes the golden mock demo to `outputs/l64c64a076_m140/<run_id>/` by default and accepts `LQCD_AGENT_OUTPUT_DIR` and `LQCD_AGENT_RUN_ID` overrides. The golden demo intentionally produces high-risk pending artifacts: `approval_packet/`, `memory_update.json` with `accepted_result: false`, and `final_report.md`. Choose an unused explicit `--run-id`; the CLI refuses to reuse a run directory that already contains completed or decision artifacts. `python evaluation/run_evaluation.py` writes actual run artifacts and `evaluation_summary.csv` under `/private/tmp/lqcd-agent-phase8-evaluation` by default, and it refuses to delete existing evaluation run directories unless `--force-clean` is passed. The Phase 10C mock benchmark is network-free and writes run artifacts plus `synthetic_rehearsal_summary.md` under the selected output root; live-provider rehearsal requires `RUN_LIVE_LLM_TESTS=1` and `--provider-config`. Resume and force-overwrite modes for graph runs are deferred to future explicit tickets.
 
-## Local Chat Demo
+## Local Multi-Agent Console
 
-Run the local scientific chat demo with:
+Run the local scientific multi-agent console with:
 
 ```bash
 python -m lqcd_agent.demo.server --host 127.0.0.1 --port 8765
@@ -101,7 +101,7 @@ Then open:
 http://127.0.0.1:8765
 ```
 
-The chat UI asks for a question plus a case config selected from `configs/cases/*.yaml`. The server writes the question into a generated copy of that config as the graph `physics_goal`, runs the existing LangGraph multi-agent system, and answers from the resulting artifacts. If `--llm-provider-config` is omitted, the graph uses deterministic local agents and does not call an external model API. Pass `--llm-provider-config configs/runtime/openai.yaml` or another provider config only after the required API environment variables are available. Actual run artifacts are written under `/private/tmp/lqcd-agent-demo-ui`, with route, risk/action, Human Approval Gate status, memory status, and artifact links shown in a compact evidence panel.
+The console accepts a case config from `configs/cases/*.yaml` or pasted/uploaded YAML, validates the config, starts a real local LangGraph run, polls the graph path, and shows the final risk/action, memory status, report summary, and artifact links. If a run reaches Human Approval Gate, the UI opens a decision modal backed by `approval_packet/07_human_decision.yaml`; `approve_with_conditions` and `reject_or_hold` continue to the Memory/Report node, while rerun/code-change decisions remain pending intents in this mock-first phase. If `--llm-provider-config` is omitted, the graph uses deterministic local agents and does not call an external model API. Pass `--llm-provider-config configs/runtime/openai.yaml` or another provider config only after the required API environment variables are available. Actual run artifacts are written under `/private/tmp/lqcd-agent-demo-ui`.
 
 ## Documentation Map
 

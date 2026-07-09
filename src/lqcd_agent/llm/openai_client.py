@@ -88,6 +88,13 @@ class OpenAIChatProvider:
         }
         if request.response_format == "json_object":
             payload["response_format"] = {"type": "json_object"}
+        elif request.response_format == "json_schema":
+            if request.json_schema is None:
+                raise LiveProviderError("missing_json_schema", "JSON schema response format requires a schema.")
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": request.json_schema,
+            }
 
         url = self.config.api_base.rstrip("/") + "/chat/completions"
         http_request = Request(
@@ -113,6 +120,11 @@ class OpenAIChatProvider:
         if not choices:
             raise LiveProviderError("provider_response_missing_choice", "Provider response did not include choices.")
         first_choice = choices[0]
+        if first_choice.get("finish_reason") == "length":
+            raise LiveProviderError(
+                "finish_reason_length",
+                "Provider stopped because the completion token limit was reached before a complete JSON artifact.",
+            )
         message = first_choice.get("message", {})
         content = message.get("content")
         if not isinstance(content, str):

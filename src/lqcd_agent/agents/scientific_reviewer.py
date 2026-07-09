@@ -104,6 +104,49 @@ def _resolve_matrix_path(
     return analysis_outputs_dir / "synthetic_matrix_elements.json"
 
 
+def _artifact_strings(payload: dict[str, Any] | None, fields: list[str]) -> list[str]:
+    if not payload:
+        return []
+    values: list[str] = []
+    for field in fields:
+        field_value = payload.get(field, [])
+        if isinstance(field_value, list):
+            values.extend(str(value) for value in field_value)
+        elif field_value is not None:
+            values.append(str(field_value))
+    return values
+
+
+def _review_scope(run_result: dict[str, Any] | None, method_plan: dict[str, Any] | None) -> dict[str, Any]:
+    run_artifacts = _artifact_strings(run_result, ["produced_outputs", "expected_outputs"])
+    plan_artifacts = _artifact_strings(method_plan, ["target_observables", "required_outputs"])
+    combined = [value.lower() for value in run_artifacts + plan_artifacts]
+    requires_matrix_elements = any(
+        "synthetic_matrix_elements.json" in value or "matrix_element" in value for value in combined
+    )
+    has_effective_mass = any("effective_mass" in value for value in combined)
+    return {
+        "requires_matrix_element_validation": requires_matrix_elements,
+        "has_effective_mass_outputs": has_effective_mass,
+        "matrix_element_policy": (
+            "run_matrix_element_diagnostics"
+            if requires_matrix_elements
+            else "mark_matrix_element_diagnostics_not_applicable"
+        ),
+    }
+
+
+def _not_applicable_matrix_element_diagnostics() -> dict[str, Any]:
+    return {
+        "status": "not_applicable",
+        "summary": "Matrix-element validation is outside the scope of this case.",
+        "evidence": [],
+        "findings": [],
+        "warnings": [],
+        "recommended_checks": [],
+    }
+
+
 def _unique_strings(values: list[str]) -> list[str]:
     seen: set[str] = set()
     unique: list[str] = []
@@ -138,6 +181,12 @@ def _summary_from_warnings(warnings: list[dict[str, Any]]) -> str:
     if warnings:
         return "Scientific Reviewer found evidence-backed warnings."
     return "Scientific Reviewer completed deterministic diagnostics without warnings."
+
+
+def _lower_confidence(existing: Any, evidence_confidence: str) -> str:
+    confidence_order = {"high": 0, "medium": 1, "low": 2}
+    existing_text = str(existing) if existing in confidence_order else "high"
+    return evidence_confidence if confidence_order[evidence_confidence] > confidence_order[existing_text] else existing_text
 
 
 def _write_report(path: Path, report: dict[str, Any]) -> str:
@@ -254,10 +303,21 @@ def _is_ungrounded_provider_warning(warning: dict[str, Any]) -> bool:
     return all(warning.get(field) in {None, ""} for field in evidence_fields)
 
 
+def _is_out_of_scope_matrix_warning(warning: dict[str, Any]) -> bool:
+    text = " ".join(
+        str(warning.get(field, ""))
+        for field in ["section", "code", "message", "path", "field", "value"]
+        if warning.get(field) is not None
+    ).lower()
+    return "matrix" in text and ("missing" in text or "absent" in text or "synthetic_matrix_elements" in text)
+
+
 def _normalize_provider_review_payload(
     payload: dict[str, Any],
     *,
+    fit_diagnostics: dict[str, Any],
     matrix_summary: dict[str, Any],
+    review_scope: dict[str, Any],
 ) -> dict[str, Any]:
     normalized = dict(payload)
     warnings = normalized.get("warnings", [])
@@ -271,6 +331,27 @@ def _normalize_provider_review_payload(
             and (_is_context_only_provider_warning(warning) or _is_ungrounded_provider_warning(warning))
         )
     ]
+    if fit_diagnostics.get("status") not in {None, "not_found", "not_populated_mvp"}:
+        normalized["fit_diagnostics"] = fit_diagnostics
+        fit_warnings = fit_diagnostics.get("warnings", [])
+        if isinstance(fit_warnings, list):
+            preserved_warnings.extend(warning for warning in fit_warnings if isinstance(warning, dict))
+
+    if not review_scope.get("requires_matrix_element_validation"):
+        preserved_warnings = [
+            warning
+            for warning in preserved_warnings
+            if not (isinstance(warning, dict) and _is_out_of_scope_matrix_warning(warning))
+        ]
+        normalized["warnings"] = preserved_warnings
+        normalized["matrix_element_diagnostics"] = _not_applicable_matrix_element_diagnostics()
+        structured_warnings = [warning for warning in preserved_warnings if isinstance(warning, dict)]
+        normalized["confidence"] = _lower_confidence(
+            normalized.get("confidence"),
+            _confidence_from_warnings(structured_warnings),
+        )
+        return normalized
+
     structured_warnings = [warning for warning in preserved_warnings if isinstance(warning, dict)]
     existing_values = {str(warning.get("value")) for warning in structured_warnings}
     flags = matrix_summary.get("diagnostic_flags", [])
@@ -292,6 +373,11 @@ def _normalize_provider_review_payload(
                 }
             )
     normalized["warnings"] = preserved_warnings
+    structured_warnings = [warning for warning in preserved_warnings if isinstance(warning, dict)]
+    normalized["confidence"] = _lower_confidence(
+        normalized.get("confidence"),
+        _confidence_from_warnings(structured_warnings),
+    )
     return normalized
 
 
@@ -318,8 +404,14 @@ def _run_provider_scientific_reviewer(
         analysis_outputs_dir=resolved_analysis_outputs_dir,
         run_result=run_result,
     )
+    review_scope = _review_scope(run_result, method_plan)
+    fit_diagnostics = diagnose_fit_outputs(resolved_analysis_outputs_dir)
     matrix_payload = _read_json(matrix_path)
-    matrix_summary = _matrix_element_summary(matrix_payload, path=matrix_path)
+    matrix_summary = (
+        _matrix_element_summary(matrix_payload, path=matrix_path)
+        if review_scope["requires_matrix_element_validation"]
+        else {"exists": False, "path": None, "applicable": False}
+    )
     request = build_scientific_reviewer_request(
         run_id=run_id,
         case_id=case_id,
@@ -327,8 +419,10 @@ def _run_provider_scientific_reviewer(
         analysis_outputs_dir=str(resolved_analysis_outputs_dir),
         method_plan_path=str(method_plan_path) if method_plan_path else None,
         run_result_summary=_run_result_summary(run_result, path=run_result_path),
+        fit_diagnostics_summary=fit_diagnostics,
         matrix_element_summary=matrix_summary,
         method_plan_summary=_method_plan_summary(method_plan, path=method_plan_path),
+        review_scope=review_scope,
     )
     try:
         response = provider.generate(request)
@@ -375,7 +469,12 @@ def _run_provider_scientific_reviewer(
         }
 
     assert payload is not None
-    payload = _normalize_provider_review_payload(payload, matrix_summary=matrix_summary)
+    payload = _normalize_provider_review_payload(
+        payload,
+        fit_diagnostics=fit_diagnostics,
+        matrix_summary=matrix_summary,
+        review_scope=review_scope,
+    )
     validation_errors = validate_scientific_review_payload(payload, run_id=run_id, case_id=case_id)
     if validation_errors:
         report = _provider_failure_report(
@@ -448,6 +547,7 @@ def run_scientific_reviewer(
         analysis_outputs_dir=resolved_analysis_outputs_dir,
         run_result=run_result,
     )
+    review_scope = _review_scope(run_result, method_plan)
 
     context_warnings: list[dict[str, Any]] = []
     context_evidence = [
@@ -496,7 +596,11 @@ def run_scientific_reviewer(
 
     correlator_diagnostics = diagnose_correlator_outputs(resolved_analysis_outputs_dir)
     fit_diagnostics = diagnose_fit_outputs(resolved_analysis_outputs_dir)
-    matrix_element_diagnostics = diagnose_matrix_elements(matrix_path)
+    matrix_element_diagnostics = (
+        diagnose_matrix_elements(matrix_path)
+        if review_scope["requires_matrix_element_validation"]
+        else _not_applicable_matrix_element_diagnostics()
+    )
     sections = [correlator_diagnostics, fit_diagnostics, matrix_element_diagnostics]
 
     warnings = context_warnings + _flatten_section_values(sections, "warnings")

@@ -24,6 +24,13 @@ class AnalysisState(TypedDict):
     current_node: str
     status: Status
     llm_provider_config_path: str | None
+    auto_codex_handoff: bool
+    codex_bin: str
+    codex_model: str | None
+    codex_timeout_seconds: int
+    verification_timeout_seconds: int
+    force_codex_handoff: bool
+    dry_run_codex: bool
 
     checkpoint_thread_id: str
     checkpoint_backend: str
@@ -86,6 +93,13 @@ def initialize_state(
     checkpoint_db_path: str | None = None,
     max_retry: int = 1,
     llm_provider_config_path: str | None = None,
+    auto_codex_handoff: bool = False,
+    codex_bin: str = "codex",
+    codex_model: str | None = None,
+    codex_timeout_seconds: int = 900,
+    verification_timeout_seconds: int = 60,
+    force_codex_handoff: bool = False,
+    dry_run_codex: bool = False,
 ) -> AnalysisState:
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -98,6 +112,13 @@ def initialize_state(
         "current_node": "START",
         "status": "running",
         "llm_provider_config_path": llm_provider_config_path,
+        "auto_codex_handoff": auto_codex_handoff,
+        "codex_bin": codex_bin,
+        "codex_model": codex_model,
+        "codex_timeout_seconds": codex_timeout_seconds,
+        "verification_timeout_seconds": verification_timeout_seconds,
+        "force_codex_handoff": force_codex_handoff,
+        "dry_run_codex": dry_run_codex,
         "checkpoint_thread_id": stable_checkpoint_thread_id(case_id, run_id),
         "checkpoint_backend": checkpoint_backend,
         "checkpoint_db_path": checkpoint_db_path,

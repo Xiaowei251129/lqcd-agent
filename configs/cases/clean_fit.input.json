@@ -1,0 +1,17 @@
+{
+  "schema_version": "0.1",
+  "case_id": "clean_fit_raw",
+  "source_kind": "raw_clean_fit_csv",
+  "physics_goal": "Recover effective-mass estimates from raw clean-fit CSV data using reusable analysis programs.",
+  "raw_data_path": "raw_data/clean_decay.csv",
+  "analysis_program_tags": [
+    "two_point",
+    "effective_mass"
+  ],
+  "target_observables": [
+    "effective_mass_estimates"
+  ],
+  "expected_outputs": [
+    "analysis_outputs/effective_mass_estimates.json"
+  ]
+}

@@ -1,6 +1,7 @@
 """File-based Codex handoff helpers.
 
-The runtime writes and reads handoff files, but never invokes Codex programmatically.
+The default runtime writes and reads handoff files. Explicit auto-handoff mode may
+invoke Codex through the separate Codex CLI worker.
 """
 
 from __future__ import annotations

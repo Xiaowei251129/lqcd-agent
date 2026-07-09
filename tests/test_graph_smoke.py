@@ -444,6 +444,38 @@ def test_graph_stops_when_planner_needs_more_info(tmp_path: Path) -> None:
     assert final_state["route_decisions"][-1]["route"] == "end"
 
 
+def test_missing_input_reaches_human_gate_with_structured_failure(tmp_path: Path) -> None:
+    result = run_mock_graph(
+        case_path="configs/cases/missing_input.input.json",
+        output_dir=str(tmp_path),
+        run_id="missing_input_smoke",
+        llm_provider_config_path="configs/runtime/mock_llm.yaml",
+    )
+    final_state = result["state"]
+    run_dir = tmp_path / "phase10c_missing_input" / "missing_input_smoke"
+    route_nodes = [decision["source"] for decision in final_state["route_decisions"]]
+    run_result = json.loads((run_dir / "run_result.json").read_text(encoding="utf-8"))
+    decision_log = json.loads((run_dir / "decision_log.json").read_text(encoding="utf-8"))
+
+    assert route_nodes[:4] == [
+        "method_planner",
+        "analysis_engineer",
+        "decision_coordinator",
+        "human_approval_gate",
+    ]
+    assert final_state["current_node"] == "memory_report"
+    assert final_state["status"] == "pending"
+    assert final_state["scientific_review_report_path"] is None
+    assert not (run_dir / "scientific_review_report.json").exists()
+    assert run_result["run_success"] is False
+    assert run_result["failure_type"] == "config_or_data"
+    assert decision_log["risk_level"] == "critical"
+    assert decision_log["recommended_action"] == "pending_human_approval"
+    assert decision_log["human_approval_required"] is True
+    assert {reason["code"] for reason in decision_log["reasons"]} >= {"config_or_data_failure"}
+    assert (run_dir / "approval_packet" / "approval_packet.json").exists()
+
+
 def test_graph_stops_at_codex_handoff_when_results_are_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -470,6 +502,10 @@ def test_graph_stops_at_codex_handoff_when_results_are_missing(
         }
 
     monkeypatch.setattr("lqcd_agent.graph.nodes.build_repo_inventory", fake_repo_inventory)
+    monkeypatch.setattr(
+        "lqcd_agent.graph.nodes.run_worker",
+        lambda **kwargs: pytest.fail("run_worker should not be called unless auto_codex_handoff is enabled."),
+    )
     checkpointer = MemorySaver()
     state = initialize_state(
         case_id="code_needed",
@@ -495,6 +531,228 @@ def test_graph_stops_at_codex_handoff_when_results_are_missing(
     assert method_plan["status"] == "success"
     assert method_plan["code_needed"] is True
     assert final_state["route_decisions"][-2]["route"] == "codex_handoff"
+    assert final_state["route_decisions"][-1]["route"] == "end"
+
+
+def test_auto_codex_handoff_runs_worker_and_reaches_analysis(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case_path = tmp_path / "code_needed.yaml"
+    case_path.write_text(
+        "\n".join(
+            [
+                'schema_version: "0.1"',
+                'case_id: "code_needed"',
+                'physics_goal: "Plan a mock-only pion quasi-DA analysis support run."',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    run_dir = tmp_path / "code_needed" / "auto"
+
+    def fake_repo_inventory(root: Path) -> dict[str, object]:
+        return {
+            "schema_version": "0.1",
+            "repo_root": str(root),
+            "implementation_gaps": ["Missing deterministic synthetic output validator."],
+            "allowed_files": ["src/lqcd_agent/graph/nodes.py"],
+        }
+
+    def fake_run_worker(**kwargs):
+        output_dir = Path(kwargs["run_dir"])
+        (output_dir / "code_change_summary.md").write_text(
+            "Implemented the automatically requested mock-only code change.\n",
+            encoding="utf-8",
+        )
+        tests_status = {
+            "schema_version": "0.1",
+            "run_id": "auto",
+            "case_id": "code_needed",
+            "created_at": "2026-06-10T00:00:00+00:00",
+            "producer": "test_runner",
+            "status": "tests_passed",
+            "summary": "All configured verification commands passed.",
+            "warnings": [],
+            "errors": [],
+            "commands": [
+                {
+                    "command": "pytest tests/test_coder_task_packet.py -q",
+                    "working_directory": str(tmp_path),
+                    "timeout_seconds": 60,
+                    "return_code": 0,
+                    "stdout": "passed",
+                    "stderr": "",
+                    "produced_files": [],
+                    "status": "passed",
+                }
+            ],
+        }
+        (output_dir / "tests_status.json").write_text(json.dumps(tests_status), encoding="utf-8")
+        return {
+            "status": "tests_passed",
+            "tests_status_path": str(output_dir / "tests_status.json"),
+            "code_change_summary_path": str(output_dir / "code_change_summary.md"),
+        }
+
+    monkeypatch.setattr("lqcd_agent.graph.nodes.build_repo_inventory", fake_repo_inventory)
+    monkeypatch.setattr("lqcd_agent.graph.nodes.run_worker", fake_run_worker)
+    checkpointer = MemorySaver()
+    state = initialize_state(
+        case_id="code_needed",
+        run_id="auto",
+        user_goal="Plan a mock-only pion quasi-DA analysis support run.",
+        case_config_path=str(case_path),
+        output_dir=str(run_dir),
+        checkpoint_backend="memory",
+        auto_codex_handoff=True,
+    )
+    config = {"configurable": {"thread_id": state["checkpoint_thread_id"]}}
+    app = compile_analysis_graph(checkpointer)
+
+    final_state = app.invoke(state, config=config)
+
+    assert final_state["status"] == "success"
+    assert final_state["current_node"] == "memory_report"
+    assert final_state["code_needed"] is False
+    assert final_state["code_change_summary_path"] == str(run_dir / "code_change_summary.md")
+    assert final_state["tests_status_path"] == str(run_dir / "tests_status.json")
+    assert (run_dir / "run_result.json").exists()
+    assert any(
+        decision["source"] == "codex_handoff" and decision["route"] == "analysis_engineer"
+        for decision in final_state["route_decisions"]
+    )
+
+
+def test_auto_codex_handoff_tests_failed_stops_safely(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case_path = tmp_path / "code_needed.yaml"
+    case_path.write_text(
+        "\n".join(
+            [
+                'schema_version: "0.1"',
+                'case_id: "code_needed"',
+                'physics_goal: "Plan a mock-only pion quasi-DA analysis support run."',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    run_dir = tmp_path / "code_needed" / "auto_failed"
+
+    def fake_repo_inventory(root: Path) -> dict[str, object]:
+        return {
+            "schema_version": "0.1",
+            "repo_root": str(root),
+            "implementation_gaps": ["Missing deterministic synthetic output validator."],
+            "allowed_files": ["src/lqcd_agent/graph/nodes.py"],
+        }
+
+    def fake_run_worker(**kwargs):
+        output_dir = Path(kwargs["run_dir"])
+        tests_status = {
+            "schema_version": "0.1",
+            "run_id": "auto_failed",
+            "case_id": "code_needed",
+            "created_at": "2026-06-10T00:00:00+00:00",
+            "producer": "test_runner",
+            "status": "tests_failed",
+            "summary": "Verification failed.",
+            "warnings": [],
+            "errors": [{"field": "verification", "message": "tests failed"}],
+            "commands": [
+                {
+                    "command": "pytest tests/test_coder_task_packet.py -q",
+                    "working_directory": str(tmp_path),
+                    "timeout_seconds": 60,
+                    "return_code": 1,
+                    "stdout": "",
+                    "stderr": "failed",
+                    "produced_files": [],
+                    "status": "failed",
+                }
+            ],
+        }
+        (output_dir / "tests_status.json").write_text(json.dumps(tests_status), encoding="utf-8")
+        return {"status": "tests_failed", "tests_status_path": str(output_dir / "tests_status.json")}
+
+    monkeypatch.setattr("lqcd_agent.graph.nodes.build_repo_inventory", fake_repo_inventory)
+    monkeypatch.setattr("lqcd_agent.graph.nodes.run_worker", fake_run_worker)
+    checkpointer = MemorySaver()
+    state = initialize_state(
+        case_id="code_needed",
+        run_id="auto_failed",
+        user_goal="Plan a mock-only pion quasi-DA analysis support run.",
+        case_config_path=str(case_path),
+        output_dir=str(run_dir),
+        checkpoint_backend="memory",
+        auto_codex_handoff=True,
+    )
+    config = {"configurable": {"thread_id": state["checkpoint_thread_id"]}}
+    app = compile_analysis_graph(checkpointer)
+
+    final_state = app.invoke(state, config=config)
+
+    assert final_state["status"] == "pending"
+    assert final_state["current_node"] == "codex_handoff"
+    assert final_state["code_fix_requested"] is True
+    assert final_state["failure_type"] == "code"
+    assert final_state["run_result_path"] is None
+    assert final_state["route_decisions"][-1]["route"] == "end"
+    assert final_state["route_decisions"][-1]["fields"]["tests_status"] == "tests_failed"
+
+
+def test_auto_codex_handoff_worker_exception_records_structured_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case_path = tmp_path / "code_needed.yaml"
+    case_path.write_text(
+        "\n".join(
+            [
+                'schema_version: "0.1"',
+                'case_id: "code_needed"',
+                'physics_goal: "Plan a mock-only pion quasi-DA analysis support run."',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    run_dir = tmp_path / "code_needed" / "auto_exception"
+
+    def fake_repo_inventory(root: Path) -> dict[str, object]:
+        return {
+            "schema_version": "0.1",
+            "repo_root": str(root),
+            "implementation_gaps": ["Missing deterministic synthetic output validator."],
+            "allowed_files": ["src/lqcd_agent/graph/nodes.py"],
+        }
+
+    def fake_run_worker(**kwargs):
+        raise FileNotFoundError("codex executable was not found")
+
+    monkeypatch.setattr("lqcd_agent.graph.nodes.build_repo_inventory", fake_repo_inventory)
+    monkeypatch.setattr("lqcd_agent.graph.nodes.run_worker", fake_run_worker)
+    checkpointer = MemorySaver()
+    state = initialize_state(
+        case_id="code_needed",
+        run_id="auto_exception",
+        user_goal="Plan a mock-only pion quasi-DA analysis support run.",
+        case_config_path=str(case_path),
+        output_dir=str(run_dir),
+        checkpoint_backend="memory",
+        auto_codex_handoff=True,
+    )
+    config = {"configurable": {"thread_id": state["checkpoint_thread_id"]}}
+    app = compile_analysis_graph(checkpointer)
+
+    final_state = app.invoke(state, config=config)
+
+    assert final_state["status"] == "pending"
+    assert final_state["current_node"] == "codex_handoff"
+    assert final_state["tests_status_path"] is None
+    assert final_state["errors"][-1]["field"] == "auto_codex_handoff"
+    assert "codex executable was not found" in final_state["errors"][-1]["message"]
     assert final_state["route_decisions"][-1]["route"] == "end"
 
 

@@ -60,8 +60,10 @@ and `context_artifacts`. `allowed_files`, `forbidden_paths`, `requirements`,
 `acceptance_criteria`, `verification_commands`, and `context_artifacts` must be
 non-empty lists.
 
-The packet is a file handoff contract only. The graph runtime must not call Codex
-programmatically.
+The packet is a file handoff contract by default. The graph runtime must not call
+Codex programmatically unless the run has explicit automatic handoff opt-in. In
+automatic handoff mode, the graph invokes the local Codex CLI worker, which must
+still respect forbidden paths, allowed files, and verification commands.
 
 ## Codex Handoff Results
 

@@ -25,12 +25,14 @@ Allowed:
 
 - Produce a structured `coder_task_packet.yaml`.
 - Read `code_change_summary.md` and `tests_status.json` once a human or external coding step has produced them.
+- Invoke the local Codex CLI worker only when the graph is run with explicit automatic handoff enabled.
 - Route based on structured test status and retry count.
 
 Forbidden:
 
-- Programmatically invoke Codex as a runtime agent.
+- Programmatically invoke Codex by default or without explicit automatic handoff opt-in.
 - Modify raw data.
+- Modify accepted results, secrets, or files outside the task packet scope.
 - Decide physics acceptance.
 
 ## Analysis Engineer Agent

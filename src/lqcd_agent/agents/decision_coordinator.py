@@ -71,6 +71,7 @@ def _read_json_artifact(
     artifact_name: str,
     run_id: str,
     case_id: str,
+    allow_failed_status: bool = False,
 ) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[dict[str, Any]]]:
     evidence = [
         {
@@ -178,7 +179,7 @@ def _read_json_artifact(
                     "message": f"{artifact_name} {field} does not match the active run.",
                 }
             )
-    if payload.get("status") == "failed":
+    if payload.get("status") == "failed" and not allow_failed_status:
         errors.append(
             {
                 "artifact": artifact_name,
@@ -260,6 +261,35 @@ def _run_failure_action(run_result: dict[str, Any]) -> tuple[str, bool, str | No
     return "targeted_rerun", True, "analysis_engineer"
 
 
+def _missing_input_reasons(run_result: dict[str, Any]) -> list[dict[str, Any]]:
+    reasons = [
+        _reason(
+            "config_or_data_failure",
+            "Analysis Engineer could not run because required runtime input data or config was invalid.",
+            source="run_result",
+            field="failure_type",
+            value=run_result.get("failure_type"),
+        )
+    ]
+    for error in _as_list(run_result.get("errors")):
+        if not isinstance(error, dict):
+            continue
+        message = str(error.get("message", ""))
+        field = error.get("field")
+        if "raw_data_path" in message or "raw data" in message.lower():
+            reasons.append(
+                _reason(
+                    "missing_required_input",
+                    message,
+                    source="run_result",
+                    field=str(field) if field is not None else "raw_data_path",
+                    value=error.get("value"),
+                )
+            )
+            break
+    return reasons
+
+
 def _classify_decision(
     *,
     method_plan: dict[str, Any] | None,
@@ -293,7 +323,6 @@ def _classify_decision(
 
     assert method_plan is not None
     assert run_result is not None
-    assert review is not None
 
     if method_plan.get("status") != "success":
         return {
@@ -317,6 +346,18 @@ def _classify_decision(
         }
 
     if run_result.get("run_success") is not True:
+        if run_result.get("failure_type") == "config_or_data":
+            return {
+                "risk_level": "critical",
+                "recommended_action": "pending_human_approval",
+                "human_approval_required": True,
+                "reasons": _missing_input_reasons(run_result),
+                "rerun_requested": False,
+                "rerun_target": None,
+                "code_fix_requested": False,
+                "requested_route": "human_approval_gate",
+                "proposed_follow_up_route": "memory_report",
+            }
         recommended_action, rerun_requested, rerun_target = _run_failure_action(run_result)
         return {
             "risk_level": "high",
@@ -345,6 +386,7 @@ def _classify_decision(
             "proposed_follow_up_route": "codex_handoff" if recommended_action == "code_fix" else "analysis_engineer",
         }
 
+    assert review is not None
     warnings = _review_warnings(review)
     severe_or_flagged = [
         warning
@@ -606,6 +648,7 @@ def _local_decision_context(
         artifact_name="run_result",
         run_id=run_id,
         case_id=case_id,
+        allow_failed_status=True,
     )
     review, review_artifact_evidence, review_errors = _read_json_artifact(
         scientific_review_report_path,
@@ -613,6 +656,12 @@ def _local_decision_context(
         run_id=run_id,
         case_id=case_id,
     )
+    if (
+        isinstance(run_result, dict)
+        and run_result.get("run_success") is not True
+        and run_result.get("failure_type") == "config_or_data"
+    ):
+        review_errors = []
     artifact_errors = method_errors + run_errors + review_errors
     decision = _classify_decision(
         method_plan=method_plan,

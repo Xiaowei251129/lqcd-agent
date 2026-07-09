@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import csv
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from lqcd_agent.llm.base import LLMProviderConfig, LLMRequest, LLMResponse, ProviderReadiness
@@ -53,6 +55,72 @@ def _has_targeted_rerun_warning(warnings: list[Any]) -> bool:
     return False
 
 
+def _as_string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list | tuple):
+        return [str(item) for item in value if str(item).strip()]
+    return [str(value)]
+
+
+def _selected_analysis_programs(case_config: dict[str, Any], repo_inventory: dict[str, Any]) -> list[dict[str, Any]]:
+    requested_tags = set(_as_string_list(case_config.get("analysis_program_tags")))
+    requested_outputs = set(_as_string_list(case_config.get("target_observables")))
+    programs = repo_inventory.get("analysis_programs", [])
+    if not isinstance(programs, list) or not case_config.get("raw_data_path"):
+        return []
+
+    selected: list[dict[str, Any]] = []
+    for program in programs:
+        if not isinstance(program, dict):
+            continue
+        tags = set(_as_string_list(program.get("tags")))
+        produced_outputs = _as_string_list(program.get("produced_outputs"))
+        output_match = bool(requested_outputs) and bool(requested_outputs & set(produced_outputs))
+        tag_match = bool(requested_tags) and requested_tags.issubset(tags)
+        if not (tag_match or output_match):
+            continue
+        required_inputs = set(_as_string_list(program.get("required_inputs")))
+        if required_inputs != {"times", "correlator_values"}:
+            continue
+        output_name = produced_outputs[0] if produced_outputs else str(program.get("name", "analysis_program"))
+        input_mapping = {
+            "times": "raw_data_csv.t",
+            "correlator_values": "raw_data_csv.value",
+        }
+        if _raw_csv_has_column(case_config, repo_inventory, "error"):
+            input_mapping["correlator_errors"] = "raw_data_csv.error"
+        selected.append(
+            {
+                "name": str(program.get("name", "")),
+                "category": str(program.get("category", "")),
+                "callable_path": str(program.get("callable_path", "")),
+                "input_mapping": input_mapping,
+                "output_path": f"analysis_outputs/{output_name}.json",
+                "required_outputs": produced_outputs,
+            }
+        )
+    return selected
+
+
+def _raw_csv_has_column(case_config: dict[str, Any], repo_inventory: dict[str, Any], column_name: str) -> bool:
+    raw_value = case_config.get("raw_data_path")
+    repo_root = repo_inventory.get("repo_root")
+    if not raw_value or not repo_root:
+        return False
+    raw_path = Path(str(raw_value))
+    if raw_path.is_absolute():
+        return False
+    try:
+        with (Path(str(repo_root)) / raw_path).resolve().open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            return bool(reader.fieldnames and column_name in reader.fieldnames)
+    except OSError:
+        return False
+
+
 class MockLLMProvider:
     def __init__(self, config: LLMProviderConfig | None = None) -> None:
         self.config = config or LLMProviderConfig(
@@ -87,7 +155,17 @@ class MockLLMProvider:
         repo_inventory = payload.get("repo_inventory") if isinstance(payload.get("repo_inventory"), dict) else {}
         gaps = repo_inventory.get("implementation_gaps", [])
         implementation_gaps = [str(gap) for gap in gaps] if isinstance(gaps, list) else []
-        code_needed = bool(implementation_gaps)
+        selected_programs = _selected_analysis_programs(case_config, repo_inventory)
+        program_requested = bool(case_config.get("raw_data_path")) and bool(
+            _as_string_list(case_config.get("analysis_program_tags"))
+            or _as_string_list(case_config.get("target_observables"))
+        )
+        missing_requested_program = program_requested and not selected_programs
+        code_needed = bool(implementation_gaps) or missing_requested_program
+        required_outputs = ["method_plan.json", "run_result.json"]
+        if selected_programs:
+            required_outputs.extend(str(program["output_path"]) for program in selected_programs)
+        required_outputs.extend(["scientific_review_report.json", "decision_log.json"])
         return {
             "schema_version": "0.1",
             "run_id": str(payload.get("run_id", "mock_run")),
@@ -99,25 +177,44 @@ class MockLLMProvider:
             "warnings": [],
             "errors": [],
             "physics_goal": str(case_config.get("physics_goal") or payload.get("user_goal") or ""),
-            "target_observables": ["provider_backed_mock_matrix_elements"],
-            "method_steps": ["Use validated provider-backed structured output in mock mode."],
+            "target_observables": _as_string_list(case_config.get("target_observables"))
+            or ["provider_backed_mock_matrix_elements"],
+            "method_steps": (
+                ["Use selected registered analysis program(s) in provider-backed mock mode."]
+                if selected_programs
+                else ["Use validated provider-backed structured output in mock mode."]
+            ),
             "required_inputs": ["case_config", "repo_inventory"],
-            "required_outputs": ["method_plan.json", "run_result.json", "scientific_review_report.json", "decision_log.json"],
+            "required_outputs": required_outputs,
             "implementation_gaps": implementation_gaps,
+            "selected_analysis_programs": selected_programs,
             "code_needed": code_needed,
-            "coder_task_summary": "Address provider-reported implementation gaps." if code_needed else None,
+            "coder_task_summary": (
+                "Implement a reusable registered analysis program for the requested raw-data analysis."
+                if missing_requested_program
+                else "Address provider-reported implementation gaps."
+                if code_needed
+                else None
+            ),
         }
 
     def _scientific_review(self, payload: dict[str, Any]) -> dict[str, Any]:
         matrix_summary = payload.get("matrix_element_summary")
         if not isinstance(matrix_summary, dict):
             matrix_summary = {}
+        review_scope = payload.get("review_scope")
+        if not isinstance(review_scope, dict):
+            review_scope = {}
+        requires_matrix = review_scope.get("requires_matrix_element_validation", True)
+        fit_diagnostics = payload.get("fit_diagnostics_summary")
+        if not isinstance(fit_diagnostics, dict):
+            fit_diagnostics = {"status": "not_populated_mvp"}
         run_summary = payload.get("run_result_summary")
         if not isinstance(run_summary, dict):
             run_summary = {}
         warnings: list[dict[str, Any]] = []
         flags = matrix_summary.get("diagnostic_flags", [])
-        if isinstance(flags, list):
+        if requires_matrix and isinstance(flags, list):
             warnings.extend(
                 _review_warning_from_flag(flag, path=matrix_summary.get("path"), index=index)
                 for index, flag in enumerate(flags)
@@ -137,7 +234,15 @@ class MockLLMProvider:
             )
         severe = _has_severe_warning(warnings)
         confidence = "low" if severe else "medium" if warnings else "high"
-        matrix_status = "fail" if severe else "warning" if warnings else "pass"
+        matrix_status = (
+            "fail"
+            if requires_matrix and severe
+            else "warning"
+            if requires_matrix and warnings
+            else "pass"
+            if requires_matrix
+            else "not_applicable"
+        )
         summary = (
             "Provider-backed mock Scientific Reviewer found severe summary evidence."
             if severe
@@ -156,8 +261,19 @@ class MockLLMProvider:
             "warnings": warnings,
             "errors": [],
             "correlator_diagnostics": {"status": "not_populated_mvp"},
-            "fit_diagnostics": {"status": "not_populated_mvp"},
-            "matrix_element_diagnostics": {"status": matrix_status},
+            "fit_diagnostics": fit_diagnostics,
+            "matrix_element_diagnostics": (
+                {"status": matrix_status}
+                if requires_matrix
+                else {
+                    "status": "not_applicable",
+                    "summary": "Matrix-element validation is outside the scope of this case.",
+                    "warnings": [],
+                    "evidence": [],
+                    "findings": [],
+                    "recommended_checks": [],
+                }
+            ),
             "findings": [{"code": "provider_mock_review_complete"}],
             "evidence": [
                 {

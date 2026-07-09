@@ -190,6 +190,45 @@ def test_critical_risk_for_missing_required_review_artifact(tmp_path: Path) -> N
     _assert_one_primary_next_action(decision_log)
 
 
+def test_config_or_data_failure_does_not_require_scientific_review_artifact(tmp_path: Path) -> None:
+    run_result = _run_result()
+    run_result.update(
+        {
+            "status": "failed",
+            "summary": "Analysis Engineer recorded a failed analysis run.",
+            "run_success": False,
+            "failure_type": "config_or_data",
+            "errors": [
+                {
+                    "field": "analysis_commands",
+                    "message": "raw_data_path does not exist or is not a file.",
+                    "command_id": "analysis_program_0",
+                    "status": "blocked",
+                    "return_code": None,
+                }
+            ],
+        }
+    )
+    method_path = _write_json(tmp_path / "method_plan.json", _method_plan())
+    run_path = _write_json(tmp_path / "run_result.json", run_result)
+    review_path = tmp_path / "missing_scientific_review_report.json"
+
+    decision_log = _run_decision(tmp_path, method_path=method_path, run_path=run_path, review_path=review_path)
+
+    assert decision_log["status"] == "pending"
+    assert decision_log["risk_level"] == "critical"
+    assert decision_log["recommended_action"] == "pending_human_approval"
+    assert decision_log["human_approval_required"] is True
+    assert decision_log["routing_decision"]["actual_route"] == "human_approval_gate"
+    assert decision_log["routing_decision"]["fields"]["rerun_requested"] is False
+    assert decision_log["routing_decision"]["fields"]["code_fix_requested"] is False
+    assert decision_log["errors"] == []
+    assert {reason["code"] for reason in decision_log["reasons"]} == {
+        "config_or_data_failure",
+        "missing_required_input",
+    }
+
+
 def test_provider_backed_decision_coordinator_accepts_valid_mock_output(tmp_path: Path) -> None:
     method_path, run_path, review_path = _write_artifacts(tmp_path)
 

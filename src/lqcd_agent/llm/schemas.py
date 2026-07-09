@@ -22,6 +22,7 @@ METHOD_PLAN_FIELDS = [
     "required_inputs",
     "required_outputs",
     "implementation_gaps",
+    "selected_analysis_programs",
     "code_needed",
     "coder_task_summary",
 ]
@@ -101,8 +102,10 @@ def validate_method_plan_payload(payload: dict[str, Any], *, run_id: str, case_i
         "required_inputs",
         "required_outputs",
         "implementation_gaps",
+        "selected_analysis_programs",
     ]:
         _expect_type(errors, payload, field, list)
+    _expect_list_items_dict(errors, payload, "selected_analysis_programs")
     if "code_needed" in payload and not isinstance(payload["code_needed"], bool):
         errors.append("code_needed must be bool.")
     return errors
