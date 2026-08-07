@@ -88,6 +88,9 @@ def test_final_report_includes_required_sections(tmp_path: Path) -> None:
     state = _state(tmp_path)
     state["memory_update_path"] = str(tmp_path / "memory_update.json")
     memory_update = {"memory_status": "accepted", "accepted_result": True}
+    trace_dir = tmp_path / "llm_calls"
+    trace_dir.mkdir()
+    (trace_dir / "method_planner.json").write_text("{}", encoding="utf-8")
 
     result = write_final_report(state, memory_update)
 
@@ -98,6 +101,7 @@ def test_final_report_includes_required_sections(tmp_path: Path) -> None:
         "## Run Summary",
         "## Scientific Review",
         "## Coordinator Decision",
+        "## LLM Calls",
         "## Approval Status",
         "## Memory Update",
         "## Reproducibility",
@@ -105,6 +109,10 @@ def test_final_report_includes_required_sections(tmp_path: Path) -> None:
         assert heading in report
     assert "- memory_status: accepted" in report
     assert "- risk_level: low" in report
+    assert "- recommended_action: accept_result" in report
+    assert "- method_planner.json:" in report
+    assert "`accept_result`: ready" in report
+    assert "accept_mock_result" not in report
 
 
 def test_final_report_records_missing_artifact_warnings(tmp_path: Path) -> None:

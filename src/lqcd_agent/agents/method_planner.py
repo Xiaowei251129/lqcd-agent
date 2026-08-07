@@ -18,6 +18,7 @@ from lqcd_agent.llm.structured_output import (
     provider_exception_artifact,
     validation_error_artifact,
 )
+from lqcd_agent.llm.trace import write_llm_call_trace
 
 
 REQUIRED_PLAN_FIELDS = [
@@ -263,6 +264,11 @@ def _append_warning(payload: dict[str, Any], warning: dict[str, Any]) -> None:
     payload["warnings"] = warnings
 
 
+def _changed_program_fields(original: dict[str, Any], normalized: dict[str, Any]) -> list[str]:
+    fields = sorted(set(original) | set(normalized))
+    return [field for field in fields if original.get(field) != normalized.get(field)]
+
+
 def _normalize_provider_selected_programs(
     *,
     payload: dict[str, Any],
@@ -279,6 +285,7 @@ def _normalize_provider_selected_programs(
 
     canonical_selected: list[dict[str, Any]] = []
     changed_programs: list[str] = []
+    changed_fields: list[dict[str, Any]] = []
     for item in selected:
         if not isinstance(item, dict):
             continue
@@ -292,6 +299,12 @@ def _normalize_provider_selected_programs(
             continue
         if item != canonical:
             changed_programs.append(str(canonical["name"]))
+            changed_fields.append(
+                {
+                    "name": str(canonical["name"]),
+                    "changed_fields": _changed_program_fields(item, canonical),
+                }
+            )
         canonical_selected.append(canonical)
 
     if not canonical_selected:
@@ -299,6 +312,13 @@ def _normalize_provider_selected_programs(
         if inferred:
             canonical_selected = inferred
             changed_programs.extend(str(program["name"]) for program in inferred)
+            changed_fields.extend(
+                {
+                    "name": str(program["name"]),
+                    "changed_fields": ["selected_analysis_programs"],
+                }
+                for program in inferred
+            )
 
     if canonical_selected != selected:
         normalized["selected_analysis_programs"] = canonical_selected
@@ -306,11 +326,16 @@ def _normalize_provider_selected_programs(
             normalized,
             {
                 "code": "selected_analysis_programs_normalized",
+                "severity": "info",
+                "decision_coordinator_flag": False,
                 "message": (
                     "Provider selected registered analysis program(s), and the runtime normalized "
                     "their executable input mappings from repo inventory."
                 ),
                 "programs": sorted(set(changed_programs)),
+                "changed_fields": changed_fields,
+                "original_selected_analysis_programs": selected,
+                "normalized_selected_analysis_programs": canonical_selected,
             },
         )
     return normalized
@@ -582,9 +607,19 @@ def _run_provider_method_planner(
                 message=str(exc),
             ),
         )
+        method_plan_path = write_method_plan(output_dir, plan)
+        write_llm_call_trace(
+            output_dir=output_dir,
+            agent="method_planner",
+            provider=provider,
+            request=request,
+            parsed_payload_path=method_plan_path,
+            status="failed",
+            error=plan,
+        )
         return {
             "status": "failed",
-            "method_plan_path": write_method_plan(output_dir, plan),
+            "method_plan_path": method_plan_path,
             "code_needed": False,
             "coder_task_packet_path": None,
             "method_plan": plan,
@@ -598,9 +633,20 @@ def _run_provider_method_planner(
     )
     if parse_error is not None:
         plan = _provider_failure_plan(run_id=run_id, case_id=case_id, artifact=parse_error)
+        method_plan_path = write_method_plan(output_dir, plan)
+        write_llm_call_trace(
+            output_dir=output_dir,
+            agent="method_planner",
+            provider=provider,
+            request=request,
+            response=response,
+            parsed_payload_path=method_plan_path,
+            status="failed",
+            error=parse_error,
+        )
         return {
             "status": "failed",
-            "method_plan_path": write_method_plan(output_dir, plan),
+            "method_plan_path": method_plan_path,
             "code_needed": False,
             "coder_task_packet_path": None,
             "method_plan": plan,
@@ -630,15 +676,35 @@ def _run_provider_method_planner(
                 errors=validation_errors,
             ),
         )
+        method_plan_path = write_method_plan(output_dir, plan)
+        write_llm_call_trace(
+            output_dir=output_dir,
+            agent="method_planner",
+            provider=provider,
+            request=request,
+            response=response,
+            parsed_payload_path=method_plan_path,
+            status="failed",
+            error=plan,
+        )
         return {
             "status": "failed",
-            "method_plan_path": write_method_plan(output_dir, plan),
+            "method_plan_path": method_plan_path,
             "code_needed": False,
             "coder_task_packet_path": None,
             "method_plan": plan,
         }
 
     method_plan_path = write_method_plan(output_dir, payload)
+    write_llm_call_trace(
+        output_dir=output_dir,
+        agent="method_planner",
+        provider=provider,
+        request=request,
+        response=response,
+        parsed_payload_path=method_plan_path,
+        status=payload["status"],
+    )
     coder_task_packet_path = None
     if payload["status"] == "success" and payload["code_needed"]:
         packet = build_coder_task_packet(method_plan=payload, repo_inventory=repo_inventory or {})

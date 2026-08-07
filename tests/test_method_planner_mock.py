@@ -217,6 +217,11 @@ def test_provider_backed_method_plan_accepts_valid_mock_output(tmp_path: Path) -
     assert result["code_needed"] is False
     assert method_plan["producer"] == "method_planner"
     assert method_plan["summary"].startswith("Provider-backed mock")
+    trace = json.loads((tmp_path / "llm_calls" / "method_planner.json").read_text(encoding="utf-8"))
+    assert trace["agent"] == "method_planner"
+    assert trace["provider"]["provider"] == "mock"
+    assert trace["parsed_payload_path"] == str(tmp_path / "method_plan.json")
+    assert trace["response"]["content"]
 
 
 def test_provider_selected_program_mapping_is_normalized_for_execution(tmp_path: Path) -> None:
@@ -285,7 +290,18 @@ def test_provider_selected_program_mapping_is_normalized_for_execution(tmp_path:
         "times": "raw_data_csv.t",
         "correlator_values": "raw_data_csv.value",
     }
-    assert method_plan["warnings"][-1]["code"] == "selected_analysis_programs_normalized"
+    warning = method_plan["warnings"][-1]
+    assert warning["code"] == "selected_analysis_programs_normalized"
+    assert warning["severity"] == "info"
+    assert warning["decision_coordinator_flag"] is False
+    assert warning["original_selected_analysis_programs"] == payload["selected_analysis_programs"]
+    assert warning["normalized_selected_analysis_programs"] == method_plan["selected_analysis_programs"]
+    assert warning["changed_fields"] == [
+        {
+            "name": "single_exponential_effective_mass",
+            "changed_fields": ["input_mapping"],
+        }
+    ]
 
 
 def test_provider_missing_raw_data_status_is_normalized_for_runtime_validation(tmp_path: Path) -> None:

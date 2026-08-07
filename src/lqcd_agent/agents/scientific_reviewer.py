@@ -19,6 +19,7 @@ from lqcd_agent.llm.structured_output import (
     provider_exception_artifact,
     validation_error_artifact,
 )
+from lqcd_agent.llm.trace import write_llm_call_trace
 
 
 def utc_now() -> str:
@@ -312,6 +313,33 @@ def _is_out_of_scope_matrix_warning(warning: dict[str, Any]) -> bool:
     return "matrix" in text and ("missing" in text or "absent" in text or "synthetic_matrix_elements" in text)
 
 
+def _is_advisory_normalization_warning(warning: dict[str, Any]) -> bool:
+    return (
+        warning.get("code") == "selected_analysis_programs_normalized"
+        and warning.get("decision_coordinator_flag") is not True
+        and warning.get("severity") in {None, "info"}
+    )
+
+
+def _advisory_evidence(warning: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "source": "method_plan_advisory",
+        "action": "recorded",
+        "artifact": warning.get("artifact") or "method_plan.json",
+        "code": warning.get("code"),
+        "severity": warning.get("severity"),
+        "decision_coordinator_flag": warning.get("decision_coordinator_flag"),
+        "message": warning.get("message"),
+        "path": warning.get("path"),
+        "field": warning.get("field"),
+        "value": warning.get("value"),
+        "programs": warning.get("programs"),
+        "changed_fields": warning.get("changed_fields"),
+        "original_selected_analysis_programs": warning.get("original_selected_analysis_programs"),
+        "normalized_selected_analysis_programs": warning.get("normalized_selected_analysis_programs"),
+    }
+
+
 def _normalize_provider_review_payload(
     payload: dict[str, Any],
     *,
@@ -328,9 +356,22 @@ def _normalize_provider_review_payload(
         for warning in warnings
         if not (
             isinstance(warning, dict)
+            and not _is_advisory_normalization_warning(warning)
             and (_is_context_only_provider_warning(warning) or _is_ungrounded_provider_warning(warning))
         )
     ]
+    advisory_evidence = [
+        _advisory_evidence(warning)
+        for warning in preserved_warnings
+        if isinstance(warning, dict) and _is_advisory_normalization_warning(warning)
+    ]
+    preserved_warnings = [
+        warning
+        for warning in preserved_warnings
+        if not (isinstance(warning, dict) and _is_advisory_normalization_warning(warning))
+    ]
+    evidence = normalized.get("evidence", [])
+    normalized["evidence"] = (evidence if isinstance(evidence, list) else []) + advisory_evidence
     if fit_diagnostics.get("status") not in {None, "not_found", "not_populated_mvp"}:
         normalized["fit_diagnostics"] = fit_diagnostics
         fit_warnings = fit_diagnostics.get("warnings", [])
@@ -439,7 +480,7 @@ def _run_provider_scientific_reviewer(
             ),
         )
         report_path = _write_report(run_dir / "scientific_review_report.json", report)
-        return {
+        result = {
             "status": "failed",
             "report_path": report_path,
             "scientific_review_report_path": report_path,
@@ -448,6 +489,16 @@ def _run_provider_scientific_reviewer(
             "errors": report["errors"],
             "confidence": "low",
         }
+        write_llm_call_trace(
+            output_dir=run_dir,
+            agent="scientific_reviewer",
+            provider=provider,
+            request=request,
+            parsed_payload_path=report_path,
+            status="failed",
+            error=report,
+        )
+        return result
 
     payload, parse_error = parse_json_object(
         response.content,
@@ -458,7 +509,7 @@ def _run_provider_scientific_reviewer(
     if parse_error is not None:
         report = _provider_failure_report(run_id=run_id, case_id=case_id, artifact=parse_error)
         report_path = _write_report(run_dir / "scientific_review_report.json", report)
-        return {
+        result = {
             "status": "failed",
             "report_path": report_path,
             "scientific_review_report_path": report_path,
@@ -467,6 +518,17 @@ def _run_provider_scientific_reviewer(
             "errors": report["errors"],
             "confidence": "low",
         }
+        write_llm_call_trace(
+            output_dir=run_dir,
+            agent="scientific_reviewer",
+            provider=provider,
+            request=request,
+            response=response,
+            parsed_payload_path=report_path,
+            status="failed",
+            error=parse_error,
+        )
+        return result
 
     assert payload is not None
     payload = _normalize_provider_review_payload(
@@ -488,7 +550,7 @@ def _run_provider_scientific_reviewer(
             ),
         )
         report_path = _write_report(run_dir / "scientific_review_report.json", report)
-        return {
+        result = {
             "status": "failed",
             "report_path": report_path,
             "scientific_review_report_path": report_path,
@@ -497,8 +559,28 @@ def _run_provider_scientific_reviewer(
             "errors": report["errors"],
             "confidence": "low",
         }
+        write_llm_call_trace(
+            output_dir=run_dir,
+            agent="scientific_reviewer",
+            provider=provider,
+            request=request,
+            response=response,
+            parsed_payload_path=report_path,
+            status="failed",
+            error=report,
+        )
+        return result
 
     report_path = _write_report(run_dir / "scientific_review_report.json", payload)
+    write_llm_call_trace(
+        output_dir=run_dir,
+        agent="scientific_reviewer",
+        provider=provider,
+        request=request,
+        response=response,
+        parsed_payload_path=report_path,
+        status=payload["status"],
+    )
     return {
         "status": payload["status"],
         "report_path": report_path,

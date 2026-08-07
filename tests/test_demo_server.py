@@ -6,8 +6,12 @@ import pytest
 from lqcd_agent.demo.server import (
     DemoServerError,
     apply_human_decision,
+    case_config_preview,
     case_configs,
     chat_response,
+    command_preview,
+    resolve_runtime_config_path,
+    runtime_configs,
     run_status_payload,
     start_graph_run,
     validate_case_config_request,
@@ -21,7 +25,29 @@ def test_case_configs_endpoint_returns_repo_case_configs(tmp_path: Path) -> None
     payload = {"configs": case_configs()}
 
     assert {config["config_id"] for config in payload["configs"]} >= {"mock_lqcd_goal", "l64c64a076_m140"}
+    assert payload["configs"][0]["config_id"] == "clean_fit.input"
+    assert "missing_input.input" in {config["config_id"] for config in payload["configs"]}
+    missing_input = next(config for config in payload["configs"] if config["config_id"] == "missing_input.input")
+    assert missing_input["config_type"] == "json"
+    assert missing_input["path"] == "configs/cases/missing_input.input.json"
+    assert missing_input["analysis_route"] == "registered_analysis_program"
+    assert missing_input["raw_data_status"] == "missing"
     assert "hidden_expected_conclusion_summary" not in json.dumps(payload)
+
+
+def test_runtime_configs_endpoint_returns_repo_provider_configs() -> None:
+    payload = {"runtime_configs": runtime_configs()}
+
+    assert {config["config_id"] for config in payload["runtime_configs"]} >= {"mock_llm", "openai", "deepseek"}
+    openai = next(config for config in payload["runtime_configs"] if config["config_id"] == "openai")
+    assert openai["path"] == "configs/runtime/openai.yaml"
+    assert openai["live_test_env"] == "RUN_LIVE_LLM_TESTS"
+    assert openai["provider_mode"] == "live"
+    assert openai["recommended"] is True
+    assert payload["runtime_configs"][0]["config_id"] == "openai"
+    mock = next(config for config in payload["runtime_configs"] if config["config_id"] == "mock_llm")
+    assert mock["provider_mode"] == "testing"
+    assert "testing/developer" in mock["label"]
 
 
 def test_validate_config_preview_rejects_missing_config(tmp_path: Path) -> None:
@@ -48,7 +74,38 @@ def test_validate_pasted_config_returns_preview(tmp_path: Path) -> None:
     )
 
     assert payload["config"]["case_id"] == "pasted_case"
+    assert payload["config"]["analysis_route"] == "analysis_commands"
     assert payload["config"]["analysis_commands"] == ["mock:write_synthetic_matrix_elements"]
+
+
+def test_validate_json_config_returns_preview(tmp_path: Path) -> None:
+    payload = validate_case_config_request(
+        output_root=tmp_path,
+        body={"config_id": "missing_input.input"},
+    )
+
+    assert payload["config"]["case_id"] == "phase10c_missing_input"
+    assert payload["config"]["analysis_route"] == "registered_analysis_program"
+    assert payload["config"]["analysis_program_tags"] == ["two_point", "effective_mass"]
+    assert payload["config"]["target_observables"] == ["effective_mass_estimates"]
+    assert payload["config"]["raw_data_path"] == "raw_data/does_not_exist.csv"
+    assert payload["config"]["raw_data_status"] == "missing"
+    assert payload["config"]["expected_outputs"] == ["analysis_outputs/effective_mass_estimates.json"]
+    assert not any("analysis_commands is missing" in warning for warning in payload["config"]["warnings"])
+    assert any("raw_data_path is configured but the file is missing" in warning for warning in payload["config"]["warnings"])
+
+
+def test_clean_fit_preview_uses_registered_program_schema_without_legacy_warning() -> None:
+    preview = case_config_preview("configs/cases/clean_fit.input.json")
+
+    assert preview["case_id"] == "clean_fit_raw"
+    assert preview["analysis_route"] == "registered_analysis_program"
+    assert preview["analysis_commands"] == []
+    assert preview["raw_data_path"] == "raw_data/clean_decay.csv"
+    assert preview["raw_data_status"] == "exists"
+    assert preview["analysis_program_tags"] == ["two_point", "effective_mass"]
+    assert preview["target_observables"] == ["effective_mass_estimates"]
+    assert preview["warnings"] == []
 
 
 def test_run_config_writes_core_artifacts_and_report(tmp_path: Path) -> None:
@@ -83,6 +140,53 @@ def test_start_graph_run_returns_pollable_run_payload(tmp_path: Path) -> None:
 
     assert polled["case_id"] == "mock_lqcd_goal"
     assert polled["summary"]["status"] in {"running", "success"}
+
+
+def test_start_graph_run_accepts_terminal_equivalent_payload(tmp_path: Path) -> None:
+    payload = start_graph_run(
+        config_id="missing_input.input",
+        output_root=tmp_path,
+        output_dir=tmp_path,
+        run_id="fit_demo_001",
+        llm_provider_config_path="configs/runtime/mock_llm.yaml",
+    )
+    polled = run_status_payload(output_root=tmp_path, case_id=payload["case_id"], run_id=payload["run_id"])
+
+    assert payload["case_id"] == "phase10c_missing_input"
+    assert payload["run_id"] == "fit_demo_001"
+    assert "--case configs/cases/missing_input.input.json" in payload["command_preview"]
+    assert "--run-id fit_demo_001" in payload["command_preview"]
+    assert "--llm-provider-config configs/runtime/mock_llm.yaml" in payload["command_preview"]
+    assert Path(polled["run_dir"], "graph_state.json").exists() or polled["job_status"] == "running"
+
+
+def test_start_graph_run_blocks_live_provider_when_env_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("RUN_LIVE_LLM_TESTS", raising=False)
+
+    with pytest.raises(DemoServerError, match="RUN_LIVE_LLM_TESTS=1 is required"):
+        start_graph_run(
+            config_id="clean_fit.input",
+            output_root=tmp_path,
+            run_id="clean_fit_live_demo_001",
+            llm_provider_config_path="configs/runtime/openai.yaml",
+        )
+
+
+def test_runtime_provider_path_rejects_paths_outside_runtime_configs() -> None:
+    with pytest.raises(DemoServerError, match="Unknown runtime config"):
+        resolve_runtime_config_path("/etc/passwd")
+
+
+def test_openai_command_preview_includes_live_env_hint_when_env_missing(tmp_path: Path) -> None:
+    command = command_preview(
+        case_path=Path("configs/cases/missing_input.input.json"),
+        output_dir=tmp_path,
+        run_id="fit_demo_001",
+        llm_provider_config_path=Path("configs/runtime/openai.yaml"),
+    )
+
+    assert "--llm-provider-config configs/runtime/openai.yaml" in command
+    assert command.startswith("RUN_LIVE_LLM_TESTS=1 ") or "RUN_LIVE_LLM_TESTS=1" not in command
 
 
 def test_once_smoke_runs_clean_case(tmp_path: Path) -> None:

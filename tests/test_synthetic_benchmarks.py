@@ -46,6 +46,18 @@ def test_mock_provider_demo_writes_checklists_and_summary(tmp_path: Path) -> Non
         assert checklist["items"]
 
 
+def test_mock_provider_full_case_set_passes(tmp_path: Path) -> None:
+    result = runner.run_benchmarks(
+        case_set="full",
+        output_dir=tmp_path,
+        provider="mock",
+        run_id_prefix="test_full",
+    )
+
+    assert result["passed"] is True
+    assert result["case_count"] == 9
+
+
 def test_scenario_data_is_consumed_without_exposing_expected_notes(tmp_path: Path) -> None:
     result = runner.run_benchmarks(
         case_set="demo",

@@ -155,6 +155,18 @@ The full mock-provider suite can be run with:
 python evaluation/synthetic_benchmarks/run_synthetic_benchmarks.py --provider mock --case-set full --output-dir /private/tmp/lqcd-agent-phase10c-full
 ```
 
+The full suite must treat intentional pre-analysis stops, such as the missing-input scenario, as valid when their expected route, approval behavior, and pending memory state match the instructor-only contract. Warning checks use the concrete diagnostic codes written by the Scientific Reviewer rather than a generic upstream placeholder.
+
+The Phase 10D demo-console and LLM-auditability milestone acceptance commands are:
+
+```bash
+pytest -q
+python evaluation/synthetic_benchmarks/run_synthetic_benchmarks.py --provider mock --case-set full --output-dir /private/tmp/lqcd-agent-phase10d-full
+python -m lqcd_agent.demo.server --once-smoke --output-root /private/tmp/lqcd-agent-phase10d-demo-smoke
+```
+
+Provider-backed test runs must write non-secret `llm_calls/<agent>.json` records, include them in the manifest, and reference them in the final report. The console must discover YAML and JSON cases, expose configured runtime providers, reject unconfigured live-provider execution, and keep its default run artifacts under ignored repo-local `outputs/`.
+
 The optional live-provider Phase 10C advisor-demo command is:
 
 ```bash

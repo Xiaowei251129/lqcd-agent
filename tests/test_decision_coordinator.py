@@ -117,6 +117,44 @@ def test_low_risk_accepts_mock_result_with_structured_evidence(tmp_path: Path) -
     _assert_one_primary_next_action(decision_log)
 
 
+def test_advisory_normalization_warning_does_not_raise_risk(tmp_path: Path) -> None:
+    review = _review_report()
+    review["warnings"] = [
+        {
+            "section": "method_plan",
+            "code": "selected_analysis_programs_normalized",
+            "severity": "info",
+            "decision_coordinator_flag": False,
+            "message": "Provider selected registered analysis program(s), and runtime normalized mappings.",
+            "programs": ["single_exponential_effective_mass"],
+            "changed_fields": [
+                {
+                    "name": "single_exponential_effective_mass",
+                    "changed_fields": ["input_mapping"],
+                }
+            ],
+        }
+    ]
+    review["evidence"].append(
+        {
+            "source": "method_plan_advisory",
+            "code": "selected_analysis_programs_normalized",
+            "severity": "info",
+            "decision_coordinator_flag": False,
+        }
+    )
+    review["confidence"] = "high"
+    method_path, run_path, review_path = _write_artifacts(tmp_path, review_report=review)
+
+    decision_log = _run_decision(tmp_path, method_path=method_path, run_path=run_path, review_path=review_path)
+
+    assert decision_log["status"] == "success"
+    assert decision_log["risk_level"] == "low"
+    assert decision_log["recommended_action"] == "accept_mock_result"
+    assert decision_log["human_approval_required"] is False
+    _assert_one_primary_next_action(decision_log)
+
+
 def test_medium_risk_is_pending_and_human_review_recommended(tmp_path: Path) -> None:
     review = _review_report()
     review["warnings"] = [
@@ -247,6 +285,11 @@ def test_provider_backed_decision_coordinator_accepts_valid_mock_output(tmp_path
     assert decision_log["producer"] == "decision_coordinator"
     assert decision_log["risk_level"] == "low"
     assert decision_log["routing_decision"]["actual_route"] == "memory_report"
+    trace = json.loads((tmp_path / "llm_calls" / "decision_coordinator.json").read_text(encoding="utf-8"))
+    assert trace["agent"] == "decision_coordinator"
+    assert trace["provider"]["provider"] == "mock"
+    assert trace["parsed_payload_path"] == str(tmp_path / "decision_log.json")
+    assert trace["response"]["content"]
     _assert_one_primary_next_action(decision_log)
 
 

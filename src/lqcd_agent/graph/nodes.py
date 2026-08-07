@@ -486,6 +486,23 @@ def human_approval_gate_node(state: AnalysisState) -> AnalysisState:
     return state
 
 
+def _record_llm_call_files_in_manifest(state: AnalysisState) -> None:
+    output_dir = Path(state["output_dir"])
+    manifest_path = output_dir / "manifest.json"
+    trace_dir = output_dir / "llm_calls"
+    if not manifest_path.exists() or not trace_dir.exists():
+        return
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return
+    if not isinstance(manifest, dict):
+        return
+    trace_files = sorted(str(path) for path in trace_dir.glob("*.json") if path.is_file())
+    manifest["llm_call_files"] = trace_files
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def memory_report_node(state: AnalysisState) -> AnalysisState:
     state = dict(state)
     state["current_node"] = "memory_report"
@@ -496,6 +513,7 @@ def memory_report_node(state: AnalysisState) -> AnalysisState:
     state["status"] = "success" if memory_status == "accepted" else "pending"
     report_result = write_final_report(state, memory_result["memory_update"])
     state["final_report_path"] = report_result["final_report_path"]
+    _record_llm_call_files_in_manifest(state)
     append_event(
         state,
         node="memory_report",

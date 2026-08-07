@@ -6,11 +6,13 @@ The project does not make final physics claims, does not read real raw numeric d
 
 ## Current Status
 
-The repository has completed the source-of-truth documentation pass, the repository skeleton, the initial real LangGraph mock runtime skeleton, the standalone deterministic Method Planner module, Phase 2B Method Planner graph integration, Phase 3 Codex Handoff integration, Phase 4 Analysis Engineer integration, Phase 5 Scientific Reviewer diagnostics, Phase 6 Decision Coordinator risk rubric, Phase 7 Human Approval Gate integration, Phase 8 Memory, Final Report, and Synthetic Evaluation Harness implementation, Phase 9 Golden Example productization, Phase 10 provider abstraction with secure dry-run configuration, Phase 10B provider-backed agent wiring, and Phase 10C advisor-demo synthetic benchmarks.
+The repository has completed the source-of-truth documentation pass, the repository skeleton, the initial real LangGraph mock runtime skeleton, the standalone deterministic Method Planner module, Phase 2B Method Planner graph integration, Phase 3 Codex Handoff integration, Phase 4 Analysis Engineer integration, Phase 5 Scientific Reviewer diagnostics, Phase 6 Decision Coordinator risk rubric, Phase 7 Human Approval Gate integration, Phase 8 Memory, Final Report, and Synthetic Evaluation Harness implementation, Phase 9 Golden Example productization, Phase 10 provider abstraction with secure dry-run configuration, Phase 10B provider-backed agent wiring, Phase 10C advisor-demo synthetic benchmarks, and the Phase 10D demo-console and LLM-auditability milestone.
 
-The graph method planner node calls the standalone Method Planner, the graph analysis node calls the standalone Analysis Engineer, the graph reviewer node calls the standalone Scientific Reviewer, the graph decision node calls the standalone Decision Coordinator, the graph approval node writes file-based approval packets, and the graph memory/report node calls dedicated memory and final-report modules. Method Planner, Scientific Reviewer, and Decision Coordinator remain deterministic by default, but can use provider-backed structured output when `--llm-provider-config` is supplied. The no-code low-risk path writes `run_result.json`, `manifest.json`, `run.log`, synthetic mock analysis outputs, `scientific_review_report.json`, `decision_log.json`, `memory_update.json`, and `final_report.md` under the canonical run path. Planner `needs_more_info` outcomes stop safely as `pending` before analysis; `code_needed=true` writes `coder_task_packet.yaml` and routes to Codex Handoff. Medium outcomes remain pending memory; high and critical outcomes generate `approval_packet/` artifacts and can write pending `memory_update.json` plus `final_report.md` while waiting for a structured human decision. The synthetic Phase 8 evaluation harness covers good, ambiguous, and bad cases without reading real raw numeric data. The Phase 9 golden demo links to the sibling `l64c64a076_m140` example as read-only provenance while keeping analysis output synthetic. The Phase 10C benchmark runs separate advisor-demo scenarios under `evaluation/synthetic_benchmarks/`, keeps instructor-only expected behavior out of agent inputs, and writes per-scenario checklists plus `synthetic_rehearsal_summary.md`; optional live-provider runs also write `advisor_demo_report.md`. Real raw-data-backed evaluation, databases, and production deployment remain deferred.
+The graph method planner node calls the standalone Method Planner, the graph analysis node calls the standalone Analysis Engineer, the graph reviewer node calls the standalone Scientific Reviewer, the graph decision node calls the standalone Decision Coordinator, the graph approval node writes file-based approval packets, and the graph memory/report node calls dedicated memory and final-report modules. Method Planner, Scientific Reviewer, and Decision Coordinator remain deterministic by default, but can use provider-backed structured output when `--llm-provider-config` is supplied. The no-code low-risk path writes `run_result.json`, `manifest.json`, `run.log`, synthetic mock analysis outputs, `scientific_review_report.json`, `decision_log.json`, `memory_update.json`, and `final_report.md` under the canonical run path. Provider-backed runs also write request/response audit records under `llm_calls/`, record them in the manifest, and link them from the final report. Planner `needs_more_info` outcomes stop safely as `pending` before analysis; `code_needed=true` writes `coder_task_packet.yaml` and routes to Codex Handoff. Medium outcomes remain pending memory; high and critical outcomes generate `approval_packet/` artifacts and can write pending `memory_update.json` plus `final_report.md` while waiting for a structured human decision. The synthetic Phase 8 evaluation harness covers good, ambiguous, and bad cases without reading real raw numeric data. The Phase 9 golden demo links to the sibling `l64c64a076_m140` example as read-only provenance while keeping analysis output synthetic. The Phase 10C benchmark runs separate advisor-demo scenarios under `evaluation/synthetic_benchmarks/`, keeps instructor-only expected behavior out of agent inputs, and writes per-scenario checklists plus `synthetic_rehearsal_summary.md`; optional live-provider runs also write `advisor_demo_report.md`. Phase 10D adds YAML/JSON case discovery, runtime-provider selection, live-provider guards, command previews, richer artifact links, and run-level LLM audit visibility to the local console. Real raw-data-backed evaluation, databases, and production deployment remain deferred.
 
 The canonical run result path is `<output_root>/<case_id>/<run_id>/`. Repo-local `outputs/` is for ignored actual-run artifacts only; future curated evaluation baselines belong under `evaluation/reference_outputs/`, not under `outputs/`. For verification, prefer a temporary output root such as `/private/tmp/lqcd-agent-smoke`. If `--run-id` is omitted, the CLI generates a timestamped run id.
+
+The `v0.2-demo` milestone captures the stable demo-ready research MVP before the next development phase expands good, bad, and ambiguous examples, strengthens individual agents, and improves the evaluation harness. The tag is a reproducible source snapshot, not a production-readiness claim.
 
 ## Directory Structure
 
@@ -20,7 +22,8 @@ The canonical run result path is `<output_root>/<case_id>/<run_id>/`. Repo-local
 ├── configs/
 │   ├── cases/
 │   │   ├── mock_lqcd_goal.yaml    # Placeholder synthetic case config
-│   │   └── l64c64a076_m140.yaml   # Conservative golden demo case config
+│   │   ├── l64c64a076_m140.yaml   # Conservative golden demo case config
+│   │   └── *.input.json           # Registered-program demo case configs
 │   └── runtime/
 │       ├── mock_llm.yaml          # Placeholder deterministic mock provider config
 │       ├── openai.yaml            # OpenAI provider config with env-var placeholders
@@ -29,6 +32,7 @@ The canonical run result path is `<output_root>/<case_id>/<run_id>/`. Repo-local
 ├── evaluation/                    # Synthetic Phase 8 and Phase 10C evaluation runners
 ├── outputs/
 │   └── .gitkeep                   # Keeps the future output root in version control
+├── raw_data/                      # Small tracked demo fixtures for registered analysis programs
 ├── scripts/
 │   └── run_langgraph_demo.sh      # One-command Phase 9 golden mock demo
 ├── src/
@@ -37,7 +41,7 @@ The canonical run result path is `<output_root>/<case_id>/<run_id>/`. Repo-local
 │       ├── analysis/              # Scientific Reviewer diagnostic helpers
 │       ├── coder/                 # File-based handoff artifact helpers
 │       ├── graph/                 # LangGraph mock runtime, routing, and CLI
-│       ├── llm/                   # Provider abstraction, mock provider, and dry-run config loader
+│       ├── llm/                   # Provider abstraction, secure configuration, and LLM call traces
 │       ├── memory/                # Memory update classification and query helpers
 │       ├── report/                # Final Markdown report generation
 │       ├── tools/                 # Repository inventory, command, validation, and manifest helpers
@@ -80,6 +84,7 @@ python -m lqcd_agent.graph.run_graph --case configs/cases/mock_lqcd_goal.yaml --
 python -m lqcd_agent.graph.run_graph --case configs/cases/mock_lqcd_goal.yaml --output-dir /private/tmp/lqcd-agent-smoke
 python evaluation/run_evaluation.py
 python evaluation/synthetic_benchmarks/run_synthetic_benchmarks.py --provider mock --case-set demo --output-dir /private/tmp/lqcd-agent-phase10c-mock
+python evaluation/synthetic_benchmarks/run_synthetic_benchmarks.py --provider mock --case-set full --output-dir /private/tmp/lqcd-agent-phase10c-full
 python -m lqcd_agent.demo.server --once-smoke --output-root /private/tmp/lqcd-agent-demo-smoke
 python -m lqcd_agent.demo.server --host 127.0.0.1 --port 8765
 bash scripts/run_langgraph_demo.sh
@@ -101,7 +106,7 @@ Then open:
 http://127.0.0.1:8765
 ```
 
-The console accepts a case config from `configs/cases/*.yaml` or pasted/uploaded YAML, validates the config, starts a real local LangGraph run, polls the graph path, and shows the final risk/action, memory status, report summary, and artifact links. If a run reaches Human Approval Gate, the UI opens a decision modal backed by `approval_packet/07_human_decision.yaml`; `approve_with_conditions` and `reject_or_hold` continue to the Memory/Report node, while rerun/code-change decisions remain pending intents in this mock-first phase. If `--llm-provider-config` is omitted, the graph uses deterministic local agents and does not call an external model API. Pass `--llm-provider-config configs/runtime/openai.yaml` or another provider config only after the required API environment variables are available. Actual run artifacts are written under `/private/tmp/lqcd-agent-demo-ui`.
+The console discovers YAML and JSON cases under `configs/cases/`, accepts pasted or uploaded configs, previews the analysis route and input status, and exposes the configured deterministic or live runtime providers. It validates the selection, shows the equivalent CLI command, starts a real local LangGraph run, polls the graph path, and displays the final risk/action, memory status, report summary, LLM audit records, and artifact links. Live providers remain blocked unless their configured opt-in environment variable is enabled. If a run reaches Human Approval Gate, the UI opens a decision modal backed by `approval_packet/07_human_decision.yaml`; `approve_with_conditions` and `reject_or_hold` continue to the Memory/Report node, while rerun/code-change decisions remain pending intents in this mock-first phase. If `--llm-provider-config` is omitted, the graph uses deterministic local agents and does not call an external model API. By default, local-console run artifacts are written under the ignored repo-local `outputs/` directory.
 
 ## Documentation Map
 

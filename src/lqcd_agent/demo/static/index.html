@@ -19,14 +19,60 @@
           <select id="configSelect"></select>
         </label>
 
+        <div class="two-col">
+          <label class="field">
+            <span>Output dir</span>
+            <input id="outputDir" type="text" value="outputs" />
+          </label>
+          <label class="field">
+            <span>Run id</span>
+            <input id="runId" type="text" placeholder="optional, e.g. fit_demo_001" />
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Provider config</span>
+          <select id="providerSelect"></select>
+        </label>
+        <div id="providerStatus" class="status-note">Provider status pending.</div>
+
         <div class="split-label">
           <span>Custom case config</span>
           <label class="file-button">
-            Upload YAML
-            <input id="configFile" type="file" accept=".yaml,.yml,text/yaml,text/plain" />
+            Upload Config
+            <input id="configFile" type="file" accept=".yaml,.yml,.json,application/json,text/yaml,text/plain" />
           </label>
         </div>
-        <textarea id="configText" class="config-text" spellcheck="false" placeholder="Paste a case config YAML here to run a generated config instead of the selected repo config."></textarea>
+        <textarea id="configText" class="config-text" spellcheck="false" placeholder="Paste a case config YAML or JSON here to run a generated config instead of the selected repo config."></textarea>
+
+        <details class="advanced-options">
+          <summary>Advanced Codex handoff</summary>
+          <div class="check-row">
+            <label><input id="autoCodexHandoff" type="checkbox" /> Auto handoff</label>
+            <label><input id="forceCodexHandoff" type="checkbox" /> Force handoff</label>
+            <label><input id="dryRunCodex" type="checkbox" /> Dry run</label>
+          </div>
+          <div class="two-col">
+            <label class="field">
+              <span>Codex bin</span>
+              <input id="codexBin" type="text" value="codex" />
+            </label>
+            <label class="field">
+              <span>Codex model</span>
+              <input id="codexModel" type="text" placeholder="optional" />
+            </label>
+          </div>
+          <div class="two-col">
+            <label class="field">
+              <span>Codex timeout seconds</span>
+              <input id="codexTimeout" type="number" value="900" min="1" />
+            </label>
+            <label class="field">
+              <span>Verification timeout seconds</span>
+              <input id="verificationTimeout" type="number" value="60" min="1" />
+            </label>
+          </div>
+        </details>
 
         <div class="actions">
           <button id="validateButton" type="button" class="secondary">Validate</button>
@@ -34,6 +80,8 @@
         </div>
 
         <div id="configPreview" class="preview-box">Select or paste a config, then validate or run.</div>
+        <h3>Command Preview</h3>
+        <pre id="commandPreview" class="command-preview">Select a case to preview the equivalent command.</pre>
       </section>
 
       <section class="graph-pane">
@@ -62,6 +110,8 @@
         <dl id="summaryGrid" class="summary-grid"></dl>
         <h3>Final Report</h3>
         <pre id="reportSummary" class="report-summary">No run yet.</pre>
+        <h3>Warnings</h3>
+        <div id="warningList" class="warning-list">No warnings.</div>
         <h3>Artifacts</h3>
         <div id="artifactLinks" class="artifact-links"></div>
       </aside>

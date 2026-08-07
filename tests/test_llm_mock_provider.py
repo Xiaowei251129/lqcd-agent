@@ -5,6 +5,7 @@ from lqcd_agent.llm.base import LLMRequest
 from lqcd_agent.llm.mock_provider import MockLLMProvider
 from lqcd_agent.llm.prompts import build_scientific_reviewer_request
 from lqcd_agent.llm.structured_output import parse_json_object, write_error_artifact
+from lqcd_agent.llm.trace import write_llm_call_trace
 
 
 def test_mock_provider_returns_deterministic_json() -> None:
@@ -42,6 +43,31 @@ def test_invalid_json_output_writes_structured_error_artifact(tmp_path: Path) ->
 
     assert written["producer"] == "method_planner"
     assert written["summary"] == "Provider output was not valid JSON."
+
+
+def test_llm_call_trace_records_request_response_without_secret_values(tmp_path: Path) -> None:
+    provider = MockLLMProvider()
+    request = LLMRequest(messages=[{"role": "user", "content": "Return JSON."}])
+    response = provider.generate(request)
+
+    path = write_llm_call_trace(
+        output_dir=tmp_path,
+        agent="method_planner",
+        provider=provider,
+        request=request,
+        response=response,
+        parsed_payload_path=tmp_path / "method_plan.json",
+        status="success",
+    )
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+
+    assert Path(path).name == "method_planner.json"
+    assert payload["agent"] == "method_planner"
+    assert payload["request"]["messages"] == request.messages
+    assert payload["response"]["content"] == response.content
+    assert payload["parsed_payload_path"] == str(tmp_path / "method_plan.json")
+    assert "api_key" not in json.dumps(payload).lower()
+    assert "sk-" not in json.dumps(payload)
 
 
 def test_mock_provider_preserves_severe_reviewer_summary() -> None:

@@ -1,4 +1,4 @@
-"""Final Markdown report generator for mock graph runs."""
+"""Final Markdown report generator for agent graph runs."""
 
 from __future__ import annotations
 
@@ -44,18 +44,38 @@ def _human_decision_summary(state: AnalysisState) -> str:
     return f"Human decision status: `{status}`."
 
 
+def _display_action(value: Any) -> Any:
+    return "accept_result" if value == "accept_mock_result" else value
+
+
+def _display_message(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.replace("mock-result", "result")
+    return value
+
+
 def _bullet_lines(items: list[Any], *, empty: str) -> list[str]:
     if not items:
         return [f"- {empty}"]
     lines = []
     for item in items:
         if isinstance(item, dict):
-            code = item.get("code") or item.get("action") or item.get("field") or "item"
-            message = item.get("message") or item.get("summary") or item.get("status") or item
+            code = _display_action(item.get("code") or item.get("action") or item.get("field") or "item")
+            message = _display_message(item.get("message") or item.get("summary") or item.get("status") or item)
             lines.append(f"- `{code}`: {message}")
         else:
-            lines.append(f"- {item}")
+            lines.append(f"- {_display_message(item)}")
     return lines
+
+
+def _llm_call_lines(output_dir: str | Path) -> list[str]:
+    trace_dir = Path(output_dir) / "llm_calls"
+    if not trace_dir.exists():
+        return ["- No LLM call transcripts recorded."]
+    trace_files = sorted(path for path in trace_dir.glob("*.json") if path.is_file())
+    if not trace_files:
+        return ["- No LLM call transcripts recorded."]
+    return [f"- {path.name}: {path}" for path in trace_files]
 
 
 def build_final_report(state: AnalysisState, memory_update: dict[str, Any]) -> str:
@@ -108,9 +128,12 @@ def build_final_report(state: AnalysisState, memory_update: dict[str, Any]) -> s
         "",
         "## Coordinator Decision",
         f"- risk_level: {state['risk_level']}",
-        f"- recommended_action: {state['recommended_action']}",
+        f"- recommended_action: {_display_action(state['recommended_action'])}",
         f"- human_approval_required: {state['human_approval_required']}",
         f"- decision_log_path: {state.get('decision_log_path')}",
+        "",
+        "## LLM Calls",
+        *_llm_call_lines(state["output_dir"]),
         "",
         "## Approval Status",
         f"- approval_packet_dir: {state.get('approval_packet_dir')}",

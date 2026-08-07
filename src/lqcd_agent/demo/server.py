@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import mimetypes
+import os
+import shlex
 import sys
 import tempfile
 import threading
@@ -33,11 +35,20 @@ from lqcd_agent.graph.routing import route_after_human_approval_gate
 
 
 STATIC_ROOT = Path(__file__).resolve().parent / "static"
-DEFAULT_OUTPUT_ROOT = Path("/private/tmp/lqcd-agent-demo-ui")
+DEFAULT_OUTPUT_ROOT = REPO_ROOT / "outputs"
 CASE_CONFIGS_ROOT = REPO_ROOT / "configs" / "cases"
+RUNTIME_CONFIGS_ROOT = REPO_ROOT / "configs" / "runtime"
 GENERATED_CONFIG_DIRNAME = "_generated_case_configs"
 RUN_JOBS: dict[tuple[str, str], dict[str, Any]] = {}
 RUN_JOBS_LOCK = threading.Lock()
+CASE_CONFIG_PATTERNS = ("*.yaml", "*.yml", "*.json")
+RAW_DATA_DEMO_ORDER = {
+    "clean_fit.input": 0,
+    "noisy_valid_fit.input": 1,
+    "fit_window_contamination.input": 2,
+    "plateau_instability.input": 3,
+    "missing_input.input": 4,
+}
 NODE_LABELS = {
     "START": "Start",
     "method_planner": "Method Planner",
@@ -74,19 +85,76 @@ def read_json_file(path: Path) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
+def relative_to_repo(path: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def read_flat_config(path: Path) -> dict[str, Any]:
+    if path.suffix == ".json":
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else {}
+    return read_case_config(path)
+
+
+def case_config_sort_key(path: Path) -> tuple[int, int, str]:
+    order = RAW_DATA_DEMO_ORDER.get(path.stem)
+    if order is not None:
+        return (0, order, path.name)
+    return (1, 999, path.name)
+
+
+def case_config_paths() -> list[Path]:
+    paths: set[Path] = set()
+    for pattern in CASE_CONFIG_PATTERNS:
+        paths.update(CASE_CONFIGS_ROOT.glob(pattern))
+    return sorted(paths, key=case_config_sort_key)
+
+
+def raw_data_preview(payload: dict[str, Any]) -> tuple[str | None, str]:
+    raw_data_path = payload.get("raw_data_path")
+    if not raw_data_path:
+        return None, "not_configured"
+    raw_data_text = str(raw_data_path)
+    candidate = Path(raw_data_text).expanduser()
+    if not candidate.is_absolute():
+        candidate = REPO_ROOT / candidate
+    return raw_data_text, "exists" if candidate.is_file() else "missing"
+
+
 def case_configs() -> list[dict[str, Any]]:
     configs: list[dict[str, Any]] = []
-    for path in sorted(CASE_CONFIGS_ROOT.glob("*.yaml")):
+    for path in case_config_paths():
         payload = read_case_config(path)
         case_id = str(payload.get("case_id", path.stem))
+        commands = as_string_list(payload.get("analysis_commands") or payload.get("analysis_command"))
+        analysis_program_tags = as_string_list(payload.get("analysis_program_tags") or payload.get("analysis_tags"))
+        target_observables = as_string_list(payload.get("target_observables"))
+        expected_outputs = as_string_list(payload.get("expected_outputs") or payload.get("analysis_expected_outputs"))
+        raw_data_path, raw_data_status = raw_data_preview(payload)
         configs.append(
             {
                 "config_id": path.stem,
                 "case_id": case_id,
-                "path": str(path),
+                "path": relative_to_repo(path),
+                "absolute_path": str(path),
                 "label": f"{case_id} ({path.name})",
                 "physics_goal": payload.get("physics_goal"),
                 "source_kind": payload.get("source_kind"),
+                "config_type": path.suffix.lstrip(".") or "config",
+                "analysis_commands": commands,
+                "analysis_route": analysis_route(
+                    commands=commands,
+                    analysis_program_tags=analysis_program_tags,
+                    target_observables=target_observables,
+                ),
+                "raw_data_path": raw_data_path,
+                "raw_data_status": raw_data_status,
+                "analysis_program_tags": analysis_program_tags,
+                "target_observables": target_observables,
+                "expected_outputs": expected_outputs,
             }
         )
     return configs
@@ -94,9 +162,48 @@ def case_configs() -> list[dict[str, Any]]:
 
 def case_config_record(config_id: str) -> dict[str, Any]:
     for config in case_configs():
-        if config["config_id"] == config_id or config["case_id"] == config_id:
+        if config["config_id"] == config_id or config["case_id"] == config_id or config["path"] == config_id:
             return config
     raise DemoServerError(HTTPStatus.NOT_FOUND, f"Unknown case config: {config_id}")
+
+
+def runtime_configs() -> list[dict[str, Any]]:
+    configs: list[dict[str, Any]] = []
+    for path in sorted(RUNTIME_CONFIGS_ROOT.glob("*.yaml")):
+        payload = read_flat_config(path)
+        live_env = str(payload["live_test_env"]) if payload.get("live_test_env") else None
+        provider = str(payload.get("provider", path.stem))
+        provider_lower = provider.lower()
+        provider_mode = "live" if live_env else "testing" if provider_lower == "mock" else "local"
+        recommended = path.stem == "openai" or provider_lower == "openai"
+        label_suffix = "live provider" if provider_mode == "live" else "testing/developer only" if provider_mode == "testing" else "local provider"
+        configs.append(
+            {
+                "config_id": path.stem,
+                "path": relative_to_repo(path),
+                "absolute_path": str(path),
+                "label": f"{provider} ({path.name}) - {label_suffix}",
+                "provider": provider,
+                "provider_mode": provider_mode,
+                "recommended": recommended,
+                "model_env": payload.get("model_env"),
+                "api_key_env": payload.get("api_key_env"),
+                "live_test_env": live_env,
+                "live_test_env_enabled": bool(live_env and os.environ.get(live_env) == "1"),
+            }
+        )
+    return sorted(configs, key=lambda item: (not bool(item["recommended"]), str(item["label"])))
+
+
+def runtime_config_record(config_id: str) -> dict[str, Any]:
+    candidate = Path(config_id).expanduser()
+    if not candidate.is_absolute():
+        candidate = (REPO_ROOT / candidate).resolve()
+    for config in runtime_configs():
+        absolute = Path(str(config["absolute_path"])).resolve()
+        if config["config_id"] == config_id or config["path"] == config_id or absolute == candidate:
+            return config
+    raise DemoServerError(HTTPStatus.NOT_FOUND, f"Unknown runtime config: {config_id}")
 
 
 def as_string_list(value: Any) -> list[str]:
@@ -109,19 +216,37 @@ def as_string_list(value: Any) -> list[str]:
     return [str(value)]
 
 
+def analysis_route(*, commands: list[str], analysis_program_tags: list[str], target_observables: list[str]) -> str:
+    if commands:
+        return "analysis_commands"
+    if analysis_program_tags or target_observables:
+        return "registered_analysis_program"
+    return "default_mock_command"
+
+
 def case_config_preview(path: str | Path) -> dict[str, Any]:
     config_path = Path(path)
     payload = read_case_config(config_path)
     case_id = str(payload.get("case_id", config_path.stem))
     commands = as_string_list(payload.get("analysis_commands") or payload.get("analysis_command"))
+    analysis_program_tags = as_string_list(payload.get("analysis_program_tags") or payload.get("analysis_tags"))
+    target_observables = as_string_list(payload.get("target_observables"))
     expected_outputs = as_string_list(payload.get("expected_outputs") or payload.get("analysis_expected_outputs"))
+    raw_data_path, raw_data_status = raw_data_preview(payload)
+    route = analysis_route(
+        commands=commands,
+        analysis_program_tags=analysis_program_tags,
+        target_observables=target_observables,
+    )
     warnings: list[str] = []
     if not payload.get("case_id"):
         warnings.append("case_id is missing; the filename will be used as a fallback.")
     if not payload.get("physics_goal"):
         warnings.append("physics_goal is missing.")
-    if not commands:
-        warnings.append("analysis_commands is missing; Analysis Engineer will use its default mock command.")
+    if route == "default_mock_command":
+        warnings.append("analysis_commands is missing; Analysis Engineer will use its developer/testing fallback command.")
+    if raw_data_status == "missing":
+        warnings.append(f"raw_data_path is configured but the file is missing: {raw_data_path}.")
     if not expected_outputs:
         warnings.append("expected_outputs is missing; Analysis Engineer will use its default expected output.")
     return {
@@ -131,6 +256,11 @@ def case_config_preview(path: str | Path) -> dict[str, Any]:
         "physics_goal": payload.get("physics_goal"),
         "source_kind": payload.get("source_kind"),
         "analysis_commands": commands,
+        "analysis_route": route,
+        "raw_data_path": raw_data_path,
+        "raw_data_status": raw_data_status,
+        "analysis_program_tags": analysis_program_tags,
+        "target_observables": target_observables,
         "expected_outputs": expected_outputs,
         "warnings": warnings,
     }
@@ -147,11 +277,12 @@ def write_generated_case_config(*, config_text: str, output_root: str | Path) ->
     if not text:
         raise DemoServerError(HTTPStatus.BAD_REQUEST, "Case config text is empty.")
     root = generated_config_root(output_root)
-    temp_path = root / f"pasted_{utc_run_prefix()}.yaml"
+    suffix = ".json" if text.startswith("{") else ".yaml"
+    temp_path = root / f"pasted_{utc_run_prefix()}{suffix}"
     temp_path.write_text(text + "\n", encoding="utf-8")
     preview = case_config_preview(temp_path)
     case_id = str(preview["case_id"]).replace("/", "_").replace("..", "_")
-    final_path = root / f"{case_id}_{utc_run_prefix()}.yaml"
+    final_path = root / f"{case_id}_{utc_run_prefix()}{suffix}"
     temp_path.replace(final_path)
     return final_path
 
@@ -167,7 +298,101 @@ def resolve_case_config_path(
     if not config_id:
         raise DemoServerError(HTTPStatus.BAD_REQUEST, "Missing case config.")
     record = case_config_record(config_id)
-    return Path(str(record["path"]))
+    return Path(str(record.get("absolute_path") or record["path"]))
+
+
+def resolve_output_dir(value: str | Path | None) -> Path:
+    if not value:
+        return DEFAULT_OUTPUT_ROOT
+    output_path = Path(str(value)).expanduser()
+    if not output_path.is_absolute():
+        output_path = REPO_ROOT / output_path
+    return output_path.resolve()
+
+
+def resolve_runtime_config_path(config_id_or_path: str | Path | None) -> str | None:
+    if not config_id_or_path:
+        return None
+    value = str(config_id_or_path)
+    record = runtime_config_record(value)
+    return str(record.get("absolute_path") or (REPO_ROOT / record["path"]))
+
+
+def bool_from_body(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def int_from_body(value: Any, default: int) -> int:
+    if value in {None, ""}:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise DemoServerError(HTTPStatus.BAD_REQUEST, f"Expected integer value, got {value!r}.") from exc
+
+
+def selected_runtime_warning(llm_provider_config_path: str | None) -> str | None:
+    live_env = missing_live_env(llm_provider_config_path)
+    if not live_env:
+        return None
+    return f"{live_env}=1 is not set on the demo server process; live provider runs are blocked."
+
+
+def missing_live_env(llm_provider_config_path: str | Path | None) -> str | None:
+    if not llm_provider_config_path:
+        return None
+    payload = read_flat_config(Path(llm_provider_config_path))
+    live_env = str(payload.get("live_test_env") or "")
+    if live_env and os.environ.get(live_env) != "1":
+        return live_env
+    return None
+
+
+def command_preview(
+    *,
+    case_path: str | Path,
+    output_dir: str | Path,
+    run_id: str | None = None,
+    llm_provider_config_path: str | Path | None = None,
+    auto_codex_handoff: bool = False,
+    codex_bin: str = "codex",
+    codex_model: str | None = None,
+    codex_timeout_seconds: int = 900,
+    verification_timeout_seconds: int = 60,
+    force_codex_handoff: bool = False,
+    dry_run_codex: bool = False,
+) -> str:
+    parts = ["python", "-m", "lqcd_agent.graph.run_graph", "--case", relative_to_repo(Path(case_path))]
+    parts.extend(["--output-dir", relative_to_repo(Path(output_dir))])
+    if run_id:
+        parts.extend(["--run-id", run_id])
+    if llm_provider_config_path:
+        parts.extend(["--llm-provider-config", relative_to_repo(Path(llm_provider_config_path))])
+    if auto_codex_handoff:
+        parts.append("--auto-codex-handoff")
+    if codex_bin != "codex":
+        parts.extend(["--codex-bin", codex_bin])
+    if codex_model:
+        parts.extend(["--codex-model", codex_model])
+    if codex_timeout_seconds != 900:
+        parts.extend(["--codex-timeout-seconds", str(codex_timeout_seconds)])
+    if verification_timeout_seconds != 60:
+        parts.extend(["--verification-timeout-seconds", str(verification_timeout_seconds)])
+    if force_codex_handoff:
+        parts.append("--force-codex-handoff")
+    if dry_run_codex:
+        parts.append("--dry-run-codex")
+    command = " ".join(shlex.quote(part) for part in parts)
+    if llm_provider_config_path:
+        payload = read_flat_config(Path(llm_provider_config_path))
+        live_env = str(payload.get("live_test_env") or "")
+        if live_env and os.environ.get(live_env) != "1":
+            command = f"{live_env}=1 {command}"
+    return command
 
 
 def validate_case_config_request(*, output_root: str | Path, body: dict[str, Any]) -> dict[str, Any]:
@@ -179,13 +404,16 @@ def validate_case_config_request(*, output_root: str | Path, body: dict[str, Any
     return {"config": case_config_preview(config_path)}
 
 
-def artifact_url(path: str | None) -> str | None:
+def artifact_url(path: str | None, output_root: str | Path | None = None) -> str | None:
     if not path:
         return None
-    return f"/artifacts?path={quote(path, safe='')}"
+    query = f"path={quote(path, safe='')}"
+    if output_root is not None:
+        query += f"&output_dir={quote(str(output_root), safe='')}"
+    return f"/artifacts?{query}"
 
 
-def artifact_entries(checklist: dict[str, Any] | None) -> list[dict[str, Any]]:
+def artifact_entries(checklist: dict[str, Any] | None, output_root: str | Path) -> list[dict[str, Any]]:
     if not checklist:
         return []
     paths = checklist.get("artifact_paths", {})
@@ -200,15 +428,20 @@ def artifact_entries(checklist: dict[str, Any] | None) -> list[dict[str, Any]]:
             {
                 "name": str(name),
                 "path": str(path),
-                "url": artifact_url(str(path)),
+                "url": artifact_url(str(path), output_root),
                 "exists": path.exists(),
             }
         )
     return entries
 
 
-def artifact_entries_for_run(run_dir: Path, graph_state: dict[str, Any], checklist: dict[str, Any] | None) -> list[dict[str, Any]]:
-    entries = artifact_entries(checklist)
+def artifact_entries_for_run(
+    run_dir: Path,
+    graph_state: dict[str, Any],
+    checklist: dict[str, Any] | None,
+    output_root: str | Path,
+) -> list[dict[str, Any]]:
+    entries = artifact_entries(checklist, output_root)
     seen = {entry["name"] for entry in entries}
     known_paths = {
         "method_plan": graph_state.get("method_plan_path") or str(run_dir / "method_plan.json"),
@@ -225,7 +458,7 @@ def artifact_entries_for_run(run_dir: Path, graph_state: dict[str, Any], checkli
         if name in seen or not raw_path:
             continue
         path = Path(str(raw_path))
-        entries.append({"name": name, "path": str(path), "url": artifact_url(str(path)), "exists": path.exists()})
+        entries.append({"name": name, "path": str(path), "url": artifact_url(str(path), output_root), "exists": path.exists()})
     return entries
 
 
@@ -336,7 +569,7 @@ def dashboard_payload(*, output_root: str | Path, case_id: str, run_id: str) -> 
         "checklist": checklist,
         "final_report": final_report,
         "final_report_summary": final_report_summary(final_report),
-        "artifacts": artifact_entries_for_run(run_dir, graph_state, checklist),
+        "artifacts": artifact_entries_for_run(run_dir, graph_state, checklist, output_path),
     }
 
 
@@ -429,12 +662,18 @@ def run_status_payload(*, output_root: str | Path, case_id: str, run_id: str) ->
     job_key = (case_id, run_id)
     with RUN_JOBS_LOCK:
         job = dict(RUN_JOBS.get(job_key, {}))
+    if job.get("output_root"):
+        output_root = str(job["output_root"])
     run_dir = run_dir_for(Path(output_root), case_id, run_id)
     if (run_dir / "graph_state.json").exists():
         payload = dashboard_payload(output_root=output_root, case_id=case_id, run_id=run_id)
         payload["job_status"] = job.get("status", "completed")
         if job.get("error"):
             payload["job_error"] = job["error"]
+        if job.get("command_preview"):
+            payload["command_preview"] = job["command_preview"]
+        if job.get("warnings"):
+            payload["warnings"] = job["warnings"]
         return payload
     if job:
         return {
@@ -450,6 +689,8 @@ def run_status_payload(*, output_root: str | Path, case_id: str, run_id: str) ->
             "final_report": "",
             "final_report_summary": "",
             "job_error": job.get("error"),
+            "command_preview": job.get("command_preview"),
+            "warnings": job.get("warnings", []),
         }
     raise DemoServerError(HTTPStatus.NOT_FOUND, f"Run not found: {case_id}/{run_id}")
 
@@ -459,20 +700,56 @@ def start_graph_run(
     output_root: str | Path,
     config_id: str | None = None,
     config_text: str | None = None,
+    output_dir: str | Path | None = None,
+    run_id: str | None = None,
     run_id_prefix: str | None = None,
     llm_provider_config_path: str | Path | None = None,
+    auto_codex_handoff: bool = False,
+    codex_bin: str = "codex",
+    codex_model: str | None = None,
+    codex_timeout_seconds: int = 900,
+    verification_timeout_seconds: int = 60,
+    force_codex_handoff: bool = False,
+    dry_run_codex: bool = False,
 ) -> dict[str, Any]:
-    config_path = resolve_case_config_path(output_root=output_root, config_id=config_id, config_text=config_text)
+    resolved_output_root = resolve_output_dir(output_dir or output_root)
+    config_path = resolve_case_config_path(output_root=resolved_output_root, config_id=config_id, config_text=config_text)
     preview = case_config_preview(config_path)
     case_id = str(preview["case_id"])
-    run_id = f"{run_id_prefix or utc_run_prefix()}_{case_id}"
-    job_key = (case_id, run_id)
+    resolved_run_id = str(run_id).strip() if run_id else f"{run_id_prefix or utc_run_prefix()}_{case_id}"
+    resolved_provider_config = resolve_runtime_config_path(llm_provider_config_path)
+    blocked_live_env = missing_live_env(resolved_provider_config)
+    if blocked_live_env:
+        raise DemoServerError(
+            HTTPStatus.BAD_REQUEST,
+            f"{blocked_live_env}=1 is required for the selected live LLM provider. "
+            f"Restart the demo server with {blocked_live_env}=1 before running this case.",
+        )
+    warnings = [warning for warning in [selected_runtime_warning(resolved_provider_config)] if warning]
+    command = command_preview(
+        case_path=config_path,
+        output_dir=resolved_output_root,
+        run_id=resolved_run_id,
+        llm_provider_config_path=resolved_provider_config,
+        auto_codex_handoff=auto_codex_handoff,
+        codex_bin=codex_bin,
+        codex_model=codex_model,
+        codex_timeout_seconds=codex_timeout_seconds,
+        verification_timeout_seconds=verification_timeout_seconds,
+        force_codex_handoff=force_codex_handoff,
+        dry_run_codex=dry_run_codex,
+    )
+    job_key = (case_id, resolved_run_id)
     with RUN_JOBS_LOCK:
         RUN_JOBS[job_key] = {
             "status": "running",
             "case_id": case_id,
-            "run_id": run_id,
+            "run_id": resolved_run_id,
             "config_path": str(config_path),
+            "output_root": str(resolved_output_root),
+            "llm_provider_config_path": resolved_provider_config,
+            "command_preview": command,
+            "warnings": warnings,
             "started_at": utc_now(),
         }
 
@@ -480,9 +757,16 @@ def start_graph_run(
         try:
             run_mock_graph(
                 case_path=str(config_path),
-                output_dir=str(output_root),
-                run_id=run_id,
-                llm_provider_config_path=str(llm_provider_config_path) if llm_provider_config_path else None,
+                output_dir=str(resolved_output_root),
+                run_id=resolved_run_id,
+                llm_provider_config_path=resolved_provider_config,
+                auto_codex_handoff=auto_codex_handoff,
+                codex_bin=codex_bin,
+                codex_model=codex_model,
+                codex_timeout_seconds=codex_timeout_seconds,
+                verification_timeout_seconds=verification_timeout_seconds,
+                force_codex_handoff=force_codex_handoff,
+                dry_run_codex=dry_run_codex,
             )
             with RUN_JOBS_LOCK:
                 RUN_JOBS[job_key]["status"] = "completed"
@@ -495,7 +779,7 @@ def start_graph_run(
 
     thread = threading.Thread(target=run_worker, daemon=True)
     thread.start()
-    return run_status_payload(output_root=output_root, case_id=case_id, run_id=run_id)
+    return run_status_payload(output_root=resolved_output_root, case_id=case_id, run_id=resolved_run_id)
 
 
 def yaml_scalar(value: Any) -> str:
@@ -632,18 +916,32 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
             if parsed.path in {"/api/cases", "/api/configs"}:
                 self.write_json({"configs": case_configs(), "cases": case_configs()})
                 return
+            if parsed.path == "/api/runtime-configs":
+                self.write_json(
+                    {
+                        "runtime_configs": runtime_configs(),
+                        "server": {
+                            "default_output_dir": relative_to_repo(resolve_output_dir(self.server.output_root)),
+                            "run_live_llm_tests": os.environ.get("RUN_LIVE_LLM_TESTS") == "1",
+                        },
+                    }
+                )
+                return
             if parsed.path.startswith("/api/runs/"):
                 parts = [part for part in parsed.path.split("/") if part]
                 if len(parts) != 4:
                     raise DemoServerError(HTTPStatus.NOT_FOUND, "Expected /api/runs/{case_id}/{run_id}.")
-                self.write_json(run_status_payload(output_root=self.server.output_root, case_id=parts[2], run_id=parts[3]))
+                query = parse_qs(parsed.query)
+                output_root = resolve_output_dir(query.get("output_dir", [None])[0] or self.server.output_root)
+                self.write_json(run_status_payload(output_root=output_root, case_id=parts[2], run_id=parts[3]))
                 return
             if parsed.path == "/artifacts":
                 query = parse_qs(parsed.query)
                 requested = query.get("path", [None])[0]
                 if not requested:
                     raise DemoServerError(HTTPStatus.BAD_REQUEST, "Missing artifact path.")
-                self.write_file(resolve_artifact_path(output_root=self.server.output_root, requested_path=requested))
+                output_root = resolve_output_dir(query.get("output_dir", [None])[0] or self.server.output_root)
+                self.write_file(resolve_artifact_path(output_root=output_root, requested_path=requested))
                 return
             self.write_static(parsed.path)
         except DemoServerError as exc:
@@ -688,12 +986,22 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
                 self.write_json(payload, status=HTTPStatus.CREATED)
                 return
             if parsed.path == "/api/runs":
+                output_root = resolve_output_dir(body.get("output_dir") or self.server.output_root)
                 payload = start_graph_run(
                     config_id=body.get("config_id") or body.get("case_id"),
                     config_text=body.get("config_text"),
-                    output_root=self.server.output_root,
+                    output_root=output_root,
+                    output_dir=str(output_root),
+                    run_id=body.get("run_id"),
                     run_id_prefix=body.get("run_id_prefix"),
                     llm_provider_config_path=body.get("llm_provider_config_path") or self.server.llm_provider_config_path,
+                    auto_codex_handoff=bool_from_body(body.get("auto_codex_handoff")),
+                    codex_bin=str(body.get("codex_bin") or "codex"),
+                    codex_model=str(body.get("codex_model")) if body.get("codex_model") else None,
+                    codex_timeout_seconds=int_from_body(body.get("codex_timeout_seconds"), 900),
+                    verification_timeout_seconds=int_from_body(body.get("verification_timeout_seconds"), 60),
+                    force_codex_handoff=bool_from_body(body.get("force_codex_handoff")),
+                    dry_run_codex=bool_from_body(body.get("dry_run_codex")),
                 )
                 self.write_json(payload, status=HTTPStatus.ACCEPTED)
                 return
@@ -799,7 +1107,7 @@ def main() -> None:
     parser.add_argument(
         "--llm-provider-config",
         default=None,
-        help="Optional provider config path. Omit to use deterministic local agents.",
+        help="Optional provider config path. Omit to use developer/testing deterministic mode.",
     )
     parser.add_argument("--once-smoke", action="store_true", help="Run one clean demo case and exit.")
     args = parser.parse_args()

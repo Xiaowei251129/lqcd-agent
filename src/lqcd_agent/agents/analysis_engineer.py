@@ -687,9 +687,9 @@ def run_analysis_engineer(
     run_result_path = run_dir / "run_result.json"
     manifest_path = run_dir / "manifest.json"
     summary = (
-        "Analysis Engineer completed the mock analysis run."
+        "Analysis Engineer completed the analysis run."
         if run_success
-        else "Analysis Engineer recorded a failed mock analysis run."
+        else "Analysis Engineer recorded a failed analysis run."
     )
     run_log_written_path = _write_run_log(
         path=run_log_path,

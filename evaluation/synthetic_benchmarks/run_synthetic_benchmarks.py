@@ -274,7 +274,11 @@ def build_checklist(
             or scenario.get("category") in {"code_fix_branch", "missing_input"},
             "Scenario input was copied into analysis outputs.",
         ),
-        _item("analysis_command_recorded", actual_command_recorded, "Run result records the synthetic benchmark command."),
+        _item(
+            "analysis_command_recorded",
+            actual_command_recorded or scenario.get("category") == "missing_input",
+            "Run result records the synthetic benchmark command, unless the scenario stops before analysis.",
+        ),
         _item(
             "case_specific_fit_summary_produced",
             bool(fit_summary and fit_summary.get("scenario_id") == scenario.get("case_id"))

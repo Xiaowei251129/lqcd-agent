@@ -9,7 +9,7 @@
   "expected_memory_status": "pending",
   "expected_human_approval_required": true,
   "expected_approval_packet": true,
-  "required_warning_codes": ["upstream_diagnostic_flag"],
+  "required_warning_codes": ["invalid_uncertainty"],
   "required_warning_values": ["invalid_uncertainty"],
   "forbidden_warning_codes": []
 }

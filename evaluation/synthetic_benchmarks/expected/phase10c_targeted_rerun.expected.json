@@ -11,7 +11,7 @@
   "expected_approval_packet": false,
   "expected_rerun_requested": true,
   "expected_rerun_target": "analysis_engineer",
-  "required_warning_codes": ["upstream_diagnostic_flag"],
+  "required_warning_codes": ["targeted_rerun_recommended"],
   "required_warning_values": ["targeted_rerun_recommended"],
   "forbidden_warning_codes": ["severe_normalization_violation", "invalid_uncertainty"],
   "numeric_tolerances": {

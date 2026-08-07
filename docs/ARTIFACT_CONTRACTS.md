@@ -18,6 +18,16 @@ Every artifact that influences a decision must include:
 - `warnings`
 - `errors`
 
+## LLM Call Traces
+
+Provider-backed Method Planner, Scientific Reviewer, and Decision Coordinator calls write audit records under:
+
+```text
+<output_root>/<case_id>/<run_id>/llm_calls/<agent>.json
+```
+
+Each trace records the agent, timestamp, status, non-secret provider metadata, structured request, provider response when available, parsed artifact path, and structured errors. API keys and environment-variable values must never be written. Trace files may contain bounded prompt and response content, so they remain run artifacts under ignored output storage rather than curated source or reference outputs. The manifest records trace files, and the final report links the available traces for reproducibility.
+
 ## Method Plan
 
 `method_plan.json` records:

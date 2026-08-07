@@ -16,6 +16,7 @@ from lqcd_agent.llm.structured_output import (
     provider_exception_artifact,
     validation_error_artifact,
 )
+from lqcd_agent.llm.trace import write_llm_call_trace
 
 
 RISK_RUBRIC = {
@@ -212,6 +213,18 @@ def _review_warnings(review: dict[str, Any] | None) -> list[dict[str, Any]]:
     return [warning for warning in _as_list(review.get("warnings")) if isinstance(warning, dict)]
 
 
+def _is_advisory_normalization_warning(warning: dict[str, Any]) -> bool:
+    return (
+        warning.get("code") == "selected_analysis_programs_normalized"
+        and warning.get("decision_coordinator_flag") is not True
+        and warning.get("severity") in {None, "info"}
+    )
+
+
+def _risk_relevant_warnings(warnings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [warning for warning in warnings if not _is_advisory_normalization_warning(warning)]
+
+
 def _warning_evidence(warnings: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
@@ -388,9 +401,10 @@ def _classify_decision(
 
     assert review is not None
     warnings = _review_warnings(review)
+    risk_warnings = _risk_relevant_warnings(warnings)
     severe_or_flagged = [
         warning
-        for warning in warnings
+        for warning in risk_warnings
         if warning.get("severity") == "severe" or warning.get("decision_coordinator_flag") is True
     ]
     if severe_or_flagged:
@@ -414,7 +428,7 @@ def _classify_decision(
             "proposed_follow_up_route": "memory_report",
         }
 
-    targeted_rerun = _targeted_rerun_warnings(warnings)
+    targeted_rerun = _targeted_rerun_warnings(risk_warnings)
     if targeted_rerun:
         return {
             "risk_level": "medium",
@@ -438,16 +452,16 @@ def _classify_decision(
 
     confidence = review.get("confidence")
     review_evidence = _as_list(review.get("evidence"))
-    if warnings or confidence == "medium" or not review_evidence:
+    if risk_warnings or confidence == "medium" or not review_evidence:
         reasons = []
-        if warnings:
+        if risk_warnings:
             reasons.append(
                 _reason(
                     "non_severe_review_warning",
                     "Non-severe review warnings require pending or review-recommended handling.",
                     source="scientific_review_report",
                     field="warnings",
-                    value=len(warnings),
+                    value=len(risk_warnings),
                 )
             )
         if confidence == "medium":
@@ -524,7 +538,7 @@ def _next_action(decision: dict[str, Any]) -> dict[str, Any]:
 def _summary(decision: dict[str, Any]) -> str:
     risk_level = decision["risk_level"]
     if risk_level == "low":
-        return "Decision Coordinator classified the run as low risk for mock-result acceptance."
+        return "Decision Coordinator classified the run as low risk for result acceptance."
     if risk_level == "medium":
         return "Decision Coordinator classified the run as medium risk and kept memory pending."
     if risk_level == "high":
@@ -939,6 +953,15 @@ def _run_provider_decision_coordinator(
             ),
         )
         decision_log_path = write_decision_log(output_dir, decision_log)
+        write_llm_call_trace(
+            output_dir=output_dir,
+            agent="decision_coordinator",
+            provider=provider,
+            request=request,
+            parsed_payload_path=decision_log_path,
+            status="failed",
+            error=decision_log,
+        )
         return _decision_result(decision_log, decision_log_path)
 
     payload, parse_error = parse_json_object(
@@ -950,6 +973,16 @@ def _run_provider_decision_coordinator(
     if parse_error is not None:
         decision_log = _provider_failure_decision_log(run_id=run_id, case_id=case_id, artifact=parse_error)
         decision_log_path = write_decision_log(output_dir, decision_log)
+        write_llm_call_trace(
+            output_dir=output_dir,
+            agent="decision_coordinator",
+            provider=provider,
+            request=request,
+            response=response,
+            parsed_payload_path=decision_log_path,
+            status="failed",
+            error=parse_error,
+        )
         return _decision_result(decision_log, decision_log_path)
 
     assert payload is not None
@@ -967,11 +1000,30 @@ def _run_provider_decision_coordinator(
             ),
         )
         decision_log_path = write_decision_log(output_dir, decision_log)
+        write_llm_call_trace(
+            output_dir=output_dir,
+            agent="decision_coordinator",
+            provider=provider,
+            request=request,
+            response=response,
+            parsed_payload_path=decision_log_path,
+            status="failed",
+            error=decision_log,
+        )
         return _decision_result(decision_log, decision_log_path)
 
     payload.setdefault("risk_rubric", RISK_RUBRIC)
     decision_log = _apply_provider_safety_floor(provider_log=payload, local_context=local_context)
     decision_log_path = write_decision_log(output_dir, decision_log)
+    write_llm_call_trace(
+        output_dir=output_dir,
+        agent="decision_coordinator",
+        provider=provider,
+        request=request,
+        response=response,
+        parsed_payload_path=decision_log_path,
+        status=decision_log["status"],
+    )
     return _decision_result(decision_log, decision_log_path)
 
 
