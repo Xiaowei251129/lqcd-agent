@@ -70,7 +70,7 @@ Open Items:
 Related Documents:
 
 - [Repository Current State](REPO_CURRENT_STATE.md)
-- [Tickets](TICKETS.md)
+- `docs/TICKETS.md`（已归档于 `v0.2-demo`）
 - [Verification Guide](VERIFICATION_GUIDE.md)
 
 ## 2026-06-22: Add Secure LLM Provider Abstraction
@@ -176,7 +176,7 @@ Rejected Alternatives:
 
 Related Documents:
 
-- [Codex Build Plan](CODEX_BUILD_PLAN.md)
+- `docs/CODEX_BUILD_PLAN.md`（已归档于 `v0.2-demo`）
 - [Evals and Observability](EVALS_AND_OBSERVABILITY.md)
 - [Artifact Contracts](ARTIFACT_CONTRACTS.md)
 - [Verification Guide](VERIFICATION_GUIDE.md)
@@ -239,7 +239,7 @@ Rejected Alternatives:
 
 Related Documents:
 
-- [Tickets](TICKETS.md)
+- `docs/TICKETS.md`（已归档于 `v0.2-demo`）
 - [Verification Guide](VERIFICATION_GUIDE.md)
 - [Repository Current State](REPO_CURRENT_STATE.md)
 
@@ -266,7 +266,7 @@ Rejected Alternatives:
 Related Documents:
 
 - [Architecture](ARCHITECTURE.md)
-- [Tickets](TICKETS.md)
+- `docs/TICKETS.md`（已归档于 `v0.2-demo`）
 - [State Schema](STATE_SCHEMA.md)
 - [Repository Current State](REPO_CURRENT_STATE.md)
 
@@ -295,7 +295,7 @@ Related Documents:
 
 - [Artifact Contracts](ARTIFACT_CONTRACTS.md)
 - [Agent Roles and Boundaries](AGENT_ROLES_AND_BOUNDARIES.md)
-- [Tickets](TICKETS.md)
+- `docs/TICKETS.md`（已归档于 `v0.2-demo`）
 - [Repository Current State](REPO_CURRENT_STATE.md)
 
 ## 2026-06-11: Clarify Output Lifecycle and Run Reuse Policy
@@ -326,10 +326,10 @@ Rejected Alternatives:
 
 Related Documents:
 
-- [Code Build Plan](CODEX_BUILD_PLAN.md)
+- `docs/CODEX_BUILD_PLAN.md`（已归档于 `v0.2-demo`）
 - [Verification Guide](VERIFICATION_GUIDE.md)
 - [Evals and Observability](EVALS_AND_OBSERVABILITY.md)
-- [Tickets](TICKETS.md)
+- `docs/TICKETS.md`（已归档于 `v0.2-demo`）
 
 ## 2026-06-22: Productize Conservative Golden Mock Demo
 
@@ -358,7 +358,7 @@ Related Documents:
 - [Architecture](ARCHITECTURE.md)
 - [Artifact Contracts](ARTIFACT_CONTRACTS.md)
 - [Verification Guide](VERIFICATION_GUIDE.md)
-- [Tickets](TICKETS.md)
+- `docs/TICKETS.md`（已归档于 `v0.2-demo`）
 
 ## 2026-06-22: Tighten Phase 7-9 Audit and Evaluation Cleanup Semantics
 
@@ -408,7 +408,7 @@ Rejected Alternatives:
 
 Related Documents:
 
-- [Tickets](TICKETS.md)
+- `docs/TICKETS.md`（已归档于 `v0.2-demo`）
 - [Repository Current State](REPO_CURRENT_STATE.md)
 
 ## 2026-06-30: Verify Phase 10C with Live Provider and Evidence-grounded Provider Risk
@@ -491,5 +491,122 @@ Rejected Alternatives:
 
 Related Documents:
 
-- [Tickets](TICKETS.md)
+- `docs/TICKETS.md`（已归档于 `v0.2-demo`）
+- [Repository Current State](REPO_CURRENT_STATE.md)
+
+## 2026-08-10: Freeze the `v0.2-demo` Milestone Baseline
+
+Decision:
+
+- Treat annotated tag `v0.2-demo`, peeled to commit `e73e4d3b967008f290259851caf05f28e087cd5b`, as the immutable first-stage demo baseline.
+- Move the cumulative Phase 0–10D history, verification evidence, safety boundaries, and known limitations into `milestones/V0_2_DEMO_BASELINE.md`.
+- Keep `REPO_CURRENT_STATE.md` focused on the active branch, current phase, verification status, next work, and blockers.
+
+Confirmed:
+
+- The milestone records the `162 passed` deterministic baseline, Golden Demo, 9-case full mock benchmark, and live-provider demo evidence.
+- The milestone is a reproducible research MVP snapshot, not a production-readiness claim.
+- The milestone document may receive factual corrections only; second-stage progress must not rewrite it.
+
+Rejected Alternatives:
+
+- Continuing to append all first-stage history to `REPO_CURRENT_STATE.md`: rejected because historical accomplishments obscure the current work state.
+- Treating the tag as a separate code partition or active branch: rejected because a tag is an immutable reference; second-stage work continues on a branch from that baseline.
+
+Related Documents:
+
+- [Milestone Baseline](milestones/V0_2_DEMO_BASELINE.md)
+- [Repository Current State](REPO_CURRENT_STATE.md)
+
+## 2026-08-10: Establish Second-stage Documentation and Ticket Governance
+
+Decision:
+
+- Use `docs/README.md` as the second-stage documentation index and authority map.
+- Replace the first-stage monolithic execution workflow with phase folders and single-goal tickets under `docs/tickets/`.
+- Permit execution only for tickets whose YAML front matter is explicitly set to `status: ready` after user confirmation.
+- Create Phase A–E overview folders now, but create specific draft tickets only for Phase A control-contract discussions.
+- Retain first-stage documents non-destructively and mark `CODEX_BUILD_PLAN.md`, `TICKETS.md`, and `PROMPT_PLAYBOOK.md` as Legacy.
+
+Confirmed:
+
+- A ready ticket cannot silently override `AGENTS.md`, security policy, or an existing public contract.
+- Completed tickets are work records, not the sole source of current architecture; corresponding core documents must be updated.
+- Architecture or policy changes require a Decision Log entry.
+- This migration does not approve a graph edge, state field, artifact schema, RAG implementation, or Code Agent runtime.
+
+Rejected Alternatives:
+
+- Deleting first-stage documents during initial migration: rejected until the new system is validated and a separate cleanup ticket confirms no unique rule remains.
+- Generating executable tickets for all phases immediately: rejected because Phase B–E details depend on unresolved Phase A contracts.
+- Using phase Overview files as execution prompts: rejected because they intentionally describe direction rather than a bounded, verifiable change.
+
+Related Documents:
+
+- [Docs Index](README.md)
+- [Ticket Workflow](tickets/README.md)
+- [Next-stage Improvement Directions](NEXT_STAGE_IMPROVEMENT_DIRECTIONS.md)
+
+## 2026-08-10: Remove Superseded First-stage Legacy Documents
+
+Decision:
+
+- Remove `docs/CODEX_BUILD_PLAN.md`, `docs/TICKETS.md`, and `docs/PROMPT_PLAYBOOK.md` from the active worktree after completing a rule and dependency audit.
+- Keep the original files recoverable through Git tag `v0.2-demo`.
+- Use `docs/README.md`, `docs/tickets/README.md`, and `docs/tickets/TEMPLATE.md` as the only current documentation and ticket-governance entry points.
+
+Confirmed:
+
+- Project, architecture, Agent ownership, state, artifact, data/security, provider, Human Gate, evaluation, observability, verification, milestone, and current-state contracts all have dedicated current documents.
+- First-stage cumulative implementation history is preserved in the milestone and Decision Log.
+- Still-useful ticket rules for stale-documentation scans, graph integration, schema/dependency changes, deterministic defaults, and temporary verification outputs were migrated into the new Ticket Workflow and Template.
+- No runtime code, graph edge, state field, artifact schema, configuration, test, raw data, output artifact, or milestone tag changed as part of this cleanup.
+
+Rejected Alternatives:
+
+- Keeping the files indefinitely with Legacy banners: rejected because their old phase prompts and route descriptions could be mistaken for current contracts.
+- Copying all historical phase prompts into the new ticket tree: rejected because completed prompts are historical records, not second-stage execution inputs.
+- Deleting the files before migrating unique global rules: rejected because documentation cleanup must not silently remove active safety or execution constraints.
+
+Related Documents:
+
+- [Docs Index](README.md)
+- [Ticket Workflow](tickets/README.md)
+- [Ticket Template](tickets/TEMPLATE.md)
+- [Milestone Baseline](milestones/V0_2_DEMO_BASELINE.md)
+
+## 2026-08-11: Centralize Graph-level Fallbacks in the Decision Coordinator
+
+Decision:
+
+- Adopt the A01 target transition contract with distributed structured diagnosis and centralized graph-level fallback control.
+- Keep successful forward flow direct, while routing every re-review, analysis rerun, code fix, and replan through the Decision Coordinator.
+- Allow the Coordinator to target Scientific Reviewer, Analysis Engineer, future graph-managed Code Agent, or Method Planner according to the affected layer.
+- Permit automatic fallback only for low/medium risk when diagnosis is unique and the relevant finite budget remains available.
+- Escalate high/critical risk, ambiguous diagnosis, repeated failure fingerprints, and budget exhaustion to the Human Gate.
+- Make the Human Gate the unified clarification, approval, and external-action boundary, with all valid responses returning only to the Coordinator.
+
+Confirmed:
+
+- Worker Agents produce structured outcome evidence and candidate remediation but do not own graph-level fallback transitions.
+- A Human Gate response authorizes only one new finite execution window, is single-use, and cannot grant unlimited looping.
+- Full event logs remain available for runtime, audit, and UI, but are not injected directly into Agent prompts.
+- Worker Agents receive scoped context, typed remediation, and relevant append-only attempt history; cross-Run knowledge is curated only after test or human confirmation.
+- `code_agent` in A01 is a target interface placeholder. The current Codex Handoff remains unchanged until A05 and later implementation tickets define and connect the graph-managed Code Agent.
+- A01 approves logical transition ownership and guards only. A02–A06 still own execution identity, artifact invalidation, pause/resume, Code Agent wire contracts, failure fingerprints, and concrete budgets.
+- No runtime edge, `AnalysisState` field, artifact schema, test, configuration, raw data, or output artifact changed in A01.
+
+Rejected Alternatives:
+
+- Letting Analysis Engineer or Scientific Reviewer directly select code-fix, rerun, or replan targets: rejected because it fragments control authority and makes cycle budgets harder to audit.
+- Letting Human Gate route directly to worker Agents: rejected because approvals and clarifications must return through the Coordinator for validation and single-use dispatch.
+- Defaulting ambiguous failures to the deepest Method Planner rollback: rejected because it invalidates more evidence without a unique diagnosis.
+- Giving every Agent the complete event log or autonomous writable long-term memory: rejected because it weakens role boundaries, introduces stale context, and allows unreviewed experience to affect policy.
+- Making every fallback require human approval: rejected because bounded low/medium remediation should remain automatable when deterministic guards are satisfied.
+
+Related Documents:
+
+- [A01 Transition Matrix](tickets/phase-a-control-contracts/A01_TRANSITION_MATRIX.md)
+- [Architecture](ARCHITECTURE.md)
+- [Agent Roles and Boundaries](AGENT_ROLES_AND_BOUNDARIES.md)
 - [Repository Current State](REPO_CURRENT_STATE.md)

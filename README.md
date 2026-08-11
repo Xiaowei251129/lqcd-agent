@@ -1,6 +1,6 @@
 # LQCD Agent
 
-This repository contains an initial mock-first implementation of an AI-assisted, auditable LQCD meson distribution-amplitude workflow. The MVP target is a mock-only pion quasi-DA case coordinated by a LangGraph multi-agent runtime.
+This repository contains a demo-ready, mock-first implementation of an AI-assisted, auditable LQCD meson distribution-amplitude workflow. The current stable baseline supports a synthetic pion quasi-DA case coordinated by a LangGraph multi-agent runtime.
 
 The project does not make final physics claims, does not read real raw numeric data, and the graph runtime uses deterministic agents unless an LLM provider config is explicitly supplied. Human approval is required for high or critical risk outcomes before accepted memory can be written.
 
@@ -12,7 +12,7 @@ The graph method planner node calls the standalone Method Planner, the graph ana
 
 The canonical run result path is `<output_root>/<case_id>/<run_id>/`. Repo-local `outputs/` is for ignored actual-run artifacts only; future curated evaluation baselines belong under `evaluation/reference_outputs/`, not under `outputs/`. For verification, prefer a temporary output root such as `/private/tmp/lqcd-agent-smoke`. If `--run-id` is omitted, the CLI generates a timestamped run id.
 
-The `v0.2-demo` milestone captures the stable demo-ready research MVP before the next development phase expands good, bad, and ambiguous examples, strengthens individual agents, and improves the evaluation harness. The tag is a reproducible source snapshot, not a production-readiness claim.
+The `v0.2-demo` milestone captures the stable demo-ready research MVP. Second-stage work is organized as control-contract clarification, graph-harness verification, graph-managed Code Agent integration, Agent capability improvement, and an integrated benchmark. The tag is a reproducible source snapshot, not a production-readiness claim.
 
 ## Directory Structure
 
@@ -110,11 +110,12 @@ The console discovers YAML and JSON cases under `configs/cases/`, accepts pasted
 
 ## Documentation Map
 
+- [Second-stage Docs Index](docs/README.md)
+- [Repository Current State](docs/REPO_CURRENT_STATE.md)
+- [`v0.2-demo` Milestone](docs/milestones/V0_2_DEMO_BASELINE.md)
+- [Next-stage Improvement Directions](docs/NEXT_STAGE_IMPROVEMENT_DIRECTIONS.md)
 - [Project Specification](docs/PROJECT_SPEC.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [State Schema](docs/STATE_SCHEMA.md)
 - [Artifact Contracts](docs/ARTIFACT_CONTRACTS.md)
 - [Verification Guide](docs/VERIFICATION_GUIDE.md)
-- [Prompt Playbook](docs/PROMPT_PLAYBOOK.md)
-- [Repository Current State](docs/REPO_CURRENT_STATE.md)
-- [Tickets](docs/TICKETS.md)

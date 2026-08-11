@@ -1,133 +1,85 @@
 # Repository Current State
 
-## Date
+## 状态摘要
 
-2026-08-07
+- **更新时间**：2026-08-11
+- **当前分支**：`codex/phase-11-agent-harness-upgrade`
+- **当前阶段**：Phase A 控制合同澄清；A01 路由合同已完成
+- **活动 ticket**：无；A01 `completed`，A02–A07 仍为 `draft`
+- **稳定基线**：[`v0.2-demo`](milestones/V0_2_DEMO_BASELINE.md)
+- **本轮范围**：完成 A01 transition contract 并同步核心文档；不修改 runtime、graph、tests 或 `AnalysisState`
 
-## Current Status
+## 当前稳定实现
 
-The project has completed source-of-truth documentation, the repository skeleton, the initial real LangGraph mock runtime skeleton, a standalone deterministic Method Planner module, Phase 2B Method Planner graph integration, Phase 3 Codex Handoff integration, Phase 4 Analysis Engineer integration, Phase 5 Scientific Reviewer diagnostics, Phase 6 Decision Coordinator risk rubric, Phase 6 maintenance for output policy, timestamp default run ids, and stale-documentation discipline, Phase 7 Human Approval Gate integration, Phase 8 Memory, Final Report, and Synthetic Evaluation Harness implementation, Phase 9 Golden Example productization, Phase 7-9 maintenance for decision-route audit fields, approved-decision report text, evaluation cleanup guarding, and documentation synchronization, Phase 9 GitHub-ready cleanup of ignored local artifacts, independent GitHub repository initialization for the Phase 9 baseline, Phase 10 provider abstraction with secure dry-run configuration, Phase 10B provider-backed agent wiring, Phase 10B provider safety-floor hardening, Phase 10C provider-backed advisor-demo synthetic benchmarks, and the Phase 10D demo-console and LLM-auditability milestone. The Phase 10C demo exercises a real statistical Analysis Engineer command and has been verified with a live OpenAI-compatible provider across the demo case set. Phase 10D adds YAML/JSON case discovery, runtime-provider selection, live-provider guards, command previews, richer artifact links, run-level provider request/response traces, and report/manifest visibility for those traces. The package is installable in editable mode, and focused tests cover state initialization, routing, context summarization, graph execution, standalone method planning, integrated planner graph outcomes, task-packet validation, the handoff test runner, Codex Handoff routing, safe analysis command execution, golden mock command execution, output validation, provenance manifest generation, evidence-backed scientific review diagnostics, structured decision coordination, approval packet generation and parsing, risk-safe memory behavior, final report generation, synthetic evaluation summary reporting, automatic CLI run ids, protected-artifact run reuse refusal, guarded evaluation cleanup, the conservative golden demo path, mock LLM provider behavior, secure provider config loading, provider-backed agent wiring through explicit graph config, provider-backed golden guard behavior, synthetic benchmark model artifacts, instructor-only expected behavior checks, per-case demonstration checklist generation, complete mock benchmark execution, LLM call tracing, and optional live-provider rehearsal behavior.
+`v0.2-demo` 已经提供一个可独立演示的科研多 Agent MVP：
 
-Existing source:
+- real LangGraph `StateGraph` 与 deterministic default path；
+- Method Planner、file-based Codex Handoff、Analysis Engineer、Scientific Reviewer、Decision Coordinator、Human Approval Gate、Memory and Report；
+- SQLite/Memory checkpoint、structured routing、manifest 与 final report；
+- allowlisted synthetic analysis、Golden Demo 与 synthetic benchmark；
+- optional OpenAI/DeepSeek provider path、strict structured output、local evidence safety floor 与 run-local `llm_calls/` audit；
+- high/critical 风险的 Human Gate 与 accepted-memory protection；
+- local web console 与 CLI entry points。
 
-- `AGENTS.md` defines repository behavior expectations.
-- `docs/` contains the source-of-truth project documentation.
-- `pyproject.toml` declares LangGraph and the SQLite checkpoint package.
-- `src/lqcd_agent/__init__.py` provides the initial package marker.
-- `src/lqcd_agent/agents/analysis_engineer.py` provides the standalone deterministic Analysis Engineer module.
-- `src/lqcd_agent/agents/decision_coordinator.py` provides the standalone deterministic Decision Coordinator module and risk rubric.
-- `src/lqcd_agent/agents/method_planner.py` provides a standalone deterministic structured-output Method Planner module.
-- `src/lqcd_agent/agents/scientific_reviewer.py` provides the standalone deterministic Scientific Reviewer module.
-- `src/lqcd_agent/analysis/` contains correlator, fit, matrix-element, and synthetic benchmark diagnostic/model helpers for the Scientific Reviewer and Phase 10C runner.
-- `src/lqcd_agent/coder/task_packet.py` validates and reads/writes mock coder handoff packets when code is needed.
-- `src/lqcd_agent/coder/codex_handoff.py` reads file-based handoff results; graph runs can explicitly opt in to automatic local Codex CLI handoff through the worker.
-- `src/lqcd_agent/coder/test_runner.py` runs allowlisted verification commands and writes `tests_status.json`.
-- `src/lqcd_agent/tools/command_runner.py` runs internal mock analysis commands, including the Phase 9 golden mock writer, the exact-allowlisted `analysis:run_synthetic_benchmark:<scenario>` statistical benchmark command, and exact-allowlisted local analysis commands.
-- `src/lqcd_agent/tools/output_validator.py` validates expected mock analysis outputs.
-- `src/lqcd_agent/tools/manifest.py` writes provenance manifests with config hashes, file records, command records, git summary, tool versions, and environment summary.
-- `src/lqcd_agent/tools/repo_inventory.py` provides a small repository inventory helper for planner inputs.
-- `src/lqcd_agent/graph/approval_packet.py` writes approval packets and parses flat human decision YAML files.
-- `src/lqcd_agent/memory/` classifies and writes accepted, pending, or rejected memory updates.
-- `src/lqcd_agent/report/` generates human-readable final reports.
-- `src/lqcd_agent/llm/` contains the provider abstraction, deterministic mock provider, OpenAI-compatible live clients for OpenAI and DeepSeek, bounded prompt builders, provider artifact schema validation helpers, structured-output validation helpers, run-level LLM call tracing, and a dry-run provider factory CLI. Provider-backed reviewer and decision prompts use bounded artifact summaries rather than raw numeric data.
-- `src/lqcd_agent/graph/` contains the mock `StateGraph`, state schema helpers, deterministic-default nodes, routing, and CLI runner. The graph method planner node calls the standalone Method Planner module, the Codex Handoff node is wired into `code_needed=true` and code-failure retry paths, the Analysis Engineer node calls the standalone Analysis Engineer module, the Scientific Reviewer node calls the standalone Scientific Reviewer module, the Decision Coordinator node calls the standalone Decision Coordinator module, the Human Approval Gate writes `approval_packet/` artifacts for high and critical risk outcomes, and the Memory and Report node calls the dedicated memory and report modules. Method Planner, Scientific Reviewer, and Decision Coordinator can use provider-backed structured output when `llm_provider_config_path` is set. Provider-backed decisions are constrained by a deterministic safety floor, so severe local evidence cannot be downgraded into accepted memory. The CLI generates a timestamp run id when `--run-id` is omitted, accepts optional `--llm-provider-config`, and refuses to reuse a run directory that already contains protected completed or decision artifacts.
-- `evaluation/cases/` contains synthetic good, ambiguous, and bad Phase 8 evaluation cases.
-- `evaluation/run_evaluation.py` runs the synthetic evaluation cases and writes `evaluation_summary.csv`; it refuses to delete existing evaluation run directories unless explicit force-clean behavior is requested.
-- `evaluation/synthetic_benchmarks/` contains Phase 10C advisor-demo scenario inputs, instructor-only expected behavior, synthetic CSV fixtures, demo/full case sets, and the mock/live rehearsal runner.
-- `configs/cases/mock_lqcd_goal.yaml` and `configs/runtime/mock_llm.yaml` are placeholders only.
-- `configs/runtime/openai.yaml` and `configs/runtime/deepseek.yaml` configure provider names, endpoints, placeholder environment variable names, and safe live-test guards without storing secrets.
-- `configs/cases/l64c64a076_m140.yaml` is the Phase 9 golden mock demo case; it references the sibling golden example as read-only provenance and keeps analysis output synthetic.
-- `scripts/run_langgraph_demo.sh` runs the one-command Phase 9 golden mock demo.
-- `src/lqcd_agent/demo/` provides the Phase 10D local console with YAML/JSON case discovery, runtime-provider selection, live-provider opt-in checks, command previews, run polling, approval actions, and artifact access.
-- `outputs/.gitkeep` keeps the output root present without committing run artifacts; Phase 9 GitHub-ready cleanup removed ignored historical run artifacts and local caches.
-- `tests/test_import.py` verifies that the package imports.
-- `tests/test_state_schema.py`, `tests/test_routing.py`, and `tests/test_graph_smoke.py` verify runtime behavior, including no-code, `needs_more_info`, missing handoff results, structured handoff pass-through paths, and the golden mock demo path.
-- `tests/test_approval_packet.py` verifies approval packet generation, human decision parsing, pending behavior, and decision route fields.
-- `tests/test_coder_task_packet.py` verifies task-packet validation and read/write behavior.
-- `tests/test_decision_coordinator.py` verifies low, medium, high, and critical risk decisions.
-- `tests/test_test_runner.py` verifies `tests_status.json` records passing, failing, and blocked verification commands.
-- `tests/test_method_planner_mock.py` verifies standalone method-plan generation, coder task packet generation, and missing-input handling.
-- `tests/test_analysis_engineer.py` verifies Phase 4 success, missing-output failure classification, command failure recording, and overwrite refusal.
-- `tests/test_command_runner.py` verifies mock command execution, golden mock command execution, blocked unapproved local commands, and exact-allowlisted local command execution.
-- `tests/test_manifest.py` verifies required provenance fields.
-- `tests/test_scientific_reviewer.py` verifies good, ambiguous, and bad mock matrix-element diagnostics and severe warning evidence flags.
-- `tests/test_memory.py` verifies accepted, pending, rejected, and overwrite-guard memory behavior.
-- `tests/test_report.py` verifies final report sections and missing-artifact warnings.
-- `tests/test_evaluation.py` verifies synthetic evaluation case loading and summary generation.
-- `tests/test_synthetic_benchmarks.py` verifies Phase 10C scenario loading, instructor-only expected behavior separation, demo and full mock-provider rehearsal artifacts, scenario-specific fit outputs, Human Approval Gate behavior, and live-provider opt-in guarding.
+第一阶段的 Phase 0–10D 分组成果、复现方式和已知限制不再在本文件累积，统一固定在 [V0_2_DEMO_BASELINE.md](milestones/V0_2_DEMO_BASELINE.md)。
 
-## Confirmed Scope
+## 第二阶段控制合同状态
 
-- Scientific MVP: pion quasi-DA.
-- First golden example: mock-only structured synthetic matrix elements versus `z` and `Pz`.
-- Data boundary: read manifests/checksums only; do not read real raw numeric data in MVP.
-- Command boundary: allowlisted mock/test/smoke commands only; Phase 4 and Phase 10C analysis commands are internal `mock:` commands, the exact-allowlisted `analysis:run_synthetic_benchmark:<scenario>` command, or exact-allowlisted local commands with `shell=False`.
-- LLM provider: deterministic agent paths remain the default; Phase 10B wires Method Planner, Scientific Reviewer, and Decision Coordinator to provider-backed structured output through explicit runner injection or graph `--llm-provider-config`.
-- Graph shape: LangGraph with five core agents and two support nodes.
-- Checkpoint policy: SQLite full graph state plus summarized LLM-facing context.
-- Human approval: high and critical risk gated.
-- Evaluation cases: Phase 8 synthetic good, ambiguous, and bad cases; Phase 10C advisor-demo synthetic benchmark cases with demo and full case sets.
-- Current runtime done: one-command mock run creates deterministic mock artifacts, `run_result.json`, `manifest.json`, `run.log`, `scientific_review_report.json`, `decision_log.json`, `memory_update.json`, `final_report.md`, `graph_state.json`, and checkpoint metadata.
-- Current planner integration done: no-code planner output routes to Analysis Engineer; `needs_more_info` stops safely as `pending` before analysis.
-- Current Codex Handoff integration done: `code_needed=true` and code-failure retry paths route to Codex Handoff; missing result files stop as `pending`; invalid result files stop as `halted`; structured `tests_passed` plus `code_change_summary.md` routes to Analysis Engineer.
-- Current Analysis Engineer integration done: the graph analysis node writes `run_result.json`, `manifest.json`, `run.log`, and `analysis_outputs/synthetic_matrix_elements.json` through the standalone Analysis Engineer module. Phase 10C scenarios run an exact-allowlisted weighted log-linear synthetic fit command and additionally write `analysis_outputs/synthetic_benchmark_input.json`, `analysis_outputs/synthetic_data.csv`, and `analysis_outputs/fit_summary.json` as support files. Only the validated matrix-element JSON enters the Phase 4 acceptance contract.
-- Current Scientific Reviewer integration done: the graph reviewer node writes `scientific_review_report.json` through the standalone Scientific Reviewer module, with correlator, fit, and matrix-element diagnostic sections.
-- Current Decision Coordinator integration done: the graph decision node writes `decision_log.json` through the standalone Decision Coordinator module, using structured Method Planner, Analysis Engineer, and Scientific Reviewer artifacts.
-- Current Human Approval Gate integration done: high and critical risk outcomes write `approval_packet/approval_packet.json`, `approval_packet/approval_summary.md`, and `approval_packet/07_human_decision.yaml`; no decision or invalid decision leaves the run pending at the gate.
-- Current risk policy done: low risk can write accepted mock memory; medium risk remains pending or human-review-recommended; high and critical risk require human approval before accepted memory can be written. Provider-backed decisions cannot downgrade deterministic severe/high evidence, and unsupported provider Human Gate escalation is constrained when local evidence only supports low or medium risk. High and critical no-decision states may still write pending memory and final-report artifacts for audit and demo visibility.
-- Current golden demo done: `bash scripts/run_langgraph_demo.sh` runs `configs/cases/l64c64a076_m140.yaml`, writes under `outputs/l64c64a076_m140/<run_id>/`, includes selected read-only sibling golden files in provenance, produces synthetic matrix-element output with a severe demo flag, writes `approval_packet/`, and leaves `memory_update.json` pending with `accepted_result: false`.
-- Current demo console done: YAML and JSON cases can be inspected and run with explicit output and runtime-provider selection; live providers require their configured opt-in environment variable; provider-backed runs write `llm_calls/<agent>.json`, include those files in the manifest, and expose them through the report and UI artifact views.
-- Canonical output policy: actual run artifacts live under `<output_root>/<case_id>/<run_id>/`. `outputs/` is the repo-local actual-run output root and is ignored except for `.gitkeep`; existing historical files under `outputs/` are generated artifacts, not reference outputs or schema acceptance evidence.
-- Verification output policy: Codex and automated checks should prefer a temporary output root such as `/private/tmp/lqcd-agent-...` or a unique `--run-id`. If `--run-id` is omitted, the CLI generates a timestamp run id. Explicit repeated run ids are refused once protected completed or decision artifacts exist.
-- Evaluation output policy: Phase 8 synthetic evaluation actual-run artifacts and `evaluation_summary.csv` default to `/private/tmp/lqcd-agent-phase8-evaluation`. Phase 10C benchmark actual-run artifacts should use an explicit temporary output root such as `/private/tmp/lqcd-agent-phase10c-mock`. Future curated reference outputs belong under `evaluation/reference_outputs/`, and expected risk/action/warning behavior belongs under `evaluation/expected_behavior/`; neither should be mixed into `outputs/`.
-- Repository boundary: `lqcd-agent` is now an independent Git repository rooted at `/Users/chengxiaowei/Desktop/LQCD/lqcd-agent`. The `main` branch tracks `origin/main` at `git@github.com:Xiaowei251129/lqcd-agent.git`; parent-repo commits under `/Users/chengxiaowei` are not used for this project.
-- Deferred MVP work: raw-data-backed evaluation cases and real approval-node follow-through beyond Phase 7 route intent.
+已经建立：
 
-## Verification Status
+- [Docs Index](README.md) 与文档权威顺序；
+- [Ticket Workflow](tickets/README.md) 和 [Ticket Template](tickets/TEMPLATE.md)；
+- Phase A–E 目录与 Overview；
+- Phase A A01–A07 的 control-contract tickets；
+- 独立的 `v0.2-demo` milestone 文档；
+- 第一阶段 Legacy 规则迁移与删除记录；
+- 核心规则文档的第二阶段定位。
 
-- `pip install -e .` succeeds.
-- `pytest tests/test_import.py -q` succeeds.
-- `pytest tests/test_state_schema.py tests/test_routing.py tests/test_graph_smoke.py -q` succeeds.
-- `pytest tests/test_method_planner_mock.py -q` succeeds.
-- `pytest tests/test_coder_task_packet.py tests/test_test_runner.py tests/test_routing.py tests/test_graph_smoke.py -q` succeeds.
-- `pytest tests/test_analysis_engineer.py tests/test_command_runner.py tests/test_manifest.py tests/test_routing.py tests/test_graph_smoke.py -q` succeeds.
-- `pytest tests/test_scientific_reviewer.py tests/test_graph_smoke.py -q` succeeds.
-- `pytest tests/test_decision_coordinator.py tests/test_routing.py tests/test_graph_smoke.py -q` succeeds.
-- `pytest tests/test_approval_packet.py tests/test_routing.py tests/test_graph_smoke.py -q` succeeds.
-- `pytest -q` succeeds.
-- `pytest tests/test_llm_config.py -q` succeeds.
-- `pytest tests/test_llm_mock_provider.py -q` succeeds.
-- `pytest tests/test_method_planner_mock.py tests/test_scientific_reviewer.py tests/test_decision_coordinator.py tests/test_llm_mock_provider.py tests/test_graph_smoke.py tests/test_state_schema.py -q` succeeds after Phase 10B provider-backed agent wiring.
-- `python -m lqcd_agent.graph.run_graph --case configs/cases/mock_lqcd_goal.yaml --output-dir /private/tmp/lqcd-agent-provider-smoke --run-id provider_mock --llm-provider-config configs/runtime/mock_llm.yaml` succeeds without network access.
-- `python -m lqcd_agent.graph.run_graph --case configs/cases/l64c64a076_m140.yaml --output-dir /private/tmp/lqcd-agent-provider-golden-guard --run-id provider_golden --llm-provider-config configs/runtime/mock_llm.yaml` succeeds without network access and keeps the severe golden demo pending with Human Approval Gate artifacts.
-- `python -m lqcd_agent.llm.provider_factory --config configs/runtime/openai.yaml --dry-run` succeeds without network access.
-- `python -m lqcd_agent.llm.provider_factory --config configs/runtime/deepseek.yaml --dry-run` succeeds without network access.
-- `pytest tests/test_state_schema.py tests/test_routing.py tests/test_graph_smoke.py tests/test_method_planner_mock.py -q` succeeds.
-- `python -m lqcd_agent.graph.run_graph --case configs/cases/mock_lqcd_goal.yaml --output-dir /private/tmp/lqcd-agent-phase6-cli --run-id phase6_verify` succeeds and writes `run_result.json`, `manifest.json`, `run.log`, `scientific_review_report.json`, `decision_log.json`, `memory_update.json`, and SQLite checkpoints under `/private/tmp/lqcd-agent-phase6-cli/mock_lqcd_goal/phase6_verify/`.
-- `pytest tests/test_graph_smoke.py tests/test_routing.py -q` succeeds after the Phase 6 maintenance run-id guard tests.
-- `pytest tests/test_decision_coordinator.py tests/test_analysis_engineer.py tests/test_scientific_reviewer.py -q` succeeds after the Phase 6 maintenance docs and CLI policy changes.
-- `python -m lqcd_agent.graph.run_graph --case configs/cases/mock_lqcd_goal.yaml --output-dir /private/tmp/lqcd-agent-maintenance` succeeds with an automatically generated timestamp run id.
-- `python -m lqcd_agent.graph.run_graph --case configs/cases/mock_lqcd_goal.yaml --output-dir /private/tmp/lqcd-agent-maintenance --run-id phase6_maintenance` succeeds on first use and fails cleanly on reuse after protected artifacts exist.
-- `pytest tests/test_memory.py tests/test_report.py tests/test_evaluation.py tests/test_graph_smoke.py -q` succeeds.
-- `python evaluation/run_evaluation.py` succeeds and writes `/private/tmp/lqcd-agent-phase8-evaluation/evaluation_summary.csv`.
-- `pytest tests/test_synthetic_benchmarks.py -q` succeeds after Phase 10C advisor-demo benchmark implementation.
-- `python evaluation/synthetic_benchmarks/run_synthetic_benchmarks.py --provider mock --case-set demo --output-dir /private/tmp/lqcd-agent-phase10c-mock` succeeds without network access and writes `synthetic_rehearsal_summary.md`.
-- `python evaluation/synthetic_benchmarks/run_synthetic_benchmarks.py --provider mock --case-set full --output-dir /private/tmp/lqcd-agent-phase10c-full` succeeds without network access across the full synthetic benchmark suite.
-- `RUN_LIVE_LLM_TESTS=1 python evaluation/synthetic_benchmarks/run_synthetic_benchmarks.py --provider-config configs/runtime/openai.yaml --case-set demo --output-dir /private/tmp/lqcd-agent-real-analysis-live --run-id-prefix live_real_analysis_check --force-clean` succeeds with a configured local OpenAI-compatible provider and writes both `synthetic_rehearsal_summary.md` and `advisor_demo_report.md`.
-- `bash scripts/run_langgraph_demo.sh` succeeds and writes a high-risk pending golden mock demo under `outputs/l64c64a076_m140/<run_id>/`.
-- Phase 9 GitHub-ready cleanup dry-runs and removes ignored generated artifacts; after cleanup, `outputs/` contains only `.gitkeep`, `.DS_Store`, `__pycache__/`, `.pytest_cache/`, and `src/lqcd_agent.egg-info/` are absent before verification commands regenerate local caches.
-- Independent Git setup completed: `git rev-parse --show-toplevel` resolves to `/Users/chengxiaowei/Desktop/LQCD/lqcd-agent`, `git remote -v` points to `git@github.com:Xiaowei251129/lqcd-agent.git`, and `git status --short --branch` shows `main` tracking `origin/main`.
+A01 已确认：
 
-## Next Work
+- graph-level re-review、rerun、code fix 和 replan 由 Decision Coordinator 统一派发；
+- low/medium、诊断唯一且预算可用时允许自动回退；high/critical、诊断歧义、重复失败或预算耗尽进入 Human Gate；
+- Coordinator 的四层回退目标是 Reviewer、Analysis、Code 和 Planner；
+- Human Gate 统一处理 clarification、approval 和 external action，进出只连接 Coordinator；
+- 完整 event log 不直接进入 Agent prompt；Agent 使用 scoped context 和相关 attempt history；
+- target contract 尚未接入 runtime，具体 identity、invalidation、resume、Code Agent 和 budget 由 A02–A06 继续定义。
 
-The Phase 10D demo-ready research MVP is the `v0.2-demo` milestone. The next major development phase will expand good, bad, and ambiguous examples, strengthen each agent, and improve the evaluation harness. Raw-data-backed evaluation remains gated on explicit authorization and data readiness.
+第二阶段文档迁移此前已通过 scope check、Markdown link check、ticket metadata、tag、`git diff --check` 与完整 `pytest -q` 验收。
 
-## Blockers and TODOs
+## 当前验证状态
 
-- No Phase 10D milestone blockers remain after the documented verification suite passes.
+稳定 milestone 与当前 working tree 的验证结果为：
 
-## Related Documents
+- milestone 封版：`162 passed`；
+- Legacy 清理与第二阶段文档迁移后：`162 passed in 4.30s`；
+- 9-case full mock synthetic benchmark passed
+- 5-case live-provider demo passed
+- Golden Demo smoke passed
 
-- [Project Specification](PROJECT_SPEC.md)
-- [Tickets](TICKETS.md)
-- [Decision Log](DECISION_LOG.md)
+本轮按计划没有运行 live-provider 测试；上面的 live-provider 与 benchmark 结果是 milestone 的冻结事实。第二阶段文档迁移当时还额外验证了 29 个现行 Markdown 文件的相对 links、Legacy 删除前的规则/依赖审计、当时的 A01–A07 draft 状态、Phase B–E overview-only 结构，以及 `v0.2-demo` 仍 peel 到 `e73e4d3b967008f290259851caf05f28e087cd5b`。第一阶段原始文档仍可从该 tag 恢复。
+
+A01 是纯设计 ticket，没有运行 runtime 或 live-provider tests；本轮验收使用 ticket metadata、scope、Markdown relative links、stale-documentation scan 和 `git diff --check`。
+
+## 下一项工作
+
+下一步不是直接修改 graph，而是讨论 [A02 Run/Cycle/Attempt Model](tickets/phase-a-control-contracts/A02_RUN_CYCLE_ATTEMPT_MODEL.md)，把 A01 的四层回退转换为明确 execution identity 和父子关系。
+
+建议顺序：
+
+1. A02 确认 Run/Cycle/Attempt identity 与 Agent-scoped attempt history；
+2. A03–A06 依次确认 invalidation、resume、Code Agent 和 budget contracts；
+3. A07 锁定 Phase B harness acceptance；
+4. Phase B 通过后再进入真实 Code Agent 与 Agent capability 增强。
+
+## Blockers
+
+当前无 runtime blocker。
+
+治理上的主动限制是：A01 只批准目标控制合同，不批准新 state field、artifact schema 或 runtime edge。A02–A07 仍为 `draft`，因此当前没有可执行的 graph implementation ticket。这是预期状态，不是项目故障。
+
+## 入口
+
+- [Docs Index](README.md)
+- [下一阶段改进方向](NEXT_STAGE_IMPROVEMENT_DIRECTIONS.md)
+- [Phase A Overview](tickets/phase-a-control-contracts/OVERVIEW.md)
+- [Verification Guide](VERIFICATION_GUIDE.md)

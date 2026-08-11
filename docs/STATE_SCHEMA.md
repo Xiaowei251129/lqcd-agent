@@ -1,10 +1,12 @@
 # State Schema
 
-## Contract
+## 当前合同
 
-`AnalysisState` is the public graph-state contract. Nodes may only read and write documented fields. Schema changes require an explicit ticket, updated artifact contracts where relevant, and a decision-log entry when the change affects architecture or policy.
+`AnalysisState` 是当前公开 graph-state contract。节点只能读取和写入已记录字段。下面的 schema 与当前 runtime 对齐；本次文档迁移不增加、不删除也不重命名任何字段。
 
-## Fields
+schema 变化必须由独立 ticket 批准，并同步 runtime、tests、artifact contracts 和相关 Decision Log。未来的 Run/Cycle/Attempt、reducer 或 namespace 目前只是 draft 议题，不属于正式 schema。
+
+## 当前字段
 
 ```python
 class AnalysisState(TypedDict):
@@ -59,58 +61,67 @@ class AnalysisState(TypedDict):
     route_decisions: list[dict]
 ```
 
-## Invariants
+## 当前 invariants
 
-- `run_id`, `case_id`, `user_goal`, `case_config_path`, and `output_dir` are required for every run.
-- `llm_provider_config_path` is optional; when omitted, Method Planner, Scientific Reviewer, and Decision Coordinator use deterministic agent paths.
-- `checkpoint_backend` is `sqlite` for local CLI MVP runs and `memory` for unit and smoke tests.
-- `checkpoint_thread_id` is stable for a given `case_id` and `run_id`.
-- `retry_count` must never exceed `max_retry`.
-- `human_approval_required` must be true when `risk_level` is `high` or `critical`.
-- High and critical outcomes cannot produce accepted memory without a structured human approval record.
-- Routing decisions must use structured fields, not markdown summaries.
-- `route_decisions` records deterministic route choices, source nodes, reasons, and the structured fields used for routing.
-- `event_log` is persisted in full state; LLM-facing context uses selected fields and `event_log_summary`.
+- 每次 run 必须提供 `run_id`、`case_id`、`user_goal`、`case_config_path` 和 `output_dir`。
+- `llm_provider_config_path` 可选；省略时三个 provider-capable Agent 走 deterministic path。
+- local CLI 使用 `sqlite`，unit/smoke tests 使用 `memory`。
+- 同一 `case_id` 与 `run_id` 的 `checkpoint_thread_id` 必须稳定。
+- `retry_count` 不得超过 `max_retry`。
+- `risk_level` 为 `high` 或 `critical` 时，`human_approval_required` 必须为 true。
+- 没有 structured human approval record 时，high/critical outcome 不得写 accepted memory。
+- routing 必须使用 structured fields，而不是 Markdown summary。
+- `route_decisions` 记录 deterministic route、source node、reason 和所用字段。
+- `event_log` 完整保存在 state；LLM-facing context 只使用选定字段和 `event_log_summary`。
 
-## Context Boundary
+## Context 边界
 
-LLM-facing prompts may include:
+LLM-facing prompt 可以包含：
 
-- Selected identifiers and status fields.
-- Optional provider config path metadata, never provider secrets.
-- Paths to relevant artifacts.
-- Bounded summaries of method, run, review, decision, and event-log artifacts.
+- selected identifiers 与 status fields；
+- provider config path metadata，但不能包含 provider secrets；
+- relevant artifact paths；
+- method、run、review、decision 和 event-log 的 bounded summaries。
 
-LLM-facing prompts must not include:
+LLM-facing prompt 不得包含：
 
-- Full raw numeric data.
-- Secrets.
-- Long unbounded logs.
-- Truncated free-form text as the only source for a routing decision.
+- full raw numeric data；
+- secrets；
+- unbounded long logs；
+- 作为 routing 唯一依据的 truncated free-form text。
 
-## Current Mock Runtime Behavior
+## 当前 runtime 行为
 
-The graph runtime uses deterministic agent paths by default and persists `graph_state.json` after meaningful node completions and route decisions. The full state is also persisted in LangGraph checkpoints. Phase 10B adds optional provider-backed Method Planner, Scientific Reviewer, and Decision Coordinator execution through `llm_provider_config_path`; provider-backed output must validate structurally before it can affect artifacts or routing.
+graph 默认使用 deterministic Agent path，并在重要节点完成和 route decision 后写 `graph_state.json`；完整 state 同时保存在 LangGraph checkpoint。`llm_provider_config_path` 可以启用 provider-backed Method Planner、Scientific Reviewer 和 Decision Coordinator，但 provider output 必须先通过结构验证。
 
-High and critical risk outcomes route to the Human Approval Gate. The gate sets
-`approval_packet_dir` and `human_decision_path` when it writes
-`approval_packet/` artifacts. If no valid human decision is present, the state
-remains `pending`.
+high/critical outcome 进入 Human Approval Gate。gate 写 `approval_packet/` 时设置 `approval_packet_dir` 和 `human_decision_path`；没有有效决定时 state 保持 `pending`。
 
-Local CLI runs use `SqliteSaver`. The CLI `--output-dir` argument is an output root; the resolved run output directory is `<output_root>/<case_id>/<run_id>/` and is stored in `state["output_dir"]`. If the CLI is invoked without `--run-id`, it generates a timestamped run id before state initialization. The checkpoint database is written under that run output directory:
+Local CLI 使用 `SqliteSaver`。`--output-dir` 是 output root；解析后的 run directory 为 `<output_root>/<case_id>/<run_id>/`，并写入 `state["output_dir"]`。省略 `--run-id` 时，在 state 初始化前生成 timestamp run id。checkpoint database 位于：
 
 ```text
 <output_root>/<case_id>/<run_id>/checkpoints/graph_checkpoints.sqlite
 ```
 
-Unit and smoke tests use `MemorySaver`. Both backends use the same stable `checkpoint_thread_id` format:
+Unit/smoke tests 使用 `MemorySaver`。两种 backend 使用相同的 `checkpoint_thread_id` 格式：
 
 ```text
 <case_id>:<run_id>
 ```
+
+## 第二阶段待决 schema 议题
+
+以下内容尚未成为 `AnalysisState` 合同：
+
+- [A02](tickets/phase-a-control-contracts/A02_RUN_CYCLE_ATTEMPT_MODEL.md)：Run/Cycle/Attempt identity 与 lifecycle；
+- [A03](tickets/phase-a-control-contracts/A03_ARTIFACT_INVALIDATION.md)：artifact validity、supersession 与 invalidation；
+- [A04](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)：pause/resume 与 checkpoint compatibility；
+- 正式 parallel reducer、per-branch namespace 或 merge semantics。
+
+在这些 ticket 进入 `ready` 并完成前，任何实现或其他文档都不能假设这些字段已经存在。
 
 ## Related Documents
 
 - [Architecture](ARCHITECTURE.md)
 - [Artifact Contracts](ARTIFACT_CONTRACTS.md)
 - [Security and Data Policy](SECURITY_AND_DATA_POLICY.md)
+- [Phase A: Control Contracts](tickets/phase-a-control-contracts/OVERVIEW.md)

@@ -45,6 +45,13 @@ Example:
 3. [Step] -> verify: [check]
 ```
 
+### 5. Ticket Execution
+- Read `docs/README.md` before executing a repository ticket.
+- Execute only tickets whose YAML front matter has `status: ready`.
+- Treat a ready ticket's Allowed Files, Do Not Touch, and Stop Conditions as hard scope boundaries.
+- If a ticket conflicts with this file, the security policy, or a current public contract, stop and request clarification instead of silently overriding the contract.
+- After completing a ticket, update affected source-of-truth documents, `docs/REPO_CURRENT_STATE.md`, and `docs/DECISION_LOG.md` when architecture or policy changed.
+
 ### What Good Looks Like
 - Fewer unnecessary changes in diffs
 - Fewer rewrites due to overcomplication

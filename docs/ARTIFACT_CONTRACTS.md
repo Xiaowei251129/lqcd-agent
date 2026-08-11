@@ -1,12 +1,18 @@
 # Artifact Contracts
 
-## General Rules
+## 第二阶段文档定位
 
-Artifacts must be machine-readable where they affect routing and human-readable where they support review. JSON or YAML artifacts drive routing; Markdown is for reports and summaries only.
+本文记录当前 runtime 已经实现并由测试覆盖的 artifact contracts。下面保留英文 schema identifiers、field names、status values 和文件名，解释以这些精确合同为准；本轮文档迁移不改变任何 artifact schema。
 
-Actual run artifacts are written under `<output_root>/<case_id>/<run_id>/`. Repo-local `outputs/` is ignored actual-run storage, not reference-output storage. Future curated evaluation baselines belong under `evaluation/reference_outputs/`, with expected behavior under `evaluation/expected_behavior/`.
+第二阶段讨论中的 attempt namespace、artifact supersession/invalidation、Code Agent patch/evidence bundle 和 physics RAG evidence bundle 尚未获批，不属于当前合同。它们只能先在 [A03](tickets/phase-a-control-contracts/A03_ARTIFACT_INVALIDATION.md)、[A05](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md) 及后续独立 ticket 中讨论。普通 ticket 不能仅通过修改 artifact writer 就隐式改变这里的 public contract。
 
-Every artifact that influences a decision must include:
+## 当前通用规则
+
+影响 routing 的 artifact 必须 machine-readable；支持人工 review 的内容应同时 human-readable。JSON/YAML 可以驱动 routing，Markdown 只用于 report 和 summary。
+
+实际运行 artifacts 写入 `<output_root>/<case_id>/<run_id>/`。仓库内 `outputs/` 是 ignored actual-run storage，不是 reference-output storage。curated evaluation baseline 属于 `evaluation/reference_outputs/`，expected behavior 属于 `evaluation/expected_behavior/`。
+
+所有影响 decision 的 artifact 必须包含：
 
 - `schema_version`
 - `run_id`
