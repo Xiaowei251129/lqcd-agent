@@ -16,6 +16,8 @@
 
 后续应通过 `docs/tickets/` 逐项完成设计讨论，再把已经确认的结论同步到核心文档；只有用户确认并标记为 `status: ready` 的具体 ticket 才能执行。
 
+截至 2026-08-11，A01 已确认目标 transition contract；A02 corrective implementation 已完成 formal Run、current-route transition allocation、canonical Attempt kinds 和 Human identity 验收。A02 的四层 fallback coverage 仍是 protocol harness，不表示产品 graph 已开放这些路线。
+
 ## 当前阶段判断
 
 项目当前已经完成 `v0.2-demo` 里程碑。它已经不是只有空节点的 LangGraph skeleton，而是一个能够演示的科研工作流 MVP：
@@ -31,7 +33,7 @@
 当前主要缺口可以概括为：
 
 1. 图中声明的路线、真实可执行的路线和测试覆盖的路线还没有完全统一；
-2. rerun、code fix、replan 等回退意图尚未形成完整的多 attempt 执行协议；
+2. current routes 已有可审计的 Attempt/Transition protocol，但 rerun、code fix、replan 等 A01 回退尚未接成完整产品循环；
 3. Codex Handoff 虽然位于图中，但真正的编码智能仍主要由图外的 Codex CLI worker 提供；
 4. Agent 已经具有结构化职责，但物理知识、工具能力和基于证据的判断能力仍可继续加强；
 5. 当前 harness 能证明主要 demo 可用，但还不能系统证明所有允许的边、循环、恢复和未来并行行为都可靠。
@@ -64,7 +66,7 @@
 
 ### 3. 逻辑可以回退，历史不能倒退
 
-图可以从 Reviewer 回到 Analysis、从 Analysis 回到 Code Agent、从 Coordinator 回到 Method Planner，但旧的 plan、analysis、review 和 decision 不应被静默覆盖。
+Decision Coordinator 可以根据 A01 合同派发 re-review、analysis rerun、code fix 或 replan，但旧的 plan、analysis、review 和 decision 不应被静默覆盖。Worker Agent 和 Human Gate 都不能绕过 Coordinator 直接控制 graph-level 回退。
 
 每次循环都应被理解为从已有证据派生出的新 attempt，而不是对旧 run directory 进行原地重写。
 
@@ -89,7 +91,7 @@ Agent 变强不等于允许它跳转到更多节点或获得更多写权限。�
 - 图中存在一些已经画出或记录的回退方向，但当前 routing function 并不会真正选择它们；
 - Coordinator 的 rerun 或 code-fix 建议与实际 graph transition 尚未完全统一；
 - Human Approval Gate 的 rerun 决定当前更多是记录意图，而不是真正恢复到下一轮 Analysis；
-- state 主要保存当前一套 artifact path，尚未正式表达多个 attempt 和它们之间的父子关系；
+- A02 已在 state 和 append-only ledger 中表达 current Run/Cycle/Attempt/Transition/Human identity 与 control lineage，但 domain artifact 仍使用当前 fixed paths；
 - 不同层级的旧产物在回退后应该如何失效，尚未成为明确合同；
 - checkpoint 已经存在，但 runner 的启动、暂停和恢复协议仍需重新梳理；
 - 当前没有真实 fan-out，因此暂时没有并行冲突，但未来加入并行 Reviewer 或诊断节点后会出现共享 state merge 问题；
@@ -121,20 +123,23 @@ Agent 变强不等于允许它跳转到更多节点或获得更多写权限。�
 
 #### 2. Run、Cycle 与 Attempt 的层次
 
-下一阶段需要讨论并固定三种概念：
+A02 已固定三种概念：
 
 - **Run**：用户发起的一次完整科研任务；
-- **Cycle**：同一目标下的一轮 plan → analysis → review → decision；
-- **Attempt**：某个可重试工作单元的一次具体尝试，例如一次代码修复或一次分析执行。
+- **Cycle**：同一方法合同下的 execution epoch，只在 initial 或 replan 创建；
+- **Attempt**：一次产生持久状态、artifact 或决策的 graph node invocation。
 
-这三个层级不一定最终都成为独立 schema，但必须能够表达：
+它们已经成为 current control-plane schema，并能够表达：
 
 - 当前执行属于哪一轮；
 - 为什么产生新一轮；
 - 它继承了哪些输入；
-- 它使哪些旧结果失效；
-- 哪个失败或人类决定触发了它；
-- 是否已经达到预算上限。
+- 哪个 source Attempt、Transition 或 Human decision 触发了它；
+- 相关 input/output/evidence references。
+
+哪些旧结果失效仍由 A03 定义；是否达到循环预算以及如何识别重复失败仍由 A06 定义。A02 identity 不能被解释成这两个合同已经存在。
+
+当前 product routes 已使用 Transition commit 在目标副作用前预分配 Attempt；Run、Cycle、Attempt、Transition、Human Request 和 Human Response lifecycle 写入 `execution_history.jsonl`。re-review、analysis rerun、code fix 和 replan 目前只经过 A02 最小 identity harness，尚不能据此宣称完整循环已实现。A03 继续决定 artifact invalidation，A04 决定 durable resume/replay/fork，A06 决定预算。
 
 #### 3. Artifact Invalidation 规则
 
@@ -221,10 +226,9 @@ Harness 应逐步形成相互分离但可以组合的层次：
 
 ### 后续需要讨论的问题
 
-- Run、Cycle、Attempt 最终采用几层模型；
 - artifact namespace 的具体目录结构；
 - 哪些状态进入 checkpoint，哪些只存在 artifact；
-- transition matrix 的正式格式；
+- A01 transition matrix 如何编码进产品 graph 与 coverage report；
 - Human Gate 的 start/resume CLI 或 UI 交互；
 - 不同循环预算是统一管理还是由子图分别管理；
 - 哪些科学诊断值得并行，哪些必须保持顺序。
@@ -247,6 +251,8 @@ Harness 应逐步形成相互分离但可以组合的层次：
 - allowlisted verification；
 - 失败后返回 Codex 的基本路线；
 - 手动和自动 worker 之间的边界。
+
+A02 将这个 physical node 的 canonical Attempt kind 固定为 `legacy_codex_handoff`。它不是 `code_agent`；A02 fallback harness 中出现的 canonical `code_agent` 也只是 transition protocol sink。Fake/real graph-managed Code Agent 的输入输出、sandbox 和 lifecycle 仍由 A05 与后续 Phase B/C 实现。
 
 它的主要限制是：
 
@@ -527,7 +533,7 @@ RAG 是否有效不能只看回答“更像专家”。至少需要评估：
 ```text
 确认控制层原则和 Code Agent 最小契约
                 ↓
-建立 attempt、invalidation、resume 和 path harness
+复用 A02 identity，建立 invalidation、resume 和 path harness
                 ↓
 用 Fake Code Agent 验证完整图循环
                 ↓
@@ -554,13 +560,13 @@ RAG 是否有效不能只看回答“更像专家”。至少需要评估：
 目标是确认：
 
 - 哪些路线必须存在；
-- Run/Cycle/Attempt 如何理解；
+- Run/Cycle/Attempt 如何理解（A02 已确认并完成实现验收）；
 - 回退后的 artifact invalidation；
 - Code Agent 的最小输入输出；
 - 循环预算和 Human Gate 边界；
 - 哪些行为必须由确定性规则控制。
 
-这一阶段的主要产物应是讨论结论和架构决策，而不是大量代码。
+这一阶段的主要产物是讨论结论和架构决策，不做大规模能力开发。A02 是纠正已发生 design/runtime 偏差的 implementation ticket：它落地 identity protocol，但不提前实现 A03–A07。
 
 ### 阶段 B：图和 Harness 可靠性
 
@@ -618,18 +624,17 @@ RAG 是否有效不能只看回答“更像专家”。至少需要评估：
 
 ## 下一轮讨论建议
 
-在编写具体执行 prompt 之前，建议依次讨论以下设计问题：
+当前 A01 transition matrix 与 A02 identity model 已确认。后续 ticket 应从尚未解决的问题继续，而不是重新讨论这两项：
 
-1. 当前图真正希望支持的完整 transition matrix；
-2. Run、Cycle、Attempt 的最小模型；
-3. 四种主要回退的 artifact invalidation 规则；
-4. Human Gate 的 pause/resume 语义；
-5. Code Agent 的最小输入输出 contract；
-6. Fake Code Agent 需要模拟的结果类型；
-7. 哪些 harness 属于下一阶段的必要基线；
-8. 第一个物理能力增强试点及其可测问题；
-9. 共享 Physics Knowledge Service 的 evidence bundle；
-10. 下一阶段 milestone 的演示场景和验收定义。
+1. 四种主要回退的 artifact invalidation 规则；
+2. Human Gate 的 PAUSE/resume 语义；
+3. Code Agent 的最小输入输出 contract；
+4. budgets、failure fingerprint 和停止条件；
+5. Fake Code Agent 需要模拟的结果类型；
+6. 哪些 harness 属于 Phase B 的必要基线；
+7. 第一个物理能力增强试点及其可测问题；
+8. 共享 Physics Knowledge Service 的 evidence bundle；
+9. 下一阶段 milestone 的演示场景和验收定义。
 
 这些问题确认之后，再决定是否更新 `ARCHITECTURE.md`、`STATE_SCHEMA.md`、`ARTIFACT_CONTRACTS.md`、`EVALS_AND_OBSERVABILITY.md` 和 `AGENT_ROLES_AND_BOUNDARIES.md`，并进一步拆分正式执行 tickets。
 
@@ -638,9 +643,9 @@ RAG 是否有效不能只看回答“更像专家”。至少需要评估：
 - [`docs/README.md`](README.md)：第二阶段文档入口与权威顺序；
 - [`tickets/README.md`](tickets/README.md)：ticket 生命周期和 Phase A–E 目录；
 - [`REPO_CURRENT_STATE.md`](REPO_CURRENT_STATE.md)：只记录当前已经实现、验证和正在进行的工作；
-- `ARCHITECTURE.md`：未来只接收已经确认的图和控制层设计；
-- `STATE_SCHEMA.md`：未来只接收已经确认的 Run/Cycle/Attempt 和 reducer 设计；
-- `ARTIFACT_CONTRACTS.md`：未来只接收已经确认的 attempt namespace 和 evidence bundle；
+- `ARCHITECTURE.md`：记录 current-route identity protocol，并把 A02 harness-only fallback 与未来产品路线分开；
+- `STATE_SCHEMA.md`：已经接收 A02 Run/Cycle/Attempt/Transition/Human identity，未来只接收经过批准的 reducer 或恢复字段；
+- `ARTIFACT_CONTRACTS.md`：已经接收 A02 execution ledger 与 approval 0.2，未来只接收经过批准的 domain-artifact namespace 和 evidence bundle；
 - `EVALS_AND_OBSERVABILITY.md`：未来接收已经批准的 harness 和 benchmark 设计；
 - `AGENT_ROLES_AND_BOUNDARIES.md`：未来接收 Code Agent 和物理知识能力的正式边界；
 - 第一阶段单体 build plan、ticket ledger 和 prompt playbook 已在迁移审计后从当前工作树删除；原文可从 Git tag `v0.2-demo` 查看。

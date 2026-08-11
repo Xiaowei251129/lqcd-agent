@@ -68,9 +68,13 @@ def _decision_file(tmp_path: Path, decision: str) -> Path:
     path.write_text(
         "\n".join(
             [
-                'schema_version: "0.1"',
+                'schema_version: "0.2"',
                 'run_id: "run_a"',
                 'case_id: "case_a"',
+                'cycle_id: "cycle_0001"',
+                'human_request_id: "human_request_000001"',
+                'requesting_attempt_id: "attempt_000004"',
+                'human_response_id: "human_response_000001"',
                 f'decision: "{decision}"',
                 'conditions: ""',
                 'reason: "Reviewed by test."',
@@ -131,6 +135,11 @@ def test_final_report_names_approved_human_decision(tmp_path: Path) -> None:
     state = _state(tmp_path)
     state["human_approval_required"] = True
     state["human_decision_path"] = str(_decision_file(tmp_path, "approve_with_conditions"))
+    state["active_human_request_id"] = "human_request_000001"
+    state["human_requesting_attempt_id"] = "attempt_000004"
+    state["active_human_response_id"] = "human_response_000001"
+    state["human_response_status"] = "consumed"
+    state["human_response_decision"] = "approve_with_conditions"
     memory_update = {"memory_status": "accepted", "accepted_result": True}
 
     result = write_final_report(state, memory_update)
@@ -138,3 +147,25 @@ def test_final_report_names_approved_human_decision(tmp_path: Path) -> None:
     report = Path(result["final_report_path"]).read_text(encoding="utf-8")
     assert "Approved human decision: `approve_with_conditions`." in report
     assert "Human decision status: `approved`." not in report
+
+
+def test_final_report_uses_validated_decision_snapshot_after_projection_changes(
+    tmp_path: Path,
+) -> None:
+    state = _state(tmp_path)
+    state["human_approval_required"] = True
+    state["human_decision_path"] = str(_decision_file(tmp_path, "reject_or_hold"))
+    state["active_human_request_id"] = "human_request_000001"
+    state["human_requesting_attempt_id"] = "attempt_000004"
+    state["active_human_response_id"] = "human_response_000001"
+    state["human_response_status"] = "consumed"
+    state["human_response_decision"] = "approve_with_conditions"
+
+    result = write_final_report(
+        state,
+        {"memory_status": "accepted", "accepted_result": True},
+    )
+
+    report = Path(result["final_report_path"]).read_text(encoding="utf-8")
+    assert "Approved human decision: `approve_with_conditions`." in report
+    assert "Approved human decision: `reject_or_hold`." not in report

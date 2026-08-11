@@ -12,7 +12,9 @@ APPROVAL_PACKET_DIRNAME = "approval_packet"
 APPROVAL_PACKET_FILENAME = "approval_packet.json"
 APPROVAL_SUMMARY_FILENAME = "approval_summary.md"
 HUMAN_DECISION_FILENAME = "07_human_decision.yaml"
-APPROVAL_SCHEMA_VERSION = "0.1"
+APPROVAL_SCHEMA_VERSION = "0.2"
+LEGACY_APPROVAL_SCHEMA_VERSION = "0.1"
+_EXPECTED_ID_UNSET = object()
 
 DECISION_ROUTE_TARGETS = {
     "approve_with_conditions": "memory_report",
@@ -110,7 +112,17 @@ def _available_comparisons(state: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _required_identity(state: dict[str, Any], field: str) -> str:
+    value = state.get(field)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"Approval projection requires {field} from the control plane.")
+    return value
+
+
 def build_approval_packet(state: dict[str, Any], human_decision_path: str) -> dict[str, Any]:
+    cycle_id = _required_identity(state, "cycle_id")
+    human_request_id = _required_identity(state, "active_human_request_id")
+    requesting_attempt_id = _required_identity(state, "human_requesting_attempt_id")
     decision_log = _read_json_object(state.get("decision_log_path")) or {}
     risk_level = state.get("risk_level")
     recommended_action = state.get("recommended_action")
@@ -122,6 +134,13 @@ def build_approval_packet(state: dict[str, Any], human_decision_path: str) -> di
         "schema_version": APPROVAL_SCHEMA_VERSION,
         "run_id": state["run_id"],
         "case_id": state["case_id"],
+        "cycle_id": cycle_id,
+        "human_request_id": human_request_id,
+        "requesting_attempt_id": requesting_attempt_id,
+        "human_request_status": state.get("human_request_status"),
+        "human_response_id": state.get("active_human_response_id"),
+        "attempt_id": state.get("attempt_id"),
+        "parent_attempt_id": state.get("parent_attempt_id"),
         "created_at": utc_now(),
         "producer": "human_approval_gate",
         "status": "pending",
@@ -133,6 +152,7 @@ def build_approval_packet(state: dict[str, Any], human_decision_path: str) -> di
             "recommended_action": recommended_action,
             "human_approval_required": state.get("human_approval_required"),
         },
+        "authorization_scope": state.get("human_request_authorization_scope") or {},
         "human_summary": summary,
         "method_and_run_context": {
             "method_plan_path": state.get("method_plan_path"),
@@ -169,6 +189,9 @@ def _summary_markdown(packet: dict[str, Any]) -> str:
         "# Human Approval Packet\n\n"
         f"- run_id: {packet['run_id']}\n"
         f"- case_id: {packet['case_id']}\n"
+        f"- cycle_id: {packet['cycle_id']}\n"
+        f"- human_request_id: {packet['human_request_id']}\n"
+        f"- requesting_attempt_id: {packet['requesting_attempt_id']}\n"
         f"- risk_level: {requested['risk_level']}\n"
         f"- recommended_action: {requested['recommended_action']}\n"
         f"- scientific_review_report: {packet['scientific_review_report']['path']}\n"
@@ -214,6 +237,10 @@ def _template_payload(state: dict[str, Any]) -> dict[str, Any]:
         "schema_version": APPROVAL_SCHEMA_VERSION,
         "run_id": state["run_id"],
         "case_id": state["case_id"],
+        "cycle_id": _required_identity(state, "cycle_id"),
+        "human_request_id": _required_identity(state, "active_human_request_id"),
+        "requesting_attempt_id": _required_identity(state, "human_requesting_attempt_id"),
+        "human_response_id": state.get("active_human_response_id"),
         "decision": None,
         "conditions": "",
         "reason": "",
@@ -239,11 +266,16 @@ def write_approval_packet(state: dict[str, Any]) -> dict[str, str | None]:
     packet_dir = approval_packet_dir(state["output_dir"])
     packet_dir.mkdir(parents=True, exist_ok=True)
     human_decision_path = packet_dir / HUMAN_DECISION_FILENAME
-    if not human_decision_path.exists():
+    packet_path = packet_dir / APPROVAL_PACKET_FILENAME
+    previous_packet = _read_json_object(packet_path)
+    request_changed = bool(
+        previous_packet
+        and previous_packet.get("human_request_id") != state.get("active_human_request_id")
+    )
+    if not human_decision_path.exists() or request_changed:
         _write_flat_yaml(human_decision_path, _template_payload(state))
 
     packet = build_approval_packet(state, str(human_decision_path))
-    packet_path = packet_dir / APPROVAL_PACKET_FILENAME
     packet_path.write_text(json.dumps(packet, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     summary_path = packet_dir / APPROVAL_SUMMARY_FILENAME
     summary_path.write_text(_summary_markdown(packet), encoding="utf-8")
@@ -269,7 +301,35 @@ def read_flat_human_decision_yaml(path: str | Path) -> dict[str, Any]:
     return payload
 
 
-def parse_human_decision(path: str | Path | None, *, run_id: str, case_id: str) -> dict[str, Any]:
+def _identity_error(
+    *,
+    field: str,
+    value: Any,
+    expected: Any,
+    path: str | Path,
+    message: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "field": field,
+        "value": value,
+        "expected": expected,
+        "message": message or f"human decision {field} does not match the active request.",
+        "path": str(path),
+    }
+
+
+def parse_human_decision(
+    path: str | Path | None,
+    *,
+    run_id: str,
+    case_id: str,
+    cycle_id: str | None = None,
+    human_request_id: str | None = None,
+    requesting_attempt_id: str | None = None,
+    human_response_id: str | None | object = _EXPECTED_ID_UNSET,
+    legacy_import: bool = False,
+    legacy_open_request_ids: list[str] | None = None,
+) -> dict[str, Any]:
     if not path or not Path(path).exists():
         return {"status": "pending", "decision": None, "errors": []}
 
@@ -283,26 +343,134 @@ def parse_human_decision(path: str | Path | None, *, run_id: str, case_id: str) 
         }
 
     errors: list[dict[str, Any]] = []
-    for field, expected in {
-        "schema_version": APPROVAL_SCHEMA_VERSION,
-        "run_id": run_id,
-        "case_id": case_id,
-    }.items():
+    schema_version = payload.get("schema_version")
+    if schema_version == LEGACY_APPROVAL_SCHEMA_VERSION:
+        if not legacy_import:
+            errors.append(
+                _identity_error(
+                    field="schema_version",
+                    value=schema_version,
+                    expected=APPROVAL_SCHEMA_VERSION,
+                    path=path,
+                    message="legacy human decision schema requires explicit compatibility import.",
+                )
+            )
+        missing_binding = [
+            field
+            for field, value in {
+                "cycle_id": cycle_id,
+                "human_request_id": human_request_id,
+                "requesting_attempt_id": requesting_attempt_id,
+            }.items()
+            if not isinstance(value, str) or not value
+        ]
+        if legacy_import and missing_binding:
+            errors.append(
+                _identity_error(
+                    field="legacy_import",
+                    value=missing_binding,
+                    expected="one explicitly identified active Human Request",
+                    path=path,
+                    message="legacy import requires the caller to bind one active Human Request.",
+                )
+            )
+        if legacy_import and not missing_binding and legacy_open_request_ids != [human_request_id]:
+            errors.append(
+                _identity_error(
+                    field="legacy_open_request_ids",
+                    value=legacy_open_request_ids,
+                    expected=[human_request_id],
+                    path=path,
+                    message="legacy import requires exactly one matching open Human Request from the ledger.",
+                )
+            )
+        if legacy_import and not missing_binding and not errors:
+            payload = {
+                **payload,
+                "schema_version": APPROVAL_SCHEMA_VERSION,
+                "imported_schema_version": LEGACY_APPROVAL_SCHEMA_VERSION,
+                "cycle_id": cycle_id,
+                "human_request_id": human_request_id,
+                "requesting_attempt_id": requesting_attempt_id,
+                "human_response_id": (
+                    None if human_response_id is _EXPECTED_ID_UNSET else human_response_id
+                ),
+            }
+    elif schema_version != APPROVAL_SCHEMA_VERSION:
+        errors.append(
+            _identity_error(
+                field="schema_version",
+                value=schema_version,
+                expected=APPROVAL_SCHEMA_VERSION,
+                path=path,
+            )
+        )
+
+    for field, expected in {"run_id": run_id, "case_id": case_id}.items():
         value = payload.get(field)
         if value != expected:
             errors.append(
-                {
-                    "field": field,
-                    "value": value,
-                    "expected": expected,
-                    "message": f"human decision {field} does not match the active run.",
-                    "path": str(path),
-                }
+                _identity_error(
+                    field=field,
+                    value=value,
+                    expected=expected,
+                    path=path,
+                    message=f"human decision {field} does not match the active run.",
+                )
+            )
+
+    if payload.get("schema_version") == APPROVAL_SCHEMA_VERSION:
+        for field in ("cycle_id", "human_request_id", "requesting_attempt_id"):
+            value = payload.get(field)
+            if not isinstance(value, str) or not value:
+                errors.append(
+                    _identity_error(
+                        field=field,
+                        value=value,
+                        expected="non-empty control-plane identity",
+                        path=path,
+                    )
+                )
+        for field, expected in {
+            "cycle_id": cycle_id,
+            "human_request_id": human_request_id,
+            "requesting_attempt_id": requesting_attempt_id,
+        }.items():
+            if expected is not None and payload.get(field) != expected:
+                errors.append(
+                    _identity_error(
+                        field=field,
+                        value=payload.get(field),
+                        expected=expected,
+                        path=path,
+                    )
+                )
+        if (
+            human_response_id is not _EXPECTED_ID_UNSET
+            and payload.get("human_response_id") != human_response_id
+        ):
+            errors.append(
+                _identity_error(
+                    field="human_response_id",
+                    value=payload.get("human_response_id"),
+                    expected=human_response_id,
+                    path=path,
+                )
             )
 
     decision = payload.get("decision")
     if decision in {None, ""}:
         return {"status": "invalid" if errors else "pending", "decision": None, "errors": errors}
+    if not isinstance(payload.get("human_response_id"), str) or not payload["human_response_id"]:
+        errors.append(
+            _identity_error(
+                field="human_response_id",
+                value=payload.get("human_response_id"),
+                expected="runtime-allocated Human Response identity",
+                path=path,
+                message="a submitted human decision requires a runtime-allocated response identity.",
+            )
+        )
     if not isinstance(decision, str) or decision not in DECISION_ROUTE_TARGETS:
         errors.append(
             {

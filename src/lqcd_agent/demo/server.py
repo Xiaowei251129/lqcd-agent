@@ -29,9 +29,11 @@ from lqcd_agent.graph.approval_packet import (
     HUMAN_DECISION_FILENAME,
     read_flat_human_decision_yaml,
 )
+from lqcd_agent.graph.analysis_graph import execute_graph_node_transition
 from lqcd_agent.graph.nodes import human_approval_gate_node, memory_report_node
 from lqcd_agent.graph.run_graph import run_mock_graph
-from lqcd_agent.graph.routing import route_after_human_approval_gate
+from lqcd_agent.graph.routing import select_after_human_approval_gate
+from lqcd_agent.graph.state import commit_external_transition, submit_human_response
 
 
 STATIC_ROOT = Path(__file__).resolve().parent / "static"
@@ -496,7 +498,7 @@ def review_warning_codes(run_dir: Path) -> list[str]:
     return [str(warning.get("code")) for warning in payload["warnings"] if isinstance(warning, dict)]
 
 
-def approval_status(run_dir: Path) -> dict[str, Any]:
+def approval_status(run_dir: Path, graph_state: dict[str, Any] | None = None) -> dict[str, Any]:
     packet_path = run_dir / "approval_packet" / APPROVAL_PACKET_FILENAME
     decision_path = run_dir / "approval_packet" / HUMAN_DECISION_FILENAME
     packet = read_json_file(packet_path)
@@ -507,9 +509,10 @@ def approval_status(run_dir: Path) -> dict[str, Any]:
         except (json.JSONDecodeError, ValueError):
             decision_payload = {"decision": None, "invalid": True}
     decision = decision_payload.get("decision") if decision_payload else None
+    request_is_open = bool(graph_state and graph_state.get("human_request_status") == "open")
     return {
         "required": bool(packet),
-        "pending": bool(packet and not decision),
+        "pending": bool(packet and (request_is_open or not decision)),
         "packet": packet,
         "decision": decision_payload,
         "packet_path": str(packet_path) if packet_path.exists() else None,
@@ -544,7 +547,7 @@ def dashboard_payload(*, output_root: str | Path, case_id: str, run_id: str) -> 
     final_report_path = run_dir / "final_report.md"
     final_report = final_report_path.read_text(encoding="utf-8") if final_report_path.exists() else ""
     actual = checklist.get("actual", {}) if checklist else {}
-    approval = approval_status(run_dir)
+    approval = approval_status(run_dir, graph_state)
 
     return {
         "case_id": case_id,
@@ -798,6 +801,10 @@ def write_human_decision_file(
     path: Path,
     run_id: str,
     case_id: str,
+    cycle_id: str,
+    human_request_id: str,
+    requesting_attempt_id: str,
+    human_response_id: str,
     decision: str,
     conditions: str = "",
     reason: str = "",
@@ -810,6 +817,10 @@ def write_human_decision_file(
         "schema_version": APPROVAL_SCHEMA_VERSION,
         "run_id": run_id,
         "case_id": case_id,
+        "cycle_id": cycle_id,
+        "human_request_id": human_request_id,
+        "requesting_attempt_id": requesting_attempt_id,
+        "human_response_id": human_response_id,
         "decision": decision,
         "conditions": conditions,
         "reason": reason,
@@ -830,6 +841,9 @@ def apply_human_decision(
     reason: str = "",
     decided_by: str = "",
 ) -> dict[str, Any]:
+    allowed_decisions = {str(option["decision"]) for option in DECISION_OPTIONS}
+    if decision not in allowed_decisions:
+        raise DemoServerError(HTTPStatus.BAD_REQUEST, f"Unsupported human decision: {decision}")
     run_dir = run_dir_for(Path(output_root), case_id, run_id)
     graph_state = read_json_file(run_dir / "graph_state.json")
     if graph_state is None:
@@ -838,23 +852,81 @@ def apply_human_decision(
     if not packet_path.exists():
         raise DemoServerError(HTTPStatus.BAD_REQUEST, "This run does not have an approval packet.")
     decision_path = run_dir / "approval_packet" / HUMAN_DECISION_FILENAME
+    state = dict(graph_state)
+    state["output_dir"] = str(run_dir)
+    state["human_decision_path"] = str(decision_path)
+    state["approval_packet_dir"] = str(packet_path.parent)
+    response_payload = {
+        "decision": decision,
+        "conditions": conditions,
+        "reason": reason,
+        "decided_by": decided_by,
+        "human_request_id": state.get("active_human_request_id"),
+    }
+    try:
+        state = submit_human_response(
+            state,
+            payload=response_payload,
+            payload_reference="inline:demo_api_request",
+        )
+    except ValueError as exc:
+        raise DemoServerError(HTTPStatus.CONFLICT, str(exc)) from exc
     write_human_decision_file(
         path=decision_path,
         run_id=run_id,
         case_id=case_id,
+        cycle_id=str(state["cycle_id"]),
+        human_request_id=str(state["active_human_request_id"]),
+        requesting_attempt_id=str(state["human_requesting_attempt_id"]),
+        human_response_id=str(state["active_human_response_id"]),
         decision=decision,
         conditions=conditions,
         reason=reason,
         decided_by=decided_by,
     )
-    state = dict(graph_state)
-    state["output_dir"] = str(run_dir)
-    state["human_decision_path"] = str(decision_path)
-    state["approval_packet_dir"] = str(packet_path.parent)
-    state = human_approval_gate_node(state)
-    route = route_after_human_approval_gate(state)
+    state = commit_external_transition(
+        state,
+        source_name="HUMAN_RESPONSE",
+        route="human_approval_gate",
+        reason="A runtime-identified human response is ready for validation.",
+        fields={
+            "human_request_id": state["active_human_request_id"],
+            "human_response_id": state["active_human_response_id"],
+        },
+        target_node="human_approval_gate",
+        target_attempt_kind="human_gate",
+        trigger_reason="human_response",
+    )
+    state = execute_graph_node_transition(
+        state,
+        node_name="human_approval_gate",
+        attempt_kind="human_gate",
+        node=human_approval_gate_node,
+        route_selector=select_after_human_approval_gate,
+        route_targets={
+            "analysis_engineer": ("analysis_engineer", "analysis_engineer"),
+            "codex_handoff": ("codex_handoff", "legacy_codex_handoff"),
+            "memory_report": ("memory_report", "memory_report"),
+            "end": None,
+        },
+    )
+    route = state["committed_route"]
     if route == "memory_report":
-        state = memory_report_node(state)
+        state = execute_graph_node_transition(
+            state,
+            node_name="memory_report",
+            attempt_kind="memory_report",
+            node=memory_report_node,
+            route_selector=lambda completed: {
+                "route": "end",
+                "reason": "Memory and Report is the terminal graph sink.",
+                "fields": {"status": completed["status"]},
+                "state_updates": {},
+                "trigger_reason": "forward",
+                "new_cycle": False,
+            },
+            route_targets={"end": None},
+        )
     return dashboard_payload(output_root=output_root, case_id=case_id, run_id=run_id)
 
 

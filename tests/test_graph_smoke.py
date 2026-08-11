@@ -296,7 +296,12 @@ def test_high_risk_graph_cannot_enter_accepted_memory_without_approval(
     )
 
     final_state, run_dir = _run_graph_with_fake_review(tmp_path, monkeypatch, report=report)
-    route_fields = final_state["route_decisions"][-1]["fields"]
+    human_transition = next(
+        decision
+        for decision in final_state["route_decisions"]
+        if decision["source"] == "human_approval_gate"
+    )
+    route_fields = human_transition["fields"]
 
     assert final_state["status"] == "pending"
     assert final_state["current_node"] == "memory_report"
@@ -311,6 +316,22 @@ def test_high_risk_graph_cannot_enter_accepted_memory_without_approval(
     assert memory_update["accepted_result"] is False
     assert route_fields["actual_route"] == "memory_report"
     assert route_fields["requested_route"] == "human_approval_gate"
+    assert final_state["active_human_request_id"] == "human_request_000001"
+    history = [
+        json.loads(line)
+        for line in Path(final_state["execution_history_path"]).read_text(encoding="utf-8").splitlines()
+    ]
+    request_position = next(
+        index for index, record in enumerate(history) if record["record_type"] == "human_request"
+    )
+    gate_position = next(
+        index
+        for index, record in enumerate(history)
+        if record["record_type"] == "attempt"
+        and record.get("attempt_kind") == "human_gate"
+        and record["event"] == "scheduled"
+    )
+    assert request_position < gate_position
 
 
 def test_critical_risk_graph_cannot_enter_accepted_memory_without_approval(
@@ -457,7 +478,8 @@ def test_missing_input_reaches_human_gate_with_structured_failure(tmp_path: Path
     run_result = json.loads((run_dir / "run_result.json").read_text(encoding="utf-8"))
     decision_log = json.loads((run_dir / "decision_log.json").read_text(encoding="utf-8"))
 
-    assert route_nodes[:4] == [
+    assert route_nodes[:5] == [
+        "START",
         "method_planner",
         "analysis_engineer",
         "decision_coordinator",
@@ -532,6 +554,91 @@ def test_graph_stops_at_codex_handoff_when_results_are_missing(
     assert method_plan["code_needed"] is True
     assert final_state["route_decisions"][-2]["route"] == "codex_handoff"
     assert final_state["route_decisions"][-1]["route"] == "end"
+
+
+def test_legacy_codex_safe_stop_can_continue_same_run_with_new_attempts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case_path = tmp_path / "code_needed_continuation.yaml"
+    case_path.write_text(
+        "\n".join(
+            [
+                'schema_version: "0.1"',
+                'case_id: "code_needed_continuation"',
+                'physics_goal: "Plan a mock-only pion quasi-DA analysis support run."',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    def fake_repo_inventory(root: Path) -> dict[str, object]:
+        return {
+            "schema_version": "0.1",
+            "repo_root": str(root),
+            "implementation_gaps": ["Missing deterministic synthetic output validator."],
+            "allowed_files": ["src/lqcd_agent/graph/nodes.py"],
+        }
+
+    monkeypatch.setattr("lqcd_agent.graph.nodes.build_repo_inventory", fake_repo_inventory)
+    first = run_mock_graph(
+        case_path=str(case_path),
+        output_dir=str(tmp_path),
+        run_id="continuation",
+    )
+    first_state = first["state"]
+    run_dir = Path(first_state["output_dir"])
+    assert first_state["status"] == "pending"
+    assert first_state["attempt_kind"] == "legacy_codex_handoff"
+    first_attempt_index = first_state["attempt_index"]
+    first_transition_index = first_state["transition_index"]
+    (run_dir / "code_change_summary.md").write_text(
+        "Implemented the externally requested mock-only code change.\n",
+        encoding="utf-8",
+    )
+    tests_status = {
+        "schema_version": "0.1",
+        "run_id": "continuation",
+        "case_id": "code_needed_continuation",
+        "created_at": "2026-06-10T00:00:00+00:00",
+        "producer": "test_runner",
+        "status": "tests_passed",
+        "summary": "All configured verification commands passed.",
+        "warnings": [],
+        "errors": [],
+        "commands": [],
+    }
+    (run_dir / "tests_status.json").write_text(json.dumps(tests_status), encoding="utf-8")
+
+    second = run_mock_graph(
+        case_path=str(case_path),
+        output_dir=str(tmp_path),
+        run_id="continuation",
+    )
+    second_state = second["state"]
+    history = [
+        json.loads(line)
+        for line in (run_dir / "execution_history.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    source_attempt_ids = [
+        record["source_attempt_id"]
+        for record in history
+        if record["record_type"] == "transition" and record.get("source_attempt_id")
+    ]
+
+    assert second_state["status"] == "success"
+    assert second_state["attempt_kind"] == "memory_report"
+    assert second_state["attempt_index"] > first_attempt_index
+    assert second_state["transition_index"] > first_transition_index
+    assert len(source_attempt_ids) == len(set(source_attempt_ids))
+    assert len([record for record in history if record["record_type"] == "run"]) == 1
+    assert any(
+        record["record_type"] == "transition"
+        and record["source_node"] == "START"
+        and record["source_attempt_id"] is None
+        and record["fields"].get("trigger") == "legacy_reentry"
+        for record in history
+    )
 
 
 def test_auto_codex_handoff_runs_worker_and_reaches_analysis(

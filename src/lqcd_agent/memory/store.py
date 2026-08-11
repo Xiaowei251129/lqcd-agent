@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-from lqcd_agent.graph.approval_packet import parse_human_decision
 from lqcd_agent.graph.state import AnalysisState, utc_now
 
 
@@ -19,6 +18,20 @@ def _base_artifact(state: AnalysisState, *, status: str, summary: str) -> dict[s
         "schema_version": MEMORY_SCHEMA_VERSION,
         "run_id": state["run_id"],
         "case_id": state["case_id"],
+        "cycle_id": state["cycle_id"],
+        "attempt_id": state["attempt_id"],
+        "parent_attempt_id": state["parent_attempt_id"],
+        "attempt_kind": state["attempt_kind"],
+        "attempt_node": state["attempt_node"],
+        "inbound_transition_id": state["inbound_transition_id"],
+        "committed_transition_id": state["committed_transition_id"],
+        "human_request_id": state["active_human_request_id"],
+        "human_request_status": state["human_request_status"],
+        "human_response_id": state["active_human_response_id"],
+        "human_response_status": state["human_response_status"],
+        "human_response_validator_attempt_id": state["human_response_validator_attempt_id"],
+        "human_response_consumer_attempt_id": state["human_response_consumer_attempt_id"],
+        "human_response_target_attempt_id": state["human_response_target_attempt_id"],
         "created_at": utc_now(),
         "producer": "memory_report",
         "status": status,
@@ -29,15 +42,9 @@ def _base_artifact(state: AnalysisState, *, status: str, summary: str) -> dict[s
 
 
 def _human_decision(state: AnalysisState) -> str | None:
-    decision_path = state.get("human_decision_path")
-    if not decision_path:
+    if state.get("human_response_status") != "consumed":
         return None
-    result = parse_human_decision(
-        decision_path,
-        run_id=state["run_id"],
-        case_id=state["case_id"],
-    )
-    decision = result.get("decision")
+    decision = state.get("human_response_decision")
     return decision if isinstance(decision, str) else None
 
 

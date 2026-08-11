@@ -37,6 +37,8 @@ Codex Handoff Node 默认是 file-based handoff：写入或读取 `coder_task_pa
 
 Human Approval Gate 同样是 file-based：它写 approval packet、读取 `approval_packet/07_human_decision.yaml`，但绝不改写人类决定。默认 Agent 路径是 deterministic；只有传入显式 provider config 时，Method Planner、Scientific Reviewer 和 Decision Coordinator 才调用 provider。
 
+A02 corrective implementation 没有改变下面的 logical route outcomes，但已经改变它们的执行协议：每个 source node 领取预先 `scheduled` 的 Attempt，完成后由纯 selector 产生结构化选择，再由 control plane commit Transition 并在 target side effect 前分配下一个 Attempt。LangGraph conditional edge 只读取已提交的 `committed_route`；fixed route 和 END 也写 Transition record。
+
 当前入口与主要路线是：
 
 ```text
@@ -83,7 +85,7 @@ Human Approval Gate 当前路线：
 - reviewer/coordinator 触发任意多轮闭环；当前只存在有限的 code retry 与 human decision 路线。
 - 多 Agent fan-out、并行 reducer 或 attempt namespace；当前没有正式实现。
 
-这些差距必须由 [Phase A](tickets/phase-a-control-contracts/OVERVIEW.md) 逐项明确合同，再由 Phase B harness 验证。A01 已确认逻辑路线合同，但不得仅修改本文或流程图就把目标边视为现有 runtime 能力。
+这些差距必须由 [Phase A](tickets/phase-a-control-contracts/OVERVIEW.md) 逐项明确合同，再由 Phase B harness 验证。A01 已确认逻辑路线合同；A02 corrective implementation 已完成并把当前可达路线接入 execution identity control plane。A01 的目标回退边和循环仍不能被视为现有 runtime 能力。
 
 ## A01 已确认的目标控制合同（尚未实现）
 
@@ -115,7 +117,22 @@ Memory and Report -> END
 
 四个回退目标分别表示：重新审查相同 analysis、在相同 plan/code 下重新分析、修复实现、重新规划方法。候选目标冲突或无法唯一归因时不得默认选择最深回退，必须进入 Human Gate。
 
-这里的 `Code Agent` 是 A05 将定义的 graph-managed 接口，不是把当前 Codex Handoff 直接改名。Run/Cycle/Attempt identity、artifact invalidation、PAUSE/resume、Code Agent wire contract 和具体预算仍分别由 A02–A06 定义；在这些合同和 Phase B harness 完成前，目标闭环不得接入 runtime。
+这里的 `Code Agent` 是 A05 将定义的 graph-managed 接口，不是把当前 Codex Handoff 直接改名。A02 已确认 Run/Cycle/Attempt identity；artifact invalidation、PAUSE/resume、Code Agent wire contract 和具体预算仍分别由 A03–A06 定义。在这些合同和 Phase B harness 完成前，目标闭环不得接入 runtime。
+
+## A02 当前 Execution Identity
+
+[A02 Run/Cycle/Attempt Model](tickets/phase-a-control-contracts/A02_RUN_CYCLE_ATTEMPT_MODEL.md) 已完成三层 identity 验收：Run 表示完整用户科研任务，Cycle 表示同一方法合同下的 execution epoch，Attempt 表示一次产生持久状态、artifact 或决策的 graph node invocation。
+
+- 新 Run 首先写唯一 formal Run record，再写 initial Cycle、预分配 Planner Attempt，最后 commit START Transition；Planner identity 在 `app.invoke()` 前存在；
+- 每个 current-route source wrapper 只领取 inbound Transition 指定的 Attempt，执行并结束它；Transition commit 应用显式 state updates、可选创建 Cycle、预分配 target Attempt，再把已提交 route 交给 LangGraph edge reader；
+- Run-local `execution_history.jsonl` append-only 记录 `run`、`cycle`、`attempt`、`transition`、`human_request` 和 `human_response`；state 只保存 bounded current pointers 和 counters；
+- physical node 与 canonical Attempt kind 分开记录：当前 `codex_handoff` 是 `legacy_codex_handoff`，`human_approval_gate` 是 `human_gate`；canonical `code_agent` 只为 A05/Phase B 预留；
+- Coordinator 进入 Gate 时创建独立 Human Request；外部 response 获得独立 identity，只能由 `human_gate` Attempt 验证，并由 scope 内的一次 compatibility transition 消费；
+- Agent、router 和 human decision payload 都不能创建、改写或复用 control identity；`START`、`END` 与 Human Request/Response 都不是 Agent Attempt。
+
+re-review、analysis rerun、code fix 和 replan 目前只在最小 deterministic StateGraph integration harness 中经过真实 selection/commit/target-consumption protocol；这只能证明 identity protocol，不代表产品 graph 已开放四层回退。特别是 harness 中的 `code_agent` 只是 protocol sink，不是 Fake/real Code Agent。
+
+legacy incomplete-Run re-entry 会校验 formal Run immutable fields，并从 ledger 恢复 counters，但这只是 compatibility audit continuity，不是 checkpoint resume。Run-owned `checkpoint_thread_id` 与 canonical output root 未改变；A03 仍决定 namespace/current pointers/invalidation，A04 决定 PAUSE/resume 与 replay/fork API，A05 定义 Fake/real graph-managed Code Agent，A06 决定 budgets/failure fingerprint，A07/Phase B 才负责 A01 完整产品线路和禁止路线 harness。
 
 ## Checkpoint 与上下文边界
 

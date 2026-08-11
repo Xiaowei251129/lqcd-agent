@@ -610,3 +610,58 @@ Related Documents:
 - [Architecture](ARCHITECTURE.md)
 - [Agent Roles and Boundaries](AGENT_ROLES_AND_BOUNDARIES.md)
 - [Repository Current State](REPO_CURRENT_STATE.md)
+
+## 2026-08-11: Adopt Run, Cycle, and Attempt Identity and Correct A02 Execution Scope
+
+Decision:
+
+- Use a three-level Run / Cycle / Attempt model instead of a two-level Run / Attempt model.
+- Keep `run_id` as the complete user research-task identity and owner of the canonical output root and checkpoint thread.
+- Treat Cycle as a method-contract epoch created only for initial execution or Coordinator-approved replan.
+- Treat Attempt as one durable graph node invocation, using a shared identity envelope across worker Agents, Decision Coordinator, Human Gate, and Memory Report.
+- Allocate Attempt identity during Run bootstrap or transition commit, before the target node performs side effects.
+- Keep re-review, analysis rerun, and code fix in the same Run/Cycle with new Attempts; create a new Cycle for replan and a new parent-linked Run for replay/fork or root input identity changes.
+- Separate canonical Attempt kind from physical node name. Map the current physical `codex_handoff` to `legacy_codex_handoff`; reserve `code_agent` for A05/Phase B.
+- Give Human Request and Human Response independent deterministic identities and append-only lifecycle records; they are not Human Gate Attempts.
+
+Confirmed:
+
+- `START` is not an Attempt, and human request/response records use separate single-use identities linked to the Attempts that request, validate, and consume them.
+- Parent Run/Cycle/Attempt identifiers express control lineage; typed remediation, evidence, and artifact references express data provenance.
+- State retains bounded current identity pointers, allocation counters, and active control references; complete execution history remains append-only and is not injected directly into Agent prompts.
+- The Run-owned `checkpoint_thread_id` remains stable across Cycle, Attempt, and pause/resume; Cycle and Attempt do not create checkpoint threads.
+- Technical recovery may keep an Attempt only for the same checkpoint before semantic failure and with idempotent side effects. Every semantic retry or human-approved execution window creates a new Attempt.
+
+Current Implementation Boundary:
+
+- The initial design-only completion was invalidated and A02 was reopened as an implementation ticket after user correction. The corrective runtime, schema, graph, Human identity, tests, and source-of-truth verification are now complete; the ticket records the replacement completion evidence.
+- A formal, unique Run creation record now precedes initial Cycle creation, Planner Attempt scheduling, and the committed START Transition in `execution_history.jsonl`.
+- Current product-route source wrappers finish the pre-scheduled source Attempt, call a pure selector, and commit a Transition that preallocates the target Attempt. Conditional edge readers consume only `committed_route`; fixed and END routes use the same commit protocol.
+- `AnalysisState` now carries bounded current Cycle/Attempt/Transition and Human pointers/counters. The append-only ledger records Run, Cycle, Attempt, Transition, Human Request, and Human Response lifecycle events.
+- Human Gate packets and responses are identity-bound. A Gate Attempt validates a submitted response, and an authorized compatibility transition consumes it once while recording validator, consumer, and target lineage.
+- Legacy incomplete-Run re-entry validates immutable Run identity and restores counters so it cannot reuse IDs. This is compatibility audit continuity, not A04 checkpoint resume.
+- Re-review, analysis rerun, code fix, and replan pass through a minimal deterministic StateGraph identity harness only. Those tests do not open the A01 product fallback edges; the harness `code_agent` target is a protocol sink, not an implemented Agent.
+
+Deferred:
+
+- A03 owns per-attempt domain-artifact namespaces, current pointers, versioning, and invalidation.
+- A04 owns durable PAUSE/resume, checkpoint recovery, and public replay/fork APIs.
+- A05 owns Fake/real graph-managed Code Agent behavior, sandboxing, and diagnostic outcome contracts.
+- A06 owns concrete budgets, failure fingerprints, repeated-failure policy, and human-granted finite windows.
+- A07/Phase B owns the complete A01 target-route and forbidden-route product harness. A02 does not change the current compatibility topology.
+
+Rejected Alternatives:
+
+- A two-level Run / Attempt model: rejected because it cannot represent method-plan epochs and deterministic replan invalidation without reconstructing semantics from history.
+- Agent-created Attempt identifiers: rejected because identity must exist before side effects and remain under graph control.
+- A checkpoint thread per Cycle or Attempt: rejected because pause/resume belongs to the stable Run and thread proliferation would confuse product identity with checkpoint implementation details.
+- Reusing a failed Attempt for semantic retry: rejected because it overwrites provenance and can bypass retry budgets.
+- Storing the complete Attempt history in every Agent context: rejected because it weakens scoped responsibility and creates unbounded stale context.
+
+Related Documents:
+
+- [A02 Run/Cycle/Attempt Model](tickets/phase-a-control-contracts/A02_RUN_CYCLE_ATTEMPT_MODEL.md)
+- [Architecture](ARCHITECTURE.md)
+- [State Schema](STATE_SCHEMA.md)
+- [Artifact Contracts](ARTIFACT_CONTRACTS.md)
+- [Repository Current State](REPO_CURRENT_STATE.md)

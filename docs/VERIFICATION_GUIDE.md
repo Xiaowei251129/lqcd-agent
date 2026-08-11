@@ -70,6 +70,36 @@ pytest tests/test_approval_packet.py tests/test_memory.py tests/test_report.py -
 pytest tests/test_llm_config.py tests/test_llm_mock_provider.py -q
 ```
 
+### A02 Execution Identity 验收
+
+A02 的 targeted suite 必须同时覆盖 primitive、真实 compiled graph、demo Human continuation、legacy handoff compatibility 和最小 fallback identity harness：
+
+```bash
+pytest -q \
+  tests/test_execution_identity.py \
+  tests/test_state_schema.py \
+  tests/test_routing.py \
+  tests/test_graph_smoke.py \
+  tests/test_approval_packet.py \
+  tests/test_demo_server.py \
+  tests/test_memory.py \
+  tests/test_report.py \
+  tests/test_run_graph_with_codex_handoff.py
+
+python -m compileall -q src/lqcd_agent
+```
+
+验收不能只看 pass count，还必须检查：
+
+- 每个新 Run 的 ledger 前四条 records 是 formal Run、initial Cycle、scheduled Planner Attempt、committed START Transition；
+- current fixed/conditional/END routes 都通过 Transition commit，且 target wrapper 消费同一个预分配 Attempt；
+- physical `codex_handoff` 的 canonical kind 始终是 `legacy_codex_handoff`，没有被伪装成 `code_agent`；
+- Human Request/Response 有独立 IDs，validator/consumer/authorized-target lineage 可追踪，重复提交不会增加 Attempt counter 或重写 memory/report；
+- re-review、analysis rerun、code fix 和 replan 只作为最小 StateGraph identity harness 证据，不被统计为 current product edge coverage；
+- incomplete-Run re-entry 只证明 immutable identity/counter continuity，不被描述成 A04 durable resume。
+
+A02 的完成证据已记录为 targeted suite `125 passed`、full suite `218 passed`，并包含 compileall、scope、29-file Markdown links、stale-doc scan、ticket metadata 和 `git diff --check`。后续修改该合同仍需重复本节检查，不能只沿用历史 pass count。
+
 provider dry-run 不发出 live call，也不得打印 secret：
 
 ```bash

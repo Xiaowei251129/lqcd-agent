@@ -26,9 +26,13 @@ def _decision_file(tmp_path: Path, decision: str) -> Path:
     path.write_text(
         "\n".join(
             [
-                'schema_version: "0.1"',
+                'schema_version: "0.2"',
                 'run_id: "run_a"',
                 'case_id: "case_a"',
+                'cycle_id: "cycle_0001"',
+                'human_request_id: "human_request_000001"',
+                'requesting_attempt_id: "attempt_000004"',
+                'human_response_id: "human_response_000001"',
                 f'decision: "{decision}"',
                 'conditions: ""',
                 'reason: "Reviewed by test."',
@@ -86,12 +90,37 @@ def test_human_reject_or_hold_writes_rejected_memory(tmp_path: Path) -> None:
     state["recommended_action"] = "pending_human_approval"
     state["human_approval_required"] = True
     state["human_decision_path"] = str(_decision_file(tmp_path, "reject_or_hold"))
+    state["active_human_request_id"] = "human_request_000001"
+    state["human_requesting_attempt_id"] = "attempt_000004"
+    state["active_human_response_id"] = "human_response_000001"
+    state["human_response_status"] = "consumed"
+    state["human_response_decision"] = "reject_or_hold"
 
     result = write_memory_update(state)
 
     assert result["memory_update"]["memory_status"] == "rejected"
     assert result["memory_update"]["accepted_result"] is False
     assert result["memory_update"]["human_decision"] == "reject_or_hold"
+
+
+def test_consumed_human_decision_uses_validated_snapshot_not_mutable_projection(
+    tmp_path: Path,
+) -> None:
+    state = _state(tmp_path)
+    state["risk_level"] = "high"
+    state["recommended_action"] = "pending_human_approval"
+    state["human_approval_required"] = True
+    state["human_decision_path"] = str(_decision_file(tmp_path, "reject_or_hold"))
+    state["active_human_request_id"] = "human_request_000001"
+    state["human_requesting_attempt_id"] = "attempt_000004"
+    state["active_human_response_id"] = "human_response_000001"
+    state["human_response_status"] = "consumed"
+    state["human_response_decision"] = "approve_with_conditions"
+
+    result = write_memory_update(state)
+
+    assert result["memory_update"]["memory_status"] == "accepted"
+    assert result["memory_update"]["human_decision"] == "approve_with_conditions"
 
 
 def test_refuses_to_overwrite_different_run_memory_update(tmp_path: Path) -> None:

@@ -2,9 +2,9 @@
 
 ## 当前合同
 
-`AnalysisState` 是当前公开 graph-state contract。节点只能读取和写入已记录字段。下面的 schema 与当前 runtime 对齐；本次文档迁移不增加、不删除也不重命名任何字段。
+`AnalysisState` 是当前公开 graph-state contract。节点只能读取和写入已记录字段。下面的 schema 与当前 runtime 对齐；A02 corrective implementation 已完成 Run/Cycle/Attempt、committed Transition 和 active Human identity 的 control-plane 验收。
 
-schema 变化必须由独立 ticket 批准，并同步 runtime、tests、artifact contracts 和相关 Decision Log。未来的 Run/Cycle/Attempt、reducer 或 namespace 目前只是 draft 议题，不属于正式 schema。
+schema 变化必须由独立 implementation ticket 批准，并同步 runtime、tests、artifact contracts 和相关 Decision Log。A02 execution identity schema 已落地并通过验收；reducer、per-attempt artifact namespace、具体恢复字段和 budgets 不属于当前正式 schema。
 
 ## 当前字段
 
@@ -18,10 +18,51 @@ class AnalysisState(TypedDict):
     current_node: str
     status: str  # running | success | failed | pending | halted
     llm_provider_config_path: str | None
+    auto_codex_handoff: bool
+    codex_bin: str
+    codex_model: str | None
+    codex_timeout_seconds: int
+    verification_timeout_seconds: int
+    force_codex_handoff: bool
+    dry_run_codex: bool
 
     checkpoint_thread_id: str
     checkpoint_backend: str  # memory | sqlite
     checkpoint_db_path: str | None
+
+    parent_run_id: str | None
+    cycle_id: str
+    cycle_index: int
+    parent_cycle_id: str | None
+    attempt_id: str | None
+    attempt_index: int
+    parent_attempt_id: str | None
+    attempt_kind: str | None
+    attempt_node: str | None
+    attempt_trigger: str | None
+    attempt_status: str | None  # scheduled | running | succeeded | failed | pending | abandoned
+    inbound_transition_id: str | None
+    committed_transition_id: str | None
+    transition_index: int
+    committed_route: str | None
+    execution_history_path: str
+
+    human_request_index: int
+    human_response_index: int
+    active_human_request_id: str | None
+    human_requesting_attempt_id: str | None
+    human_request_kind: str | None  # clarification | approval | external_action
+    human_request_status: str | None  # open | satisfied
+    human_request_authorization_scope: dict | None
+    active_human_response_id: str | None
+    human_response_status: str | None  # submitted | validated | invalid | consumed
+    human_response_decision: str | None
+    human_response_authorized_route: str | None
+    human_response_authorized_transition_route: str | None
+    human_response_authorized_transition_target: str | None
+    human_response_validator_attempt_id: str | None
+    human_response_consumer_attempt_id: str | None
+    human_response_target_attempt_id: str | None
 
     context_policy_path: str | None
     context_summary_path: str | None
@@ -67,6 +108,15 @@ class AnalysisState(TypedDict):
 - `llm_provider_config_path` 可选；省略时三个 provider-capable Agent 走 deterministic path。
 - local CLI 使用 `sqlite`，unit/smoke tests 使用 `memory`。
 - 同一 `case_id` 与 `run_id` 的 `checkpoint_thread_id` 必须稳定。
+- Run 初始化时创建 `cycle_0001`；Cycle 与 Attempt 使用显式 Run-local counters 分配 deterministic identity。
+- 新 Run 的 ledger/bootstrap 顺序是 Run creation、initial Cycle creation、Planner Attempt `scheduled`、START Transition `committed`；Planner 在 `app.invoke()` 前已有 identity。
+- 当前 compiled graph 的每条来源路线先完成 source Attempt，再由 `commit_transition` 在目标节点副作用前创建 target Attempt；conditional edge 只读取 `committed_route`。
+- target wrapper 只能领取 committed inbound Transition 已分配给自己的 `scheduled` Attempt；terminal Attempt identity 不得复用，同一 source Attempt 最多一个 committed outbound Transition。
+- `parent_run_id`、`parent_cycle_id` 和 `parent_attempt_id` 记录 control lineage。
+- `execution_history_path` 指向 run-local append-only `execution_history.jsonl`。
+- event log 与 route decision 必须携带当时的 Run/Cycle/Attempt identity。
+- `attempt_kind` 是 canonical contract，`attempt_node` 是 physical node；当前 `codex_handoff` 必须记录为 `legacy_codex_handoff`，不能记录为 `code_agent`。
+- Human Request/Response 使用独立 Run-local counters 和 IDs；有效 response 必须由一个 `human_gate` Attempt 验证。验证会冻结 decision、logical authorized route 和精确 compatibility Transition route/target，commit 必须完全匹配这些字段，且只能消费一次。
 - `retry_count` 不得超过 `max_retry`。
 - `risk_level` 为 `high` 或 `critical` 时，`human_approval_required` 必须为 true。
 - 没有 structured human approval record 时，high/critical outcome 不得写 accepted memory。
@@ -78,7 +128,8 @@ class AnalysisState(TypedDict):
 
 LLM-facing prompt 可以包含：
 
-- selected identifiers 与 status fields；
+- selected Run/Cycle/Attempt identifiers 与 status fields；
+- 与当前 Gate 操作直接相关的 active Human Request/Response identifiers；
 - provider config path metadata，但不能包含 provider secrets；
 - relevant artifact paths；
 - method、run、review、decision 和 event-log 的 bounded summaries。
@@ -94,7 +145,9 @@ LLM-facing prompt 不得包含：
 
 graph 默认使用 deterministic Agent path，并在重要节点完成和 route decision 后写 `graph_state.json`；完整 state 同时保存在 LangGraph checkpoint。`llm_provider_config_path` 可以启用 provider-backed Method Planner、Scientific Reviewer 和 Decision Coordinator，但 provider output 必须先通过结构验证。
 
-high/critical outcome 进入 Human Approval Gate。gate 写 `approval_packet/` 时设置 `approval_packet_dir` 和 `human_decision_path`；没有有效决定时 state 保持 `pending`。
+所有 compiled graph nodes 通过 control-plane wrapper 执行。来源 transition 或 bootstrap 预先写 target Attempt `scheduled`；target wrapper 验证 committed inbound Transition，写 `started`，执行 physical node，再写 terminal `finished`。node exception 写 failed Attempt 后原样重新抛出，且不提交正常 outbound Transition。route selector 只返回结构化选择和显式 state updates；Transition commit 才能更新 control state、分配下一个 Attempt 并记录 route。完整 lifecycle 写入 `execution_history.jsonl`，但 Agent-facing context 只包含 current identity 和既有 bounded summaries。
+
+high/critical outcome 进入 Human Approval Gate。Coordinator commit 同时创建独立 Human Request 和预分配 Gate Attempt；gate 写 identity-bound `approval_packet/`。外部 response 获得独立 identity，只能由新 Gate Attempt 验证并由已授权 compatibility transition 消费一次；没有有效决定时 request 保持 open，state 保持 `pending`。
 
 Local CLI 使用 `SqliteSaver`。`--output-dir` 是 output root；解析后的 run directory 为 `<output_root>/<case_id>/<run_id>/`，并写入 `state["output_dir"]`。省略 `--run-id` 时，在 state 初始化前生成 timestamp run id。checkpoint database 位于：
 
@@ -108,16 +161,25 @@ Unit/smoke tests 使用 `MemorySaver`。两种 backend 使用相同的 `checkpoi
 <case_id>:<run_id>
 ```
 
-## 第二阶段待决 schema 议题
+## A02 当前落地的 State Boundary
 
-以下内容尚未成为 `AnalysisState` 合同：
+[A02](tickets/phase-a-control-contracts/A02_RUN_CYCLE_ATTEMPT_MODEL.md) 的当前实现采用 Run / Cycle / Attempt 三层 identity。Run 继续使用现有 `run_id` 并拥有 canonical output root 与稳定 checkpoint thread；Cycle 表示 initial/replan 创建的方法合同 epoch；Attempt 表示一次产生持久状态、artifact 或 route decision 的 node invocation。每个 Run 另有 deterministic Transition、Human Request 和 Human Response identities。
 
-- [A02](tickets/phase-a-control-contracts/A02_RUN_CYCLE_ATTEMPT_MODEL.md)：Run/Cycle/Attempt identity 与 lifecycle；
+State 保存 current Cycle/Attempt pointers、Run-local allocation counters、parent lineage、current artifact pointers、execution ledger path 和 Run-owned checkpoint metadata。完整 Attempt history append-only 保存，不能作为不断增长的 state-to-prompt context。
+
+Attempt 由 graph control plane 在目标节点副作用之前分配。canonical Attempt kinds 当前固定为 `method_planner`、`legacy_codex_handoff`、`code_agent`、`analysis_engineer`、`scientific_reviewer`、`decision_coordinator`、`human_gate` 和 `memory_report`；其中 `code_agent` 只为 A05/Phase B 预留，当前产品 graph 没有该节点。legacy external Codex runner 仍保留原有重新进入主图的行为；重新初始化未完成 Run 时会从已有 ledger 恢复 counters，避免复用 identity。它不是未来 graph-managed Code Agent，也不是 A04 将定义的通用 checkpoint resume API。
+
+当前 product routes 已使用 transition-time allocation。re-review、analysis rerun、code fix 和 replan 只在最小 deterministic StateGraph harness 中验证 identity protocol；它们尚未因此成为当前产品路线。A01 的完整线路改造与 forbidden-route coverage 仍由 A07/Phase B 承接。
+
+## 第二阶段已确认与待决 schema 议题
+
+以下内容仍未成为 `AnalysisState` 合同：
+
 - [A03](tickets/phase-a-control-contracts/A03_ARTIFACT_INVALIDATION.md)：artifact validity、supersession 与 invalidation；
 - [A04](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)：pause/resume 与 checkpoint compatibility；
 - 正式 parallel reducer、per-branch namespace 或 merge semantics。
 
-在这些 ticket 进入 `ready` 并完成前，任何实现或其他文档都不能假设这些字段已经存在。
+在相应 design 与 implementation tickets 完成前，任何实现或其他文档都不能假设这些字段已经存在。
 
 ## Related Documents
 

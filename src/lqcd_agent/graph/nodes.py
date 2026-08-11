@@ -22,7 +22,9 @@ from lqcd_agent.graph.state import (
     AnalysisState,
     append_event,
     llm_context_view,
+    record_human_request_packet,
     save_graph_state,
+    validate_human_response,
 )
 from lqcd_agent.memory.store import write_memory_update
 from lqcd_agent.report.generate_report import write_final_report
@@ -414,11 +416,19 @@ def human_approval_gate_node(state: AnalysisState) -> AnalysisState:
     packet_paths = write_approval_packet(state)
     state["approval_packet_dir"] = packet_paths["approval_packet_dir"]
     state["human_decision_path"] = packet_paths["human_decision_path"]
+    state = record_human_request_packet(
+        state,
+        packet_reference=str(packet_paths["approval_packet_path"]),
+    )
 
     decision_result = parse_human_decision(
         state["human_decision_path"],
         run_id=state["run_id"],
         case_id=state["case_id"],
+        cycle_id=state["cycle_id"],
+        human_request_id=state["active_human_request_id"],
+        requesting_attempt_id=state["human_requesting_attempt_id"],
+        human_response_id=state["active_human_response_id"],
     )
     if decision_result["status"] == "pending":
         state["status"] = "pending"
@@ -434,6 +444,13 @@ def human_approval_gate_node(state: AnalysisState) -> AnalysisState:
         return state
 
     if decision_result["status"] == "invalid":
+        if state.get("human_response_status") == "submitted":
+            state = validate_human_response(
+                state,
+                validator_attempt_id=str(state["attempt_id"]),
+                valid=False,
+                error="Human response failed identity or schema validation.",
+            )
         state["status"] = "pending"
         state["errors"].extend(
             {
@@ -456,8 +473,34 @@ def human_approval_gate_node(state: AnalysisState) -> AnalysisState:
         save_graph_state(state)
         return state
 
+    if state.get("human_response_status") != "submitted":
+        raise ValueError("A valid human decision requires a submitted Human Response identity.")
     decision = decision_result["decision"]
     follow_up_route = decision_route_target(decision)
+    state = validate_human_response(
+        state,
+        validator_attempt_id=str(state["attempt_id"]),
+        valid=True,
+        decision_payload=decision_result.get("payload"),
+        authorized_route=follow_up_route,
+    )
+    if state["human_response_status"] == "invalid":
+        state["status"] = "pending"
+        state["errors"].append(
+            {
+                "node": "human_approval_gate",
+                "field": "authorization_scope",
+                "message": f"Human decision target {follow_up_route!r} is outside the active request scope.",
+            }
+        )
+        append_event(
+            state,
+            node="human_approval_gate",
+            kind="node_pending",
+            summary="Human decision is outside the active authorization scope.",
+        )
+        save_graph_state(state)
+        return state
     state["rerun_requested"] = False
     state["rerun_target"] = None
     state["code_fix_requested"] = False

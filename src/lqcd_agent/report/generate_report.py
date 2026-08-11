@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-from lqcd_agent.graph.approval_packet import parse_human_decision
 from lqcd_agent.graph.state import AnalysisState, utc_now
 
 
@@ -29,19 +28,12 @@ def _read_json_object(path: str | Path | None) -> tuple[dict[str, Any] | None, s
 
 
 def _human_decision_summary(state: AnalysisState) -> str:
-    decision_path = state.get("human_decision_path")
-    if not decision_path:
-        return "No human decision file is recorded for this run."
-    result = parse_human_decision(
-        decision_path,
-        run_id=state["run_id"],
-        case_id=state["case_id"],
-    )
-    status = result.get("status")
-    decision = result.get("decision")
-    if status == "approved":
+    if state.get("human_response_status") != "consumed":
+        return f"No consumed human decision; response status: `{state.get('human_response_status')}`."
+    decision = state.get("human_response_decision")
+    if isinstance(decision, str):
         return f"Approved human decision: `{decision}`."
-    return f"Human decision status: `{status}`."
+    return "Consumed human response has no validated decision snapshot."
 
 
 def _display_action(value: Any) -> Any:
@@ -103,6 +95,13 @@ def build_final_report(state: AnalysisState, memory_update: dict[str, Any]) -> s
         "## Metadata",
         f"- run_id: {state['run_id']}",
         f"- case_id: {state['case_id']}",
+        f"- cycle_id: {state['cycle_id']}",
+        f"- attempt_id: {state['attempt_id']}",
+        f"- parent_attempt_id: {state['parent_attempt_id']}",
+        f"- attempt_kind: {state['attempt_kind']}",
+        f"- attempt_node: {state['attempt_node']}",
+        f"- inbound_transition_id: {state['inbound_transition_id']}",
+        f"- committed_transition_id: {state['committed_transition_id']}",
         f"- created_at: {utc_now()}",
         f"- graph_status: {state['status']}",
         f"- current_node: {state['current_node']}",
@@ -138,6 +137,13 @@ def build_final_report(state: AnalysisState, memory_update: dict[str, Any]) -> s
         "## Approval Status",
         f"- approval_packet_dir: {state.get('approval_packet_dir')}",
         f"- human_decision_path: {state.get('human_decision_path')}",
+        f"- human_request_id: {state.get('active_human_request_id')}",
+        f"- human_request_status: {state.get('human_request_status')}",
+        f"- human_response_id: {state.get('active_human_response_id')}",
+        f"- human_response_status: {state.get('human_response_status')}",
+        f"- human_response_validator_attempt_id: {state.get('human_response_validator_attempt_id')}",
+        f"- human_response_consumer_attempt_id: {state.get('human_response_consumer_attempt_id')}",
+        f"- human_response_target_attempt_id: {state.get('human_response_target_attempt_id')}",
         f"- decision: {_human_decision_summary(state)}",
         "",
         "## Memory Update",
@@ -154,6 +160,7 @@ def build_final_report(state: AnalysisState, memory_update: dict[str, Any]) -> s
         f"- checkpoint_backend: {state['checkpoint_backend']}",
         f"- checkpoint_thread_id: {state['checkpoint_thread_id']}",
         f"- checkpoint_db_path: {state['checkpoint_db_path']}",
+        f"- execution_history_path: {state['execution_history_path']}",
         "",
     ]
     return "\n".join(lines)

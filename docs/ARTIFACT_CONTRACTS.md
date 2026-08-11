@@ -2,11 +2,49 @@
 
 ## 第二阶段文档定位
 
-本文记录当前 runtime 已经实现并由测试覆盖的 artifact contracts。下面保留英文 schema identifiers、field names、status values 和文件名，解释以这些精确合同为准；本轮文档迁移不改变任何 artifact schema。
+本文记录当前 runtime 已经实现并由测试覆盖的 artifact contracts。下面保留英文 schema identifiers、field names、status values 和文件名，解释以这些精确合同为准。
 
-第二阶段讨论中的 attempt namespace、artifact supersession/invalidation、Code Agent patch/evidence bundle 和 physics RAG evidence bundle 尚未获批，不属于当前合同。它们只能先在 [A03](tickets/phase-a-control-contracts/A03_ARTIFACT_INVALIDATION.md)、[A05](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md) 及后续独立 ticket 中讨论。普通 ticket 不能仅通过修改 artifact writer 就隐式改变这里的 public contract。
+A02 corrective implementation 已完成 Run/Cycle/Attempt/Transition/Human execution ledger 与 state-aware identity metadata 验收。per-attempt domain-artifact namespace、artifact supersession/invalidation、Code Agent patch/evidence bundle 和 physics RAG evidence bundle 尚未获批，不属于当前合同。它们只能先在 [A03](tickets/phase-a-control-contracts/A03_ARTIFACT_INVALIDATION.md)、[A05](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md) 及后续独立 ticket 中讨论。普通 ticket 不能仅通过修改 artifact writer 就隐式改变这里的 public contract。
+
+## Execution Identity History
+
+[A02 Run/Cycle/Attempt Model](tickets/phase-a-control-contracts/A02_RUN_CYCLE_ATTEMPT_MODEL.md) 在每个 run root 写入：
+
+```text
+<output_root>/<case_id>/<run_id>/execution_history.jsonl
+```
+
+ledger schema version 是 `0.2`，`record_type` 固定为 `run`、`cycle`、`attempt`、`transition`、`human_request` 或 `human_response`。新 Run 的前四条 authoritative records 顺序固定为：
+
+```text
+Run created
+-> initial Cycle created
+-> Planner Attempt scheduled
+-> START -> method_planner Transition committed
+```
+
+每个 Run 恰好一个 Run `created` record，记录 `parent_run_id`、`creation_reason`、root-goal reference/digest、input-snapshot reference/digest、canonical output root 和 Run-owned `checkpoint_thread_id`。Cycle `created` record 只记录自身 Run/Cycle lineage、trigger 和 creating Attempt，不混入旧 Attempt envelope。
+
+每次 node invocation 的 Attempt 使用同一 ID 追加以下 lifecycle records：
+
+```text
+scheduled -> started -> finished (succeeded | failed | pending)
+scheduled -> abandoned
+```
+
+Attempt record 分开记录 canonical `attempt_kind` 和 physical `node_name`、parent Attempt、inbound Transition、input/output references 与 optional error。当前 physical `codex_handoff` 的 canonical kind 是 `legacy_codex_handoff`；`code_agent` 只为 A05/Phase B protocol 预留，当前产品 graph 不执行它。
+
+每条来源路线另外写一个 Transition `committed` record，包括 deterministic ID/index、source/target Cycle、source/target Attempt、physical target、canonical target kind、route/trigger/reason/evidence，以及 applied state-update keys/digest。END transition 的 target fields 为 null。target Attempt 在 Transition commit 中、目标节点任何副作用之前预分配；fixed 和 conditional routes 使用相同协议。
+
+Human Request/Response 是独立 records，不是 Human Gate Attempt。Coordinator 进入 Gate 时创建 `human_request_*`，记录 request kind、requesting Coordinator Attempt、authorization scope 和 packet reference。外部提交创建 `human_response_*`；同一 response ID 依次追加 `submitted -> validated -> consumed` 或 `submitted -> invalid`，并记录 payload snapshot/digest、validated decision、logical authorized route、精确 authorized Transition route/target、validator Gate Attempt、consumer Gate Attempt 和 authorized target Attempt。validated response 只能消费一次。
+
+文件只允许 append，不允许覆盖；legacy incomplete-Run re-entry 从已有 records 恢复 counters，不能复用旧 IDs，也不能被描述为 A04 durable resume。
+
+event log、route decisions、approval packet、memory update 和 final report 记录 relevant current identity。JSON artifact writer 会附加 `cycle_id`、`attempt_id`、`parent_attempt_id`、`attempt_kind`、`attempt_node`、`inbound_transition_id` 和 `committed_transition_id`；其他现有 domain artifacts 通过 execution ledger 的 input/output references 追溯 producing Attempt。Run 继续拥有 `<output_root>/<case_id>/<run_id>/`；现有 domain-artifact fixed paths 保持不变，A03 决定 per-attempt namespace、versioning、current pointers 和 invalidation。
 
 ## 当前通用规则
+
+以下通用 metadata 规则适用于 domain artifacts；`execution_history.jsonl` 使用上一节按 `record_type` 区分的 ledger contract，不要求把 domain artifact 的 `producer`、`summary`、`warnings` 和 `errors` 无差别复制到每条 identity record。
 
 影响 routing 的 artifact 必须 machine-readable；支持人工 review 的内容应同时 human-readable。JSON/YAML 可以驱动 routing，Markdown 只用于 report 和 summary。
 
@@ -374,6 +412,8 @@ The directory contains:
 `approval_packet.json` records:
 
 - general artifact metadata with `producer: human_approval_gate`
+- `cycle_id`, `human_request_id`, `requesting_attempt_id`, current `attempt_id`, and `parent_attempt_id`
+- the request `authorization_scope`
 - requested decision
 - human-readable summary
 - method and run context
@@ -384,13 +424,17 @@ The directory contains:
 - decision options
 - human decision template path
 
-The Phase 7 schema uses `schema_version: "0.1"` and `status: pending`.
+The current approval projection uses `schema_version: "0.2"` and `status: pending`.
 
 `07_human_decision.yaml` is a flat YAML decision file with:
 
 - `schema_version`
 - `run_id`
 - `case_id`
+- `cycle_id`
+- `human_request_id`
+- `requesting_attempt_id`
+- `human_response_id`
 - `decision`
 - `conditions`
 - `reason`
@@ -405,10 +449,34 @@ Supported `decision` values are:
 - `reject_or_hold`
 
 If `07_human_decision.yaml` is missing or has `decision: null`, the Human
-Approval Gate remains pending. Invalid decision files keep the run pending with
-structured errors. Existing human decision files must not be rewritten by agents.
-In Phase 7, `approve_rerun` records rerun route intent but does not implement a
-new safe rerun output or resume mechanism.
+Approval Gate remains pending and the request remains open. A non-empty 0.2
+decision must match the active Run, Cycle, request, requesting Attempt, and
+control-plane-assigned response ID. Invalid decision files append an invalid
+response lifecycle record and leave the request open. A worker Agent does not
+rewrite an identity-bound human decision. The control plane refreshes the fixed
+current template to `decision: null` when a new request replaces the previous
+request, and the external submission path writes the response projection.
+
+Schema 0.1 is not auto-bound to the active request. It can only be parsed by an
+explicit legacy-import caller that supplies the missing identity bindings and
+proves that the ledger has exactly one matching open request. A validated 0.2
+response is single-use: its frozen decision, logical route, exact Transition
+route/target, validation Attempt, consuming Gate Attempt, authorized target
+Attempt, and satisfied request are recorded in `execution_history.jsonl`.
+Duplicate submission or consumption is rejected and must not change counters,
+append ledger records, create a new target Attempt, or rewrite memory/report
+artifacts. Network-delivery idempotency keys and replay semantics remain an A04
+responsibility.
+
+The current demo still follows the Phase 7 compatibility topology:
+`request_code_change` transitions directly to legacy Codex Handoff,
+approve/reject reporting decisions transition directly to Memory Report, and
+`approve_rerun` consumes the response but records intent and ends pending rather
+than executing Analysis Engineer. The graph still declares an Analysis Engineer
+compatibility target for the Gate, but the current selector does not execute that
+target for `approve_rerun`. None of this is the A01 target contract, where a
+valid Human response must return to Decision Coordinator. A04 owns durable
+PAUSE/resume and A07/Phase B owns the product-route migration.
 
 ## Final Report and Memory Update
 

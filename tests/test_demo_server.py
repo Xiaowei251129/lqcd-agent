@@ -18,7 +18,12 @@ from lqcd_agent.demo.server import (
     resolve_artifact_path,
     run_question_against_config,
     run_once_smoke,
+    write_human_decision_file,
 )
+from lqcd_agent.graph.analysis_graph import execute_graph_node_transition
+from lqcd_agent.graph.nodes import human_approval_gate_node, memory_report_node
+from lqcd_agent.graph.routing import select_after_human_approval_gate
+from lqcd_agent.graph.state import commit_external_transition, submit_human_response
 
 
 def test_case_configs_endpoint_returns_repo_case_configs(tmp_path: Path) -> None:
@@ -241,6 +246,7 @@ def test_human_decision_approve_with_conditions_updates_memory(tmp_path: Path) -
         output_root=tmp_path,
         run_id_prefix="test_approve_ui",
     )
+    state_before = json.loads(Path(payload["run_dir"], "graph_state.json").read_text(encoding="utf-8"))
 
     updated = apply_human_decision(
         output_root=tmp_path,
@@ -252,10 +258,236 @@ def test_human_decision_approve_with_conditions_updates_memory(tmp_path: Path) -
         decided_by="pytest",
     )
     memory = json.loads(Path(updated["run_dir"], "memory_update.json").read_text(encoding="utf-8"))
+    state_after = json.loads(Path(updated["run_dir"], "graph_state.json").read_text(encoding="utf-8"))
 
     assert updated["approval"]["pending"] is False
     assert updated["approval"]["decision"]["decision"] == "approve_with_conditions"
     assert memory["memory_status"] == "accepted"
+    assert state_after["attempt_index"] == state_before["attempt_index"] + 2
+    assert state_after["attempt_kind"] == "memory_report"
+    assert state_after["parent_attempt_id"] == f"attempt_{state_after['attempt_index'] - 1:06d}"
+    assert state_after["active_human_request_id"] == "human_request_000001"
+    assert state_after["active_human_response_id"] == "human_response_000001"
+    assert state_after["human_response_status"] == "consumed"
+    assert state_after["human_request_status"] == "satisfied"
+    assert state_after["human_response_validator_attempt_id"] == state_after["parent_attempt_id"]
+    assert state_after["human_response_consumer_attempt_id"] == state_after["parent_attempt_id"]
+    assert state_after["human_response_target_attempt_id"] == state_after["attempt_id"]
+    history = [
+        json.loads(line)
+        for line in Path(updated["run_dir"], "execution_history.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    response_records = [record for record in history if record["record_type"] == "human_response"]
+    assert [record["event"] for record in response_records] == ["submitted", "validated", "consumed"]
+    assert response_records[0]["payload_reference"] == "inline:demo_api_request"
+    assert response_records[0]["payload_snapshot"]["decision"] == "approve_with_conditions"
+    assert response_records[1]["validator_attempt_id"] == state_after["parent_attempt_id"]
+    assert response_records[2]["consumer_attempt_id"] == state_after["parent_attempt_id"]
+    assert response_records[2]["authorized_target_attempt_id"] == state_after["attempt_id"]
+    request_records = [record for record in history if record["record_type"] == "human_request"]
+    assert request_records[0]["event"] == "created"
+    assert request_records[-1]["event"] == "satisfied"
+    assert request_records[-1]["status"] == "satisfied"
+    assert request_records[-1]["authorization_scope"]["allowed_target_nodes"]
+
+    run_dir = Path(updated["run_dir"])
+    memory_before_duplicate = (run_dir / "memory_update.json").read_bytes()
+    report_before_duplicate = (run_dir / "final_report.md").read_bytes()
+    ledger_before_duplicate = (run_dir / "execution_history.jsonl").read_bytes()
+    identity_before_duplicate = {
+        field: state_after[field]
+        for field in (
+            "attempt_index",
+            "transition_index",
+            "human_request_index",
+            "human_response_index",
+        )
+    }
+    with pytest.raises(DemoServerError) as exc_info:
+        apply_human_decision(
+            output_root=tmp_path,
+            case_id=payload["case_id"],
+            run_id=payload["run_id"],
+            decision="approve_with_conditions",
+            conditions="Duplicate submission.",
+            reason="This must not run again.",
+            decided_by="pytest",
+        )
+    assert exc_info.value.status.value == 409
+    state_after_duplicate = json.loads(Path(updated["run_dir"], "graph_state.json").read_text(encoding="utf-8"))
+    assert {
+        field: state_after_duplicate[field]
+        for field in identity_before_duplicate
+    } == identity_before_duplicate
+    assert (run_dir / "execution_history.jsonl").read_bytes() == ledger_before_duplicate
+    assert (run_dir / "memory_update.json").read_bytes() == memory_before_duplicate
+    assert (run_dir / "final_report.md").read_bytes() == report_before_duplicate
+
+
+def test_invalid_demo_decision_does_not_consume_response_identity(tmp_path: Path) -> None:
+    payload = run_question_against_config(
+        question="Run the golden example before correcting an invalid decision.",
+        config_id="l64c64a076_m140",
+        output_root=tmp_path,
+        run_id_prefix="test_invalid_decision_ui",
+    )
+    state_path = Path(payload["run_dir"], "graph_state.json")
+    before = json.loads(state_path.read_text(encoding="utf-8"))
+
+    with pytest.raises(DemoServerError) as exc_info:
+        apply_human_decision(
+            output_root=tmp_path,
+            case_id=payload["case_id"],
+            run_id=payload["run_id"],
+            decision="ship_it",
+        )
+
+    assert exc_info.value.status.value == 400
+    after_invalid = json.loads(state_path.read_text(encoding="utf-8"))
+    assert after_invalid["human_response_index"] == before["human_response_index"]
+    assert after_invalid["active_human_response_id"] is None
+    updated = apply_human_decision(
+        output_root=tmp_path,
+        case_id=payload["case_id"],
+        run_id=payload["run_id"],
+        decision="reject_or_hold",
+        reason="Corrected decision.",
+    )
+    assert updated["approval"]["decision"]["decision"] == "reject_or_hold"
+
+
+def test_invalid_identified_response_can_be_replaced_and_consumed_once(tmp_path: Path) -> None:
+    payload = run_question_against_config(
+        question="Run the golden example through an invalid and corrected response.",
+        config_id="l64c64a076_m140",
+        output_root=tmp_path,
+        run_id_prefix="test_invalid_response_lifecycle",
+    )
+    run_dir = Path(payload["run_dir"])
+    state = json.loads((run_dir / "graph_state.json").read_text(encoding="utf-8"))
+    decision_path = Path(str(state["human_decision_path"]))
+    state = submit_human_response(
+        state,
+        payload={
+            "decision": "approve_with_conditions",
+            "human_request_id": state["active_human_request_id"],
+        },
+        payload_reference="inline:test_invalid_response",
+    )
+    first_response_id = state["active_human_response_id"]
+    write_human_decision_file(
+        path=decision_path,
+        run_id=state["run_id"],
+        case_id=state["case_id"],
+        cycle_id=state["cycle_id"],
+        human_request_id="human_request_999999",
+        requesting_attempt_id=state["human_requesting_attempt_id"],
+        human_response_id=first_response_id,
+        decision="approve_with_conditions",
+    )
+    state = commit_external_transition(
+        state,
+        source_name="HUMAN_RESPONSE",
+        route="human_approval_gate",
+        reason="Validate an identity-mismatched response.",
+        fields={"human_response_id": first_response_id},
+        target_node="human_approval_gate",
+        target_attempt_kind="human_gate",
+        trigger_reason="human_response",
+    )
+    state = execute_graph_node_transition(
+        state,
+        node_name="human_approval_gate",
+        attempt_kind="human_gate",
+        node=human_approval_gate_node,
+        route_selector=select_after_human_approval_gate,
+        route_targets={
+            "analysis_engineer": ("analysis_engineer", "analysis_engineer"),
+            "codex_handoff": ("codex_handoff", "legacy_codex_handoff"),
+            "memory_report": ("memory_report", "memory_report"),
+            "end": None,
+        },
+    )
+
+    assert state["human_response_status"] == "invalid"
+    assert state["human_request_status"] == "open"
+    invalid_attempt_index = state["attempt_index"]
+    state = submit_human_response(
+        state,
+        payload={
+            "decision": "approve_with_conditions",
+            "human_request_id": state["active_human_request_id"],
+        },
+        payload_reference="inline:test_corrected_response",
+    )
+    second_response_id = state["active_human_response_id"]
+    write_human_decision_file(
+        path=decision_path,
+        run_id=state["run_id"],
+        case_id=state["case_id"],
+        cycle_id=state["cycle_id"],
+        human_request_id=state["active_human_request_id"],
+        requesting_attempt_id=state["human_requesting_attempt_id"],
+        human_response_id=second_response_id,
+        decision="approve_with_conditions",
+    )
+    state = commit_external_transition(
+        state,
+        source_name="HUMAN_RESPONSE",
+        route="human_approval_gate",
+        reason="Validate the corrected response.",
+        fields={"human_response_id": second_response_id},
+        target_node="human_approval_gate",
+        target_attempt_kind="human_gate",
+        trigger_reason="human_response",
+    )
+    state = execute_graph_node_transition(
+        state,
+        node_name="human_approval_gate",
+        attempt_kind="human_gate",
+        node=human_approval_gate_node,
+        route_selector=select_after_human_approval_gate,
+        route_targets={
+            "analysis_engineer": ("analysis_engineer", "analysis_engineer"),
+            "codex_handoff": ("codex_handoff", "legacy_codex_handoff"),
+            "memory_report": ("memory_report", "memory_report"),
+            "end": None,
+        },
+    )
+    state = execute_graph_node_transition(
+        state,
+        node_name="memory_report",
+        attempt_kind="memory_report",
+        node=memory_report_node,
+        route_selector=lambda completed: {
+            "route": "end",
+            "reason": "Memory and Report is the terminal graph sink.",
+            "fields": {"status": completed["status"]},
+            "state_updates": {},
+        },
+        route_targets={"end": None},
+    )
+    history = [
+        json.loads(line)
+        for line in (run_dir / "execution_history.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    response_events = {
+        response_id: [
+            record["event"]
+            for record in history
+            if record["record_type"] == "human_response"
+            and record["human_response_id"] == response_id
+        ]
+        for response_id in (first_response_id, second_response_id)
+    }
+
+    assert first_response_id == "human_response_000001"
+    assert second_response_id == "human_response_000002"
+    assert response_events[first_response_id] == ["submitted", "invalid"]
+    assert response_events[second_response_id] == ["submitted", "validated", "consumed"]
+    assert state["human_response_status"] == "consumed"
+    assert state["human_request_status"] == "satisfied"
+    assert state["attempt_index"] == invalid_attempt_index + 2
 
 
 def test_human_decision_reject_or_hold_updates_memory(tmp_path: Path) -> None:

@@ -4,10 +4,44 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
-from lqcd_agent.graph.approval_packet import parse_human_decision
-from lqcd_agent.graph.state import AnalysisState, record_route_decision, save_graph_state
+from lqcd_agent.graph.approval_packet import DECISION_ROUTE_TARGETS, parse_human_decision
+from lqcd_agent.graph.state import AnalysisState, read_committed_route
+
+
+class RouteSelection(TypedDict, total=False):
+    route: str
+    target_node: str | None
+    target_attempt_kind: str | None
+    reason: str
+    fields: dict[str, Any]
+    evidence_references: dict[str, Any]
+    state_updates: dict[str, Any]
+    trigger_reason: str
+    new_cycle: bool
+    human_request_kind: str
+    human_authorization_scope: dict[str, Any]
+
+
+_CURRENT_ROUTE_TARGETS: dict[str, tuple[str, str] | None] = {
+    "analysis_engineer": ("analysis_engineer", "analysis_engineer"),
+    "codex_handoff": ("codex_handoff", "legacy_codex_handoff"),
+    "decision_coordinator": ("decision_coordinator", "decision_coordinator"),
+    "scientific_reviewer": ("scientific_reviewer", "scientific_reviewer"),
+    "human_approval_gate": ("human_approval_gate", "human_gate"),
+    "memory_report": ("memory_report", "memory_report"),
+    "method_planner": ("method_planner", "method_planner"),
+    "end": None,
+}
+
+
+def route_target_contract(route: str) -> dict[str, str | None]:
+    target = _CURRENT_ROUTE_TARGETS[route]
+    return {
+        "target_node": target[0] if target else None,
+        "target_attempt_kind": target[1] if target else None,
+    }
 
 
 def _structured_tests_status(state: AnalysisState) -> str | None:
@@ -22,7 +56,7 @@ def _structured_tests_status(state: AnalysisState) -> str | None:
     return status if isinstance(status, str) else None
 
 
-def route_after_method_planner(state: AnalysisState) -> str:
+def select_after_method_planner(state: AnalysisState) -> RouteSelection:
     if state["status"] in {"pending", "halted"}:
         route = "end"
         reason = "method planner reached a safe terminal status before analysis."
@@ -32,12 +66,11 @@ def route_after_method_planner(state: AnalysisState) -> str:
     else:
         route = "analysis_engineer"
         reason = "code_needed is false."
-    record_route_decision(
-        state,
-        source="method_planner",
-        route=route,
-        reason=reason,
-        fields={
+    return {
+        "route": route,
+        **route_target_contract(route),
+        "reason": reason,
+        "fields": {
             "status": state["status"],
             "code_needed": state["code_needed"],
             "coder_task_packet_path": state["coder_task_packet_path"],
@@ -45,35 +78,52 @@ def route_after_method_planner(state: AnalysisState) -> str:
             "retry_count": state["retry_count"],
             "max_retry": state["max_retry"],
         },
-    )
-    save_graph_state(state)
-    return route
+        "evidence_references": {
+            "method_plan_path": state.get("method_plan_path"),
+            "coder_task_packet_path": state.get("coder_task_packet_path"),
+        },
+        "state_updates": {},
+        "trigger_reason": "forward",
+        "new_cycle": False,
+    }
 
 
-def route_after_analysis_engineer(state: AnalysisState) -> str:
+def select_after_analysis_engineer(state: AnalysisState) -> RouteSelection:
+    state_updates: dict[str, Any] = {}
     if state["run_success"]:
         route = "scientific_reviewer"
         reason = "run_success is true."
     elif state["failure_type"] == "code" and state["retry_count"] < state["max_retry"]:
-        state["retry_count"] += 1
-        state["code_fix_requested"] = True
+        state_updates = {
+            "retry_count": state["retry_count"] + 1,
+            "code_fix_requested": True,
+        }
         route = "codex_handoff"
         reason = "code failure has retry budget and requires Codex Handoff."
     else:
         route = "decision_coordinator"
         reason = "analysis failed without a mock retry route."
-    record_route_decision(
-        state,
-        source="analysis_engineer",
-        route=route,
-        reason=reason,
-        fields={"run_success": state["run_success"], "failure_type": state["failure_type"], "retry_count": state["retry_count"]},
-    )
-    save_graph_state(state)
-    return route
+    effective_retry_count = int(state_updates.get("retry_count", state["retry_count"]))
+    return {
+        "route": route,
+        **route_target_contract(route),
+        "reason": reason,
+        "fields": {
+            "run_success": state["run_success"],
+            "failure_type": state["failure_type"],
+            "retry_count": effective_retry_count,
+        },
+        "evidence_references": {
+            "run_result_path": state.get("run_result_path"),
+            "tests_status_path": state.get("tests_status_path"),
+        },
+        "state_updates": state_updates,
+        "trigger_reason": "legacy_code_retry" if route == "codex_handoff" else "forward",
+        "new_cycle": False,
+    }
 
 
-def route_after_codex_handoff(state: AnalysisState) -> str:
+def select_after_codex_handoff(state: AnalysisState) -> RouteSelection:
     tests_status = _structured_tests_status(state)
     summary_path = state["code_change_summary_path"]
     has_summary = bool(summary_path and Path(summary_path).exists())
@@ -89,12 +139,11 @@ def route_after_codex_handoff(state: AnalysisState) -> str:
             reason = "structured tests_status.json reports tests_failed."
         else:
             reason = "Codex Handoff is pending external result files."
-    record_route_decision(
-        state,
-        source="codex_handoff",
-        route=route,
-        reason=reason,
-        fields={
+    return {
+        "route": route,
+        **route_target_contract(route),
+        "reason": reason,
+        "fields": {
             "status": state["status"],
             "tests_status": tests_status,
             "coder_task_packet_path": state["coder_task_packet_path"],
@@ -103,12 +152,17 @@ def route_after_codex_handoff(state: AnalysisState) -> str:
             "retry_count": state["retry_count"],
             "max_retry": state["max_retry"],
         },
-    )
-    save_graph_state(state)
-    return route
+        "evidence_references": {
+            "code_change_summary_path": state.get("code_change_summary_path"),
+            "tests_status_path": state.get("tests_status_path"),
+        },
+        "state_updates": {},
+        "trigger_reason": "forward",
+        "new_cycle": False,
+    }
 
 
-def route_after_decision_coordinator(state: AnalysisState) -> str:
+def select_after_decision_coordinator(state: AnalysisState) -> RouteSelection:
     if state["human_approval_required"]:
         route = "human_approval_gate"
         reason = "high or critical risk requires Human Approval Gate before reporting."
@@ -121,12 +175,11 @@ def route_after_decision_coordinator(state: AnalysisState) -> str:
         proposed_follow_up_route = "analysis_engineer"
     else:
         proposed_follow_up_route = "memory_report"
-    record_route_decision(
-        state,
-        source="decision_coordinator",
-        route=route,
-        reason=reason,
-        fields={
+    selection: RouteSelection = {
+        "route": route,
+        **route_target_contract(route),
+        "reason": reason,
+        "fields": {
             "risk_level": state["risk_level"],
             "human_approval_required": state["human_approval_required"],
             "recommended_action": state["recommended_action"],
@@ -138,20 +191,54 @@ def route_after_decision_coordinator(state: AnalysisState) -> str:
             "rerun_target": state["rerun_target"],
             "code_fix_requested": state["code_fix_requested"],
         },
+        "evidence_references": {
+            "scientific_review_report_path": state.get("scientific_review_report_path"),
+            "decision_log_path": state.get("decision_log_path"),
+        },
+        "state_updates": {},
+        "trigger_reason": "forward",
+        "new_cycle": False,
+    }
+    if route == "human_approval_gate":
+        selection["human_request_kind"] = "approval"
+        selection["human_authorization_scope"] = {
+            "allowed_decisions": sorted(DECISION_ROUTE_TARGETS),
+            "allowed_target_nodes": sorted(set(DECISION_ROUTE_TARGETS.values())),
+            "decision_transition_routes": {
+                "approve_rerun": "end",
+                "approve_with_conditions": "memory_report",
+                "reject_or_hold": "memory_report",
+                "request_code_change": "codex_handoff",
+            },
+            "decision_transition_targets": {
+                "approve_rerun": "END",
+                "approve_with_conditions": "memory_report",
+                "reject_or_hold": "memory_report",
+                "request_code_change": "codex_handoff",
+            },
+            "compatibility_topology": True,
+        }
+    return selection
+
+
+def select_after_human_approval_gate(state: AnalysisState) -> RouteSelection:
+    decision = state.get("human_response_decision")
+    decision_status = (
+        "approved"
+        if state.get("human_response_status") in {"validated", "consumed"}
+        and isinstance(decision, str)
+        else None
     )
-    save_graph_state(state)
-    return route
-
-
-def route_after_human_approval_gate(state: AnalysisState) -> str:
-    decision = None
-    decision_status = None
     decision_path = state.get("human_decision_path")
-    if decision_path:
+    if decision_status is None and decision_path:
         decision_result = parse_human_decision(
             decision_path,
             run_id=state["run_id"],
             case_id=state["case_id"],
+            cycle_id=state["cycle_id"],
+            human_request_id=state.get("active_human_request_id"),
+            requesting_attempt_id=state.get("human_requesting_attempt_id"),
+            human_response_id=state.get("active_human_response_id"),
         )
         decision = decision_result.get("decision")
         decision_status = decision_result.get("status")
@@ -181,12 +268,11 @@ def route_after_human_approval_gate(state: AnalysisState) -> str:
         proposed_follow_up_route = route
         reason = "human decision allows reporting to continue."
 
-    record_route_decision(
-        state,
-        source="human_approval_gate",
-        route=route,
-        reason=reason,
-        fields={
+    return {
+        "route": route,
+        **route_target_contract(route),
+        "reason": reason,
+        "fields": {
             "status": state["status"],
             "risk_level": state["risk_level"],
             "human_approval_required": state["human_approval_required"],
@@ -200,6 +286,35 @@ def route_after_human_approval_gate(state: AnalysisState) -> str:
             "rerun_target": state["rerun_target"],
             "code_fix_requested": state["code_fix_requested"],
         },
-    )
-    save_graph_state(state)
-    return route
+        "evidence_references": {
+            "approval_packet_dir": state.get("approval_packet_dir"),
+            "human_decision_path": state.get("human_decision_path"),
+        },
+        "state_updates": {},
+        "trigger_reason": "human_response" if decision_status == "approved" else "forward",
+        "new_cycle": False,
+    }
+
+
+def committed_route(state: AnalysisState) -> str:
+    return read_committed_route(state)
+
+
+def route_after_method_planner(state: AnalysisState) -> str:
+    return select_after_method_planner(state)["route"]
+
+
+def route_after_analysis_engineer(state: AnalysisState) -> str:
+    return select_after_analysis_engineer(state)["route"]
+
+
+def route_after_codex_handoff(state: AnalysisState) -> str:
+    return select_after_codex_handoff(state)["route"]
+
+
+def route_after_decision_coordinator(state: AnalysisState) -> str:
+    return select_after_decision_coordinator(state)["route"]
+
+
+def route_after_human_approval_gate(state: AnalysisState) -> str:
+    return select_after_human_approval_gate(state)["route"]
