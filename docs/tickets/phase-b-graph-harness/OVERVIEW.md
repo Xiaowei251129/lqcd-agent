@@ -6,9 +6,9 @@
 
 ## 目标
 
-根据 Phase A 已冻结的控制合同，复用 A02 已验收的 Run/Cycle/Attempt/Transition/Human identity protocol，实现 artifact invalidation、durable resume、有限循环和 A01 产品路线改造，并使用 Fake Agents 建立分层 graph harness 证明控制系统正确。
+根据 Phase A 已冻结的控制合同，复用 A02 identity protocol和A03 artifact invalidation infrastructure，实现 durable resume、有限循环和 A01 产品路线改造，并使用 Fake Agents 建立分层 graph harness 证明控制系统正确。
 
-A02 的 re-review、analysis rerun、code fix 和 replan tests 只证明 transition-time identity protocol；它们不是 Phase B 的完整 product-route、forbidden-route、budget 或 recovery coverage。Phase B 必须在不重新定义 identity 的前提下补齐这些控制行为。
+A02/A03 的 re-review、analysis rerun、code fix 和 replan tests只证明 transition-time identity与invalidation protocol；它们不是 Phase B 的完整 product-route、forbidden-route、budget 或 recovery coverage。Phase B必须复用这些 primitives，不得另建第二套 current-selection或失效规则。
 
 ## 进入条件
 

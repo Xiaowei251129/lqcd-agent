@@ -254,7 +254,11 @@ def _write_flat_yaml(path: Path, payload: dict[str, Any]) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def write_approval_packet(state: dict[str, Any]) -> dict[str, str | None]:
+def write_approval_packet(
+    state: dict[str, Any],
+    *,
+    output_dir: str | Path | None = None,
+) -> dict[str, str | None]:
     if not state.get("human_approval_required"):
         return {
             "approval_packet_dir": None,
@@ -263,7 +267,7 @@ def write_approval_packet(state: dict[str, Any]) -> dict[str, str | None]:
             "human_decision_path": None,
         }
 
-    packet_dir = approval_packet_dir(state["output_dir"])
+    packet_dir = approval_packet_dir(output_dir or state["output_dir"])
     packet_dir.mkdir(parents=True, exist_ok=True)
     human_decision_path = packet_dir / HUMAN_DECISION_FILENAME
     packet_path = packet_dir / APPROVAL_PACKET_FILENAME

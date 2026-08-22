@@ -279,7 +279,11 @@ def test_human_decision_approve_with_conditions_updates_memory(tmp_path: Path) -
     ]
     response_records = [record for record in history if record["record_type"] == "human_response"]
     assert [record["event"] for record in response_records] == ["submitted", "validated", "consumed"]
-    assert response_records[0]["payload_reference"] == "inline:demo_api_request"
+    snapshot_path = Path(response_records[0]["payload_reference"])
+    assert snapshot_path == Path(updated["run_dir"]) / "human_responses" / "human_response_000001" / "payload.json"
+    assert snapshot_path.exists()
+    assert response_records[0]["submitted_payload_reference"] == "inline:demo_api_request"
+    assert all(record["payload_reference"] == str(snapshot_path) for record in response_records)
     assert response_records[0]["payload_snapshot"]["decision"] == "approve_with_conditions"
     assert response_records[1]["validator_attempt_id"] == state_after["parent_attempt_id"]
     assert response_records[2]["consumer_attempt_id"] == state_after["parent_attempt_id"]

@@ -99,6 +99,19 @@ def _existing_update_error(path: Path, state: AnalysisState, payload: dict[str, 
 def build_memory_update(state: AnalysisState) -> dict[str, Any]:
     classification = classify_memory_update(state)
     memory_status = classification["memory_status"]
+    current_artifacts = state.get("current_artifacts", {})
+    source_artifact_ids = {
+        slot: pointer["artifact_id"]
+        for slot, pointer in current_artifacts.items()
+        if isinstance(pointer, dict) and slot != "terminal"
+    }
+    source_artifact_digests = {
+        pointer["artifact_id"]: {
+            member["logical_name"]: member["sha256"] for member in pointer.get("members", [])
+        }
+        for slot, pointer in current_artifacts.items()
+        if isinstance(pointer, dict) and slot != "terminal"
+    }
     return {
         **_base_artifact(
             state,
@@ -116,18 +129,24 @@ def build_memory_update(state: AnalysisState) -> dict[str, Any]:
             "run_result_path": state["run_result_path"],
             "scientific_review_report_path": state["scientific_review_report_path"],
             "decision_log_path": state["decision_log_path"],
+            "artifact_ids": source_artifact_ids,
+            "artifact_member_digests": source_artifact_digests,
         },
     }
 
 
-def write_memory_update(state: AnalysisState) -> dict[str, Any]:
-    output_dir = Path(state["output_dir"])
-    path = output_dir / MEMORY_UPDATE_FILENAME
+def write_memory_update(
+    state: AnalysisState,
+    *,
+    output_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    destination = Path(output_dir or state["output_dir"])
+    path = destination / MEMORY_UPDATE_FILENAME
     payload = build_memory_update(state)
     error = _existing_update_error(path, state, payload)
     if error:
         raise FileExistsError(error)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    destination.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return {"memory_update": payload, "memory_update_path": str(path)}

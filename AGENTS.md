@@ -48,8 +48,11 @@ Example:
 ### 5. Ticket Execution
 - Read `docs/README.md` before executing a repository ticket.
 - Execute only tickets whose YAML front matter has `status: ready`.
+- Treat a `ready` ticket body as frozen. After execution starts, only YAML lifecycle metadata may change in that ticket.
 - Treat a ready ticket's Allowed Files, Do Not Touch, and Stop Conditions as hard scope boundaries.
 - If a ticket conflicts with this file, the security policy, or a current public contract, stop and request clarification instead of silently overriding the contract.
+- Record implementation results in a separate completion record, never by appending to or rewriting the frozen ticket body.
+- Record a contract-preserving local fix in a separate maintenance record. If a fix changes architecture, schema, public contract, Allowed Files, or acceptance boundaries, create and approve a new corrective ticket before implementation.
 - After completing a ticket, update affected source-of-truth documents, `docs/REPO_CURRENT_STATE.md`, and `docs/DECISION_LOG.md` when architecture or policy changed.
 
 ### What Good Looks Like

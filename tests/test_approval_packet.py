@@ -3,6 +3,11 @@ from pathlib import Path
 
 import pytest
 
+from lqcd_agent.artifacts.registry import (
+    initialize_artifact_registry,
+    prepare_attempt_output_dir,
+    register_artifact_bundle,
+)
 from lqcd_agent.graph.approval_packet import (
     APPROVAL_PACKET_FILENAME,
     APPROVAL_SUMMARY_FILENAME,
@@ -15,6 +20,7 @@ from lqcd_agent.graph.approval_packet import (
 from lqcd_agent.graph.nodes import human_approval_gate_node
 from lqcd_agent.graph.routing import route_after_human_approval_gate, select_after_human_approval_gate
 from lqcd_agent.graph.state import (
+    commit_external_transition,
     commit_transition,
     execute_scheduled_attempt,
     initialize_state,
@@ -36,7 +42,7 @@ def _decision_file(
     case_id: str = "case_a",
     cycle_id: str = "cycle_0001",
     human_request_id: str = "human_request_000001",
-    requesting_attempt_id: str = "attempt_000002",
+    requesting_attempt_id: str = "attempt_000003",
     human_response_id: str | None = "human_response_000001",
     schema_version: str = "0.2",
     decision: str | None,
@@ -97,50 +103,107 @@ def _state(
     state["risk_level"] = "high" if approval_required else "medium"
     state["recommended_action"] = "pending_human_approval"
     state["human_approval_required"] = approval_required
-    state["method_plan_path"] = _write_json(
-        tmp_path / "method_plan.json",
-        {"schema_version": "0.1", "run_id": "run_a", "case_id": "case_a", "status": "success"},
-    )
-    state["run_result_path"] = _write_json(
-        tmp_path / "run_result.json",
-        {"schema_version": "0.1", "run_id": "run_a", "case_id": "case_a", "status": "success"},
-    )
-    state["scientific_review_report_path"] = _write_json(
-        tmp_path / "scientific_review_report.json",
-        {"schema_version": "0.1", "run_id": "run_a", "case_id": "case_a", "status": "success"},
-    )
-    state["decision_log_path"] = _write_json(
-        tmp_path / "decision_log.json",
-        {
-            "schema_version": "0.1",
-            "run_id": "run_a",
-            "case_id": "case_a",
-            "status": "pending",
-            "reasons": [{"code": "severe_or_flagged_review_warning"}],
-            "next_actions": [{"action": "pending_human_approval", "primary": True}],
-            "routing_decision": {"requested_route": "human_approval_gate"},
-        },
-    )
+    def planner_node(active):
+        artifact_dir = prepare_attempt_output_dir(active)
+        plan_path = _write_json(
+            artifact_dir / "method_plan.json",
+            {
+                "schema_version": "0.1",
+                "run_id": "run_a",
+                "case_id": "case_a",
+                "status": "success",
+            },
+        )
+        return register_artifact_bundle(
+            active,
+            slot="plan",
+            member_paths=[plan_path],
+            state_paths={"method_plan_path": plan_path, "coder_task_packet_path": None},
+            status="success",
+        )
+
     planner = execute_scheduled_attempt(
         state,
         node_name="method_planner",
         attempt_kind="method_planner",
-        node=lambda active: {**active, "status": "running"},
+        node=planner_node,
     )
-    coordinator = commit_transition(
+    analysis = commit_transition(
         planner,
         source_node="method_planner",
+        route="analysis_engineer",
+        reason="Approval packet unit-test setup.",
+        fields={},
+        target_node="analysis_engineer",
+        target_attempt_kind="analysis_engineer",
+    )
+
+    def analysis_node(active):
+        artifact_dir = prepare_attempt_output_dir(active)
+        output_dir = artifact_dir / "analysis_outputs"
+        output_dir.mkdir()
+        run_result_path = _write_json(
+            artifact_dir / "run_result.json",
+            {
+                "schema_version": "0.1",
+                "run_id": "run_a",
+                "case_id": "case_a",
+                "status": "success",
+            },
+        )
+        return register_artifact_bundle(
+            active,
+            slot="analysis",
+            member_paths=[run_result_path],
+            state_paths={
+                "run_result_path": run_result_path,
+                "analysis_outputs_dir": str(output_dir),
+            },
+            status="success",
+        )
+
+    analysis = execute_scheduled_attempt(
+        analysis,
+        node_name="analysis_engineer",
+        attempt_kind="analysis_engineer",
+        node=analysis_node,
+    )
+    coordinator = commit_transition(
+        analysis,
+        source_node="analysis_engineer",
         route="decision_coordinator",
         reason="Approval packet unit-test setup.",
         fields={},
         target_node="decision_coordinator",
         target_attempt_kind="decision_coordinator",
     )
+    def coordinator_node(active):
+        artifact_dir = prepare_attempt_output_dir(active)
+        decision_path = _write_json(
+            artifact_dir / "decision_log.json",
+            {
+                "schema_version": "0.1",
+                "run_id": "run_a",
+                "case_id": "case_a",
+                "status": "pending",
+                "reasons": [{"code": "severe_or_flagged_review_warning"}],
+                "next_actions": [{"action": "pending_human_approval", "primary": True}],
+                "routing_decision": {"requested_route": "human_approval_gate"},
+            },
+        )
+        return register_artifact_bundle(
+            active,
+            slot="decision",
+            member_paths=[decision_path],
+            state_paths={"decision_log_path": decision_path},
+            status="pending",
+        )
+
     coordinator = execute_scheduled_attempt(
         coordinator,
         node_name="decision_coordinator",
         attempt_kind="decision_coordinator",
-        node=lambda active: {**active, "status": "running"},
+        node=coordinator_node,
     )
     gate = commit_transition(
         coordinator,
@@ -175,6 +238,19 @@ def _state(
         },
     )
     if human_response_id:
+        gate = execute_scheduled_attempt(
+            gate,
+            node_name="human_approval_gate",
+            attempt_kind="human_gate",
+            node=human_approval_gate_node,
+        )
+        gate = commit_transition(
+            gate,
+            source_node="human_approval_gate",
+            route="end",
+            reason="Approval packet unit-test wait boundary.",
+            fields={},
+        )
         gate = submit_human_response(
             gate,
             payload={
@@ -184,6 +260,16 @@ def _state(
             payload_reference="inline:test",
         )
         assert gate["active_human_response_id"] == human_response_id
+        gate = commit_external_transition(
+            gate,
+            source_name="HUMAN_RESPONSE",
+            route="human_approval_gate",
+            reason="Approval packet unit-test response validation.",
+            fields={},
+            target_node="human_approval_gate",
+            target_attempt_kind="human_gate",
+            trigger_reason="human_response",
+        )
     return start_attempt(
         gate,
         node_name="human_approval_gate",
@@ -214,7 +300,7 @@ def test_high_risk_generates_approval_packet_and_template(tmp_path: Path) -> Non
     assert packet["schema_version"] == "0.2"
     assert packet["cycle_id"] == "cycle_0001"
     assert packet["human_request_id"] == "human_request_000001"
-    assert packet["requesting_attempt_id"] == "attempt_000002"
+    assert packet["requesting_attempt_id"] == "attempt_000003"
     assert packet["scientific_review_report"]["path"] == state["scientific_review_report_path"]
     assert {option["decision"] for option in packet["decision_options"]} == {
         "approve_with_conditions",
@@ -226,7 +312,7 @@ def test_high_risk_generates_approval_packet_and_template(tmp_path: Path) -> Non
     assert template["schema_version"] == "0.2"
     assert template["cycle_id"] == "cycle_0001"
     assert template["human_request_id"] == "human_request_000001"
-    assert template["requesting_attempt_id"] == "attempt_000002"
+    assert template["requesting_attempt_id"] == "attempt_000003"
     assert template["human_response_id"] is None
 
 
@@ -272,7 +358,9 @@ def test_no_human_decision_keeps_gate_pending(tmp_path: Path) -> None:
     route = route_after_human_approval_gate(state)
 
     assert state["status"] == "pending"
-    assert state["approval_packet_dir"] == str(tmp_path / APPROVAL_PACKET_DIRNAME)
+    assert state["approval_packet_dir"] == str(
+        tmp_path / "attempts" / state["attempt_id"] / APPROVAL_PACKET_DIRNAME
+    )
     assert state["human_decision_path"] == str(tmp_path / APPROVAL_PACKET_DIRNAME / HUMAN_DECISION_FILENAME)
     assert route == "memory_report"
     fields = select_after_human_approval_gate(state)["fields"]
@@ -287,10 +375,23 @@ def test_existing_human_decision_file_is_not_overwritten(tmp_path: Path) -> None
 
     state = human_approval_gate_node(state)
     route = route_after_human_approval_gate(state)
+    index = json.loads(Path(state["artifact_index_path"]).read_text(encoding="utf-8"))
 
     assert decision_path.read_text(encoding="utf-8") == original
+    assert index["managed_projections"]["approval_packet/07_human_decision.yaml"] == state[
+        "current_artifacts"
+    ]["approval"]["artifact_id"]
     assert state["status"] == "running"
     assert route == "memory_report"
+
+
+def test_missing_owned_human_decision_projection_fails_closed(tmp_path: Path) -> None:
+    state = _state(tmp_path)
+    state = human_approval_gate_node(state)
+    Path(state["human_decision_path"]).unlink()
+
+    with pytest.raises(ValueError, match="projection is missing"):
+        initialize_artifact_registry(dict(state))
 
 
 def test_new_human_request_refreshes_current_decision_template(tmp_path: Path) -> None:
@@ -426,7 +527,7 @@ def test_parse_rejects_stale_response_identity(tmp_path: Path, field: str, value
         case_id="case_a",
         cycle_id="cycle_0001",
         human_request_id="human_request_000001",
-        requesting_attempt_id="attempt_000002",
+        requesting_attempt_id="attempt_000003",
         human_response_id="human_response_000001",
     )
 
@@ -448,7 +549,7 @@ def test_submitted_decision_requires_runtime_response_identity(tmp_path: Path) -
         case_id="case_a",
         cycle_id="cycle_0001",
         human_request_id="human_request_000001",
-        requesting_attempt_id="attempt_000002",
+        requesting_attempt_id="attempt_000003",
     )
 
     assert result["status"] == "invalid"
@@ -464,7 +565,7 @@ def test_parser_rejects_response_identity_when_runtime_expects_none(tmp_path: Pa
         case_id="case_a",
         cycle_id="cycle_0001",
         human_request_id="human_request_000001",
-        requesting_attempt_id="attempt_000002",
+        requesting_attempt_id="attempt_000003",
         human_response_id=None,
     )
 
@@ -504,7 +605,7 @@ def test_explicit_legacy_import_binds_runtime_identities(tmp_path: Path) -> None
         case_id="case_a",
         cycle_id="cycle_0001",
         human_request_id="human_request_000001",
-        requesting_attempt_id="attempt_000002",
+        requesting_attempt_id="attempt_000003",
         human_response_id="human_response_000001",
         legacy_import=True,
         legacy_open_request_ids=["human_request_000001"],
@@ -527,7 +628,7 @@ def test_legacy_import_rejects_non_unique_open_request_binding(tmp_path: Path) -
         case_id="case_a",
         cycle_id="cycle_0001",
         human_request_id="human_request_000001",
-        requesting_attempt_id="attempt_000002",
+        requesting_attempt_id="attempt_000003",
         human_response_id="human_response_000001",
         legacy_import=True,
         legacy_open_request_ids=["human_request_000001", "human_request_000002"],

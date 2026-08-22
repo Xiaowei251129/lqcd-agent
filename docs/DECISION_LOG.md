@@ -665,3 +665,114 @@ Related Documents:
 - [State Schema](STATE_SCHEMA.md)
 - [Artifact Contracts](ARTIFACT_CONTRACTS.md)
 - [Repository Current State](REPO_CURRENT_STATE.md)
+
+## 2026-08-11: Make Attempt Artifacts Immutable and Current Selection Explicit
+
+Decision:
+
+- Store every graph-managed domain bundle under `<run_root>/attempts/<attempt_id>/` and identify it as `<attempt_id>:<slot>`.
+- Use append-only `artifact_history.jsonl` for audit and atomically replaced `artifact_index.json` as the only normal current-selection authority.
+- Fix current slots as `plan`, `code`, `analysis`, `review`, `decision`, `approval`, and `terminal`; keep bounded state paths synchronized with the typed index.
+- Clear the target layer and all downstream current slots during Transition commit, after target Attempt allocation and before target-node side effects.
+- Preserve v0.2 run-root fixed paths as registry-owned copy projections, not canonical history; refuse to manage legacy output trees without an A03 index.
+- Store Human Response payloads under versioned `human_responses/<human_response_id>/` snapshots and append protection events for accepted terminal bundles.
+- Allow benchmark code-fix checks to read invalidated analysis evidence only through validated artifact history, never by restoring a stale current pointer.
+
+Confirmed:
+
+- Invalidation removes current pointers and owned projections but never deletes canonical Attempt members, artifact history, Human Response snapshots, or accepted-result evidence.
+- Each registered artifact event freezes its complete typed pointer and cross-checks the producing Attempt against the execution ledger. Registry validation replays current-set/current-cleared events and requires the replayed current map to exactly match the mutable index before restoration or use.
+- Producing Attempt identity is the exact six-field Run, Case, Cycle, Attempt, Kind, and Node tuple. Missing or inconsistent fields in either the registered event or execution ledger fail closed.
+- The managed projection owner map is derived uniquely from replayed current members and must exactly match the index. Escaping, protected/control, duplicate, extra, missing, unknown-owner, or wrong-owner entries fail closed.
+- External code-result and Human-decision ingress may differ from canonical bytes, but this exception skips only projection digest comparison and never path or owner validation.
+- Each ordinary registration is immediately followed by its only current-set event. Once cleared, the same artifact cannot become current again.
+- Replay recomputes the registration-time dependency chain from current slots, and ordinary members must remain inside the producing Attempt with canonical, logical, and projection paths in exact correspondence.
+- Projection publication preflights the complete bundle before copying. Ownership collisions fail without changing history, index, or existing projection bytes; external ingress exemptions still require the owned projection to exist.
+- Every current-clear is bound to the exact target Attempt and its unique committed inbound Transition, including Run, Case, Cycle, Attempt, Kind, Node, transition identity, reason, and target-slot policy.
+- Human Response protection is bound to one submitted ledger record and its exact response/request identity, canonical snapshot path, and digest. Accepted-result protection is valid only for the current accepted terminal pointer; unsupported protection requests fail before any history write.
+- Initialization may hydrate only an explicitly empty reconstructed artifact state. A populated state must validate exactly and is never silently repaired from the index; duplicate JSON object keys in registry or execution ledgers fail closed.
+- Replay completeness is bidirectional: scheduled Attempt inputs plus target policy derive the exact required clear set; finished Attempt outputs derive required registrations; submitted Human Responses and accepted terminals derive required protections. Validating only events that remain in history is insufficient because coordinated deletion could otherwise produce a self-consistent but incomplete head.
+- Every committed Transition with a target reverse-requires that target's exact Attempt lifecycle, and populated current-Attempt state must equal the latest lifecycle record. Removing a target lifecycle together with its artifact cannot turn the Transition into a valid incomplete history.
+- Human Response lifecycle identity is stable and ordered across submitted, validated or invalid, and optional consumed records. Populated active-response state reverse-requires the matching latest ledger record and immutable snapshot protection; the only exception is the bounded preflight inside initial snapshot publication.
+- The write path permits narrowly scoped preflight incompleteness only for the target Attempt currently entering invalidation and the producing terminal Attempt currently adding accepted protection. Normal reads, restoration, and state persistence always require the complete reverse-derived event set.
+- Initial and legacy incomplete-Run Planner scheduling use the same A03 invalidation entry point as ordinary committed Transitions.
+- Failed or pending target Attempts do not restore the previous current chain.
+- Fixed-path handoff/Human files remain explicit compatibility ingress; graph outputs and consumed evidence are canonicalized in producing bundles or protected snapshots.
+- Four-layer re-review, analysis-rerun, code-fix, and replan tests are fallback infrastructure harnesses only. A03 does not open A01 product routes.
+- A04 still owns cross-process crash recovery, durable resume, replay/fork, and partial-commit repair; A05 owns the graph-managed Code Agent bundle; A06 owns budgets and failure fingerprints.
+
+Rejected Alternatives:
+
+- Versioned filenames in the Run root: rejected because Attempt identity already supplies a deterministic namespace and root filenames remain compatibility projections.
+- Selecting current artifacts by directory scan, timestamp, mtime, or filename suffix: rejected because these methods cannot provide typed dependency or invalidation guarantees.
+- Symlink-based compatibility projections: rejected because moved or packaged output trees would break the public contract.
+- Restoring an invalidated failed-analysis pointer to satisfy legacy benchmarks: rejected because historical evidence and current validity are different semantics.
+- Automatically migrating unmanaged v0.2 output trees: rejected because ownership cannot be proven safely.
+
+Related Documents:
+
+- [A03 Artifact Invalidation](tickets/phase-a-control-contracts/A03_ARTIFACT_INVALIDATION.md)
+- [Architecture](ARCHITECTURE.md)
+- [State Schema](STATE_SCHEMA.md)
+- [Artifact Contracts](ARTIFACT_CONTRACTS.md)
+- [Security and Data Policy](SECURITY_AND_DATA_POLICY.md)
+- [Verification Guide](VERIFICATION_GUIDE.md)
+
+## 2026-08-22: Freeze Ready Tickets and Separate Execution Records
+
+Decision:
+
+- Treat the body of a user-approved `status: ready` ticket as an immutable execution contract.
+- Permit later changes only to YAML lifecycle metadata; do not append completion evidence or corrective requirements to the frozen body.
+- Store actual execution results in `docs/tickets/completions/` and contract-preserving maintenance history in `docs/tickets/corrections/`.
+- Require a separately reviewed and approved corrective ticket whenever a fix changes schema, architecture, public contract, Allowed Files, recovery policy, or acceptance boundaries.
+
+Confirmed:
+
+- A01 and A02 retain their historical embedded Completion Records and are not rewritten retroactively.
+- A03's initial completion evidence and six pre-governance corrective passes are preserved in separate records. The detailed A03 implementation ticket was not committed before execution, so the repository does not claim that an uncommitted intermediate version can be reconstructed exactly.
+- Future execution should commit the frozen ticket before implementation when authorized. If no commit is created, the completion record must disclose that limitation.
+
+Rejected Alternatives:
+
+- Continuing to append corrective passes to the original ticket: rejected because it obscures the approved plan and weakens scope auditing.
+- Rewriting A01 and A02 into the new format: rejected because they are complete and have no known issue requiring historical surgery.
+- Treating a large integrity-policy change as an undocumented bug fix: rejected because the changed contract must be independently reviewable.
+
+Related Documents:
+
+- [Ticket Workflow](tickets/README.md)
+- [Ticket Template](tickets/TEMPLATE.md)
+- [Completion Records](tickets/completions/README.md)
+- [Correction Records](tickets/corrections/README.md)
+- [G01 Governance Ticket](tickets/G01_TICKET_RECORD_IMMUTABILITY.md)
+
+## 2026-08-22: Bind the Artifact Registry to Execution Ledger Heads
+
+Decision:
+
+- Require A03 registry validation to bind bounded state to the Run-local global heads of Cycle, Attempt, Transition, Human Request, and Human Response records.
+- Require deterministic IDs and positive indexes to be unique and contiguous from 1 through the current maximum for each execution identity type.
+- Treat Transition target shape as an integrity boundary: only terminal `end`/`__end__` routes may have an explicitly present null target tuple, while every nonterminal route must retain a complete target tuple that exactly matches its target Attempt. A missing nullable identity field is not equivalent to an explicit null.
+
+Confirmed:
+
+- A locally valid old Attempt or Human Response lifecycle is not a valid current state when a newer ledger identity exists.
+- The active Human Response is the maximum response index associated with the latest Human Request; the global response counter cannot roll back across requests or retries.
+- Human Request lifecycle validation preserves the existing optional `packet_written` event between creation and satisfaction.
+- Initial Human Response snapshot publication retains one narrow preflight for the deterministic next response identity with empty outcome fields. Normal restoration, reads, and state persistence do not receive that exception.
+- Coordinated deletion of a target Attempt/artifact plus state rollback and conversion of a nonterminal Transition to a null target fails closed.
+- This correction does not change artifact schema `0.1`, execution schema `0.2`, `AnalysisState`, graph topology, provider behavior, Human approval policy, or A04 recovery boundaries.
+
+Rejected Alternatives:
+
+- Accepting any state identity that has an internally valid lifecycle: rejected because it permits rollback from the actual ledger head.
+- Treating a null target as terminal without checking the route and all target fields: rejected because a nonterminal transition could be rewritten into an apparently self-consistent truncated history.
+- Repairing or migrating inconsistent experimental registries automatically: rejected because ownership and current-head intent cannot be recovered safely.
+
+Related Documents:
+
+- [A03C01 Execution Head Integrity](tickets/phase-a-control-contracts/A03C01_EXECUTION_HEAD_INTEGRITY.md)
+- [Artifact Contracts](ARTIFACT_CONTRACTS.md)
+- [Verification Guide](VERIFICATION_GUIDE.md)
+- [Repository Current State](REPO_CURRENT_STATE.md)

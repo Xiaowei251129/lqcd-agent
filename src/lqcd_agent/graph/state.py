@@ -9,6 +9,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal, TypedDict
 
+from lqcd_agent.artifacts.registry import (
+    initialize_artifact_registry,
+    invalidate_for_target,
+    register_human_response_snapshot,
+    validate_state_artifacts,
+)
+
 
 Status = Literal["running", "success", "failed", "pending", "halted"]
 ContextWindowStatus = Literal["normal", "near_limit", "summarized", "overflow_halt"]
@@ -76,6 +83,10 @@ class AnalysisState(TypedDict):
     transition_index: int
     committed_route: str | None
     execution_history_path: str
+    artifact_history_path: str
+    artifact_index_path: str
+    artifact_event_index: int
+    current_artifacts: dict[str, dict[str, Any] | None]
 
     human_request_index: int
     human_response_index: int
@@ -469,6 +480,10 @@ def initialize_state(
         "transition_index": identity["transition_index"],
         "committed_route": None,
         "execution_history_path": str(execution_history_path),
+        "artifact_history_path": str(output_path / "artifact_history.jsonl"),
+        "artifact_index_path": str(output_path / "artifact_index.json"),
+        "artifact_event_index": 0,
+        "current_artifacts": {},
         "human_request_index": identity["human_request_index"],
         "human_response_index": identity["human_response_index"],
         "active_human_request_id": identity["active_human_request_id"],
@@ -528,6 +543,7 @@ def initialize_state(
         ],
         "route_decisions": [],
     }
+    state = initialize_artifact_registry(state)
     if existing_identity is None:
         _append_record(state, {**run_record, "created_at": utc_now()})
         _append_cycle_record(
@@ -546,6 +562,12 @@ def initialize_state(
             trigger_reason="initial",
             parent_attempt_id=None,
             inbound_transition_id=transition_id,
+        )
+        state = invalidate_for_target(
+            state,
+            target_attempt_kind="method_planner",
+            transition_id=transition_id,
+            target_attempt_id=str(state["attempt_id"]),
         )
         state = _record_committed_transition(
             state,
@@ -580,6 +602,12 @@ def initialize_state(
             trigger_reason="legacy_reentry",
             parent_attempt_id=state.get("attempt_id"),
             inbound_transition_id=transition_id,
+        )
+        state = invalidate_for_target(
+            state,
+            target_attempt_kind="method_planner",
+            transition_id=transition_id,
+            target_attempt_id=str(state["attempt_id"]),
         )
         state = _record_committed_transition(
             state,
@@ -896,7 +924,10 @@ def submit_human_response(
     updated["human_response_validator_attempt_id"] = None
     updated["human_response_consumer_attempt_id"] = None
     updated["human_response_target_attempt_id"] = None
-    payload_hash = _sha256_bytes(json.dumps(payload, sort_keys=True).encode("utf-8"))
+    updated, snapshot_path, payload_hash = register_human_response_snapshot(
+        updated,
+        payload=payload,
+    )
     _append_record(
         updated,
         {
@@ -909,7 +940,8 @@ def submit_human_response(
             "human_request_id": request_id,
             "human_response_id": updated["active_human_response_id"],
             "response_index": updated["human_response_index"],
-            "payload_reference": payload_reference,
+            "payload_reference": snapshot_path,
+            "submitted_payload_reference": payload_reference,
             "payload_snapshot": payload,
             "payload_sha256": payload_hash,
             "validator_attempt_id": None,
@@ -1017,8 +1049,8 @@ def validate_human_response(
             "human_request_id": updated["active_human_request_id"],
             "human_response_id": response_id,
             "response_index": updated["human_response_index"],
-            "payload_reference": updated.get("human_decision_path"),
-            "payload_sha256": None,
+            "payload_reference": submitted_record.get("payload_reference"),
+            "payload_sha256": submitted_record.get("payload_sha256"),
             "validator_attempt_id": validator_attempt_id,
             "consumer_attempt_id": None,
             "authorized_target_attempt_id": None,
@@ -1046,7 +1078,7 @@ def consume_human_response(
     if not response_id or state.get("human_response_status") != "validated":
         raise ValueError("Only a validated, unconsumed human response can be consumed.")
     _active_human_request_records(state)
-    _active_human_response_record(state)
+    validated_record = _active_human_response_record(state)
     if (
         transition_route != state.get("human_response_authorized_transition_route")
         or transition_target != state.get("human_response_authorized_transition_target")
@@ -1069,8 +1101,8 @@ def consume_human_response(
             "human_request_id": updated["active_human_request_id"],
             "human_response_id": response_id,
             "response_index": updated["human_response_index"],
-            "payload_reference": updated.get("human_decision_path"),
-            "payload_sha256": None,
+            "payload_reference": validated_record.get("payload_reference"),
+            "payload_sha256": validated_record.get("payload_sha256"),
             "validator_attempt_id": state.get("human_response_validator_attempt_id"),
             "consumer_attempt_id": consumer_attempt_id,
             "authorized_target_attempt_id": authorized_target_attempt_id,
@@ -1105,8 +1137,8 @@ def consume_human_response(
     return updated
 
 
-def _artifact_references(state: AnalysisState) -> dict[str, str]:
-    references: dict[str, str] = {}
+def _artifact_references(state: AnalysisState) -> dict[str, Any]:
+    references: dict[str, Any] = {}
     for field in (
         "method_plan_path",
         "coder_task_packet_path",
@@ -1124,6 +1156,11 @@ def _artifact_references(state: AnalysisState) -> dict[str, str]:
         value = state.get(field)
         if value:
             references[field] = str(value)
+    references["current_artifact_ids"] = {
+        slot: pointer.get("artifact_id")
+        for slot, pointer in state.get("current_artifacts", {}).items()
+        if isinstance(pointer, dict)
+    }
     return references
 
 
@@ -1445,6 +1482,7 @@ def _validate_node_identity_envelope(
         mismatches.extend(human_mismatches)
     if mismatches:
         raise ValueError(f"Graph node modified control-plane identity fields: {mismatches}")
+    validate_state_artifacts(result)
 
 
 def begin_attempt(
@@ -1844,6 +1882,13 @@ def commit_transition(
             new_cycle=new_cycle,
             inbound_transition_id=transition_id,
         )
+        updated = invalidate_for_target(
+            updated,
+            target_attempt_kind=str(target_attempt_kind),
+            transition_id=transition_id,
+            target_attempt_id=str(updated["attempt_id"]),
+            new_human_request=human_request_kind is not None,
+        )
     if should_consume_response:
         target_attempt_id = updated.get("attempt_id") if target_node else None
         updated = consume_human_response(
@@ -1899,6 +1944,13 @@ def commit_external_transition(
         trigger_reason=trigger_reason,
         parent_attempt_id=parent_attempt_id,
         inbound_transition_id=transition_id,
+    )
+    updated = invalidate_for_target(
+        updated,
+        target_attempt_kind=target_attempt_kind,
+        transition_id=transition_id,
+        target_attempt_id=str(updated["attempt_id"]),
+        new_human_request=False,
     )
     return _record_committed_transition(
         updated,
@@ -1994,6 +2046,7 @@ def write_json_artifact(state: AnalysisState, relative_path: str, payload: dict[
 
 
 def save_graph_state(state: AnalysisState) -> str:
+    validate_state_artifacts(state)
     path = Path(state["output_dir"]) / "graph_state.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")

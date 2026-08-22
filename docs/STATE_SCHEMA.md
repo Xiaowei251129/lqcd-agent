@@ -2,9 +2,9 @@
 
 ## 当前合同
 
-`AnalysisState` 是当前公开 graph-state contract。节点只能读取和写入已记录字段。下面的 schema 与当前 runtime 对齐；A02 corrective implementation 已完成 Run/Cycle/Attempt、committed Transition 和 active Human identity 的 control-plane 验收。
+`AnalysisState` 是当前公开 graph-state contract。节点只能读取和写入已记录字段。下面的 schema 与当前 runtime 对齐；A02 完成 execution identity，A03 完成 bounded artifact-current control fields。
 
-schema 变化必须由独立 implementation ticket 批准，并同步 runtime、tests、artifact contracts 和相关 Decision Log。A02 execution identity schema 已落地并通过验收；reducer、per-attempt artifact namespace、具体恢复字段和 budgets 不属于当前正式 schema。
+schema 变化必须由独立 implementation ticket 批准，并同步 runtime、tests、artifact contracts 和相关 Decision Log。A02 execution identity 与 A03 artifact-current schema 已落地并通过验收；reducer、具体恢复字段和 budgets 不属于当前正式 schema。
 
 ## 当前字段
 
@@ -46,6 +46,10 @@ class AnalysisState(TypedDict):
     transition_index: int
     committed_route: str | None
     execution_history_path: str
+    artifact_history_path: str
+    artifact_index_path: str
+    artifact_event_index: int
+    current_artifacts: dict[str, dict | None]
 
     human_request_index: int
     human_response_index: int
@@ -114,6 +118,10 @@ class AnalysisState(TypedDict):
 - target wrapper 只能领取 committed inbound Transition 已分配给自己的 `scheduled` Attempt；terminal Attempt identity 不得复用，同一 source Attempt 最多一个 committed outbound Transition。
 - `parent_run_id`、`parent_cycle_id` 和 `parent_attempt_id` 记录 control lineage。
 - `execution_history_path` 指向 run-local append-only `execution_history.jsonl`。
+- `artifact_history_path` 指向 append-only `artifact_history.jsonl`；`artifact_index_path` 指向 atomically replaced `artifact_index.json`，`artifact_event_index` 必须等于 registry head。
+- `current_artifacts` 的 keys 固定为 `plan`、`code`、`analysis`、`review`、`decision`、`approval`、`terminal`。每个非 null pointer 记录 artifact/Attempt/Cycle identity、members、dependencies、status 和 state paths。
+- convenience path fields 必须指向 current canonical Attempt member；slot invalidation 时同步清空。`human_decision_path` 是 approval slot 明确保留的 current external ingress path。
+- `current_artifacts`、artifact counter、registry paths 和 convenience paths 是 control plane fields，Agent、provider payload 和 router 不得修改。
 - event log 与 route decision 必须携带当时的 Run/Cycle/Attempt identity。
 - `attempt_kind` 是 canonical contract，`attempt_node` 是 physical node；当前 `codex_handoff` 必须记录为 `legacy_codex_handoff`，不能记录为 `code_agent`。
 - Human Request/Response 使用独立 Run-local counters 和 IDs；有效 response 必须由一个 `human_gate` Attempt 验证。验证会冻结 decision、logical authorized route 和精确 compatibility Transition route/target，commit 必须完全匹配这些字段，且只能消费一次。
@@ -169,13 +177,12 @@ State 保存 current Cycle/Attempt pointers、Run-local allocation counters、pa
 
 Attempt 由 graph control plane 在目标节点副作用之前分配。canonical Attempt kinds 当前固定为 `method_planner`、`legacy_codex_handoff`、`code_agent`、`analysis_engineer`、`scientific_reviewer`、`decision_coordinator`、`human_gate` 和 `memory_report`；其中 `code_agent` 只为 A05/Phase B 预留，当前产品 graph 没有该节点。legacy external Codex runner 仍保留原有重新进入主图的行为；重新初始化未完成 Run 时会从已有 ledger 恢复 counters，避免复用 identity。它不是未来 graph-managed Code Agent，也不是 A04 将定义的通用 checkpoint resume API。
 
-当前 product routes 已使用 transition-time allocation。re-review、analysis rerun、code fix 和 replan 只在最小 deterministic StateGraph harness 中验证 identity protocol；它们尚未因此成为当前产品路线。A01 的完整线路改造与 forbidden-route coverage 仍由 A07/Phase B 承接。
+当前 product routes 已使用 transition-time allocation 与 target-layer artifact invalidation。re-review、analysis rerun、code fix 和 replan 只在最小 deterministic StateGraph harness 中验证 identity/invalidation protocol；它们尚未因此成为当前产品路线。A01 的完整线路改造与 forbidden-route coverage 仍由 A07/Phase B 承接。
 
 ## 第二阶段已确认与待决 schema 议题
 
 以下内容仍未成为 `AnalysisState` 合同：
 
-- [A03](tickets/phase-a-control-contracts/A03_ARTIFACT_INVALIDATION.md)：artifact validity、supersession 与 invalidation；
 - [A04](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)：pause/resume 与 checkpoint compatibility；
 - 正式 parallel reducer、per-branch namespace 或 merge semantics。
 

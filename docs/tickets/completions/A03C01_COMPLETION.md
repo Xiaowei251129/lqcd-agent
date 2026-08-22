@@ -1,0 +1,9 @@
+# A03C01 Completion Record
+
+- Ticket：[A03C01 Execution Head Integrity](../phase-a-control-contracts/A03C01_EXECUTION_HEAD_INTEGRITY.md)
+- Status：2026-08-22 completed。
+- Changed：仅在`src/lqcd_agent/artifacts/registry.py`增加Run-local execution identity/index sequence、global state-head、Transition target-shape、Human Request/Response head与pending snapshot preflight校验；在`tests/test_artifact_registry.py`增加stale Attempt、same-request stale Response、协调target删除/置空、head counter回滚及Transition identity重用/断档回归；同步本ticket Allowed Files内的Artifact Contracts、Verification Guide、Decision Log、Current State、Phase Overview、completion/correction indexes和本记录。原A03 ticket、legacy corrective history、`graph/state.py`及其他Do Not Touch文件未修改。
+- Verified：registry suite `106 passed`；focused registry/identity/state suite `139 passed`；full deterministic suite `325 passed`；synthetic benchmark tests `6 passed`；compileall和`git diff --check`通过。新的`/private/tmp/lqcd-agent-a03c01-final-20260822-smoke` CLI Run返回`status=success`，核对artifact revision/head `11`、Cycle/Attempt/Transition heads、9个exact managed projection owners、canonical/projection byte equality和accepted-result protection。三个独立协调篡改实验分别拒绝stale Attempt、同一request内stale Response及删除target Attempt/artifact并把nonterminal target置空；另有10个回归覆盖nullable state/ledger字段删除与terminal target字段删除。38个当前Markdown文件的214个relative links检查为0 broken。原A03与legacy corrective history SHA-256保持为`5efe5a80557aa95da5fe2aba14094ee0369b147ee6c405d2fb8807b212384142`和`e94d11ada90e834d53debc75cd22516981bc7d41a19627c1b57ba43e99e534e9`。
+- Commit：未创建commit；变更保留在当前worktree。
+- Deviations：无。完整suite首次运行暴露正常Human Request `packet_written` write order未被新grammar接受；修复保持既有`created → packet_written? → satisfied?`合同，仅调整registry validator，没有修改schema、state或graph runtime。
+- Follow-ups：无A03C01遗留。A04继续负责crash recovery、partial-commit repair、resume、replay和fork；任何后续大型A03合同变化继续使用新的独立corrective ticket。

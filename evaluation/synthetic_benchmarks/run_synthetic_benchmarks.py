@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -111,6 +112,52 @@ def _read_json_object(path: str | Path | None) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _historical_json_artifact(
+    run_dir: Path,
+    *,
+    slot: str,
+    logical_name: str,
+) -> dict[str, Any] | None:
+    history_path = run_dir / "artifact_history.jsonl"
+    if not history_path.is_file():
+        return None
+    selected_member: dict[str, Any] | None = None
+    for line in history_path.read_text(encoding="utf-8").splitlines():
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(record, dict):
+            return None
+        if record.get("event") != "registered" or record.get("slot") != slot:
+            continue
+        members = record.get("members", [])
+        if not isinstance(members, list):
+            return None
+        selected_member = next(
+            (
+                member
+                for member in members
+                if isinstance(member, dict) and member.get("logical_name") == logical_name
+            ),
+            selected_member,
+        )
+    if selected_member is None:
+        return None
+    relative = Path(str(selected_member.get("canonical_path", "")))
+    candidate = (run_dir / relative).resolve()
+    try:
+        candidate.relative_to(run_dir.resolve())
+    except ValueError:
+        return None
+    if relative.is_absolute() or not candidate.is_file():
+        return None
+    digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+    if digest != selected_member.get("sha256"):
+        return None
+    return _read_json_object(candidate)
 
 
 def _memory_status(run_dir: Path) -> str:
@@ -223,7 +270,11 @@ def build_checklist(
     run_dir: Path,
 ) -> dict[str, Any]:
     method_plan = _read_json_object(state.get("method_plan_path"))
-    run_result = _read_json_object(state.get("run_result_path"))
+    run_result = _read_json_object(state.get("run_result_path")) or _historical_json_artifact(
+        run_dir,
+        slot="analysis",
+        logical_name="run_result.json",
+    )
     review = _read_json_object(state.get("scientific_review_report_path"))
     decision = _read_json_object(state.get("decision_log_path"))
     memory_status = _memory_status(run_dir)

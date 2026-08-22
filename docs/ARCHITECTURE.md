@@ -83,7 +83,7 @@ Human Approval Gate 当前路线：
 - `approve_rerun` 后自动返回 Analysis Engineer；当前仅记录意图并停止为 `pending`。
 - 通过同一个 checkpoint 自动恢复旧运行；普通 CLI 入口仍初始化新 state，未实现正式 resume protocol。
 - reviewer/coordinator 触发任意多轮闭环；当前只存在有限的 code retry 与 human decision 路线。
-- 多 Agent fan-out、并行 reducer 或 attempt namespace；当前没有正式实现。
+- 多 Agent fan-out 或并行 reducer；当前没有正式实现。per-attempt artifact namespace 已由 A03 实现，但没有因此开放新产品路线。
 
 这些差距必须由 [Phase A](tickets/phase-a-control-contracts/OVERVIEW.md) 逐项明确合同，再由 Phase B harness 验证。A01 已确认逻辑路线合同；A02 corrective implementation 已完成并把当前可达路线接入 execution identity control plane。A01 的目标回退边和循环仍不能被视为现有 runtime 能力。
 
@@ -117,7 +117,7 @@ Memory and Report -> END
 
 四个回退目标分别表示：重新审查相同 analysis、在相同 plan/code 下重新分析、修复实现、重新规划方法。候选目标冲突或无法唯一归因时不得默认选择最深回退，必须进入 Human Gate。
 
-这里的 `Code Agent` 是 A05 将定义的 graph-managed 接口，不是把当前 Codex Handoff 直接改名。A02 已确认 Run/Cycle/Attempt identity；artifact invalidation、PAUSE/resume、Code Agent wire contract 和具体预算仍分别由 A03–A06 定义。在这些合同和 Phase B harness 完成前，目标闭环不得接入 runtime。
+这里的 `Code Agent` 是 A05 将定义的 graph-managed 接口，不是把当前 Codex Handoff 直接改名。A02 已确认 Run/Cycle/Attempt identity，A03 已实现 artifact invalidation；PAUSE/resume、Code Agent wire contract 和具体预算仍分别由 A04–A06 定义。在这些合同和 Phase B harness 完成前，目标闭环不得接入 runtime。
 
 ## A02 当前 Execution Identity
 
@@ -132,7 +132,15 @@ Memory and Report -> END
 
 re-review、analysis rerun、code fix 和 replan 目前只在最小 deterministic StateGraph integration harness 中经过真实 selection/commit/target-consumption protocol；这只能证明 identity protocol，不代表产品 graph 已开放四层回退。特别是 harness 中的 `code_agent` 只是 protocol sink，不是 Fake/real Code Agent。
 
-legacy incomplete-Run re-entry 会校验 formal Run immutable fields，并从 ledger 恢复 counters，但这只是 compatibility audit continuity，不是 checkpoint resume。Run-owned `checkpoint_thread_id` 与 canonical output root 未改变；A03 仍决定 namespace/current pointers/invalidation，A04 决定 PAUSE/resume 与 replay/fork API，A05 定义 Fake/real graph-managed Code Agent，A06 决定 budgets/failure fingerprint，A07/Phase B 才负责 A01 完整产品线路和禁止路线 harness。
+legacy incomplete-Run re-entry 会校验 formal Run immutable fields，并从 ledger 恢复 counters，但这只是 compatibility audit continuity，不是 checkpoint resume。Run-owned `checkpoint_thread_id` 与 canonical output root 未改变；A04 决定 PAUSE/resume 与 replay/fork API，A05 定义 Fake/real graph-managed Code Agent，A06 决定 budgets/failure fingerprint，A07/Phase B 才负责 A01 完整产品线路和禁止路线 harness。
+
+## A03 当前 Artifact Control Plane
+
+每个 graph-managed domain bundle 写入 `<run_root>/attempts/<attempt_id>/`，随后注册到 append-only `artifact_history.jsonl`。`artifact_index.json` 是唯一 current-selection authority，固定 slots 为 `plan`、`code`、`analysis`、`review`、`decision`、`approval`、`terminal`；state 中的 `current_artifacts` 与 convenience paths 必须与 index 一致。
+
+Transition commit 在目标 Attempt 分配后、目标节点副作用前按 target layer 清除 current pointer：re-review 清除 review 及下游，analysis rerun 清除 analysis 及下游，code fix 清除 code 及下游，replan 清除全部 slots。Decision、Human Gate 与 Memory Report 使用相同的 target-layer规则。清除只修改 current index、bounded state 和 managed projection，不删除 canonical bytes 或 history。
+
+run-root 的 v0.2 fixed paths 现在是 registry-managed copy projections，不是 canonical history。只有带有效 A03 index 且记录 owner 的 projection 才能替换或清除；unmanaged legacy trees 不迁移、不覆盖。Human Response payload 以 `<run_root>/human_responses/<human_response_id>/payload.json` 保存，accepted terminal bundle追加保护事件。A03 没有实现 crash recovery、并发提交或 replay，这些仍属于 A04。
 
 ## Checkpoint 与上下文边界
 
@@ -155,7 +163,7 @@ A01 进一步确认：完整 `event_log`、route trace 和 checkpoint state 只�
 
 ## Output 边界
 
-实际运行 artifacts 写入 `<output_root>/<case_id>/<run_id>/`。仓库内 `outputs/` 是被忽略的实际运行目录，不是 reference-output 目录。curated evaluation baseline 位于 `evaluation/reference_outputs/`，expected behavior 位于 `evaluation/expected_behavior/`。
+实际 Run root 是 `<output_root>/<case_id>/<run_id>/`；canonical graph-managed domain artifacts 位于其 `attempts/<attempt_id>/` 子目录，run-root fixed paths 仅是 current compatibility projections。仓库内 `outputs/` 是被忽略的实际运行目录，不是 reference-output 目录。curated evaluation baseline 位于 `evaluation/reference_outputs/`，expected behavior 位于 `evaluation/expected_behavior/`。
 
 没有 `--run-id` 时 CLI 生成 timestamp run id；显式 run id 指向已有完成/决策 artifacts 时，CLI 拒绝复用目录。resume 和 force overwrite 仍未获批准。
 

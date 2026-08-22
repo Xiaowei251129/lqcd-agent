@@ -16,7 +16,7 @@
 
 后续应通过 `docs/tickets/` 逐项完成设计讨论，再把已经确认的结论同步到核心文档；只有用户确认并标记为 `status: ready` 的具体 ticket 才能执行。
 
-截至 2026-08-11，A01 已确认目标 transition contract；A02 corrective implementation 已完成 formal Run、current-route transition allocation、canonical Attempt kinds 和 Human identity 验收。A02 的四层 fallback coverage 仍是 protocol harness，不表示产品 graph 已开放这些路线。
+截至 2026-08-11，A01 已确认目标 transition contract；A02 已完成 execution identity；A03 已完成 per-attempt artifact namespace、current index、compatibility projection 和 deterministic invalidation。四层 fallback coverage仍是 protocol harness，不表示产品 graph已开放这些路线。
 
 ## 当前阶段判断
 
@@ -91,8 +91,8 @@ Agent 变强不等于允许它跳转到更多节点或获得更多写权限。�
 - 图中存在一些已经画出或记录的回退方向，但当前 routing function 并不会真正选择它们；
 - Coordinator 的 rerun 或 code-fix 建议与实际 graph transition 尚未完全统一；
 - Human Approval Gate 的 rerun 决定当前更多是记录意图，而不是真正恢复到下一轮 Analysis；
-- A02 已在 state 和 append-only ledger 中表达 current Run/Cycle/Attempt/Transition/Human identity 与 control lineage，但 domain artifact 仍使用当前 fixed paths；
-- 不同层级的旧产物在回退后应该如何失效，尚未成为明确合同；
+- A02 identity与A03 artifact registry已经表达current control lineage；run-root fixed paths现在只是managed compatibility projections；
+- 不同层级的旧产物已按target-layer matrix失效，但完整产品回退路线尚未接入；
 - checkpoint 已经存在，但 runner 的启动、暂停和恢复协议仍需重新梳理；
 - 当前没有真实 fan-out，因此暂时没有并行冲突，但未来加入并行 Reviewer 或诊断节点后会出现共享 state merge 问题；
 - 测试覆盖了许多节点和主要路径，但还没有形成完整的 edge、trajectory、cycle 和 recovery coverage。
@@ -137,22 +137,22 @@ A02 已固定三种概念：
 - 哪个 source Attempt、Transition 或 Human decision 触发了它；
 - 相关 input/output/evidence references。
 
-哪些旧结果失效仍由 A03 定义；是否达到循环预算以及如何识别重复失败仍由 A06 定义。A02 identity 不能被解释成这两个合同已经存在。
+哪些旧结果失效已由 A03 定义；是否达到循环预算以及如何识别重复失败仍由 A06 定义。A03 invalidation不能被解释成budget合同已经存在。
 
-当前 product routes 已使用 Transition commit 在目标副作用前预分配 Attempt；Run、Cycle、Attempt、Transition、Human Request 和 Human Response lifecycle 写入 `execution_history.jsonl`。re-review、analysis rerun、code fix 和 replan 目前只经过 A02 最小 identity harness，尚不能据此宣称完整循环已实现。A03 继续决定 artifact invalidation，A04 决定 durable resume/replay/fork，A06 决定预算。
+当前 product routes 已使用 Transition commit 在目标副作用前预分配 Attempt并按A03清除target layer。Run、Cycle、Attempt、Transition、Human Request和Human Response写入`execution_history.jsonl`，artifact events写入`artifact_history.jsonl`。四层fallback仍只经过最小harness；A04决定durable resume/replay/fork，A06决定预算。
 
 #### 3. Artifact Invalidation 规则
 
-回退不是简单修改 `current_node`。不同回退目标应有不同失效范围。初步方向是：
+回退不是简单修改 `current_node`。A03 已实现以下失效范围：
 
 | 回退目标 | 原则上的失效范围 |
 | --- | --- |
-| Reviewer | 旧 review 和 decision 失效，analysis 结果可以继续使用 |
-| Analysis Engineer | 旧 analysis、review 和 decision 失效，已批准的 plan 可以继续使用 |
-| Code Agent | 旧 code attempt 及其下游 analysis、review、decision 失效 |
-| Method Planner | 旧 plan 及全部下游结果失效 |
+| Reviewer | `review`, `decision`, `approval`, `terminal` |
+| Analysis Engineer | `analysis`, `review`, `decision`, `approval`, `terminal` |
+| Code Agent / legacy handoff | `code`, `analysis`, `review`, `decision`, `approval`, `terminal` |
+| Method Planner | 全部 slots，并由 A02 replan创建新 Cycle |
 
-这里的“失效”应表示不再作为当前结果，而不是删除历史文件。最终规则仍需结合 artifact 目录设计进一步讨论。
+这里的“失效”表示不再作为当前结果，不删除`attempts/<attempt_id>/` canonical files、history或protected snapshots。Phase B应复用该规则验证产品routes，不重新设计。
 
 #### 4. Durable Pause and Resume
 
@@ -533,7 +533,7 @@ RAG 是否有效不能只看回答“更像专家”。至少需要评估：
 ```text
 确认控制层原则和 Code Agent 最小契约
                 ↓
-复用 A02 identity，建立 invalidation、resume 和 path harness
+复用 A02 identity与A03 invalidation，建立 resume 和完整产品 path harness
                 ↓
 用 Fake Code Agent 验证完整图循环
                 ↓
@@ -566,7 +566,7 @@ RAG 是否有效不能只看回答“更像专家”。至少需要评估：
 - 循环预算和 Human Gate 边界；
 - 哪些行为必须由确定性规则控制。
 
-这一阶段的主要产物是讨论结论和架构决策，不做大规模能力开发。A02 是纠正已发生 design/runtime 偏差的 implementation ticket：它落地 identity protocol，但不提前实现 A03–A07。
+这一阶段的主要产物是控制合同与边界实现。A02落地identity protocol，A03落地artifact control plane，但不提前实现A04–A07。
 
 ### 阶段 B：图和 Harness 可靠性
 
@@ -612,7 +612,7 @@ RAG 是否有效不能只看回答“更像专家”。至少需要评估：
 
 ### 先画出所有回退边
 
-如果没有 invalidation、artifact namespace 和停止条件，更多边只会增加旧数据污染和无限循环风险。
+artifact namespace与invalidation已由A03建立；在A06停止条件和Phase B完整harness完成前，更多产品边仍会带来无限循环风险。
 
 ### 只做真实 LLM 端到端测试
 
@@ -645,7 +645,7 @@ RAG 是否有效不能只看回答“更像专家”。至少需要评估：
 - [`REPO_CURRENT_STATE.md`](REPO_CURRENT_STATE.md)：只记录当前已经实现、验证和正在进行的工作；
 - `ARCHITECTURE.md`：记录 current-route identity protocol，并把 A02 harness-only fallback 与未来产品路线分开；
 - `STATE_SCHEMA.md`：已经接收 A02 Run/Cycle/Attempt/Transition/Human identity，未来只接收经过批准的 reducer 或恢复字段；
-- `ARTIFACT_CONTRACTS.md`：已经接收 A02 execution ledger 与 approval 0.2，未来只接收经过批准的 domain-artifact namespace 和 evidence bundle；
+- `ARTIFACT_CONTRACTS.md`：已经接收 A02 execution ledger、approval 0.2与A03 domain-artifact registry；未来 evidence bundle仍需独立批准；
 - `EVALS_AND_OBSERVABILITY.md`：未来接收已经批准的 harness 和 benchmark 设计；
 - `AGENT_ROLES_AND_BOUNDARIES.md`：未来接收 Code Agent 和物理知识能力的正式边界；
 - 第一阶段单体 build plan、ticket ledger 和 prompt playbook 已在迁移审计后从当前工作树删除；原文可从 Git tag `v0.2-demo` 查看。

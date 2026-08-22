@@ -20,11 +20,13 @@
 实际运行 artifacts 必须写入 `<output_root>/<case_id>/<run_id>/`。仓库内 `outputs/` 是 ignored actual-run root，不是 reference-output location。
 
 - 默认不得覆盖已有 run directory；
-- accepted results 与 human decisions 必须 append-only 或 versioned；
+- accepted results 与 human decisions 必须 append-only 或 versioned；Human Response payload 使用 exclusive-create immutable snapshot；
 - verification 应优先使用 `/private/tmp/lqcd-agent-...`；
 - curated baselines 属于 `evaluation/reference_outputs/`；
 - expected behavior 属于 `evaluation/expected_behavior/`；
-- resume、force overwrite、attempt namespace 和 artifact invalidation 尚未形成正式合同，必须等待对应 Phase A ticket。
+- canonical domain artifacts 写入并严格绑定`attempts/<attempt_id>/`且不得覆盖；只有registry-owned current projection可以替换或清除，跨owner collision必须在复制前失败；external ingress只豁免内容digest比较，路径、存在性和owner仍必须验证；
+- unmanaged legacy outputs 不自动迁移、不覆盖、不删除；
+- resume、force overwrite 和 crash recovery 尚未形成正式合同，必须等待 A04。
 
 ## Command Policy
 
@@ -79,7 +81,6 @@ runner 必须阻止 shell control operators、非 exact-allowlisted commands，�
 
 以下内容仍是 draft，不改变当前政策：
 
-- [A03 Artifact Invalidation](tickets/phase-a-control-contracts/A03_ARTIFACT_INVALIDATION.md)
 - [A04 Pause/Resume](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)
 - [A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)
 - [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)

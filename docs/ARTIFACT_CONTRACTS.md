@@ -4,7 +4,7 @@
 
 本文记录当前 runtime 已经实现并由测试覆盖的 artifact contracts。下面保留英文 schema identifiers、field names、status values 和文件名，解释以这些精确合同为准。
 
-A02 corrective implementation 已完成 Run/Cycle/Attempt/Transition/Human execution ledger 与 state-aware identity metadata 验收。per-attempt domain-artifact namespace、artifact supersession/invalidation、Code Agent patch/evidence bundle 和 physics RAG evidence bundle 尚未获批，不属于当前合同。它们只能先在 [A03](tickets/phase-a-control-contracts/A03_ARTIFACT_INVALIDATION.md)、[A05](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md) 及后续独立 ticket 中讨论。普通 ticket 不能仅通过修改 artifact writer 就隐式改变这里的 public contract。
+A02 已完成 Run/Cycle/Attempt/Transition/Human execution ledger，A03 已完成 per-attempt domain-artifact namespace、artifact history/current index、supersession/invalidation 和 fixed-path compatibility projection。Code Agent patch/evidence bundle 与 physics RAG evidence bundle仍未获批，只能在 [A05](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md) 及后续独立 ticket 中定义。
 
 ## Execution Identity History
 
@@ -38,9 +38,59 @@ Attempt record 分开记录 canonical `attempt_kind` 和 physical `node_name`、
 
 Human Request/Response 是独立 records，不是 Human Gate Attempt。Coordinator 进入 Gate 时创建 `human_request_*`，记录 request kind、requesting Coordinator Attempt、authorization scope 和 packet reference。外部提交创建 `human_response_*`；同一 response ID 依次追加 `submitted -> validated -> consumed` 或 `submitted -> invalid`，并记录 payload snapshot/digest、validated decision、logical authorized route、精确 authorized Transition route/target、validator Gate Attempt、consumer Gate Attempt 和 authorized target Attempt。validated response 只能消费一次。
 
-文件只允许 append，不允许覆盖；legacy incomplete-Run re-entry 从已有 records 恢复 counters，不能复用旧 IDs，也不能被描述为 A04 durable resume。
+文件只允许 append，不允许覆盖；legacy incomplete-Run re-entry 从已有 records 恢复 counters，不能复用旧 IDs，也不能被描述为 A04 durable resume。registry恢复和读取还要求每类Run-local Cycle、Attempt、Transition、Human Request和Human Response index为正整数、deterministic identity唯一且序列从1连续到max；同一identity的lifecycle字段必须稳定，不同identity不能复用index。
 
-event log、route decisions、approval packet、memory update 和 final report 记录 relevant current identity。JSON artifact writer 会附加 `cycle_id`、`attempt_id`、`parent_attempt_id`、`attempt_kind`、`attempt_node`、`inbound_transition_id` 和 `committed_transition_id`；其他现有 domain artifacts 通过 execution ledger 的 input/output references 追溯 producing Attempt。Run 继续拥有 `<output_root>/<case_id>/<run_id>/`；现有 domain-artifact fixed paths 保持不变，A03 决定 per-attempt namespace、versioning、current pointers 和 invalidation。
+event log、route decisions、approval packet、memory update 和 final report 记录 relevant current identity。Attempt ledger 的 input/output references 使用 canonical paths 与 `current_artifact_ids`；Human Response ledger references 使用 immutable snapshot path/digest，不引用随后可能变化的 ingress projection。
+
+## A03 Artifact Registry 与 Current Contract
+
+Run root 继续是 `<output_root>/<case_id>/<run_id>/`。graph-managed domain artifacts 的 canonical immutable namespace 是：
+
+```text
+<run_root>/attempts/<attempt_id>/...
+```
+
+同一 Attempt/slot 最多注册一个 bundle，artifact ID 固定为 `<attempt_id>:<slot>`。slots 固定为：
+
+```text
+plan -> optional code -> analysis -> review -> decision -> approval -> terminal
+```
+
+每个 Run 还写：
+
+```text
+artifact_history.jsonl
+artifact_index.json
+```
+
+`artifact_history.jsonl` schema version 是 `0.1`，event 固定为 `registered`、`current_set`、`current_cleared`、`protected_snapshot_registered`。event ID/index Run-local 单调递增；member 至少记录 logical name、Run-relative canonical path、SHA-256、size 和 media type。每个普通`registered` event还冻结完整 typed current pointer和producing `node_name`，并且必须立即跟随同一artifact唯一一次`current_set`；清除后的artifact不能再次成为current。history append-only，并验证 identity、固定reason code、顺序、member containment、digest和pointer内部一致性；history、index与execution ledger中的duplicate JSON object key均拒绝。校验不仅检查已有event是否合法，还从execution ledger反向派生必需event：finished Attempt的output references必须覆盖其registered bundle，registered bundle的Attempt必须至少具有合法`scheduled → started`生命周期；缺失整个registration/current-set序列同样fail closed。每个带target Attempt的committed Transition必须反向对应exactly one合法Attempt lifecycle，且Transition的Run、Case、target Cycle、Attempt、Kind、Node与Attempt provenance exact-equal；bounded state中已填充的current Attempt也必须与该lifecycle最新状态exact-equal。普通member必须位于其producing `attempts/<attempt_id>/`内，canonical相对Attempt的路径必须与logical/projection path一致。producing Attempt的`run_id`、`case_id`、`cycle_id`、`attempt_id`、`attempt_kind`、`node_name`必须全部存在并与execution ledger exact-equal。
+
+`artifact_index.json` schema version 是 `0.1`，以原子替换发布，记录 revision/head、七个 typed current pointers 和 `managed_projections` owner map。正常 current selection 只读取该 index 或与其验证一致的 bounded state，不允许按目录、mtime 或文件名猜测最新结果。registry按`registered → current_set → current_cleared`重放history，重放得到的七个current slots必须与index exact-equal；`managed_projections`也必须由这些current pointer的member paths唯一派生并与index exact-equal。projection必须是Run-relative、留在Run root内，且不能指向Attempt、control、Human Response、checkpoint、context、raw-data或accepted-result路径；重复、额外、缺失、未知或错误owner均fail closed。恢复已有Run时，只有显式的空重建state（counter为0、`current_artifacts`为空且全部artifact convenience path为`None`）可以从validated registry同步；任何已populated state必须先与history/index、canonical digest和managed projection完整一致，不能被initialize静默覆盖或修复。index/history head、state counter、current pointer、dependency、canonical digest 或 projection ownership不一致时 fail closed，不自动迁移或修复缺少新identity字段的实验性A03 registry。
+
+bounded state必须绑定execution ledger的全局head，而不只是绑定某个局部合法lifecycle：Cycle lineage、Attempt完整provenance/latest status、Transition ID/index/route、latest Human Request字段和Run-global Human Response counter都必须等于各自max index；active Human Response必须是latest Human Request下max response index对应的latest lifecycle，或在该request尚无response时为`None`。合法Human Request lifecycle为`created`后可选`packet_written`，并可最终`satisfied`。Human Response snapshot publication只允许确定性的next global response ID/index作为一次性pending preflight，且decision、validator、consumer和target fields必须为空；恢复、普通读取和save不接受该例外。
+
+committed Transition的target shape也属于registry完整性边界：只有`end`/`__end__` route允许`target_attempt_id`为`None`，且其他三个target fields必须显式存在并同时为`None`；字段缺失不等同于null。任何非terminal route必须提供完整的target Attempt/Node/Cycle/Kind tuple并与exact target Attempt lifecycle双向一致。删除目标Attempt或artifact、回滚state并把非terminal target协调置空不能形成合法head。bounded state和Attempt/Cycle ledger中的nullable identity fields同样必须显式存在，不能通过删除字段伪装成合法null。
+
+bundle dependencies在注册时冻结：code依赖 plan；analysis 依赖 plan 和存在时的 code；review依赖 analysis；decision、approval 和 terminal记录它们实际读取的全部 current upstream artifact IDs。history replay必须按注册时的current slots重算基础dependency前缀，额外dependency只能引用此前已注册artifact；forward、wrong-slot、non-current replacement或重复dependency均fail closed。`current` 只表示最新有效链成员，不等于 success、usable 或 accepted。
+
+Transition commit 在 target Attempt 副作用前执行确定性 invalidation：
+
+| Target | Cleared current slots |
+| --- | --- |
+| `scientific_reviewer` | `review`, `decision`, `approval`, `terminal` |
+| `analysis_engineer` | `analysis`, `review`, `decision`, `approval`, `terminal` |
+| `legacy_codex_handoff` / `code_agent` | `code`, `analysis`, `review`, `decision`, `approval`, `terminal` |
+| `method_planner` | all slots |
+| `decision_coordinator` | `decision`, `approval`, `terminal` |
+| new-request `human_gate` | `approval`, `terminal` |
+| same-request validation `human_gate` | none |
+| `memory_report` | `terminal` |
+
+Invalidation 清除 index/state current 和 owned projection，但不删除 canonical members、history 或 protected snapshot。每个`current_cleared`必须清除当时该slot真实current的同一artifact，并将triggering `transition_id`、target/triggering `attempt_id`、target Cycle、Attempt kind/Node和reason code与execution ledger中的唯一committed Transition及其目标Attempt exact-equal；slot还必须属于该target kind的固定invalidation policy。反向校验从每个scheduled Attempt的`input_references.current_artifact_ids`和target policy派生完整expected-clear map，并要求同一target Attempt的actual clear map exact-equal，因此删除单个或全部required clear后即使协调修改history/index/state也会fail closed。initial与legacy incomplete-Run re-entry的Planner调度使用同一invalidation入口；目标 Attempt随后失败、pending或没有bundle时，旧pointer不会恢复。
+
+v0.2 run-root fixed paths保持为 current compatibility copies，包括 plan/code/analysis/review/decision/approval/terminal paths和 `llm_calls/`。copy publication 对单文件使用同目录临时文件与 `os.replace()`；目录按成员受控 materialize，不使用 symlink。publication在复制任何bytes前必须preflight全部member；另一个current artifact已经拥有的projection会使整个注册失败，history、index和既有projection保持不变。只有 index 中记录正确current artifact owner 的 projection 可以替换/清除；没有 A03 index 的 legacy tree拒绝接管。外部 handoff result files与 Human decision file仍是明确 ingress，消费后 canonical evidence由 registry保留；这两类ingress只豁免projection digest比较，不豁免路径、存在性和owner验证。
+
+Human Response payload写入 `<run_root>/human_responses/<human_response_id>/payload.json`，artifact ID必须为 `<human_response_id>:payload`，唯一member必须是同一identity下的`payload.json`，并使用 `protected_kind: human_response`；protected event的Run/Case/Cycle/Request/Response、canonical path和digest必须与唯一`submitted` Human Response ledger record exact-equal，且每个submitted ledger identity必须反向对应exactly one Human Response protection。每个Human Response ledger identity必须形成合法有序的`submitted → validated|invalid → consumed?`生命周期，跨事件的Run、Case、Request、Response、index、payload path与digest不可变化；bounded state声明的active Human Response必须存在于ledger，并与其最新lifecycle状态、decision、route、validator、consumer和authorized target exact-equal。accepted terminal bundle继续使用 `<attempt_id>:terminal`，但只有当它是当时current、slot为`terminal`且pointer status为`accepted`时，才能追加唯一`protected_kind: accepted_result`事件；每个registered accepted terminal也必须反向对应exactly one protection，未知protected kind、非terminal/non-accepted、缺失或重复protection均fail closed。为保持正常原子写入顺序，invalidation、Human Response snapshot和accepted protection API只对正在写入的唯一target/response/producing Attempt开放一次受限preflight例外；恢复、读取和state保存不接受该例外。`memory_update.json`冻结 source artifact IDs/member digests和 Human Response identity。A03不提供跨进程 partial-commit recovery或 replay，相关语义属于 A04。
 
 ## 当前通用规则
 
@@ -48,7 +98,7 @@ event log、route decisions、approval packet、memory update 和 final report �
 
 影响 routing 的 artifact 必须 machine-readable；支持人工 review 的内容应同时 human-readable。JSON/YAML 可以驱动 routing，Markdown 只用于 report 和 summary。
 
-实际运行 artifacts 写入 `<output_root>/<case_id>/<run_id>/`。仓库内 `outputs/` 是 ignored actual-run storage，不是 reference-output storage。curated evaluation baseline 属于 `evaluation/reference_outputs/`，expected behavior 属于 `evaluation/expected_behavior/`。
+实际 Run root 写入 `<output_root>/<case_id>/<run_id>/`，canonical domain artifacts写入其 Attempt namespace。仓库内 `outputs/` 是 ignored actual-run storage，不是 reference-output storage。curated evaluation baseline 属于 `evaluation/reference_outputs/`，expected behavior 属于 `evaluation/expected_behavior/`。
 
 所有影响 decision 的 artifact 必须包含：
 
@@ -67,10 +117,10 @@ event log、route decisions、approval packet、memory update 和 final report �
 Provider-backed Method Planner, Scientific Reviewer, and Decision Coordinator calls write audit records under:
 
 ```text
-<output_root>/<case_id>/<run_id>/llm_calls/<agent>.json
+<output_root>/<case_id>/<run_id>/attempts/<attempt_id>/llm_calls/<agent>.json
 ```
 
-Each trace records the agent, timestamp, status, non-secret provider metadata, structured request, provider response when available, parsed artifact path, and structured errors. API keys and environment-variable values must never be written. Trace files may contain bounded prompt and response content, so they remain run artifacts under ignored output storage rather than curated source or reference outputs. The manifest records trace files, and the final report links the available traces for reproducibility.
+Each trace records the agent, timestamp, status, non-secret provider metadata, structured request, provider response when available, parsed artifact path, and structured errors. API keys and environment-variable values must never be written. The producing bundle registers trace members; current run-root `llm_calls/` files are managed projections. The final report links canonical current traces for reproducibility.
 
 ## Method Plan
 

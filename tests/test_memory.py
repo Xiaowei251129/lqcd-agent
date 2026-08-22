@@ -124,9 +124,9 @@ def test_consumed_human_decision_uses_validated_snapshot_not_mutable_projection(
 
 
 def test_refuses_to_overwrite_different_run_memory_update(tmp_path: Path) -> None:
+    state = _state(tmp_path)
     path = tmp_path / "memory_update.json"
     path.write_text('{"run_id": "other", "case_id": "case_a"}\n', encoding="utf-8")
-    state = _state(tmp_path)
 
     with pytest.raises(FileExistsError, match="different run"):
         write_memory_update(state)

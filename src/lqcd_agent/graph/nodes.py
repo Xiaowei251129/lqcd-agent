@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,11 @@ from lqcd_agent.agents.analysis_engineer import run_analysis_engineer
 from lqcd_agent.agents.decision_coordinator import run_decision_coordinator
 from lqcd_agent.agents.method_planner import run_method_planner
 from lqcd_agent.agents.scientific_reviewer import run_scientific_reviewer
+from lqcd_agent.artifacts.registry import (
+    prepare_attempt_output_dir,
+    protect_current_artifact,
+    register_artifact_bundle,
+)
 from lqcd_agent.coder.codex_handoff import ensure_task_packet, read_handoff_results
 from lqcd_agent.coder.codex_handoff_worker import run_worker
 from lqcd_agent.coder.task_packet import TaskPacketValidationError
@@ -56,19 +62,35 @@ def method_planner_node(state: AnalysisState) -> AnalysisState:
     state["current_node"] = "method_planner"
     state["status"] = "running"
     llm_context_view(state)
+    current_plan = state.get("current_artifacts", {}).get("plan")
+    if isinstance(current_plan, dict) and state.get("method_plan_path"):
+        method_plan = json.loads(Path(state["method_plan_path"]).read_text(encoding="utf-8"))
+        state["code_needed"] = bool(method_plan.get("code_needed"))
+        if method_plan.get("status") == "needs_more_info":
+            state["status"] = "pending"
+        elif method_plan.get("status") != "success":
+            state["status"] = "halted"
+        append_event(
+            state,
+            node="method_planner",
+            kind="current_artifact_reused",
+            summary="Reused the current immutable Planner bundle for legacy handoff continuation.",
+            artifact_id=current_plan["artifact_id"],
+        )
+        save_graph_state(state)
+        return state
+    artifact_dir = prepare_attempt_output_dir(state)
     repo_root = Path(__file__).resolve().parents[3]
     result = run_method_planner(
         user_goal=state["user_goal"],
         case_config=_read_case_config(state["case_config_path"]),
         repo_inventory=build_repo_inventory(repo_root),
-        output_dir=state["output_dir"],
+        output_dir=artifact_dir,
         run_id=state["run_id"],
         provider_config_path=state["llm_provider_config_path"],
     )
     method_plan = result["method_plan"]
-    state["method_plan_path"] = result["method_plan_path"]
     state["code_needed"] = result["code_needed"]
-    state["coder_task_packet_path"] = result["coder_task_packet_path"]
 
     if result["status"] == "needs_more_info":
         state["status"] = "pending"
@@ -77,7 +99,7 @@ def method_planner_node(state: AnalysisState) -> AnalysisState:
                 "node": "method_planner",
                 "field": error.get("field"),
                 "message": error.get("message"),
-                "method_plan_path": state["method_plan_path"],
+                "method_plan_path": result["method_plan_path"],
             }
             for error in method_plan.get("errors", [])
         )
@@ -94,7 +116,7 @@ def method_planner_node(state: AnalysisState) -> AnalysisState:
                 "node": "method_planner",
                 "field": error.get("field"),
                 "message": error.get("message"),
-                "method_plan_path": state["method_plan_path"],
+                "method_plan_path": result["method_plan_path"],
             }
             for error in method_plan.get("errors", [])
         )
@@ -115,8 +137,42 @@ def method_planner_node(state: AnalysisState) -> AnalysisState:
     else:
         state["status"] = "running"
         append_event(state, node="method_planner", kind="node_complete", summary=method_plan["summary"])
+    state = register_artifact_bundle(
+        state,
+        slot="plan",
+        member_paths=[artifact_dir],
+        state_paths={
+            "method_plan_path": result["method_plan_path"],
+            "coder_task_packet_path": result["coder_task_packet_path"],
+        },
+        status=result["status"],
+    )
     save_graph_state(state)
     return state
+
+
+def _snapshot_handoff_files(
+    run_root: Path,
+    artifact_dir: Path,
+    *,
+    include_rebuilt_task_packet: bool,
+) -> list[Path]:
+    snapshot_paths: list[Path] = []
+    names = [
+        "code_change_summary.md",
+        "tests_status.json",
+        "codex_handoff_last_message.md",
+    ]
+    if include_rebuilt_task_packet:
+        names.insert(0, "coder_task_packet.yaml")
+    for name in names:
+        source = run_root / name
+        if not source.is_file():
+            continue
+        destination = artifact_dir / name
+        shutil.copyfile(source, destination)
+        snapshot_paths.append(destination)
+    return snapshot_paths
 
 
 def codex_handoff_node(state: AnalysisState) -> AnalysisState:
@@ -146,15 +202,13 @@ def codex_handoff_node(state: AnalysisState) -> AnalysisState:
         save_graph_state(state)
         return state
 
-    state["coder_task_packet_path"] = task_packet["coder_task_packet_path"]
+    rebuilt_task_packet = task_packet["coder_task_packet_path"] != state.get("coder_task_packet_path")
     handoff = read_handoff_results(state["output_dir"])
-    state["code_change_summary_path"] = handoff["code_change_summary_path"]
-    state["tests_status_path"] = handoff["tests_status_path"]
     if (
         state.get("auto_codex_handoff") is True
         and handoff["handoff_status"] == "pending"
-        and not state["code_change_summary_path"]
-        and not state["tests_status_path"]
+        and not handoff["code_change_summary_path"]
+        and not handoff["tests_status_path"]
     ):
         repo_root = Path(__file__).resolve().parents[3]
         try:
@@ -193,8 +247,27 @@ def codex_handoff_node(state: AnalysisState) -> AnalysisState:
             summary=f"Automatic Codex handoff worker returned {worker_result.get('status')}.",
         )
         handoff = read_handoff_results(state["output_dir"])
-        state["code_change_summary_path"] = handoff["code_change_summary_path"]
-        state["tests_status_path"] = handoff["tests_status_path"]
+
+    snapshot_paths: list[Path] = []
+    if handoff["code_change_summary_path"] or handoff["tests_status_path"] or rebuilt_task_packet:
+        artifact_dir = prepare_attempt_output_dir(state)
+        snapshot_paths = _snapshot_handoff_files(
+            Path(state["output_dir"]),
+            artifact_dir,
+            include_rebuilt_task_packet=rebuilt_task_packet,
+        )
+        summary_path = artifact_dir / "code_change_summary.md"
+        tests_path = artifact_dir / "tests_status.json"
+        state = register_artifact_bundle(
+            state,
+            slot="code",
+            member_paths=snapshot_paths,
+            state_paths={
+                "code_change_summary_path": str(summary_path) if summary_path.is_file() else None,
+                "tests_status_path": str(tests_path) if tests_path.is_file() else None,
+            },
+            status=handoff["handoff_status"],
+        )
 
     if handoff["handoff_status"] == "halted":
         state["status"] = "halted"
@@ -264,17 +337,17 @@ def analysis_engineer_node(state: AnalysisState) -> AnalysisState:
     state["current_node"] = "analysis_engineer"
     state["status"] = "running"
     llm_context_view(state)
+    artifact_dir = prepare_attempt_output_dir(state)
     repo_root = Path(__file__).resolve().parents[3]
     result = run_analysis_engineer(
         case_config_path=state["case_config_path"],
         case_id=state["case_id"],
         run_id=state["run_id"],
         run_output_dir=state["output_dir"],
+        artifact_output_dir=artifact_dir,
         method_plan_path=state["method_plan_path"],
         repo_root=repo_root,
     )
-    state["run_result_path"] = result["run_result_path"]
-    state["analysis_outputs_dir"] = result["analysis_outputs_dir"]
     state["run_success"] = result["run_success"]
     state["failure_type"] = result["failure_type"]
     state["warnings"].extend(
@@ -308,6 +381,17 @@ def analysis_engineer_node(state: AnalysisState) -> AnalysisState:
         summary=summary,
         manifest_path=result["manifest_path"],
     )
+    if result["run_result_path"]:
+        state = register_artifact_bundle(
+            state,
+            slot="analysis",
+            member_paths=[artifact_dir],
+            state_paths={
+                "run_result_path": result["run_result_path"],
+                "analysis_outputs_dir": result["analysis_outputs_dir"],
+            },
+            status="success" if result["run_success"] else "failed",
+        )
     save_graph_state(state)
     return state
 
@@ -317,17 +401,17 @@ def scientific_reviewer_node(state: AnalysisState) -> AnalysisState:
     state["current_node"] = "scientific_reviewer"
     state["status"] = "running"
     llm_context_view(state)
+    artifact_dir = prepare_attempt_output_dir(state)
     result = run_scientific_reviewer(
         run_id=state["run_id"],
         case_id=state["case_id"],
-        run_output_dir=state["output_dir"],
+        run_output_dir=artifact_dir,
         run_result_path=state["run_result_path"],
         analysis_outputs_dir=state["analysis_outputs_dir"],
         method_plan_path=state["method_plan_path"],
         provider_config_path=state["llm_provider_config_path"],
     )
     report = result["report"]
-    state["scientific_review_report_path"] = result["scientific_review_report_path"]
     state["warnings"].extend(
         {
             "node": "scientific_reviewer",
@@ -365,6 +449,16 @@ def scientific_reviewer_node(state: AnalysisState) -> AnalysisState:
         kind="node_complete" if result["status"] == "success" else "node_pending",
         summary=report["summary"],
     )
+    if result["scientific_review_report_path"] and any(artifact_dir.iterdir()):
+        state = register_artifact_bundle(
+            state,
+            slot="review",
+            member_paths=[artifact_dir],
+            state_paths={
+                "scientific_review_report_path": result["scientific_review_report_path"],
+            },
+            status=result["status"],
+        )
     save_graph_state(state)
     return state
 
@@ -374,17 +468,17 @@ def decision_coordinator_node(state: AnalysisState) -> AnalysisState:
     state["current_node"] = "decision_coordinator"
     state["status"] = "running"
     llm_context_view(state)
+    artifact_dir = prepare_attempt_output_dir(state)
     result = run_decision_coordinator(
         run_id=state["run_id"],
         case_id=state["case_id"],
-        output_dir=state["output_dir"],
+        output_dir=artifact_dir,
         method_plan_path=state["method_plan_path"],
         run_result_path=state["run_result_path"],
         scientific_review_report_path=state["scientific_review_report_path"],
         provider_config_path=state["llm_provider_config_path"],
     )
     decision_log = result["decision_log"]
-    state["decision_log_path"] = result["decision_log_path"]
     state["risk_level"] = result["risk_level"]
     state["recommended_action"] = result["recommended_action"]
     state["human_approval_required"] = result["human_approval_required"]
@@ -393,6 +487,13 @@ def decision_coordinator_node(state: AnalysisState) -> AnalysisState:
     state["code_fix_requested"] = result["code_fix_requested"]
     state["status"] = "running" if result["status"] == "success" else "pending"
     append_event(state, node="decision_coordinator", kind="node_complete", summary=decision_log["summary"])
+    state = register_artifact_bundle(
+        state,
+        slot="decision",
+        member_paths=[artifact_dir],
+        state_paths={"decision_log_path": result["decision_log_path"]},
+        status=result["status"],
+    )
     save_graph_state(state)
     return state
 
@@ -413,13 +514,25 @@ def human_approval_gate_node(state: AnalysisState) -> AnalysisState:
         save_graph_state(state)
         return state
 
-    packet_paths = write_approval_packet(state)
-    state["approval_packet_dir"] = packet_paths["approval_packet_dir"]
-    state["human_decision_path"] = packet_paths["human_decision_path"]
-    state = record_human_request_packet(
-        state,
-        packet_reference=str(packet_paths["approval_packet_path"]),
-    )
+    approval_pointer = state.get("current_artifacts", {}).get("approval")
+    if not isinstance(approval_pointer, dict):
+        artifact_dir = prepare_attempt_output_dir(state)
+        packet_paths = write_approval_packet(state, output_dir=artifact_dir)
+        ingress_decision_path = Path(state["output_dir"]) / "approval_packet" / "07_human_decision.yaml"
+        state = register_artifact_bundle(
+            state,
+            slot="approval",
+            member_paths=[artifact_dir],
+            state_paths={
+                "approval_packet_dir": packet_paths["approval_packet_dir"],
+                "human_decision_path": str(ingress_decision_path),
+            },
+            status="pending",
+        )
+        state = record_human_request_packet(
+            state,
+            packet_reference=str(packet_paths["approval_packet_path"]),
+        )
 
     decision_result = parse_human_decision(
         state["human_decision_path"],
@@ -529,34 +642,21 @@ def human_approval_gate_node(state: AnalysisState) -> AnalysisState:
     return state
 
 
-def _record_llm_call_files_in_manifest(state: AnalysisState) -> None:
-    output_dir = Path(state["output_dir"])
-    manifest_path = output_dir / "manifest.json"
-    trace_dir = output_dir / "llm_calls"
-    if not manifest_path.exists() or not trace_dir.exists():
-        return
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return
-    if not isinstance(manifest, dict):
-        return
-    trace_files = sorted(str(path) for path in trace_dir.glob("*.json") if path.is_file())
-    manifest["llm_call_files"] = trace_files
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-
 def memory_report_node(state: AnalysisState) -> AnalysisState:
     state = dict(state)
     state["current_node"] = "memory_report"
     llm_context_view(state)
-    memory_result = write_memory_update(state)
+    artifact_dir = prepare_attempt_output_dir(state)
+    memory_result = write_memory_update(state, output_dir=artifact_dir)
     state["memory_update_path"] = memory_result["memory_update_path"]
     memory_status = memory_result["memory_update"]["memory_status"]
     state["status"] = "success" if memory_status == "accepted" else "pending"
-    report_result = write_final_report(state, memory_result["memory_update"])
+    report_result = write_final_report(
+        state,
+        memory_result["memory_update"],
+        output_dir=artifact_dir,
+    )
     state["final_report_path"] = report_result["final_report_path"]
-    _record_llm_call_files_in_manifest(state)
     append_event(
         state,
         node="memory_report",
@@ -566,5 +666,21 @@ def memory_report_node(state: AnalysisState) -> AnalysisState:
         final_report_path=state["final_report_path"],
         memory_update_path=state["memory_update_path"],
     )
+    state = register_artifact_bundle(
+        state,
+        slot="terminal",
+        member_paths=[artifact_dir],
+        state_paths={
+            "memory_update_path": memory_result["memory_update_path"],
+            "final_report_path": report_result["final_report_path"],
+        },
+        status=memory_status,
+    )
+    if memory_status == "accepted":
+        state = protect_current_artifact(
+            state,
+            slot="terminal",
+            protected_kind="accepted_result",
+        )
     save_graph_state(state)
     return state

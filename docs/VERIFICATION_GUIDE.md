@@ -100,6 +100,46 @@ python -m compileall -q src/lqcd_agent
 
 A02 的完成证据已记录为 targeted suite `125 passed`、full suite `218 passed`，并包含 compileall、scope、29-file Markdown links、stale-doc scan、ticket metadata 和 `git diff --check`。后续修改该合同仍需重复本节检查，不能只沿用历史 pass count。
 
+### A03 Artifact Namespace / Invalidation 验收
+
+A03 targeted verification：
+
+```bash
+pytest -q tests/test_artifact_registry.py tests/test_execution_identity.py tests/test_state_schema.py
+pytest -q tests/test_graph_smoke.py tests/test_run_graph_with_codex_handoff.py
+pytest -q tests/test_method_planner_mock.py tests/test_analysis_engineer.py \
+  tests/test_scientific_reviewer.py tests/test_decision_coordinator.py
+pytest -q tests/test_approval_packet.py tests/test_codex_handoff_worker.py \
+  tests/test_demo_server.py tests/test_memory.py tests/test_report.py
+pytest -q
+python -m compileall -q src tests evaluation/synthetic_benchmarks/run_synthetic_benchmarks.py
+```
+
+除 pass count 外还必须检查：
+
+- canonical member位于 `attempts/<attempt_id>/`，第二个同类 Attempt不改变第一个的 bytes/digest；
+- history/index/state heads一致，current selection不使用目录扫描或 mtime；
+- `registered` event冻结完整typed pointer和`node_name`，并将Run、Case、Cycle、Attempt、Kind、Node六个identity字段与execution ledger exact-equal；字段缺失、变化或不一致必须fail closed；
+- history重放结果与index current exact-equal；普通registration必须紧邻唯一一次current-set，已clear artifact不得重新set；篡改pointer identity、status、members、state paths、跨slot引用或set/clear顺序必须fail closed；
+- 每个current-clear必须同时匹配当时current artifact、target Attempt完整provenance、其inbound committed Transition和固定slot policy；transition/target/triggering Attempt/Cycle/reason任一不一致必须fail closed；
+- 每个带target Attempt的committed Transition必须反向对应exactly one合法Attempt lifecycle；删除整个target lifecycle后即使同时删除其artifact并协调index/state paths仍必须fail closed；bounded state的current Attempt必须与ledger最新lifecycle exact-equal；
+- Cycle、Attempt、Transition、Human Request和Human Response的Run-local deterministic ID/index必须唯一并从1连续到max；bounded state必须指向各类全局latest head，不能回滚到自身仍合法的旧Attempt、旧request或旧response；
+- target-null committed Transition只允许terminal `end`/`__end__` route且全部target fields显式存在并为`None`；字段缺失不得当作null；非terminal Transition必须保留完整target tuple并exact匹配目标Attempt，协调删除target Attempt/artifact、回滚state并清空target仍必须fail closed；
+- bounded execution-head state和Cycle/Attempt ledger中的nullable identity fields必须显式存在；删除字段即使其期望值为`None`也必须fail closed；
+- 每个scheduled Attempt的input current IDs与target policy必须反向派生exact required-clear map；删除一个或全部required clear并协调修改history/index/state仍必须fail closed；legacy incomplete-Run re-entry必须在新Planner副作用前清除旧current；
+- dependency必须与注册时replayed current chain一致，不能引用future、wrong-slot或替换后的non-current artifact；普通canonical member必须留在producing Attempt且与logical/projection path一一对应；
+- `managed_projections`必须与replayed current members派生结果exact-equal；路径逃逸、protected/control target、重复key、额外/缺失entry、未知或错误owner必须fail closed；
+- fixed projection bytes等于 current canonical member，invalidation后不再暴露旧 current；跨slot projection collision必须在写入前失败且保持history/index/projection bytes不变；external code/Human ingress可跳过内容digest比较，但仍必须通过路径、存在性和ownership校验；
+- 四层 fallback StateGraph 都经过真实 commit、target allocation 与 side-effect前清除；replan创建新 Cycle，其余保持 Cycle；
+- failed/pending target不恢复旧 pointer；Human Response snapshot必须与唯一submitted ledger identity/path/digest一致；accepted-result protection只允许当时current且status为accepted的terminal；未知kind、非terminal/non-accepted或重复protection必须在registry写入前失败；两类protected evidence在后续invalidation后仍可验证；
+- Human Request ledger允许`created → packet_written? → satisfied?`且identity稳定；Human Response ledger必须形成合法有序且identity稳定的lifecycle；state声明的active response必须是latest request下max response identity并与其latest record及snapshot protection一致，删除response ledger/protection chain或回滚同一request内response后恢复必须fail closed；只有snapshot写入中的deterministic next response可使用一次受限preflight例外；
+- finished Attempt output references必须反向覆盖其registered artifact，registered artifact必须具有合法scheduled/started lifecycle；删除started、整个registration/current-set或accepted/Human protection event必须fail closed；
+- 已populated bounded state在initialize时必须先exact validation，不能被registry静默覆盖；仅counter/current/convenience paths全部为空的明确重建state可以从validated registry同步；history/index/execution ledger duplicate JSON key必须fail closed；
+- unmanaged legacy fixture byte-for-byte不变；corrupt history/index/member digest fail closed；
+- synthetic benchmark若需要检查已失效分析，只能通过 validated artifact history读取 historical evidence，不能恢复 `run_result_path` current。
+
+A03/A03C01 CLI smoke必须写新的 `/private/tmp/lqcd-agent-a03*` output root，并核对 `artifact_history.jsonl`、`artifact_index.json`、execution heads、canonical paths、compatibility projections和accepted-result protection。A03 corrective verification还必须独立重跑stale Attempt、same-request stale Response和nonterminal target-null协调篡改。A03不要求 live provider。
+
 provider dry-run 不发出 live call，也不得打印 secret：
 
 ```bash
@@ -157,8 +197,10 @@ RUN_LIVE_LLM_TESTS=1 pytest -q
 4. 相应核心文档已同步；
 5. `REPO_CURRENT_STATE.md` 已更新；
 6. 架构或政策变化已追加 `DECISION_LOG.md`；
-7. Completion Record 只追加事实，不重写原始目标；
-8. ticket status 的变更经过用户要求或确认。
+7. ticket正文从`ready`起保持冻结，只更新YAML lifecycle metadata；
+8. completion record位于`docs/tickets/completions/`，没有追加回原ticket；
+9. 局部修复有maintenance record，改变合同边界的修复有独立ready corrective ticket；
+10. ticket status 的变更经过用户要求或确认。
 
 若 implementation 与文档不一致，应更新 source-of-truth 或停止并报告冲突，不能只在 completed ticket 中留下新合同。
 

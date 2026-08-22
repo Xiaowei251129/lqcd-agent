@@ -35,6 +35,20 @@ def test_initialize_state_sets_checkpoint_metadata(tmp_path: Path) -> None:
     assert state["human_response_index"] == 0
     assert state["human_request_status"] is None
     assert state["execution_history_path"] == str(tmp_path / "execution_history.jsonl")
+    assert state["artifact_history_path"] == str(tmp_path / "artifact_history.jsonl")
+    assert state["artifact_index_path"] == str(tmp_path / "artifact_index.json")
+    assert state["artifact_event_index"] == 0
+    assert set(state["current_artifacts"]) == {
+        "plan",
+        "code",
+        "analysis",
+        "review",
+        "decision",
+        "approval",
+        "terminal",
+    }
+    assert all(pointer is None for pointer in state["current_artifacts"].values())
+    assert (tmp_path / "artifact_index.json").exists()
 
 
 def test_long_event_log_is_summarized_for_llm_context(tmp_path: Path) -> None:
@@ -58,6 +72,8 @@ def test_long_event_log_is_summarized_for_llm_context(tmp_path: Path) -> None:
     assert context["llm_provider_config_path"] is None
     assert context["cycle_id"] == "cycle_0001"
     assert context["attempt_id"] == "attempt_000001"
+    assert "artifact_history_path" not in context
+    assert "current_artifacts" not in context
     assert state["event_log_summary"]
     assert state["context_summary_path"]
     assert (tmp_path / "graph_state.json").exists()

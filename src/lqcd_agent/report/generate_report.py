@@ -60,14 +60,22 @@ def _bullet_lines(items: list[Any], *, empty: str) -> list[str]:
     return lines
 
 
-def _llm_call_lines(output_dir: str | Path) -> list[str]:
-    trace_dir = Path(output_dir) / "llm_calls"
-    if not trace_dir.exists():
-        return ["- No LLM call transcripts recorded."]
-    trace_files = sorted(path for path in trace_dir.glob("*.json") if path.is_file())
+def _llm_call_lines(state: AnalysisState) -> list[str]:
+    run_root = Path(state["output_dir"])
+    trace_files: list[Path] = []
+    for pointer in state.get("current_artifacts", {}).values():
+        if not isinstance(pointer, dict):
+            continue
+        for member in pointer.get("members", []):
+            logical_name = str(member.get("logical_name", ""))
+            if logical_name.startswith("llm_calls/") and logical_name.endswith(".json"):
+                trace_files.append(run_root / str(member["canonical_path"]))
+    if not trace_files:
+        legacy_trace_dir = run_root / "llm_calls"
+        trace_files = sorted(path for path in legacy_trace_dir.glob("*.json") if path.is_file())
     if not trace_files:
         return ["- No LLM call transcripts recorded."]
-    return [f"- {path.name}: {path}" for path in trace_files]
+    return [f"- {path.name}: {path}" for path in sorted(trace_files)]
 
 
 def build_final_report(state: AnalysisState, memory_update: dict[str, Any]) -> str:
@@ -132,7 +140,7 @@ def build_final_report(state: AnalysisState, memory_update: dict[str, Any]) -> s
         f"- decision_log_path: {state.get('decision_log_path')}",
         "",
         "## LLM Calls",
-        *_llm_call_lines(state["output_dir"]),
+        *_llm_call_lines(state),
         "",
         "## Approval Status",
         f"- approval_packet_dir: {state.get('approval_packet_dir')}",
@@ -166,9 +174,14 @@ def build_final_report(state: AnalysisState, memory_update: dict[str, Any]) -> s
     return "\n".join(lines)
 
 
-def write_final_report(state: AnalysisState, memory_update: dict[str, Any]) -> dict[str, str]:
-    output_dir = Path(state["output_dir"])
-    output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / FINAL_REPORT_FILENAME
+def write_final_report(
+    state: AnalysisState,
+    memory_update: dict[str, Any],
+    *,
+    output_dir: str | Path | None = None,
+) -> dict[str, str]:
+    destination = Path(output_dir or state["output_dir"])
+    destination.mkdir(parents=True, exist_ok=True)
+    path = destination / FINAL_REPORT_FILENAME
     path.write_text(build_final_report(state, memory_update), encoding="utf-8")
     return {"final_report_path": str(path)}

@@ -22,6 +22,21 @@ class StaticProvider:
         return LLMResponse(provider="static", model="static", content=self.content)
 
 
+def _assert_current_file(state: dict, field: str, run_dir: Path, relative_path: str) -> None:
+    canonical = Path(state[field])
+    assert canonical == run_dir / "attempts" / canonical.parent.name / relative_path
+    assert canonical.read_bytes() == (run_dir / relative_path).read_bytes()
+
+
+def _assert_current_directory(state: dict, field: str, run_dir: Path, relative_path: str) -> None:
+    canonical = Path(state[field])
+    assert canonical == run_dir / "attempts" / canonical.parent.name / relative_path
+    projection = run_dir / relative_path
+    members = sorted(path.relative_to(canonical) for path in canonical.rglob("*") if path.is_file())
+    assert members == sorted(path.relative_to(projection) for path in projection.rglob("*") if path.is_file())
+    assert all((canonical / member).read_bytes() == (projection / member).read_bytes() for member in members)
+
+
 def test_run_mock_graph_generates_timestamp_run_id(tmp_path: Path) -> None:
     result = run_mock_graph(
         case_path="configs/cases/mock_lqcd_goal.yaml",
@@ -153,10 +168,15 @@ def test_mock_graph_runs_to_end_and_checkpoint_can_be_inspected(tmp_path: Path) 
     assert graph_state["checkpoint_thread_id"] == "mock_lqcd_goal:smoke"
     assert graph_state["route_decisions"]
     assert graph_state["checkpoint_db_path"] is None
-    assert final_state["run_result_path"] == str(run_dir / "run_result.json")
+    _assert_current_file(final_state, "run_result_path", run_dir, "run_result.json")
     assert (run_dir / "manifest.json").exists()
-    assert final_state["scientific_review_report_path"] == str(run_dir / "scientific_review_report.json")
-    assert final_state["decision_log_path"] == str(run_dir / "decision_log.json")
+    _assert_current_file(
+        final_state,
+        "scientific_review_report_path",
+        run_dir,
+        "scientific_review_report.json",
+    )
+    _assert_current_file(final_state, "decision_log_path", run_dir, "decision_log.json")
     memory_update = json.loads((run_dir / "memory_update.json").read_text(encoding="utf-8"))
     decision_log = json.loads((run_dir / "decision_log.json").read_text(encoding="utf-8"))
     assert memory_update["memory_status"] == "accepted"
@@ -307,7 +327,7 @@ def test_high_risk_graph_cannot_enter_accepted_memory_without_approval(
     assert final_state["current_node"] == "memory_report"
     assert final_state["risk_level"] == "high"
     assert final_state["human_approval_required"] is True
-    assert final_state["approval_packet_dir"] == str(run_dir / "approval_packet")
+    _assert_current_directory(final_state, "approval_packet_dir", run_dir, "approval_packet")
     assert (run_dir / "approval_packet" / "approval_packet.json").exists()
     assert (run_dir / "approval_packet" / "07_human_decision.yaml").exists()
     assert (run_dir / "final_report.md").exists()
@@ -355,7 +375,7 @@ def test_critical_risk_graph_cannot_enter_accepted_memory_without_approval(
     assert final_state["current_node"] == "memory_report"
     assert final_state["risk_level"] == "critical"
     assert final_state["human_approval_required"] is True
-    assert final_state["approval_packet_dir"] == str(run_dir / "approval_packet")
+    _assert_current_directory(final_state, "approval_packet_dir", run_dir, "approval_packet")
     assert (run_dir / "approval_packet" / "approval_packet.json").exists()
     assert (run_dir / "approval_packet" / "07_human_decision.yaml").exists()
     assert (run_dir / "final_report.md").exists()
@@ -382,9 +402,9 @@ def test_golden_demo_graph_writes_pending_report_and_approval_packet(tmp_path: P
     assert state["current_node"] == "memory_report"
     assert state["risk_level"] == "high"
     assert state["human_approval_required"] is True
-    assert state["approval_packet_dir"] == str(run_dir / "approval_packet")
-    assert state["final_report_path"] == str(run_dir / "final_report.md")
-    assert state["memory_update_path"] == str(run_dir / "memory_update.json")
+    _assert_current_directory(state, "approval_packet_dir", run_dir, "approval_packet")
+    _assert_current_file(state, "final_report_path", run_dir, "final_report.md")
+    _assert_current_file(state, "memory_update_path", run_dir, "memory_update.json")
     assert matrix["source_kind"] == "synthetic"
     assert matrix["golden_example"]["case_id"] == "l64c64a076_m140"
     assert "severe_demo_requires_human_approval" in matrix["diagnostic_flags"]
@@ -425,7 +445,7 @@ def test_provider_golden_demo_keeps_human_gate_and_pending_memory(tmp_path: Path
     assert state["status"] == "pending"
     assert state["risk_level"] == "high"
     assert state["human_approval_required"] is True
-    assert state["approval_packet_dir"] == str(run_dir / "approval_packet")
+    _assert_current_directory(state, "approval_packet_dir", run_dir, "approval_packet")
     assert decision_log["routing_decision"]["actual_route"] == "human_approval_gate"
     assert decision_log["recommended_action"] == "pending_human_approval"
     assert memory_update["accepted_result"] is False
@@ -546,7 +566,7 @@ def test_graph_stops_at_codex_handoff_when_results_are_missing(
     assert final_state["status"] == "pending"
     assert final_state["current_node"] == "codex_handoff"
     assert final_state["code_needed"] is True
-    assert final_state["coder_task_packet_path"] == str(run_dir / "coder_task_packet.yaml")
+    _assert_current_file(final_state, "coder_task_packet_path", run_dir, "coder_task_packet.yaml")
     assert (run_dir / "coder_task_packet.yaml").exists()
     assert final_state["run_result_path"] is None
     assert final_state["analysis_outputs_dir"] is None
@@ -722,8 +742,8 @@ def test_auto_codex_handoff_runs_worker_and_reaches_analysis(
     assert final_state["status"] == "success"
     assert final_state["current_node"] == "memory_report"
     assert final_state["code_needed"] is False
-    assert final_state["code_change_summary_path"] == str(run_dir / "code_change_summary.md")
-    assert final_state["tests_status_path"] == str(run_dir / "tests_status.json")
+    _assert_current_file(final_state, "code_change_summary_path", run_dir, "code_change_summary.md")
+    _assert_current_file(final_state, "tests_status_path", run_dir, "tests_status.json")
     assert (run_dir / "run_result.json").exists()
     assert any(
         decision["source"] == "codex_handoff" and decision["route"] == "analysis_engineer"
@@ -935,9 +955,9 @@ def test_graph_reaches_analysis_after_structured_handoff_passes(
     assert final_state["status"] == "success"
     assert final_state["code_needed"] is False
     assert final_state["current_node"] == "memory_report"
-    assert final_state["code_change_summary_path"] == str(run_dir / "code_change_summary.md")
-    assert final_state["tests_status_path"] == str(run_dir / "tests_status.json")
-    assert final_state["run_result_path"] == str(run_dir / "run_result.json")
+    _assert_current_file(final_state, "code_change_summary_path", run_dir, "code_change_summary.md")
+    _assert_current_file(final_state, "tests_status_path", run_dir, "tests_status.json")
+    _assert_current_file(final_state, "run_result_path", run_dir, "run_result.json")
     assert final_state["analysis_outputs_dir"]
     assert (run_dir / "manifest.json").exists()
     assert any(
@@ -1011,6 +1031,6 @@ def test_run_mock_graph_allows_preexisting_handoff_files(
 
     assert state["status"] == "success"
     assert state["current_node"] == "memory_report"
-    assert state["code_change_summary_path"] == str(run_dir / "code_change_summary.md")
-    assert state["tests_status_path"] == str(run_dir / "tests_status.json")
+    _assert_current_file(state, "code_change_summary_path", run_dir, "code_change_summary.md")
+    _assert_current_file(state, "tests_status_path", run_dir, "tests_status.json")
     assert (run_dir / "run_result.json").exists()

@@ -33,17 +33,19 @@ Ready ticket 不能静默覆盖 `AGENTS.md`、安全策略或当前 public contr
 - [`REPO_CURRENT_STATE.md`](REPO_CURRENT_STATE.md)：第二阶段实时状态；
 - [`DECISION_LOG.md`](DECISION_LOG.md)：已确认设计决定。
 
-核心文档只描述当前已确认合同与实际 runtime boundary。A02 已完成 Run/Cycle/Attempt/Transition/Human identity 和 current-route transition allocation 验收；四层 fallback 仍只是 identity harness evidence。A03/A04/A05/A06 尚未批准的 invalidation、resume、Code Agent、budget/fingerprint 设计，以及未来 RAG 设计，必须留在方向文档或相应 `draft` ticket 中。
+核心文档只描述当前已确认合同与实际 runtime boundary。A02 已完成 Run/Cycle/Attempt/Transition/Human identity，A03 已完成 per-attempt artifact namespace、typed current index、compatibility projection 和 transition-time invalidation；四层 fallback 仍只是 control harness evidence。A04/A05/A06 尚未批准的 resume、Code Agent、budget/fingerprint 设计，以及未来 RAG 设计，必须留在方向文档或相应 `draft` ticket 中。
 
 ## 第二阶段方向与 Tickets
 
 - [`NEXT_STAGE_IMPROVEMENT_DIRECTIONS.md`](NEXT_STAGE_IMPROVEMENT_DIRECTIONS.md)：第二阶段三个改进方向和 A–E 阶段关系；
 - [`tickets/README.md`](tickets/README.md)：ticket 生命周期、执行规则和目录说明；
 - [`tickets/TEMPLATE.md`](tickets/TEMPLATE.md)：统一 ticket 合同。
+- [`tickets/completions/README.md`](tickets/completions/README.md)：独立执行结果记录；
+- [`tickets/corrections/README.md`](tickets/corrections/README.md)：maintenance与corrective历史记录。
 
-Phase Overview 不是执行 prompt。只有经过用户确认并标记为 `status: ready` 的具体 ticket 才能执行。
+Phase Overview 不是执行 prompt。只有经过用户确认并标记为 `status: ready` 的具体 ticket 才能执行；`ready`后ticket正文冻结，执行结果和后续纠偏不得回写原计划。
 
-当前 Phase A 状态是 A01–A02 `completed`、A03–A07 `draft`。A02 的 current-route identity implementation 不表示 A01 目标回退线路、durable resume 或 graph-managed Code Agent 已经完成。
+当前 Phase A 状态是 A01–A03 `completed`、A04–A07 `draft`。A03 的 fallback invalidation harness 不表示 A01 目标回退线路、durable resume 或 graph-managed Code Agent 已经完成。
 
 ## Milestones
 
