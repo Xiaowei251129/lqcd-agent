@@ -35,11 +35,11 @@
 
 执行结果与后续纠偏历史分别记录在[`../completions/`](../completions/README.md)和[`../corrections/`](../corrections/README.md)；completed ticket正文不再承担累积日志功能。
 
-## Draft Tickets
+## Review Tickets
 
 - [`A04_PAUSE_RESUME_SEMANTICS.md`](A04_PAUSE_RESUME_SEMANTICS.md)
 - [`A05_CODE_AGENT_CONTRACT.md`](A05_CODE_AGENT_CONTRACT.md)
 - [`A06_BUDGETS_AND_STOP_CONDITIONS.md`](A06_BUDGETS_AND_STOP_CONDITIONS.md)
 - [`A07_PHASE_B_HARNESS_ACCEPTANCE.md`](A07_PHASE_B_HARNESS_ACCEPTANCE.md)
 
-A01 已完成逻辑 transition contract。A02 已完成 formal execution identity；A03 已完成 immutable Attempt artifact namespace、typed current index、managed projections、Human Response snapshots及四层 invalidation harness；A03C01已补齐execution global-head与Transition target-shape完整性。四层 fallback仍是 harness-only，不是产品 edges。A04–A07 当前仍为 `draft`，必须分别经过用户确认并提升为 `ready` 后才能执行。
+A01 已完成逻辑 transition contract。A02 已完成 formal execution identity；A03 已完成 immutable Attempt artifact namespace、typed current index、managed projections、Human Response snapshots及四层 invalidation harness；A03C01已补齐execution global-head与Transition target-shape完整性。四层 fallback仍是 harness-only，不是产品 edges。A04–A07 已完成最终交叉审查并保持 `review`；用户统一确认前不得提升为 `ready` 或执行。统一冻结后，在开始执行A04前先创建只包含frozen tickets及状态元数据的Git commit。

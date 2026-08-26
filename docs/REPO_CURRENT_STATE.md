@@ -2,12 +2,12 @@
 
 ## 状态摘要
 
-- **更新时间**：2026-08-22
+- **更新时间**：2026-08-26
 - **当前分支**：`codex/phase-11-agent-harness-upgrade`
-- **当前阶段**：Phase A 控制合同澄清；A01–A03及A03C01 corrective implementation已完成
-- **活动 ticket**：无；G01、A01–A03及A03C01 `completed`，A04–A07仍为`draft`
+- **当前阶段**：Phase A 控制合同澄清；A01–A03及A03C01已完成，A04–A07最终交叉审查已完成
+- **活动 ticket**：A04–A07 `review`；G01、A01–A03及A03C01 `completed`
 - **稳定基线**：[`v0.2-demo`](milestones/V0_2_DEMO_BASELINE.md)
-- **本轮范围**：已冻结ready ticket正文并分离completion/correction records；已通过独立A03C01 ticket修复A03 execution-head完整性
+- **本轮范围**：完善并交叉审查A04–A07控制合同，不执行设计ticket或runtime；四份ticket已达到待用户统一确认的review状态
 
 ## 当前稳定实现
 
@@ -103,20 +103,20 @@ A03C01当前证据为registry suite `106 passed`、focused registry/identity/sta
 
 ## 下一项工作
 
-G01治理和A03C01 execution-head修复已经完成，原A03 ticket及pre-governance legacy corrective history保持冻结。下一步是讨论并确认[A04 Pause/Resume](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)，在其提升为`ready`前不执行。
+G01治理和A03C01 execution-head修复已经完成并形成独立本地基线提交，原A03 ticket及pre-governance legacy corrective history保持冻结。[A04 Pause/Resume](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)、[A05 Code Agent](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)、[A06 Budget/Stop](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)与[A07 Phase B Acceptance](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)的最终交叉审查已完成，当前均保持`review`。下一步是用户统一确认；确认后冻结为`ready`，在开始执行A04前创建只包含frozen tickets及状态元数据的Git commit。
 
 建议顺序：
 
-1. A04–A06 依次确认 resume、Code Agent 和 budget contracts；
-2. A07 锁定 Phase B harness acceptance；
-3. Phase B复用A02/A03 primitives完成产品路线与禁止路线harness；
-4. Phase B通过后再进入真实 Code Agent与Agent capability增强。
+1. 用户统一确认A04–A07最终正文，然后冻结为`ready`；
+2. 开始执行A04前，先创建只包含四份frozen tickets及状态元数据的Git commit；
+3. 按A04 → A05 → A06 → A07分别执行并提交四份design ticket；
+4. Phase A完成后再起草B01–B05 implementation tickets。
 
 ## Blockers
 
 当前无 runtime blocker。
 
-治理上的主动限制是：A02/A03只实现identity与artifact control plane，不实现A04 resume API、A05 Code Agent、A06 budgets或A01的新product runtime edges。A04–A07仍为`draft`。
+治理上的主动限制是：A02/A03只实现identity与artifact control plane，不实现A04 resume API、A05 Code Agent、A06 budgets或A01的新product runtime edges。A04–A07当前仅为`review`合同稿；它们在统一冻结为`ready`前均不可执行。
 
 ## 入口
 

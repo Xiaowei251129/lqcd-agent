@@ -33,7 +33,7 @@ Ready ticket 不能静默覆盖 `AGENTS.md`、安全策略或当前 public contr
 - [`REPO_CURRENT_STATE.md`](REPO_CURRENT_STATE.md)：第二阶段实时状态；
 - [`DECISION_LOG.md`](DECISION_LOG.md)：已确认设计决定。
 
-核心文档只描述当前已确认合同与实际 runtime boundary。A02 已完成 Run/Cycle/Attempt/Transition/Human identity，A03 已完成 per-attempt artifact namespace、typed current index、compatibility projection 和 transition-time invalidation；四层 fallback 仍只是 control harness evidence。A04/A05/A06 尚未批准的 resume、Code Agent、budget/fingerprint 设计，以及未来 RAG 设计，必须留在方向文档或相应 `draft` ticket 中。
+核心文档只描述当前已确认合同与实际 runtime boundary。A02 已完成 Run/Cycle/Attempt/Transition/Human identity，A03 已完成 per-attempt artifact namespace、typed current index、compatibility projection 和 transition-time invalidation；四层 fallback 仍只是 control harness evidence。A04–A07 `review` tickets 中尚未批准的 resume、Code Agent、budget/fingerprint 和 Phase B harness 设计，以及未来 RAG 设计，不能提前写成当前 runtime 合同。
 
 ## 第二阶段方向与 Tickets
 
@@ -45,7 +45,7 @@ Ready ticket 不能静默覆盖 `AGENTS.md`、安全策略或当前 public contr
 
 Phase Overview 不是执行 prompt。只有经过用户确认并标记为 `status: ready` 的具体 ticket 才能执行；`ready`后ticket正文冻结，执行结果和后续纠偏不得回写原计划。
 
-当前 Phase A 状态是 A01–A03 `completed`、A04–A07 `draft`。A03 的 fallback invalidation harness 不表示 A01 目标回退线路、durable resume 或 graph-managed Code Agent 已经完成。
+当前 Phase A 状态是 A01–A03及A03C01 `completed`、A04–A07 `review`。A03 的 fallback invalidation harness 不表示 A01 目标回退线路、durable resume、graph-managed Code Agent或budget manager已经完成。A04–A07 的最终交叉审查已完成；获得用户统一确认、提升为 `ready` 并建立 frozen-ticket commit 前仍不可执行。
 
 ## Milestones
 
