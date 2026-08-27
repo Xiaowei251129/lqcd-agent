@@ -125,9 +125,12 @@ Parent LangGraph
 
 ```text
 inbound Transition allocates scheduled code_agent Attempt
--> CodeAgentSubgraph validates and freezes CodeAgentTask
--> trusted Host prepares WorkspaceManifest and isolated workspace
--> A06 admits and reserves the external producer operation
+-> trusted Host reserves ExternalOperation identity, workspace identity, and initial lease_epoch
+-> CodeAgentSubgraph validates and freezes CodeAgentTask bound to producer_operation_id
+-> trusted Host publishes WorkspaceManifest without materializing the workspace
+-> A06 admits and reserves the aggregate against task and manifest digests
+-> trusted Host commits the immutable ExternalOperation core
+-> trusted Host materializes the isolated workspace under the current external-operation epoch
 -> A04 opens external_result Pause
 -> trusted Host dispatches CodingBackend outside the replayable graph node
 -> backend returns immutable CodeAgentExternalResult evidence
@@ -142,7 +145,7 @@ inbound Transition allocates scheduled code_agent Attempt
 
 任何可能由 LangGraph resume 重新进入的节点都不得在 Pause `opened` 发布前启动 backend、创建第二个编码 operation 或执行其他不可安全重放的外部副作用。Backend dispatch只能由可信Host在图已安全暂停后完成，并通过stable、Host-owned `producer_operation_id`幂等化；该字段就是项目权威backend operation identity，不由provider job/thread ID派生或替代。
 
-Pause前的task snapshot、workspace preparation、resource reservation与Pause publication同样必须使用Attempt/operation-bound create-new identities幂等执行：exact重复返回已有identity和digest，不同内容撞到已有identity必须conflict。它们不能依赖只存在于当前Python进程的临时状态。
+Pause前的producer operation stub、task snapshot、WorkspaceManifest、resource reservation、immutable core、workspace materialization与Pause publication同样必须使用Attempt/operation-bound create-new identities幂等执行：exact重复返回已有identity和digest，不同内容撞到已有identity必须conflict。它们不能依赖只存在于当前Python进程的临时状态，也不能在ExternalOperation identity与initial epoch持久化前创建workspace bytes。
 
 外部 backend 的工具循环无权修改 graph state、execution ledger、artifact registry、Pause lifecycle、budget policy 或 route。Subgraph 只消费 exact Attempt-matched result、执行独立验证与 scope checks、注册 canonical artifact 并返回 structured outcome。
 
@@ -180,9 +183,12 @@ producer_operation_id
 parent_control_operation_id (nullable)
 run_id / cycle_id / attempt_id
 pause_id (nullable until pause_prepared) / pause_binding_digest
-task_digest / workspace_manifest_digest / reservation_id
+workspace_id / managed_workspace_locator_digest
+task_digest (nullable until task_committed)
+workspace_manifest_digest (nullable until workspace_manifest_committed)
+reservation_id / reservation_digest (nullable until reservation_committed)
 backend_kind / backend_version
-operation_contract_digest
+operation_contract_digest (nullable until core_contract_committed)
 operation_status / operation_phase / phase_revision
 worker_owner_id / worker_lease_expires_at / lease_epoch
 hard_deadline / cancel_intent / cancel_reason
@@ -193,11 +199,33 @@ last_observed_status / last_observed_at
 terminal_evidence_reference / terminal_evidence_digest
 ```
 
-`operation_status`固定为`reserved | active | cancel_requested | completed | failed | cancelled | recovery_required`，其中`completed | failed | cancelled` terminal且不可逆，`recovery_required`只允许原operation继续exact side-effect-free publication closure。`last_observed_status`使用上节独立的Backend status enum；provider `unknown`不能把ExternalOperation改回reserved或授权dispatch。
+`operation_status`固定为`reserved | active | cancel_requested | completed | failed | cancelled | recovery_required`。`completed | failed | cancelled | recovery_required`全部terminal且不可逆；exact、预计算且无副作用的publication suffix保持原non-terminal status并使用`materialization_pending` observation，不得进入`recovery_required`后继续。`last_observed_status`使用上节独立的Backend status enum；provider `unknown`不能把ExternalOperation改回reserved或授权dispatch。
 
-ExternalOperation在`pause_prepared`前创建时只冻结Run/Cycle/Attempt、task、workspace、reservation、backend和deadline的immutable core contract，`pause_id`与`pause_binding_digest`必须为null；不得预占或推测A04尚未分配的Pause identity。A04 append `pause_prepared`后，coordinator必须用current external-operation `lease_epoch`和phase revision执行一次性CAS，把该row绑定到exact `pause_id`、prepared event identity/digest与reservation；同值重放读取原binding，不同Pause或digest冲突。`pause_opened`绑定该closure，dispatch在完整public paused checkpoint前仍被禁止。动态owner、epoch、observation与terminal evidence不进入immutable core contract digest。
+ExternalOperation使用两阶段identity/core publication消除task、workspace、reservation与producer identity之间的创建环。第一笔external-operation authority transaction只执行`external_operation_reserved`：可信Host分配并持久化`producer_operation_id`、Run/Cycle/Attempt、backend/deadline policy、`workspace_id`、managed workspace locator digest、initial owner和`lease_epoch`，同时将task、manifest、reservation、core和Pause字段显式保存为null。该stub已经是workspace创建的唯一fencing authority，但尚不授权materialize workspace、创建Pause或dispatch。
 
-正常phase至少单调覆盖`reserved -> dispatch_authorized -> dispatch_receipt_committed -> result_reference_committed -> terminal_evidence_committed`；停止分支在任一允许的non-terminal phase后使用`cancel_intent_committed -> cancellation_evidence_committed`。`dispatch_authorized`必须在调用Backend前提交，因此在调用返回不确定时只能lookup原operation；phase只能按已存在的exact durable evidence补记或前进，不能倒退、跳过所需receipt/evidence或把cancel分支改回dispatch。
+随后固定phase与唯一前向顺序为：
+
+```text
+external_operation_reserved
+-> task_committed
+-> workspace_manifest_committed
+-> reservation_committed
+-> core_contract_committed
+-> workspace_materialized
+-> pause_bound
+-> dispatch_authorized
+-> dispatch_receipt_committed
+-> result_reference_committed
+-> terminal_evidence_committed
+```
+
+`CodeAgentTask`引用已存在的`producer_operation_id`和允许该route的A06 BudgetDecision；`WorkspaceManifest`再引用task与同一producer/workspace identity，但此时physical workspace仍不存在。A06 aggregate reservation随后绑定exact task和manifest digests。`core_contract_committed`使用current external-operation epoch和phase revision执行一次性CAS，填入task、manifest、reservation references/digests并计算immutable `operation_contract_digest`；此后这些字段不可变。只有core commit后，current epoch worker才能按manifest materialize workspace并提交`workspace_materialized`。这条DAG不允许先创建task/workspace/reservation再补建producer operation，也不允许physical workspace早于durable epoch owner或immutable core。
+
+Status与phase映射固定为：`external_operation_reserved`到`pause_bound`使用`reserved`；`dispatch_authorized`到`result_reference_committed`使用`active`；`terminal_evidence_committed`根据可信Backend终止证据进入terminal `completed | failed`。Backend成功结束并返回canonical non-success CodeAgent result时ExternalOperation仍可`completed`，产品outcome由后续Host验证决定；Backend自身失败或operation integrity failure才使ExternalOperation `failed`。`cancel_intent_committed`与`termination_evidence_committed`使用`cancel_requested`，`cancellation_evidence_committed`在stop integrity confirmed时进入`cancelled`，否则进入`failed`。任一nonterminal phase可以终止为`recovery_required`或`failed`并冻结phase；terminal status不得再推进或切回dispatch分支。
+
+`pause_id`与`pause_binding_digest`在`pause_prepared`前保持null；不得预占或推测A04尚未分配的Pause identity。A04 append `pause_prepared`后，coordinator必须用current external-operation `lease_epoch`和phase revision执行一次性CAS，把该row推进到`pause_bound`并绑定exact `pause_id`、prepared event identity/digest与reservation；同值重放读取原binding，不同Pause或digest冲突。`pause_opened`绑定该closure，dispatch在完整public paused checkpoint前仍被禁止。动态owner、epoch、observation与terminal evidence不进入immutable core contract digest。
+
+停止分支可从允许取消的任一non-terminal phase进入`cancel_intent_committed -> termination_evidence_committed -> cancellation_evidence_committed`；从未dispatch时`termination_evidence_committed`保存typed `not_dispatched` proof。`dispatch_authorized`必须在调用Backend前提交，因此在调用返回不确定时只能lookup原operation；phase只能按已存在的exact durable evidence补记或前进，不能倒退、跳过所需receipt/evidence或把cancel分支改回dispatch。预计算且exact的pre-dispatch publication prefix保持non-terminal并可由new current epoch materialize；dispatch/terminate等副作用结果不确定且无法由lookup/terminal evidence闭合时终止为`recovery_required`，此后不得继续原operation。
 
 该record是dispatch ownership、restart-safe monitoring、deadline与cancel intent的authority，但不是Run/Pause/Attempt或budget authority。ExternalOperation在自己的row/history中维护独立单调`lease_epoch`，复用A02C01相同的acquire/takeover和compare-and-set语义；它不复用已committed parent ControlOperation的旧epoch。创建、dispatch authorization、lease takeover、status observation、cancel intent与terminal commit都必须验证external-operation current epoch和phase revision；若当前动作同时materialize public control phase，还必须独立验证相应ControlOperation epoch。Stale worker不能调用dispatch/fetch/cancel、刷新workspace lease或发布receipt/result。
 
@@ -284,6 +312,8 @@ Repository instructions 和相关合同文档可以作为只读 evidence。Raw n
 - read/write/forbidden、tool、network、filesystem 与 ephemeral policy digests；
 - trusted Host 的创建时间、owner 与 dedicated workspace-root identity。
 
+Manifest publication只声明将要创建的workspace identity、base与policy，不证明physical workspace已经存在。它必须发生在`external_operation_reserved`和`task_committed`之后、A06 aggregate reservation与`core_contract_committed`之前；actual directory/worktree creation只能由持有current ExternalOperation `lease_epoch`的worker在`core_contract_committed`后执行，并以`workspace_materialized`phase确认。Manifest identity/digest、managed locator或existing filesystem与stub不一致时fail closed，不能换path或建立第二个workspace。
+
 Checkpoint和bounded state只允许保存`workspace_id`与manifest digest，不保存由resume payload或Agent提供的physical path。可信Host必须通过process restart后仍可重建或读取的project-owned managed-root规则维护`workspace_id -> managed physical path`映射；该映射不能由resume payload、Backend或workspace内文件提供。每次dispatch、lookup、resume和verification前都必须确认manifest、Attempt、operation、base、policy、lease与managed root exact-match。
 
 ### Workspace lifecycle and `WorkspaceSeal 0.1`
@@ -301,7 +331,7 @@ prepared -> leased -> running -> sealed -> verified -> released
 - backend 无权写 control repository、Run artifact root、raw data、accepted results 或另一 workspace；
 - scope validation比较 base snapshot 与最终 filesystem content，不能只信模型声明、backend summary或`git status`；
 - seal后任何filesystem变化、workspace path替换、base drift、foreign lease或identity mismatch都使该result不可注册；
-- workspace缺失或无法证明仍是exact Attempt workspace时进入A04/A05规定的rejection或`recovery_required`，不能静默重建同一Attempt并重新运行backend；
+- `workspace_materialized`前、stub/core/manifest全部exact且physical workspace从未创建时，current epoch worker可以保持non-terminal并materialize一次；phase已声明materialized后workspace缺失、被替换或无法证明仍是exact Attempt workspace属于`failed` integrity outcome，不能静默重建同一Attempt或重新运行backend；
 - backend workspace只作为临时证据源；主图不得把mutable path当作结果或长期source of truth。
 
 ### Conditional Phase C Codex SDK sandbox layers
@@ -332,7 +362,7 @@ C00通过后，C01才能把pinned Python Codex SDK冻结为首个真实backend�
 
 ## A04 External-result Lifecycle
 
-Inbound Transition 先按 A02/A03 分配 `scheduled` code_agent Attempt并清除 code/downstream current artifacts。随后 control plane冻结 task、由A06持久化reservation、在coordinator中创建`ExternalOperation 0.1`与initial `lease_epoch`，并在该 Attempt `started` 之前按 A04 `pause_prepared -> ExternalOperation Pause binding -> prepared checkpoint -> run_lifecycle -> pause_opened -> public paused checkpoint`协议发布`external_result` Pause。
+Inbound Transition 先按 A02/A03 分配 `scheduled` code_agent Attempt并清除 code/downstream current artifacts。随后control plane严格执行`external_operation_reserved -> task_committed -> workspace_manifest_committed -> A06 reservation_committed -> core_contract_committed -> workspace_materialized`，并在该Attempt `started`之前按A04 `pause_prepared -> ExternalOperation Pause binding -> prepared checkpoint -> run_lifecycle -> pause_opened -> public paused checkpoint`协议发布`external_result` Pause。
 
 Pause 必须绑定 task digest、target Attempt、`producer_operation_id`、immutable external-operation contract reference/digest、`coding_backend_kind`、workspace manifest identity/digest、A06在`prepared`前已持久化的resource reservation identity/digest、expected backend/result schema、runtime fingerprint、两个Pause publication checkpoints、state digest及execution/artifact heads。Pause不冻结会因合法watchdog takeover而变化的current epoch；resume preflight必须验证从创建epoch到latest terminal evidence的单调external-operation history。只有持有current external-operation epoch的可信Host或watchdog可以调用允许的`CodingBackend`操作；Code Agent本身不能调用`resume_run`。
 
@@ -356,7 +386,7 @@ Dispatch/delivery 必须满足：
 
 对尚未claim的`external_result` Pause执行`cancel_pause`时，可信Host必须先证明operation尚未dispatch，或在external-operation authority持久化cancel intent并由current-epoch watchdog对已dispatch operation执行幂等`cancel`、撤销write lease并持久化terminal status/seal control evidence；随后才按A04对exact `opened_execution_head`追加`pause_cancelled`和对应`run_lifecycle`。Backend不能自行取消Pause。停止或lease证据不完整时不得接受result，workspace必须隔离，Run按A06 stop matrix映射`failed`并保守结算，不能追加成功halted lifecycle。
 
-Resume在claim前必须完成delivery envelope的duplicate-key、schema、identity、owner、path、digest、member-shape、dispatch receipt、workspace manifest/seal和reservation/usage preflight。Claim必须对exact A04 `opened_execution_head`成功；随后在target code_agent Attempt `started`前append exact `resource_settled`。Claim后settlement崩溃只有在existing evidence exact、仅无副作用publication未闭合时返回`recovery_required`；实际usage/identity/head mismatch进入`failed`。两者都不得重新dispatch或启动target Attempt。Settlement完整后，target code_agent Attempt只`started`一次；`CodeAgentSubgraph` materialize已通过preflight的change，在fresh verifier workspace运行trusted verification/scope checks，计算canonical result，注册bundle，然后写terminal Attempt lifecycle，不再次Pause。若结果表达`needs_input`或`needs_human`，先完成当前Attempt并交给Coordinator，由Coordinator按A04建立新的`human_input` Pause。
+Resume在claim前必须完成delivery envelope的duplicate-key、schema、identity、owner、path、digest、member-shape、dispatch receipt、workspace manifest/seal和reservation/usage preflight。Claim必须对exact A04 `opened_execution_head`成功；随后在target code_agent Attempt `started`前append exact `resource_settled`。Claim后settlement崩溃在existing evidence exact、settlement identity/digest已预计算且仅无副作用publication未闭合时保持`in_progress/materialization_pending`；缺少可信settlement evidence或副作用结果不确定时终止为`recovery_required`，实际usage/identity/head mismatch进入`failed`。后两者都不得重新dispatch或启动target Attempt。Settlement完整后，target code_agent Attempt只`started`一次；`CodeAgentSubgraph` materialize已通过preflight的change，在fresh verifier workspace运行trusted verification/scope checks，计算canonical result，注册bundle，然后写terminal Attempt lifecycle，不再次Pause。若结果表达`needs_input`或`needs_human`，先完成当前Attempt并交给Coordinator，由Coordinator按A04建立新的`human_input` Pause。
 
 ## `CodeAgentExternalResult` and Trust Boundary
 
@@ -370,7 +400,7 @@ Backend 返回的 external result 是 untrusted ingress，即使来自本地 Fak
 
 Trusted `CodeAgentSubgraph`必须重新验证 schema、identity、path containment、base-to-result content、member digests、scope、authorization和budget envelope。Required verification由trusted verifier在fresh materialized workspace中重新运行；backend或Codex自报“tests passed”只能作为audit evidence，不能满足route guard。Backend实际usage超过aggregate maximum、停止后继续产生side effect或无法验证停止边界时属于control/policy failure，不得通过按maximum结算掩盖超额执行。Canonical `status`、`usable`、`failure_class`和`retryability`必须由trusted validator根据validated change、policy和verification evidence计算或约束，不能直接复制backend声明。
 
-Malformed、duplicate-key、identity mismatch、digest mismatch、path escape或无法完整验证的external result不能注册为合法`CodeAgentResult`。这些问题在preflight发现时拒绝claim并保持原Pause；claim后若观察到实际tamper、mismatch或违规content，必须quarantine并按A06 integrity matrix进入`run_status = failed`。只有已存在bytes/identity/heads全部exact、没有违规或新副作用且仅publication closure不完整时才返回`recovery_required`并由原operation补齐确定性后缀。两者都不得自动重跑Attempt。不得把invalid payload静默规范化为success、复用旧bundle或让Agent选择fallback route。
+Malformed、duplicate-key、identity mismatch、digest mismatch、path escape或无法完整验证的external result不能注册为合法`CodeAgentResult`。这些问题在preflight发现时拒绝claim并保持原Pause；claim后若观察到实际tamper、mismatch或违规content，必须quarantine并按A06 integrity matrix进入`run_status = failed`。只有已存在bytes/identity/heads全部exact、没有违规或新副作用且closure suffix已预计算时，原operation才保持`in_progress/materialization_pending`并补齐；无法安全继续但没有完整性违规时终止为`recovery_required`。后两种情况都不得自动重跑Attempt。不得把invalid payload静默规范化为success、复用旧bundle或让Agent选择fallback route。
 
 Backend若在自身边界发现内部输出无效，可以返回一个schema-valid、无usable change的`failed` envelope，并使用`failure_class = result_invalid`；该可信可归属的failure evidence经Host验证后才可形成canonical failed bundle并交给Coordinator。它与把malformed ingress规范化为合法结果不是同一行为。
 
@@ -390,7 +420,7 @@ Backend若在自身边界发现内部输出无效，可以返回一个schema-val
 
 不定义模糊的`partial_success`。只要change非空但required verification失败或不完整，结果就是`failed`；change evidence可以保留为audit-only，但`usable=false`且不能进入Analysis。
 
-`policy_blocked`只表示安全的pre-change拒绝。External payload实际包含out-of-scope member、path escape、forbidden target或其他违规filesystem content时属于invalid ingress：不注册canonical code artifact；claim前只记录control rejection evidence并保留Pause，claim后观察到实际违规content时quarantine并进入`run_status = failed`。`recovery_required`只保留给无违规content、已有bytes与heads均exact的side-effect-free publication partial。
+`policy_blocked`只表示安全的pre-change拒绝。External payload实际包含out-of-scope member、path escape、forbidden target或其他违规filesystem content时属于invalid ingress：不注册canonical code artifact；claim前只记录control rejection evidence并保留Pause，claim后观察到实际违规content时quarantine并进入`run_status = failed`。无违规content、已有bytes与heads均exact且suffix已预计算的side-effect-free publication partial保持`in_progress/materialization_pending`；`recovery_required`只用于无法继续原operation的terminal不确定性。
 
 `scope_violation`与`policy_violation` failure class在canonical `CodeAgentResult`中只允许描述已验证的pre-change `policy_blocked`拒绝或无违规content的安全失败。若external result或workspace实际含违规content，这两个label只能作为control rejection audit reason，不能把invalid ingress规范化、注册或路由为合法failed bundle。
 
@@ -494,7 +524,7 @@ Human authorization不能覆盖always-forbidden data、secret、Git history或ac
 - A06 budget/duplicate-failure guard允许继续；
 - 没有`needs_human`、policy violation或head mismatch；需要Human authorization时，其exact scope已由该task/Attempt合法单次消费，且没有复用或越权。
 
-所有其他valid result进入Decision Coordinator。A01 `invalid outcome`在本合同中仅指schema-valid、Attempt-attributable且经Trusted Host规范化的canonical `failed/result_invalid`，不是sandbox原始invalid payload。Invalid ingress在claim前拒绝且不产生产品Transition；claim后只有exact side-effect-free publication uncertainty进入`recovery_required`，实际tamper/identity/digest/path/policy integrity failure进入`failed`。只有上述canonical failure可以形成failed bundle后进入Coordinator。Code Agent不允许自行选择Analysis、rerun、replan、Human Gate或END。
+所有其他valid result进入Decision Coordinator。A01 `invalid outcome`在本合同中仅指schema-valid、Attempt-attributable且经Trusted Host规范化的canonical `failed/result_invalid`，不是sandbox原始invalid payload。Invalid ingress在claim前拒绝且不产生产品Transition；claim后预计算、exact、side-effect-free publication suffix保持`in_progress/materialization_pending`，无法继续原operation的结果不确定性终止为`recovery_required`，实际tamper/identity/digest/path/policy integrity failure进入`failed`。只有上述canonical failure可以形成failed bundle后进入Coordinator。Code Agent不允许自行选择Analysis、rerun、replan、Human Gate或END。
 
 Code fix保持同Run/Cycle并创建新的code_agent Attempt。成功后创建新的Analysis Attempt，旧code及下游artifacts按A03失效；Code Agent永远不能覆盖旧canonical bytes或复用旧Attempt bundle。
 
@@ -537,7 +567,7 @@ Analysis注册的artifact必须依赖exact source Code Bundle；base、patch、e
 
 - Code Bundle已注册但outbound Transition尚未提交：保留current code，验证heads后继续正常route commit，不重跑backend；
 - Transition已提交但spec或Analysis workspace尚未materialize：保持target Attempt为`scheduled`，按deterministic spec/workspace identity幂等创建，不重新提交Transition；
-- Analysis启动前发现已知publication phase尚未完成但所有已存在bytes仍exact时返回`recovery_required`；code/artifact head、spec、workspace或effective tree发生不一致、篡改或无法闭合时映射`run_status = failed`。旧target不得启动、自动abandon或被retarget，同一source Attempt不得提交第二条outbound Transition，原Run不再自动继续；只有满足A04 source validation时才允许operator显式replay/fork到新Run；
+- Analysis启动前发现已知publication phase尚未完成、所有已存在bytes仍exact且spec/workspace identity/digest已预计算时保持`in_progress/materialization_pending`并只补齐该suffix；若target execution是否已开始或产生副作用无法证明，则终止为`recovery_required`。Code/artifact head、spec、workspace或effective tree发生不一致、篡改或无法闭合时映射`run_status = failed`。旧target不得重复启动、自动abandon或被retarget，同一source Attempt不得提交第二条outbound Transition；只有满足A04 source validation时才允许operator显式replay/fork到新Run；
 - Analysis subprocess已运行但artifact未完整注册：不得根据process exit或文件存在声称成功，按A02/A04 recovery与Attempt lifecycle处理。
 
 Patch promotion与fresh Analysis execution是不同操作。Analysis可以消费Run-local verified bundle，但A05不允许把该patch自动写回control repository、commit、merge、push或发布。
@@ -567,7 +597,7 @@ A07至少为Fake backend冻结以下scenario classes：
 
 当前`legacy_codex_handoff`、`coder_task_packet.yaml`、`code_change_summary.md`与`tests_status.json`继续保持原合同。A05不迁移历史Run、不把legacy artifact转换为schema `0.1` Code Agent bundle，也不让legacy physical node产生canonical `code_agent` Attempt。
 
-Canonical Code Agent只允许出现在实现A04 Pause lifecycle的新Run中：本ticket冻结时的基础版本为execution schema `0.3`，A06定义的`0.4`是保留该Pause合同的明确后继版本；其他未知或不支持版本fail closed。不能向pre-A04或正在运行的legacy Run附加code_agent Attempt；符合A04 source validation时，只能显式replay/fork到新child Run后使用新合同。
+Canonical Code Agent语义以A04 schema `0.3` Pause合同为前身，Phase B实际目标只支持完整execution schema `0.4`。Phase B不得对`0.3` Run原地resume、迁移或附加code_agent Attempt；符合A04 source validation时，只能显式replay/fork到新的`0.4` child后使用本合同。其他未知或不支持版本fail closed，pre-A04或正在运行的legacy Run同样不得附加canonical code_agent Attempt。
 
 Phase B product topology可以在显式implementation ticket中选择保留legacy route作为compatibility path或停止新Run使用它，但不得静默让两套result contract共享同一个route guard。
 
@@ -601,7 +631,7 @@ Phase B product topology可以在显式implementation ticket中选择保留legac
 - 每次真实执行使用新的immutable-base worktree、`WorkspaceManifest`与`WorkspaceSeal`，不接触control repository或另一Attempt workspace；
 - 若C00选择Python `CodexSdkBackend`，它必须使用`Sandbox.workspace_write`、无额外writable roots且默认关闭workspace network；SDK选择本身不能替代C00对lookup/cancel/tool-audit/restart能力的证明；
 - 主图只消费validated content-addressed bundle，不消费mutable workspace或Markdown声明；
-- external dispatch/delivery、Pause claim和进程崩溃均由durable external-operation row与lease epoch约束为single-operation且fail closed；Host重启或unknown status不能redispatch；
+- producer identity stub必须先于task/manifest/reservation/workspace bytes，immutable core必须先于workspace materialization；external dispatch/delivery、Pause claim和进程崩溃均由durable external-operation row与lease epoch约束为single-operation且fail closed，Host重启或unknown status不能redispatch；
 - aggregate hard limit、operation timeout与operator cancellation由durable watchdog通过exact `cancel`和strict containment强制执行到完整process tree并验证post-stop inactivity；Backend不能超额后只靠usage report结算，也不能取消Run/Pause；terminal policy/operator stop为`halted`，停止完整性无法证明则为`failed`；
 - backend result只有在fresh trusted workspace验证后才能注册，registered bundle只有通过`AnalysisExecutionSpec`在新worktree/subprocess中执行；
 - scope/path/symlink、policy、authorization、digest或trusted verification任一失败都不能进入Analysis；
@@ -616,8 +646,8 @@ A07和后续implementation tickets至少必须覆盖：
 
 - `A05-CODE-001`：Method Planner implementation gap和Coordinator code fix两种task origin；
 - `A05-CODE-002`：process退出后的external Code Agent result准确恢复一次；
-- `A05-CODE-003`：resource reservation与ExternalOperation在Pause `pause_prepared`前持久化且不预占Pause identity，prepared后以fenced one-time CAS补齐external-operation Pause binding；dispatch/delivery不改变`opened_execution_head`，claim后settlement必须先于target `started`；
-- `A05-CODE-004`：pre-start control stages重复进入时task/workspace/reservation/Pause exact幂等，且不产生target `started`、backend dispatch或code artifact；
+- `A05-CODE-003`：严格验证`external_operation_reserved -> task_committed -> workspace_manifest_committed -> reservation_committed -> core_contract_committed -> workspace_materialized -> pause_bound`，producer identity/epoch先于任何workspace bytes且不预占Pause identity；prepared后以fenced one-time CAS补齐Pause binding，dispatch/delivery不改变`opened_execution_head`，claim后settlement必须先于target `started`；
+- `A05-CODE-004`：pre-start control stages重复进入时stub/task/manifest/reservation/core/workspace/Pause exact幂等，且不产生第二identity、target `started`、backend dispatch或code artifact；
 - `A05-CODE-005`：same operation/task重复dispatch、conflicting dispatch、same delivery重复resume和竞争claim；
 - `A05-CODE-006`：dispatch状态不确定时`lookup`返回running/completed/unknown且绝不创建第二operation；known operation必须返回同一receipt reference/digest并支持receipt publication崩溃恢复，unknown不得伪造receipt；
 - `A05-CODE-007`：operation timeout、aggregate hard limit和operator cancellation先持久化cancel intent，再通过同一`cancel`port和ContainmentProvider停止exact operation的完整process tree，执行revoke/fence → graceful terminate → bounded grace → containment kill-all → bounded output drain → verify-empty；terminal policy/operator stop映射`halted`，停止完整性失败映射`failed`，且都不创建替代operation；
@@ -629,14 +659,14 @@ A07和后续implementation tickets至少必须覆盖：
 - `A05-CODE-013`：wrong Run/Case/Cycle/Attempt/Transition/task/base/workspace/pause/result/member digest拒绝；
 - `A05-CODE-014`：missing/tampered/reused workspace、foreign lease、base drift、path swap与seal后filesystem变化拒绝；
 - `A05-CODE-015`：Code Bundle已注册但Transition未提交、Transition已提交但Analysis workspace未创建的幂等恢复；
-- `A05-CODE-016`：Analysis handoff的side-effect-free partial publication只返回`recovery_required`；spec、patch、effective tree、runtime或current head mismatch映射`failed`，旧target不启动、不自动abandon、不retarget、不从同一source提交第二条outbound Transition且不读取control repository；
+- `A05-CODE-016`：Analysis handoff的预计算、exact、side-effect-free partial publication保持`in_progress/materialization_pending`；target execution结果不确定时为terminal `recovery_required`，spec、patch、effective tree、runtime或current head mismatch映射`failed`，旧target不重复启动、不自动abandon、不retarget、不从同一source提交第二条outbound Transition且不读取control repository；
 - `A05-CODE-017`：non-empty unverified change不能伪装partial success；
 - `A05-CODE-018`：Human授权scope/digest错误、已消费授权或执行中扩权全部fail closed；
 - `A05-CODE-019`：multiple code attempts使用独立workspace和artifact，旧code/downstream不再current但canonical bytes保留；
 - `A05-CODE-020`：Fake与future real backend contract fixtures通过同一`dispatch`/`lookup`/`fetch_result`/`cancel` port、validator、verification、registration和fresh Analysis入口；
 - `A05-CODE-021`：legacy handoff不能被读取为canonical Code Agent result。
-- `A05-CODE-022`：ExternalOperation在dispatch前持久化；Host crash后watchdog以新lease epoch只lookup/fetch/cancel原operation，stale worker写入拒绝，unknown状态绝不redispatch；
-- `A05-CODE-023`：malformed/tampered/identity-digest-path invalid ingress在图外拒绝且不产生产品Transition；claim后exact side-effect-free publication partial为`recovery_required`，实际tamper/mismatch为`failed`；schema-valid、Attempt-attributable `failed/result_invalid`经Host验证后形成canonical failed bundle并进入Coordinator；
+- `A05-CODE-022`：ExternalOperation两阶段identity/core及完整phase在dispatch前持久化；Host crash后watchdog以新lease epoch只materialize预计算的pre-dispatch suffix或lookup/fetch/cancel原operation，stale worker写入拒绝，unknown状态绝不redispatch；
+- `A05-CODE-023`：malformed/tampered/identity-digest-path invalid ingress在图外拒绝且不产生产品Transition；claim后预计算、exact、side-effect-free publication partial保持`in_progress/materialization_pending`，不可继续的不确定性为terminal `recovery_required`，实际tamper/mismatch为`failed`；schema-valid、Attempt-attributable `failed/result_invalid`经Host验证后形成canonical failed bundle并进入Coordinator；
 - `A05-CODE-024`：strict containment fixture证明breakaway/concurrent-fork descendant仍被kill-all；仅process-group provider不能声明strict capability，真实Backend在缺少restart-safe lookup/cancel或strict containment时capability gate失败。
 
 ## Pre-freeze Review Gate

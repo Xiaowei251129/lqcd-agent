@@ -852,3 +852,38 @@ Related Documents:
 - [A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)
 - [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)
 - [A07 Phase B Harness Acceptance](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)
+
+## 2026-08-27: Close Operation Recovery, External Bootstrap, and Terminal Publication Contracts
+
+Decision:
+
+- Make `ControlOperation.recovery_required` an irreversible terminal tombstone. Exact, precomputed, side-effect-free publication prefixes remain `in_progress/materialization_pending` and may be materialized only by the same operation under the current fenced lease epoch.
+- Freeze operation-specific phase graphs for `publish_pause`, `resume_run`, `cancel_pause`, `replay_run`, `fork_run`, and `close_run`, while retaining A02C01's existing `start_run` phases.
+- Remove the ExternalOperation construction cycle by reserving producer/workspace identity and initial epoch first, then publishing task, unmaterialized WorkspaceManifest, aggregate reservation, immutable core, and finally the physical workspace.
+- Require normal END, ordinary runtime failure, confirmed stop, and uncloseable integrity failure to follow the authoritative terminal publication protocol. Standalone closure uses `close_run`; `cancel_pause` embeds the same terminal tail under its existing unique ownership.
+- Define the version boundary explicitly: schema `0.2` retains its legacy creation bytes, schema `0.3` is the A04 Pause semantic predecessor, and the Phase B `0.4` runtime performs no in-place resume or migration of older Runs.
+- Keep A02C01 classified as the repository-supported `corrective-implementation` ticket type even though the present review changes only design contracts and does not implement runtime.
+
+Confirmed:
+
+- Coordinator remains the sole product routing and fallback authority; canonical Code Agent non-success outcomes still return to Coordinator, while invalid ingress remains outside the graph.
+- A01–A03 and A03C01 frozen bodies and their completion/correction histories are unchanged.
+- Materializing already authorized canonical bytes is not a new route decision, grant consumption, domain action, or general partial-commit repair.
+- `failed`, `halted`, terminal `recovery_required`, and nonterminal `in_progress/materialization_pending` are mutually exclusive outcomes.
+- A02C01 and A04–A07 remain `review`; this decision does not create Phase B tickets or claim runtime support.
+
+Rejected Alternatives:
+
+- Letting `recovery_required` both continue automatically and act as a terminal operator-recovery state: rejected because operation replay and acceptance traces would be ambiguous.
+- Creating Task, WorkspaceManifest, or workspace bytes before a durable producer identity and epoch exist: rejected because ownership and stale-writer fencing would be circular.
+- Treating graph END, an exception, or bounded terminal state as sufficient Run closure: rejected because lifecycle, checkpoint, and public result could diverge after a crash.
+- Reinterpreting legacy `status: running` as schema `0.4` `run_status: initializing`: rejected because it would silently migrate immutable historical bytes.
+
+Related Documents:
+
+- [A02C01 Execution 0.4 Bootstrap Order](tickets/phase-a-control-contracts/A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md)
+- [A04 Pause and Resume Semantics](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)
+- [A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)
+- [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)
+- [A07 Phase B Harness Acceptance](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)
+- [Phase B Requirement Catalog](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)

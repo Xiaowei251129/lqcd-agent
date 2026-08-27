@@ -118,7 +118,7 @@ Layer 0必须复用A02/A03/A03C01现有完整性测试和实现入口；Phase B�
 
 ### Layer 1 — Node, Subgraph, Backend and Trusted Boundary
 
-每个work/control node与`CodeAgentSubgraph` control stage使用deterministic fixture验证typed input、scoped context、structured outcome、artifact registration和禁止authority。Pre-start task/workspace/reservation/Pause stages不能claim或启动target Attempt，也不能创建额外Work/Control Attempt或automatic route计数；`consume_code_agent_result`只能在A04 claim、A06唯一settlement、`pause_consumed`、paused-to-running lifecycle与resume checkpoint完成后，把同一scheduled target Attempt启动一次。
+每个work/control node与`CodeAgentSubgraph` control stage使用deterministic fixture验证typed input、scoped context、structured outcome、artifact registration和禁止authority。Pre-start producer stub/task/unmaterialized manifest/reservation/core/workspace/Pause stages不能claim或启动target Attempt，也不能创建额外Work/Control Attempt或automatic route计数；`consume_code_agent_result`只能在A04 claim、A06唯一settlement、`pause_consumed`、paused-to-running lifecycle与resume checkpoint完成后，把同一scheduled target Attempt启动一次。
 
 `FakeCodingBackend`与future `CodexSdkBackend`必须接收相同A05 task/result schema，经过同一`dispatch`/`lookup`/`fetch_result`/`cancel` port、production ingress validator、trusted verifier、artifact registry和fresh Analysis入口。Phase B只实例化Fake；Backend、provider job/thread或未来SandboxAgent不能写graph state、分配identity、推进head或拥有budget/retry/stop authority。
 
@@ -207,7 +207,7 @@ Deterministic required trajectory将以下字段投影为ordered canonical JSON�
 - `CodeAgentSubgraph` pre-start/consume control stage与零额外Attempt副作用；
 - selected route key、source/target、trigger class和guard result；
 - Run/Cycle/Attempt/Transition identity、index、lineage和lifecycle；
-- ControlOperation status/phase/lease/result、Pause、Human Request/Response、budget event、aggregate Backend reservation和grant lifecycle；
+- ControlOperation与ExternalOperation status/phase/lease/result、Pause、Human Request/Response、budget event、aggregate Backend reservation和grant lifecycle；
 - semantic Backend operation status、dispatch/lookup/fetch/cancel outcome与operation binding；
 - WorkspaceManifest/lease/materialization/WorkspaceSeal、dispatch receipt、immutable external result、Code Bundle与AnalysisExecutionSpec的identity/digest projection；
 - artifact registration、current set/clear、managed projection、fresh Analysis worktree/subprocess和protection events；
@@ -279,24 +279,24 @@ Matrix必须逐项映射：
 - 错误actor/scope、Run/Pause、typed payload digest、expired Pause及runtime/policy fingerprint拒绝且无mutation；
 - Human Response按claim → target allocation → old `pause_consumed` → `run_lifecycle(paused -> running)` → resume checkpoint → validator start消费旧Pause；invalid result后若A06容量仍能保留下一次validation及其后续收尾合计所需的3个Control Attempts/4条Transitions，则严格按decision → new `pause_prepared` → prepared checkpoint → `run_lifecycle(running -> paused)` → new `pause_opened` → public paused checkpoint创建新`pause_id`，否则从running安全`halted`，旧authorization不继承；
 - `human_input` Pause使用null target，成功claim后才按A02 external control Transition恰好分配一个scheduled Human Gate validation Attempt；invalid response终结该validator，并在A06容量允许时打开下一个null-target Pause、否则安全`halted`，claim前不预分配下一Attempt，且不产生`human_gate -> human_gate`产品Transition；
-- null-target `human_input` claim后、external control Transition/target Attempt完整commit前后的崩溃返回`recovery_required`，同key重试不重复分配；`recovery_decision`只允许exact existing target的`continue_existing_target`或existing/null target的`abandon_and_halt`，null target不得分配Attempt；
+- null-target `human_input` claim后、external control Transition/target Attempt完整commit前后的崩溃，若target/invalidation/Transition identity/digest已预计算且existing heads exact则保持`in_progress/materialization_pending`；缺少预授权或validator副作用结果不确定时为terminal `recovery_required`，同key重试不重复分配；`recovery_decision`只允许exact existing target的`continue_existing_target`或existing/null target的`abandon_and_halt`，null target不得分配Attempt；
 - recovery continue必须证明target从未started、无side effect/unsettled resource并只启动一次；recovery halt按A02 abandon existing target并转`halted`；wrong target/action、route/state patch、side-effect retry以及用recovery Pause代替replay/fork全部拒绝；
 - 只有stable exact `run_status: paused`、active opened Pause与包含其resulting head的public paused checkpoint可以resume；claim/cancel-owned transitional paused query、`initializing | running | completed | failed | halted`、prepared-only、缺少exact active Pause的伪`paused`和pre-A04/A06 schema Run不能resume，领域`status: pending`在正常END后对应`run_status: completed`；
-- cancel只作用于latest opened Pause；existing scheduled target必须写`abandoned`，null target不得创建Attempt；`pause_cancelled -> abandoned(if any) -> resource_settled(if any) -> run_lifecycle -> terminal checkpoint`的exact side-effect-free partial返回`recovery_required`，实际head/evidence conflict为`failed`，且target永不启动；
+- cancel只作用于latest opened Pause；existing scheduled target必须写`abandoned`，null target不得创建Attempt；`pause_cancelled -> target disposition -> resource disposition -> run_lifecycle -> terminal checkpoint`的预计算exact side-effect-free partial保持`in_progress/materialization_pending`，停止副作用结果不确定为terminal `recovery_required`，实际head/evidence conflict为`failed`，且target永不启动；
 - `external_result` cancel先证明未dispatch，或持久化cancel intent并由current-epoch watchdog停止exact Backend operation、撤销lease、完成containment verify-empty；停止完整才提交halted lifecycle，停止/lease/post-stop证据不完整则隔离并`failed`；
-- `external_result`在`pause_prepared`前完成exact aggregate reservation与ExternalOperation创建，Pause期间dispatch/lookup/fetch/result/delivery不推进budget或execution head，claim后唯一settlement、`pause_consumed`、paused-to-running lifecycle和resume checkpoint全部先于target `started`；
+- `external_result`在`pause_prepared`前严格完成ExternalOperation identity stub、task、unmaterialized WorkspaceManifest、aggregate reservation、immutable core与workspace materialization，Pause期间dispatch/lookup/fetch/result/delivery不推进budget或execution head，claim后唯一settlement、`pause_consumed`、paused-to-running lifecycle和resume checkpoint全部先于target `started`；
 - replay/fork通过A02C01 child bootstrap创建全新child identities，source及accepted bytes不变且不继承Pause、current pointer、authorization或accepted status；
 - fork只接受coordinator对latest validated paused/terminal head与source control revision的成功CAS，并拒绝旧checkpoint、被history否定的artifact或竞争source mutation；
-- append-only run lifecycle可从`initializing`完整重放到running/paused/terminal，terminal不可逆且bounded projection不能伪造authority；
-- `start_run`、`resume_run`、`replay_run`、`fork_run`和`cancel_pause`在任何Run/child/Pause/checkpoint mutation前进入独立ControlOperation coordinator；两个process验证same-key replay、changed-payload conflict、single Pause owner、lease takeover递增epoch、stale-owner写拒绝、terminal tombstone以及operation/run/domain/Pause状态不互相覆盖。
+- append-only run lifecycle可从`initializing`完整重放到running/paused/terminal；normal `memory_report -> END`、普通runtime failure、confirmed halt和uncloseable integrity failure分别使用A04唯一`close_run` trace，terminal不可逆且bounded projection不能伪造authority；
+- `start_run`、`publish_pause`、`resume_run`、`replay_run`、`fork_run`、`cancel_pause`和`close_run`在任何Run/child/Pause/checkpoint mutation前进入独立ControlOperation coordinator；逐项exact比较A02C01/A04冻结的phase enum、唯一前向边、evidence与status mapping，两个process验证same-key replay、changed-payload conflict、single Pause owner、lease takeover递增epoch、stale-owner写拒绝、terminal tombstone以及operation/run/domain/Pause状态不互相覆盖。
 
 ## Required A05 Graph-managed Fake Code Agent Scenarios
 
 Matrix必须逐项映射：
 
 - Planner implementation gap与Coordinator code fix两种task origin；
-- pre-start task冻结、WorkspaceManifest创建、aggregate reservation和Pause publication在重放时幂等，且不claim/start target Attempt、不启动Backend、不注册code artifact、不创建额外Attempt/Transition或增加automatic route计数；
-- aggregate Backend operation与ExternalOperation的pre-prepared reservation/creation、Pause期间zero budget/execution-head drift、post-claim/pre-start唯一settlement和claim后settlement crash fail-closed；
+- pre-start严格按ExternalOperation identity stub → task → unmaterialized WorkspaceManifest → aggregate reservation → immutable core → workspace materialization → Pause publication执行并在重放时幂等，且不claim/start target Attempt、不启动Backend、不注册code artifact、不创建额外Attempt/Transition或增加automatic route计数；
+- aggregate Backend operation与ExternalOperation两阶段identity/core、Pause期间zero budget/execution-head drift、post-claim/pre-start唯一settlement和claim后settlement crash按materializable/in-progress、terminal recovery-required与failed三类fail-closed；
 - `dispatch`使用`producer_operation_id`幂等：duplicate返回同一receipt，conflicting payload拒绝；`lookup = running | completed | unknown`都只能描述原operation且不得启动第二个operation，known status返回同一receipt reference/digest以恢复receipt-publication crash，unknown使用null receipt；`fetch_result`不得刷新预算或退款；
 - aggregate hard limit、operation timeout与operator cancellation先持久化cancel intent，再由durable watchdog通过`cancel`和ContainmentProvider执行revoke/fence → graceful terminate → bounded grace → containment kill-all → bounded output drain → verify-empty；duplicate cancel幂等，wrong operation拒绝，terminal policy/operator stop为`halted`，停止/lease失败或停止后activity为`failed`；
 - Host crash后watchdog以新`lease_epoch`只lookup/fetch/cancel原operation，旧worker的dispatch/receipt/result/workspace写入全部拒绝，unknown provider status绝不redispatch；
@@ -307,14 +307,14 @@ Matrix必须逐项映射：
 - Backend自报pass但trusted verification failed/blocked/timeout时拒绝Analysis；
 - out-of-scope file、path/symlink escape、Git metadata、secret/raw/accepted/control target拒绝；
 - `WorkspaceManifest`或`WorkspaceSeal`缺失、digest篡改、跨Attempt复用、foreign lease、base revision/tree drift、workspace path swap及seal后filesystem变化全部fail closed；
-- wrong Run/Case/Cycle/Attempt/Transition/task/operation/base/workspace/Pause/result/member digest及duplicate-key/malformed ingress在图外拒绝且不产生产品Transition；claim后exact side-effect-free publication partial为`recovery_required`，实际tamper/mismatch为`failed`；schema-valid、Attempt-attributable`failed/result_invalid`经Host验证后形成canonical failed bundle并进入Coordinator；
+- wrong Run/Case/Cycle/Attempt/Transition/task/operation/base/workspace/Pause/result/member digest及duplicate-key/malformed ingress在图外拒绝且不产生产品Transition；claim后预计算exact side-effect-free publication partial保持`in_progress/materialization_pending`，不可继续的不确定性为terminal `recovery_required`，实际tamper/mismatch为`failed`；schema-valid、Attempt-attributable`failed/result_invalid`经Host验证后形成canonical failed bundle并进入Coordinator；
 - non-empty unverified/partial change不能作为success；
 - Human authorization scope/digest错误、已消费授权或执行中扩权必须创建新请求/Attempt或fail closed；
 - multiple code attempts使用独立workspace/artifact，旧code及downstream不再current但canonical bytes保留；
 - Code Bundle注册并成为current后，source wrapper才能让`commit_transition`先分配new scheduled Analysis Attempt、再提交绑定该exact target的`code_agent -> analysis_engineer` Transition，并发布绑定bundle/base/patch/effective-tree/target/Transition/runtime的`AnalysisExecutionSpec`；
 - Analysis必须在fresh worktree与fresh subprocess从exact base应用verified change，并成功注册Analysis artifact；不得读取主控制仓库、复用Code Agent workspace或以module reload加载新代码；
 - bundle已注册但Transition未提交时可幂等继续交接；Transition已提交但Analysis workspace未创建时可按同一spec幂等materialize；
-- side-effect-free Analysis handoff partial publication返回`recovery_required`；spec、patch、effective tree、runtime fingerprint或code/artifact head mismatch映射`run_status = failed`，旧Analysis target不得`started`、不得自动abandon或retarget，同一source不得提交第二条outbound Transition；只有通过A04 source validation后才可显式replay/fork；
+- 预计算exact且side-effect-free的Analysis handoff partial publication保持`in_progress/materialization_pending`，target execution结果不确定时为terminal `recovery_required`；spec、patch、effective tree、runtime fingerprint或code/artifact head mismatch映射`run_status = failed`，旧Analysis target不得重复`started`、不得自动abandon或retarget，同一source不得提交第二条outbound Transition；只有通过A04 source validation后才可显式replay/fork；
 - Fake与future Codex fixture通过同一`dispatch`/`lookup`/`fetch_result`/`cancel` port、validator、verifier、registration及fresh Analysis入口；legacy artifact不能读取为canonical Code Agent result。
 
 ## Required A06 Budget and Stop Scenarios
@@ -325,8 +325,8 @@ Matrix必须逐项映射：
 - Work/Control/Transition absolute ceilings及5 Control Attempt/6 Transition terminal reserve；Human Gate request与response validation分别计数，invalid retry后仍须保留下一次validation及后续收尾合计3 Control/4 Transition；
 - LLM/tool/verification reservation、settlement、unsettled crash full charge和duplicate operation拒绝；
 - 每个`code_agent` Attempt恰有一个`code_backend_operation` aggregate，绑定operation/task/backend/WorkspaceManifest/Pause并统一预留现有LLM/tool/active dimensions；第二份aggregate或Backend-owned counter拒绝；
-- aggregate与ExternalOperation的pre-prepared publication、Pause期间dispatch/lookup/fetch/result zero budget/execution-head drift、post-claim/pre-start settlement、可信actual缺失时maximum settlement和claim后settlement crash fail-closed；
-- aggregate maximum/timeout由durable watchdog在side effect边界强制执行并停止完整process tree；termination confirmed且usage known按actual，confirmed但usage unknown按maximum且terminal stop可`halted`，actual超额、termination/cancel/lease revocation失败或停止后activity映射`failed`，side-effect-free publication partial为`recovery_required`；
+- aggregate与ExternalOperation无环两阶段publication、Pause期间dispatch/lookup/fetch/result zero budget/execution-head drift、post-claim/pre-start settlement、可信actual缺失时maximum settlement和claim后settlement crash三分类fail-closed；
+- aggregate maximum/timeout由durable watchdog在side effect边界强制执行并停止完整process tree；termination confirmed且usage known按actual，confirmed但usage unknown按maximum且terminal stop可`halted`，actual超额、termination/cancel/lease revocation失败或停止后activity映射`failed`；materializable publication prefix保持`in_progress/materialization_pending`，non-materializable domain gap为terminal `recovery_required`；
 - Fake fixture提供deterministic usage并与future Codex Backend走同一lifecycle；Backend receipt/tool audit/seal矛盾时按maximum结算且fail closed；
 - pre-start Host setup只计Run、Backend operation结算到aggregate预留的target-Attempt与Run active dimensions但不启动Attempt、result后delivery等待不计active time、post-start trusted verification计Attempt与Run，以及所有fake clock boundary；
 - first retryable technical fingerprint允许，second exact fingerprint升级；新Attempt/workspace/job/thread/operation identity不改变`code_task_context_digest`或`analysis_execution_context_digest`；
@@ -336,7 +336,7 @@ Matrix必须逐项映射：
 - single-use grant的correct consumption，以及wrong actor/scope/route/fingerprint/target、competition、duplicate consumption和global ceiling拒绝；
 - expired Pause返回`pause_expired`且无自动event/cancel，必须显式cancel/replay/fork；
 - policy bytes/digest、ledger event identity/counter、reservation、fingerprint、grant和bounded projection tamper作为control integrity failure映射`run_status = failed`；
-- start默认profile、resume exact policy、replay/fork计数清零、schema `0.3`不迁移；
+- start默认profile、resume exact policy、replay/fork计数清零，并验证A02 schema `0.2` legacy status、A04 schema `0.3`语义支持与Phase B `0.4`禁止原地迁移的兼容矩阵；
 - missing token/cost保持`unknown`且不参与hard gate；
 - budget stop不绕过risk、Human Gate、A03 invalidation或accepted-result保护，resource exhaustion后不调用provider/tool或accepted memory。
 
@@ -358,27 +358,28 @@ Required failpoints固定在以下durable publication boundaries：
 - A02C01 coordinator `BEGIN IMMEDIATE`前、key/operation/target locator/policy digest/initial `lease_epoch` transaction提交后但Run root创建前，以及每个operation phase/result compare-and-set前后；
 - Run root exclusive-create与parent sync、policy file publication与sync、`Run created(initializing)`、`policy_initialized`、bootstrap `decision_recorded`、initial Cycle、Planner Attempt、A03 initial invalidation、START Transition、`run_lifecycle(initializing -> running)`和checkpoint前后；
 - worker lease takeover/epoch递增前后，以及旧owner尝试phase、ledger、workspace、receipt/result publication；
-- WorkspaceManifest publication、workspace materialization/lease、aggregate reservation与ExternalOperation创建前后；
-- internal `publish_pause` ControlOperation reservation/lease、`pause_prepared`、ExternalOperation one-time Pause binding、prepared checkpoint、running-to-paused `run_lifecycle`、`pause_opened`、public paused checkpoint和public operation result前后；
+- ExternalOperation identity stub/initial epoch、task publication、unmaterialized WorkspaceManifest publication、aggregate reservation、immutable core CAS、workspace materialization/lease前后；
+- internal `publish_pause`的每个exact phase：operation reservation/lease、`pause_prepared`、dependency/ExternalOperation one-time binding、prepared checkpoint、running-to-paused `run_lifecycle`、`pause_opened`、public paused checkpoint和operation result前后；
 - Pause `opened`后、external-operation dispatch authorization、Backend dispatch、`BackendDispatchReceipt` publication、Backend completion、WorkspaceSeal与immutable result publication前后；
 - watchdog lease takeover、cancel intent、Backend cancel、write-lease revocation、containment kill-all、verify-empty与terminal evidence前后；
-- delivery snapshot前后、coordinator Pause claim transaction前后、预计算`pause_claimed` event publication前后、settlement、`pause_consumed`、paused-to-running lifecycle与resume checkpoint前后，以及checkpoint后但`consume_code_agent_result`/Attempt `started`前；
+- delivery snapshot前后，以及`resume_run`的pause ownership、`pause_claimed`、prestart allocation/invalidation/Transition/settlement、`pause_consumed`、paused-to-running lifecycle、resume checkpoint、invocation authorization、stable boundary和result每个phase前后；
 - budget `decision_recorded`后但Transition或resource reservation前；
-- `grant_consumed`前后以及其后target Attempt allocation/A03 invalidation/Transition append完整commit前；无跨record transaction时partial sequence必须`recovery_required`、grant不退款且target不启动；
+- `grant_consumed`前后以及其后target Attempt allocation/A03 invalidation/Transition append完整commit前；预计算exact partial保持`in_progress/materialization_pending`，缺少预授权时为terminal `recovery_required`，grant不退款且target不启动；
 - invalid Human Response的repause `decision_recorded`、new `pause_prepared`、prepared checkpoint、running-to-paused lifecycle、new `pause_opened`和public paused checkpoint前后；
-- replay/fork source validation、source-control-revision CAS、child locator/lineage allocation、child root/policy/ledger/lifecycle/checkpoint/result前后；
+- replay/fork的source snapshot、source-control-revision CAS及每个child root/policy/ledger/lineage/bootstrap/lifecycle/checkpoint/result phase前后；
+- `close_run`的terminal eligibility、normal END或failure/stop evidence、terminal lifecycle、terminal checkpoint与result phase前后，以及损坏head无法append lifecycle的边界；
 - `resource_reserved`后但`resource_settled`前；
 - Transition/invalidation commit后但target Attempt `started`前；
 - Code Bundle member/registry/current publication前后，以及bundle current后但Analysis Transition提交前；
 - Analysis Transition提交后但`AnalysisExecutionSpec` publication、fresh workspace materialization、fresh subprocess启动或Analysis artifact publication前后；
 - artifact history/index/projection publication或bounded-state sync出现partial/corrupt head。
 
-Bootstrap fault scenarios必须证明coordinator transaction先于任何Run root bytes，且empty-root、policy-only、ledger、lifecycle和checkpoint prefix只有同一operation/current epoch可以确定性继续，任何冲突或side-effect prefix均fail closed。Pause publication scenarios必须证明prepared checkpoint不会引用未来opened head、opened不会引用未来public checkpoint，并按非对称closure形成唯一active Pause。Pause claim scenarios必须证明transaction提交前可重试、提交后只有原operation/current epoch可materialize exact预计算claim record，且claim后的不确定副作用不能自动重跑。Transition fault scenarios必须证明scheduled target allocation先于A03 invalidation、invalidation先于committed Transition append。Invalid-response scenarios必须证明旧Pause一经`consumed`不再打开，prepared-only或未完成public checkpoint的新Pause不接收输入。External-result scenarios还必须证明：aggregate reservation与ExternalOperation先于Pause `prepared`，Pause期间的dispatch/lookup/fetch/result/delivery evidence不推进budget或execution head，唯一`resource_settled`后于claim且先于target Attempt `started`；hard limit/timeout/cancellation由current-epoch watchdog和strict containment停止完整process tree且绝不redispatch。Fresh Analysis fault scenarios必须证明exact side-effect-free spec publication可幂等materialize，但任何spec/head/digest冲突都不启动旧target、不retarget、不从同一source提交第二条outbound Transition，并进入`run_status = failed`与A04允许的显式replay/fork边界。
+Bootstrap fault scenarios必须证明coordinator transaction先于任何Run root bytes，且empty-root、policy-only、ledger、lifecycle和checkpoint prefix只有同一operation/current epoch可以确定性继续，任何冲突或side-effect prefix均fail closed。Pause publication scenarios必须证明prepared checkpoint不会引用未来opened head、opened不会引用未来public checkpoint，并按非对称closure形成唯一active Pause。Pause claim scenarios必须证明transaction提交前可重试、提交后只有原operation/current epoch可materialize exact预计算claim record，且claim后的不确定副作用不能自动重跑。Transition fault scenarios必须证明scheduled target allocation先于A03 invalidation、invalidation先于committed Transition append。Invalid-response scenarios必须证明旧Pause一经`consumed`不再打开，prepared-only或未完成public checkpoint的新Pause不接收输入。External-result scenarios还必须证明：ExternalOperation stub先于task/manifest/reservation/workspace bytes，immutable core先于workspace materialization，全部在Pause `prepared`前完成；Pause期间的dispatch/lookup/fetch/result/delivery evidence不推进budget或execution head，唯一`resource_settled`后于claim且先于target Attempt `started`；hard limit/timeout/cancellation由current-epoch watchdog和strict containment停止完整process tree且绝不redispatch。Fresh Analysis fault scenarios必须证明exact side-effect-free spec publication可幂等materialize，但任何spec/head/digest冲突都不启动旧target、不retarget、不从同一source提交第二条outbound Transition，并进入`run_status = failed`与A04允许的显式replay/fork边界。Terminal scenarios必须证明END/failure/stop evidence先于`close_run` lifecycle，terminal checkpoint先于result，损坏head不伪造ledger closure。
 
 每个failpoint必须记录预期类别：
 
-- durable safe boundary允许相同idempotency request准确继续一次；
-- exact且side-effect-free的未完成publication返回`recovery_required`；已证明完成的policy/operator stop为`halted`；termination/lease/post-stop或integrity无法证明以及head/tamper mismatch为`failed`；
+- durable safe boundary与`materializable_publication_prefix`允许相同idempotency request保持`in_progress`并准确继续一次；
+- `non_materializable_domain_gap`或副作用结果不确定为terminal `recovery_required`；已证明完成的policy/operator stop为`halted`；termination/lease/post-stop或integrity无法证明以及head/tamper mismatch为`failed`；
 - 禁止自动退款、重复provider/tool/Backend operation、重新执行target Attempt、恢复旧current artifact、复用workspace或自动partial repair。
 
 Fault harness使用injected deterministic hooks和fake clock，不通过kill timing race或真实sleep制造概率性结果。Process-restart场景仍必须真实启动新的Python process并重新打开durable store。

@@ -2,7 +2,7 @@
 ticket_id: A02C01
 phase: phase-a-control-contracts
 status: review
-type: corrective-design
+type: corrective-implementation
 depends_on: [A02, A03, A03C01]
 ---
 
@@ -12,7 +12,7 @@ depends_on: [A02, A03, A03C01]
 
 为 execution schema `0.4+` 冻结预算可审计、可幂等恢复且在 Planner 副作用前完成的 Run bootstrap 顺序，并建立正式 Run ledger 之前可持久化的 `ControlOperation 0.1`，解决 A02 schema `0.2` 固定四记录初始化、A06 admission 合同与首次持久化幂等之间的冲突。
 
-本 ticket 只冻结后继 schema 的 corrective design 和下游实现约束；不修改 A02 已完成正文、当前 schema `0.2` runtime、graph、tests 或历史 Run。
+本 ticket 使用仓库支持的 `corrective-implementation` 类型冻结后继 schema 的纠正合同和下游实现约束；该治理分类不表示本轮实现 runtime。本 ticket 不修改 A02 已完成正文、当前 schema `0.2` runtime、graph、tests 或历史 Run。
 
 ## Why
 
@@ -80,7 +80,8 @@ Schema `0.4+` 必须显式扩展 bootstrap，而不是让初始 Cycle/Attempt/Tr
 ## Versioned Supersession Boundary
 
 - A02 §5继续是execution schema `0.2`的历史权威顺序；本ticket不改写或重新解释其四条记录。
-- Execution schema `0.3`若不包含A06 budget records，继续沿用A02顺序并受A04自己的start/replay/fork边界约束。
+- A02 schema `0.2` Run-created record中的legacy `status: running`只描述该版本当时的创建结果；schema `0.4+`以权威control `run_status: initializing`版本化取代该创建时状态。Reader不得把legacy字段改写成新字段、向旧Run补写lifecycle，或把两种创建顺序混合在同一Run中。
+- Execution schema `0.3`是A04 Pause/run-lifecycle语义前身；它不包含本ticket和A06要求的完整bootstrap/budget coordinator合同。显式实现并在runtime fingerprint中声明支持`0.3`的旧runtime可以按A04合同处理自己的Run，但Phase B schema `0.4` runtime不得对`0.3` Run原地resume或迁移，只能在source validation通过后显式replay/fork为新的`0.4` child。
 - Execution schema `0.4+`只对bootstrap顺序采用本ticket；A02其余Run/Cycle/Attempt/Transition identity、counter和target-consumption合同继续有效。
 - 未知schema、混合顺序或缺少本ticket任一required bootstrap identity/record的Run不得声明为schema `0.4` completed bootstrap。
 
@@ -117,6 +118,7 @@ updated_at
 - `(idempotency_scope, idempotency_key)`全局唯一；`operation_type`、canonical request与actor scope都进入`request_digest`，不能通过换operation type复用同一key；
 - `operation_id`与new target Run locator由可信Host分配并在任何Run root、policy或ledger bytes创建前持久化；调用方不能选择现有Run或覆盖identity；
 - `operation_status = accepted | in_progress | committed | failed | recovery_required`只表达控制调用结果，不是A04 `run_status`、领域`status`或Pause lifecycle；`operation_phase`是operation-type-specific单调phase，`phase_revision`只能compare-and-set递增；
+- `accepted -> in_progress -> committed | failed | recovery_required`是唯一合法status graph。`committed | failed | recovery_required`都是不可逆terminal tombstone：仍可由exact、无副作用、预计算bytes唯一确定的publication suffix没有进入recovery，它保持`in_progress`并由同一operation的新current epoch继续；只有缺少预授权事实、发生过结果不确定副作用或已无法安全materialize原动作时才进入`recovery_required`，此后原operation不得继续，只能由显式replay/fork或operator resolution产生新的operation；
 - `lease_epoch`是每次lease acquisition或takeover时在同一coordinator transaction中严格递增的fencing token；本ControlOperation直接拥有的phase compare-and-set、ledger/control publication与workspace lease materialization都必须验证exact `operation_id + worker_owner_id + lease_epoch + expected phase_revision`，任何旧epoch写入都必须拒绝；A05 `ExternalOperation`维护自己的独立单调epoch，不复用committed parent epoch，只有同一动作同时推进两类authority时才分别验证两者；
 - worker lease只允许另一worker使用新`lease_epoch`继续同一`operation_id`的已验证phase；lease过期不释放幂等键、不创建新operation、不重新分配Run identity，也不授权重做外部副作用；
 - committed、failed与recovery-required operation及其幂等键作为tombstone保留，至少与其可能引用的Run/artifact寿命一致；归档必须保留等价的key、request digest、result/error和identity证据；
@@ -200,13 +202,13 @@ Bootstrap使用A02/A03复合Transition publication顺序：先分配scheduled ta
 - 合法prefix class显式包括：`operation_reserved`后无Run root、已持久化空Run root、只含exact policy file、从`Run created(initializing)`开始的连续ledger prefix、完整bootstrap records、已追加`run_lifecycle(initializing -> running)`但尚未完成checkpoint，以及已完成checkpoint但尚未提交operation result。每一class都必须与coordinator phase、policy digest、identity和heads exact-match，且不得包含未知record、重复identity、target `started`、domain artifact、external reservation或已公开Pause。
 - 继续合法前缀只能append缺失的确定性后缀和持久化缺失checkpoint；不能重写、删除、重新编号或替换已存在record。
 - 额外record、顺序缺口、partial JSONL bytes、digest/head mismatch、tamper或已发生Planner/Agent/provider/tool/domain side effect属于integrity failure：隔离该Run并返回`failed`，不得自动repair、replay、截断history或改用新identity继续原Run；若损坏head本身不允许安全追加`run_lifecycle`，coordinator仍保存typed failed result且该Run保持不可读/不可执行，不能伪造halted ledger closure。
-- 只有已存在bytes/identity/heads全部exact、没有新副作用而coordinator/checkpoint/result publication尚未闭合时才返回`recovery_required`并允许同operation补齐确定性后缀。并发不同request按幂等规则返回`conflict`，不是recovery。
-- 每个成功持久化边界后才能用包含owner与`lease_epoch`的compare-and-set推进`operation_phase`；phase落后于exact durable prefix时允许同operation补记phase，phase领先或identity/digest冲突属于`failed` integrity outcome，stale epoch只拒绝该writer且不改变authoritative outcome，已有exact bytes但暂时无法证明唯一current owner时进入`recovery_required`。Phase不能倒退。
-- 完整bootstrap和ControlOperation committed result前Run不得以`running`或其他可执行状态对外发布；查询只能返回typed initializing/recovery control outcome，不得暴露raw checkpoint恢复入口。
+- 只有已存在bytes/identity/heads全部exact、没有新副作用且缺失suffix的canonical identity/digest已经由current phase唯一预计算时，operation才保持`in_progress`并允许同operation/current epoch补齐确定性后缀；对外查询返回typed `in_progress/materialization_pending`，不是`recovery_required`。并发不同request按幂等规则返回`conflict`，不是recovery。
+- 每个成功持久化边界后才能用包含owner与`lease_epoch`的compare-and-set推进`operation_phase`；phase落后于exact durable prefix时允许同operation补记phase，phase领先或identity/digest冲突属于`failed` integrity outcome，stale epoch只拒绝该writer且不改变authoritative outcome。已有exact bytes但暂时没有current owner时保持`in_progress`等待lease takeover；无法证明原动作是否已产生不可重放副作用时原operation终止为`recovery_required`。Phase不能倒退。
+- 完整bootstrap和ControlOperation committed result前Run不得以`running`或其他可执行状态对外发布；安全materialization期间查询返回typed initializing/in-progress control outcome，只有原operation已不可继续时才返回terminal `recovery_required`，且都不得暴露raw checkpoint恢复入口。
 
 ## Required A07 Scenario
 
-- `A02C01-BOOTSTRAP-001`：验证schema `0.4`完整顺序、每个durable边界的合法前缀继续、冲突前缀fail closed、Planner副作用只能在bootstrap head/checkpoint exact-match后开始，以及schema `0.2`历史顺序保持不变。
+- `A02C01-BOOTSTRAP-001`：验证schema `0.4`完整顺序、每个durable边界的合法前缀以`in_progress/materialization_pending`继续、冲突前缀fail closed、Planner副作用只能在bootstrap head/checkpoint exact-match后开始，以及schema `0.2`历史顺序保持不变。
 - `A02C01-BOOTSTRAP-002`：使用两个独立client/process验证coordinator先于Run root原子占用key、Run locator、canonical policy bytes/digest和initial lease epoch，same-key/same-digest结果重放、same-key/different-digest冲突、worker lease只以新epoch继续原operation、stale-owner publication拒绝、terminal key tombstone及coordinator/checkpoint/ledger authority分离。
 - `A02C01-BOOTSTRAP-003`：验证SQLite effective durability profile、consistent backup boundary、root/policy/file/directory sync failpoints、empty-root与policy-only合法prefix，以及partial JSONL record、raw database-only copy或不支持filesystem均fail closed。
 
@@ -223,7 +225,7 @@ Bootstrap使用A02/A03复合Transition publication顺序：先分配scheduled ta
 - A02 schema `0.2`正文、runtime和历史Run均未修改；
 - START Transition遵守scheduled target allocation → A03 invalidation → Transition append顺序；
 - Planner side effect只可能发生在完整bootstrap、checkpoint和heads验证后；
-- 同key对empty-root、policy-only、ledger、lifecycle与checkpoint合法prefix的continuation，以及任意冲突/副作用prefix的fail-closed边界可机器验证；
+- 同key对empty-root、policy-only、ledger、lifecycle与checkpoint合法prefix的`in_progress` continuation，以及任意冲突/副作用prefix的fail-closed边界可机器验证；
 - worker lease takeover产生更高`lease_epoch`，所有由该ControlOperation直接拥有的stale-owner phase、ledger、workspace或result写入被拒绝；A05 external-operation写入由其独立epoch fencing拒绝；
 - SQLite、JSONL和immutable file的durability acknowledgement boundary明确且可注入故障验证；
 - operation status/phase、A04 Run status、领域status和ledger history各自authority明确且不可互相代替；
