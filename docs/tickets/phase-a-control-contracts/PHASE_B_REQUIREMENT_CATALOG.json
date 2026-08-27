@@ -4,6 +4,9 @@
   "catalog_id": "phase-b-control-requirements",
   "phase": "phase-b-graph-harness",
   "digest_policy": "A07 frozen commit and completion record bind the SHA-256 of these exact bytes",
+  "control_protocol_reference": "CONTROL_PROTOCOL_0_4.json",
+  "control_protocol_version": "0.4",
+  "control_protocol_sha256": "9287edb9988139a13e5c5272cf90fc71ac0b731af283aac3aa1262036ce406f5",
   "requirements": [
     {"requirement_id": "A01-ROUTE-001", "owner_ticket": "A01", "source_locator": "Target State Transition Matrix: START -> method_planner", "kind": "route", "summary": "Validated Run input starts one method_planner target.", "required": true},
     {"requirement_id": "A01-ROUTE-002", "owner_ticket": "A01", "source_locator": "Target State Transition Matrix: method_planner -> analysis_engineer", "kind": "route", "summary": "A usable plan with no implementation gap advances to analysis_engineer.", "required": true},
@@ -118,6 +121,7 @@
     {"requirement_id": "A07-META-006", "owner_ticket": "A07", "source_locator": "Required A07 Meta-validation Scenarios A07-META-006", "kind": "recovery", "summary": "All specified bootstrap, operation-variant and phase, terminal-close ownership, Pause, fencing, ExternalOperation bootstrap and cancellation, watchdog, child-run, budget, artifact, and Analysis boundaries have deterministic failpoints and outcomes.", "required": true},
     {"requirement_id": "A07-META-007", "owner_ticket": "A07", "source_locator": "Required A07 Meta-validation Scenarios A07-META-007", "kind": "forbidden", "summary": "Compatibility, capability, live-provider, benchmark, and happy-path evidence cannot satisfy required deterministic control acceptance.", "required": true},
     {"requirement_id": "A07-META-008", "owner_ticket": "A07", "source_locator": "Required A07 Meta-validation Scenarios A07-META-008", "kind": "interface", "summary": "B00 establishes acceptance first, B01 through B04 own and pass subsystem scenarios, and B05 proves final zero-gap exit evidence.", "required": true},
-    {"requirement_id": "A07-META-009", "owner_ticket": "A07", "source_locator": "Required A07 Meta-validation Scenarios A07-META-009", "kind": "schema", "summary": "B00 statically proves operation router and allowed-edge exhaustiveness, phase reachability and termination, absence of observable half-ownership or terminal-owner pending closure, finality of active-cancellation versus already-normal-terminal ExternalOperation proofs, and B02 close-run ownership.", "required": true}
+    {"requirement_id": "A07-META-009", "owner_ticket": "A07", "source_locator": "Required A07 Meta-validation Scenarios A07-META-009", "kind": "schema", "summary": "B00 statically proves operation router and allowed-edge exhaustiveness, phase reachability and termination, absence of observable half-ownership or terminal-owner pending closure, finality of active-cancellation versus already-normal-terminal ExternalOperation proofs, and B02 close-run ownership.", "required": true},
+    {"requirement_id": "A07-META-010", "owner_ticket": "A07", "source_locator": "Required A07 Meta-validation Scenarios A07-META-010", "kind": "schema", "summary": "The exact-byte Control Protocol 0.4 is the single machine-readable authority for ControlOperation, ExternalOperation, Pause and Run phases, states, allowed edges, ownership, evidence, continuation classes, dependency order, field binding, and compatibility; its strict validator and catalog-bound SHA reject prose drift, stale snapshots, hidden cycles, circular construction, and Pause reopening.", "required": true}
   ]
 }

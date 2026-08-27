@@ -1,0 +1,330 @@
+{
+  "schema_version": "0.1",
+  "protocol_version": "0.4",
+  "protocol_id": "phase-a-control-protocol",
+  "status": "review",
+  "digest_policy": "A07 frozen commit and acceptance matrix bind the SHA-256 of these exact bytes",
+  "source_documents": [
+    "A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md",
+    "A04_PAUSE_RESUME_SEMANTICS.md",
+    "A05_CODE_AGENT_CONTRACT.md",
+    "A06_BUDGETS_AND_STOP_CONDITIONS.md",
+    "A07_PHASE_B_HARNESS_ACCEPTANCE.md"
+  ],
+  "authorities": [
+    "coordinator_db",
+    "run_filesystem",
+    "policy_store",
+    "execution_ledger",
+    "artifact_registry",
+    "checkpoint_store",
+    "budget_ledger",
+    "external_operation_db",
+    "workspace",
+    "backend_provider",
+    "quarantine_store"
+  ],
+  "effect_classes": [
+    "authority_reservation",
+    "deterministic_publication",
+    "verification",
+    "capability_publication",
+    "external_effect_intent",
+    "external_effect_materialization",
+    "external_effect_observation",
+    "terminal_publication"
+  ],
+  "continuation_policies": [
+    "exact_replay_only",
+    "materialize_if_precomputed",
+    "lookup_only_after_uncertain_effect",
+    "no_continuation_after_terminal"
+  ],
+  "outcome_classes": [
+    {
+      "outcome_class": "committed_result_replay",
+      "operation_status": "committed",
+      "observation": "result_available",
+      "may_advance_phase": false,
+      "permitted_action": "return_exact_committed_result"
+    },
+    {
+      "outcome_class": "materializable_publication_prefix",
+      "operation_status": "in_progress",
+      "observation": "materialization_pending",
+      "may_advance_phase": true,
+      "permitted_action": "same_operation_current_epoch_materializes_precomputed_side_effect_free_suffix"
+    },
+    {
+      "outcome_class": "non_materializable_domain_gap",
+      "operation_status": "recovery_required",
+      "observation": "operator_resolution_required",
+      "may_advance_phase": false,
+      "permitted_action": "explicit_replay_or_fork_only_when_source_validation_allows"
+    },
+    {
+      "outcome_class": "integrity_conflict",
+      "operation_status": "failed",
+      "observation": "quarantined",
+      "may_advance_phase": false,
+      "permitted_action": "fail_closed_and_publish_failed_run_only_when_authority_is_appendable"
+    }
+  ],
+  "state_machines": {
+    "control_operation": {
+      "authority": "coordinator_db",
+      "statuses": ["accepted", "in_progress", "committed", "failed", "recovery_required"],
+      "initial_status": "accepted",
+      "active_status": "in_progress",
+      "terminal_statuses": ["committed", "failed", "recovery_required"],
+      "interrupt_terminal_statuses": ["failed", "recovery_required"],
+      "interrupt_rule": "any_nonterminal_phase_may_atomically_enter_interrupt_terminal_status_and_freeze_phase",
+      "operations": [
+        {
+          "operation_type": "start_run",
+          "variants": [
+            {
+              "operation_variant": "not_applicable",
+              "initial_phase": "operation_reserved",
+              "committed_phase": "result_committed",
+              "phases": ["operation_reserved", "run_root_created", "policy_published", "run_ledger_started", "bootstrap_records_complete", "running_lifecycle_recorded", "checkpoint_committed", "result_committed"],
+              "success_edges": [["operation_reserved", "run_root_created"], ["run_root_created", "policy_published"], ["policy_published", "run_ledger_started"], ["run_ledger_started", "bootstrap_records_complete"], ["bootstrap_records_complete", "running_lifecycle_recorded"], ["running_lifecycle_recorded", "checkpoint_committed"], ["checkpoint_committed", "result_committed"]]
+            }
+          ]
+        },
+        {
+          "operation_type": "publish_pause",
+          "variants": [
+            {
+              "operation_variant": "not_applicable",
+              "initial_phase": "operation_reserved",
+              "committed_phase": "result_committed",
+              "phases": ["operation_reserved", "pause_prepared_recorded", "pause_dependencies_bound", "prepared_checkpoint_committed", "paused_lifecycle_recorded", "pause_opened_recorded", "public_paused_checkpoint_committed", "result_committed"],
+              "success_edges": [["operation_reserved", "pause_prepared_recorded"], ["pause_prepared_recorded", "pause_dependencies_bound"], ["pause_dependencies_bound", "prepared_checkpoint_committed"], ["prepared_checkpoint_committed", "paused_lifecycle_recorded"], ["paused_lifecycle_recorded", "pause_opened_recorded"], ["pause_opened_recorded", "public_paused_checkpoint_committed"], ["public_paused_checkpoint_committed", "result_committed"]]
+            }
+          ]
+        },
+        {
+          "operation_type": "resume_run",
+          "variants": [
+            {
+              "operation_variant": "continue_execution",
+              "initial_phase": "operation_reserved",
+              "committed_phase": "result_committed",
+              "phases": ["operation_reserved", "resume_disposition_committed", "pause_ownership_reserved", "pause_claimed_recorded", "prestart_records_committed", "pause_consumed_recorded", "running_lifecycle_recorded", "resume_checkpoint_committed", "invocation_authorized", "stable_boundary_committed", "result_committed"],
+              "success_edges": [["operation_reserved", "resume_disposition_committed"], ["resume_disposition_committed", "pause_ownership_reserved"], ["pause_ownership_reserved", "pause_claimed_recorded"], ["pause_claimed_recorded", "prestart_records_committed"], ["prestart_records_committed", "pause_consumed_recorded"], ["pause_consumed_recorded", "running_lifecycle_recorded"], ["running_lifecycle_recorded", "resume_checkpoint_committed"], ["resume_checkpoint_committed", "invocation_authorized"], ["invocation_authorized", "stable_boundary_committed"], ["stable_boundary_committed", "result_committed"]]
+            },
+            {
+              "operation_variant": "abandon_and_halt",
+              "initial_phase": "operation_reserved",
+              "committed_phase": "result_committed",
+              "phases": ["operation_reserved", "resume_disposition_committed", "pause_and_terminal_ownership_reserved", "pause_claimed_recorded", "pause_consumed_recorded", "target_disposition_committed", "resource_disposition_committed", "terminal_eligibility_verified", "terminal_lifecycle_recorded", "terminal_checkpoint_committed", "result_committed"],
+              "success_edges": [["operation_reserved", "resume_disposition_committed"], ["resume_disposition_committed", "pause_and_terminal_ownership_reserved"], ["pause_and_terminal_ownership_reserved", "pause_claimed_recorded"], ["pause_claimed_recorded", "pause_consumed_recorded"], ["pause_consumed_recorded", "target_disposition_committed"], ["target_disposition_committed", "resource_disposition_committed"], ["resource_disposition_committed", "terminal_eligibility_verified"], ["terminal_eligibility_verified", "terminal_lifecycle_recorded"], ["terminal_lifecycle_recorded", "terminal_checkpoint_committed"], ["terminal_checkpoint_committed", "result_committed"]]
+            }
+          ]
+        },
+        {
+          "operation_type": "cancel_pause",
+          "variants": [
+            {
+              "operation_variant": "not_applicable",
+              "initial_phase": "operation_reserved",
+              "committed_phase": "result_committed",
+              "phases": ["operation_reserved", "pause_and_terminal_cancel_ownership_reserved", "cancel_intent_committed", "external_terminal_closure_verified", "pause_cancelled_recorded", "target_disposition_committed", "resource_disposition_committed", "terminal_eligibility_verified", "terminal_lifecycle_recorded", "terminal_checkpoint_committed", "result_committed"],
+              "success_edges": [["operation_reserved", "pause_and_terminal_cancel_ownership_reserved"], ["pause_and_terminal_cancel_ownership_reserved", "cancel_intent_committed"], ["cancel_intent_committed", "external_terminal_closure_verified"], ["external_terminal_closure_verified", "pause_cancelled_recorded"], ["pause_cancelled_recorded", "target_disposition_committed"], ["target_disposition_committed", "resource_disposition_committed"], ["resource_disposition_committed", "terminal_eligibility_verified"], ["terminal_eligibility_verified", "terminal_lifecycle_recorded"], ["terminal_lifecycle_recorded", "terminal_checkpoint_committed"], ["terminal_checkpoint_committed", "result_committed"]]
+            }
+          ]
+        },
+        {
+          "operation_type": "replay_run",
+          "variants": [
+            {
+              "operation_variant": "not_applicable",
+              "initial_phase": "operation_reserved",
+              "committed_phase": "result_committed",
+              "phases": ["operation_reserved", "source_snapshot_committed", "child_run_root_created", "child_policy_published", "child_run_ledger_started", "child_lineage_recorded", "child_bootstrap_records_complete", "child_running_lifecycle_recorded", "child_checkpoint_committed", "result_committed"],
+              "success_edges": [["operation_reserved", "source_snapshot_committed"], ["source_snapshot_committed", "child_run_root_created"], ["child_run_root_created", "child_policy_published"], ["child_policy_published", "child_run_ledger_started"], ["child_run_ledger_started", "child_lineage_recorded"], ["child_lineage_recorded", "child_bootstrap_records_complete"], ["child_bootstrap_records_complete", "child_running_lifecycle_recorded"], ["child_running_lifecycle_recorded", "child_checkpoint_committed"], ["child_checkpoint_committed", "result_committed"]]
+            }
+          ]
+        },
+        {
+          "operation_type": "fork_run",
+          "variants": [
+            {
+              "operation_variant": "not_applicable",
+              "initial_phase": "operation_reserved",
+              "committed_phase": "result_committed",
+              "phases": ["operation_reserved", "source_snapshot_committed", "child_run_root_created", "child_policy_published", "child_run_ledger_started", "child_lineage_recorded", "child_bootstrap_records_complete", "child_running_lifecycle_recorded", "child_checkpoint_committed", "result_committed"],
+              "success_edges": [["operation_reserved", "source_snapshot_committed"], ["source_snapshot_committed", "child_run_root_created"], ["child_run_root_created", "child_policy_published"], ["child_policy_published", "child_run_ledger_started"], ["child_run_ledger_started", "child_lineage_recorded"], ["child_lineage_recorded", "child_bootstrap_records_complete"], ["child_bootstrap_records_complete", "child_running_lifecycle_recorded"], ["child_running_lifecycle_recorded", "child_checkpoint_committed"], ["child_checkpoint_committed", "result_committed"]]
+            }
+          ]
+        },
+        {
+          "operation_type": "close_run",
+          "variants": [
+            {
+              "operation_variant": "not_applicable",
+              "initial_phase": "operation_reserved",
+              "committed_phase": "result_committed",
+              "phases": ["operation_reserved", "terminal_ownership_reserved", "terminal_eligibility_verified", "terminal_lifecycle_recorded", "terminal_checkpoint_committed", "result_committed"],
+              "success_edges": [["operation_reserved", "terminal_ownership_reserved"], ["terminal_ownership_reserved", "terminal_eligibility_verified"], ["terminal_eligibility_verified", "terminal_lifecycle_recorded"], ["terminal_lifecycle_recorded", "terminal_checkpoint_committed"], ["terminal_checkpoint_committed", "result_committed"]]
+            }
+          ]
+        }
+      ],
+      "phase_contracts": {
+        "operation_reserved": {"authorities": ["coordinator_db"], "effect_class": "authority_reservation", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["authenticated_schema_valid_request", "idempotency_scope_key", "request_digest", "operation_type_variant", "initial_lease_epoch"], "acquires": []},
+        "run_root_created": {"authorities": ["run_filesystem"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["reserved_run_locator", "current_lease_epoch"], "acquires": []},
+        "policy_published": {"authorities": ["policy_store", "run_filesystem"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["canonical_policy_bytes", "policy_digest"], "acquires": []},
+        "run_ledger_started": {"authorities": ["execution_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["run_created_initializing_record"], "acquires": []},
+        "bootstrap_records_complete": {"authorities": ["execution_ledger", "artifact_registry", "budget_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["policy_initialized", "bootstrap_allow_decision", "initial_identity_closure", "start_transition"], "acquires": []},
+        "running_lifecycle_recorded": {"authorities": ["execution_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["legal_run_lifecycle_edge", "exact_pre_head"], "acquires": []},
+        "checkpoint_committed": {"authorities": ["checkpoint_store"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["resulting_execution_head", "policy_digest"], "acquires": []},
+        "pause_prepared_recorded": {"authorities": ["execution_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["deterministic_pause_identity", "source_heads", "typed_pause_reason"], "acquires": []},
+        "pause_dependencies_bound": {"authorities": ["coordinator_db", "external_operation_db"], "effect_class": "verification", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["pause_prepared_digest", "reason_specific_dependency_binding"], "acquires": []},
+        "prepared_checkpoint_committed": {"authorities": ["checkpoint_store"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["prepared_pause_projection", "prepared_execution_head"], "acquires": []},
+        "paused_lifecycle_recorded": {"authorities": ["execution_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["running_to_paused_edge", "prepared_checkpoint_digest"], "acquires": []},
+        "pause_opened_recorded": {"authorities": ["execution_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["prepared_head", "prepared_checkpoint_digest", "paused_lifecycle_head"], "acquires": []},
+        "public_paused_checkpoint_committed": {"authorities": ["checkpoint_store"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["pause_opened_resulting_head", "active_pause_projection"], "acquires": []},
+        "resume_disposition_committed": {"authorities": ["coordinator_db"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["frozen_resume_variant", "exact_opened_pause"], "acquires": []},
+        "pause_ownership_reserved": {"authorities": ["coordinator_db"], "effect_class": "authority_reservation", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["exact_pause_cas", "opened_execution_head"], "acquires": ["pause_claim_owner"], "atomic_acquire": true},
+        "pause_and_terminal_ownership_reserved": {"authorities": ["coordinator_db"], "effect_class": "authority_reservation", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["exact_pause_cas", "empty_run_terminal_owner_cas", "terminal_resolution_contracts"], "acquires": ["pause_claim_owner", "run_terminal_closure_owner"], "atomic_acquire": true},
+        "pause_and_terminal_cancel_ownership_reserved": {"authorities": ["coordinator_db"], "effect_class": "authority_reservation", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["exact_pause_cas", "empty_run_terminal_owner_cas", "terminal_resolution_contracts"], "acquires": ["pause_cancel_owner", "run_terminal_closure_owner"], "atomic_acquire": true},
+        "pause_claimed_recorded": {"authorities": ["execution_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["pause_owner_operation", "producing_lease_epoch"], "acquires": []},
+        "prestart_records_committed": {"authorities": ["execution_ledger", "artifact_registry", "budget_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["reason_specific_target_closure", "invalidation_closure", "grant_or_settlement_closure"], "acquires": []},
+        "pause_consumed_recorded": {"authorities": ["execution_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["pause_claim_head", "single_use_authorization"], "acquires": []},
+        "resume_checkpoint_committed": {"authorities": ["checkpoint_store"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["consumed_pause_head", "running_lifecycle_head"], "acquires": []},
+        "invocation_authorized": {"authorities": ["coordinator_db"], "effect_class": "capability_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["attempt_identity", "exact_heads", "lease_epoch", "terminal_closure_revision"], "acquires": []},
+        "stable_boundary_committed": {"authorities": ["coordinator_db", "checkpoint_store"], "effect_class": "verification", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["committed_pause_or_close_or_running_checkpoint"], "acquires": []},
+        "cancel_intent_committed": {"authorities": ["coordinator_db", "external_operation_db"], "effect_class": "external_effect_intent", "continuation_policy": "lookup_only_after_uncertain_effect", "required_evidence": ["cancel_classification", "typed_cancel_reason"], "acquires": []},
+        "external_terminal_closure_verified": {"authorities": ["external_operation_db"], "effect_class": "verification", "continuation_policy": "exact_replay_only", "required_evidence": ["final_cancellation_or_preexisting_normal_terminal_proof"], "acquires": []},
+        "pause_cancelled_recorded": {"authorities": ["execution_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["final_external_terminal_proof", "stop_integrity"], "acquires": []},
+        "target_disposition_committed": {"authorities": ["execution_ledger", "coordinator_db"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["target_abandoned_or_not_applicable"], "acquires": []},
+        "resource_disposition_committed": {"authorities": ["budget_ledger", "coordinator_db"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["resource_settlement_or_not_applicable"], "acquires": []},
+        "terminal_ownership_reserved": {"authorities": ["coordinator_db"], "effect_class": "authority_reservation", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["deterministic_terminal_trigger", "empty_run_terminal_owner_cas", "terminal_resolution_contracts"], "acquires": ["run_terminal_closure_owner"], "atomic_acquire": true},
+        "terminal_eligibility_verified": {"authorities": ["coordinator_db", "execution_ledger", "artifact_registry", "policy_store", "budget_ledger"], "effect_class": "verification", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["final_terminal_evidence", "exact_authority_heads", "single_assignment_resolution"], "acquires": [], "resolves_once": ["resolved_terminal_disposition", "resolved_preclose_heads"]},
+        "terminal_lifecycle_recorded": {"authorities": ["execution_ledger"], "effect_class": "terminal_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["terminal_owner", "terminal_closure_revision", "legal_terminal_lifecycle_edge"], "acquires": []},
+        "terminal_checkpoint_committed": {"authorities": ["checkpoint_store"], "effect_class": "terminal_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["terminal_lifecycle_resulting_head", "empty_active_pause_projection"], "acquires": []},
+        "source_snapshot_committed": {"authorities": ["coordinator_db", "execution_ledger", "artifact_registry"], "effect_class": "verification", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["validated_source_heads", "source_control_revision", "lineage_snapshot_digest"], "acquires": []},
+        "child_run_root_created": {"authorities": ["run_filesystem"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["reserved_child_locator", "lineage_snapshot_digest"], "acquires": []},
+        "child_policy_published": {"authorities": ["policy_store", "run_filesystem"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["canonical_child_policy", "child_policy_digest"], "acquires": []},
+        "child_run_ledger_started": {"authorities": ["execution_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["child_run_created_initializing"], "acquires": []},
+        "child_lineage_recorded": {"authorities": ["execution_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["root_or_replay_or_fork_lineage"], "acquires": []},
+        "child_bootstrap_records_complete": {"authorities": ["execution_ledger", "artifact_registry", "budget_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["child_bootstrap_closure"], "acquires": []},
+        "child_running_lifecycle_recorded": {"authorities": ["execution_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["child_initializing_to_running"], "acquires": []},
+        "child_checkpoint_committed": {"authorities": ["checkpoint_store"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["child_running_resulting_head"], "acquires": []},
+        "result_committed": {"authorities": ["coordinator_db"], "effect_class": "terminal_publication", "continuation_policy": "no_continuation_after_terminal", "required_evidence": ["exact_public_or_internal_result", "final_phase_revision"], "acquires": []}
+      }
+    },
+    "external_operation": {
+      "authority": "external_operation_db",
+      "statuses": ["reserved", "active", "cancel_requested", "completed", "failed", "cancelled", "recovery_required"],
+      "initial_status": "reserved",
+      "terminal_statuses": ["completed", "failed", "cancelled", "recovery_required"],
+      "interrupt_terminal_statuses": ["failed", "recovery_required"],
+      "interrupt_rule": "any_nonterminal_phase_may_atomically_enter_interrupt_terminal_status_and_freeze_phase",
+      "initial_phase": "external_operation_reserved",
+      "terminal_phases": ["terminal_evidence_committed", "cancellation_evidence_committed"],
+      "phases": ["external_operation_reserved", "task_committed", "workspace_manifest_committed", "reservation_committed", "core_contract_committed", "workspace_materialized", "pause_bound", "dispatch_authorized", "dispatch_receipt_committed", "result_reference_committed", "terminal_evidence_committed", "cancel_intent_committed", "termination_evidence_committed", "cancellation_evidence_committed"],
+      "success_edges": [["external_operation_reserved", "task_committed"], ["task_committed", "workspace_manifest_committed"], ["workspace_manifest_committed", "reservation_committed"], ["reservation_committed", "core_contract_committed"], ["core_contract_committed", "workspace_materialized"], ["workspace_materialized", "pause_bound"], ["pause_bound", "dispatch_authorized"], ["dispatch_authorized", "dispatch_receipt_committed"], ["dispatch_receipt_committed", "result_reference_committed"], ["result_reference_committed", "terminal_evidence_committed"], ["external_operation_reserved", "cancel_intent_committed"], ["task_committed", "cancel_intent_committed"], ["workspace_manifest_committed", "cancel_intent_committed"], ["reservation_committed", "cancel_intent_committed"], ["core_contract_committed", "cancel_intent_committed"], ["workspace_materialized", "cancel_intent_committed"], ["pause_bound", "cancel_intent_committed"], ["dispatch_authorized", "cancel_intent_committed"], ["dispatch_receipt_committed", "cancel_intent_committed"], ["result_reference_committed", "cancel_intent_committed"], ["cancel_intent_committed", "termination_evidence_committed"], ["termination_evidence_committed", "cancellation_evidence_committed"]],
+      "phase_statuses": {
+        "external_operation_reserved": ["reserved"],
+        "task_committed": ["reserved"],
+        "workspace_manifest_committed": ["reserved"],
+        "reservation_committed": ["reserved"],
+        "core_contract_committed": ["reserved"],
+        "workspace_materialized": ["reserved"],
+        "pause_bound": ["reserved"],
+        "dispatch_authorized": ["active"],
+        "dispatch_receipt_committed": ["active"],
+        "result_reference_committed": ["active"],
+        "terminal_evidence_committed": ["completed", "failed"],
+        "cancel_intent_committed": ["cancel_requested"],
+        "termination_evidence_committed": ["cancel_requested"],
+        "cancellation_evidence_committed": ["cancelled", "failed"]
+      },
+      "phase_contracts": {
+        "external_operation_reserved": {"authorities": ["external_operation_db"], "effect_class": "authority_reservation", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["producer_operation_id", "workspace_id", "managed_workspace_locator_digest", "initial_lease_epoch"], "acquires": ["external_operation_owner"], "atomic_acquire": true},
+        "task_committed": {"authorities": ["external_operation_db"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["producer_operation_id", "code_agent_task_digest"], "acquires": []},
+        "workspace_manifest_committed": {"authorities": ["external_operation_db"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["task_digest", "workspace_manifest_digest"], "acquires": []},
+        "reservation_committed": {"authorities": ["external_operation_db", "budget_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["task_digest", "workspace_manifest_digest", "aggregate_reservation_digest"], "acquires": []},
+        "core_contract_committed": {"authorities": ["external_operation_db"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["task_digest", "workspace_manifest_digest", "reservation_digest", "operation_contract_digest"], "acquires": []},
+        "workspace_materialized": {"authorities": ["workspace"], "effect_class": "external_effect_materialization", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["immutable_core_digest", "managed_workspace_locator_digest", "current_external_lease_epoch"], "acquires": []},
+        "pause_bound": {"authorities": ["external_operation_db", "execution_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["pause_prepared_identity_digest", "reservation_digest", "current_external_lease_epoch"], "acquires": []},
+        "dispatch_authorized": {"authorities": ["external_operation_db"], "effect_class": "external_effect_intent", "continuation_policy": "lookup_only_after_uncertain_effect", "required_evidence": ["public_paused_checkpoint", "immutable_core_digest", "current_external_lease_epoch"], "acquires": []},
+        "dispatch_receipt_committed": {"authorities": ["external_operation_db", "backend_provider"], "effect_class": "external_effect_observation", "continuation_policy": "lookup_only_after_uncertain_effect", "required_evidence": ["stable_provider_operation_reference", "dispatch_receipt_digest"], "acquires": []},
+        "result_reference_committed": {"authorities": ["external_operation_db", "workspace", "backend_provider"], "effect_class": "external_effect_observation", "continuation_policy": "lookup_only_after_uncertain_effect", "required_evidence": ["immutable_result_reference", "result_digest", "workspace_seal_digest"], "acquires": []},
+        "terminal_evidence_committed": {"authorities": ["external_operation_db", "workspace", "backend_provider"], "effect_class": "terminal_publication", "continuation_policy": "no_continuation_after_terminal", "required_evidence": ["termination", "write_lease_revocation", "verify_empty", "bounded_drain", "post_stop_stability"], "acquires": []},
+        "cancel_intent_committed": {"authorities": ["external_operation_db", "backend_provider"], "effect_class": "external_effect_intent", "continuation_policy": "lookup_only_after_uncertain_effect", "required_evidence": ["typed_cancel_reason", "current_external_lease_epoch"], "acquires": []},
+        "termination_evidence_committed": {"authorities": ["external_operation_db", "backend_provider"], "effect_class": "external_effect_observation", "continuation_policy": "lookup_only_after_uncertain_effect", "required_evidence": ["termination_or_not_dispatched_observation"], "acquires": []},
+        "cancellation_evidence_committed": {"authorities": ["external_operation_db", "workspace", "backend_provider"], "effect_class": "terminal_publication", "continuation_policy": "no_continuation_after_terminal", "required_evidence": ["termination_or_not_dispatched", "write_lease_revocation", "verify_empty", "bounded_drain", "post_stop_stability"], "acquires": []}
+      }
+    },
+    "pause_lifecycle": {
+      "authority": "execution_ledger",
+      "states": ["prepared", "opened", "claimed", "consumed", "cancelled"],
+      "initial_state": "prepared",
+      "active_states": ["opened"],
+      "publicly_resumable_states": ["opened"],
+      "terminal_states": ["consumed", "cancelled"],
+      "allowed_edges": [["prepared", "opened"], ["opened", "claimed"], ["opened", "cancelled"], ["claimed", "consumed"]],
+      "visibility_rule": "prepared_is_private; opened_requires_public_paused_checkpoint; claimed_is_transitional_and_not_resumable; consumed_and_cancelled_are_irreversible"
+    },
+    "run_lifecycle": {
+      "authority": "execution_ledger",
+      "states": ["initializing", "running", "paused", "completed", "halted", "failed"],
+      "initial_state": "initializing",
+      "terminal_states": ["completed", "halted", "failed"],
+      "allowed_edges": [["initializing", "running"], ["initializing", "failed"], ["running", "paused"], ["running", "completed"], ["running", "halted"], ["running", "failed"], ["paused", "running"], ["paused", "halted"], ["paused", "failed"]],
+      "allowed_cycles": [
+        {"states": ["running", "paused"], "monotonic_guards": ["new_pause_id", "new_control_operation_id", "budget_admission_or_terminal_reserve"]}
+      ]
+    }
+  },
+  "dependency_dags": [
+    {
+      "dag_id": "external_operation_prestart_and_pause_publication",
+      "nodes": [
+        {"node": "external_operation_reserved", "requires": []},
+        {"node": "task_committed", "requires": ["external_operation_reserved"]},
+        {"node": "workspace_manifest_committed", "requires": ["external_operation_reserved", "task_committed"]},
+        {"node": "reservation_committed", "requires": ["task_committed", "workspace_manifest_committed"]},
+        {"node": "core_contract_committed", "requires": ["external_operation_reserved", "task_committed", "workspace_manifest_committed", "reservation_committed"]},
+        {"node": "workspace_materialized", "requires": ["core_contract_committed"]},
+        {"node": "pause_prepared_recorded", "requires": ["workspace_materialized", "core_contract_committed"]},
+        {"node": "pause_bound", "requires": ["pause_prepared_recorded", "reservation_committed"]},
+        {"node": "pause_dependencies_bound", "requires": ["pause_bound"]},
+        {"node": "prepared_checkpoint_committed", "requires": ["pause_dependencies_bound"]},
+        {"node": "paused_lifecycle_recorded", "requires": ["prepared_checkpoint_committed"]},
+        {"node": "pause_opened_recorded", "requires": ["paused_lifecycle_recorded"]},
+        {"node": "public_paused_checkpoint_committed", "requires": ["pause_opened_recorded"]},
+        {"node": "dispatch_authorized", "requires": ["public_paused_checkpoint_committed", "pause_bound", "core_contract_committed"]}
+      ]
+    }
+  ],
+  "field_bindings": [
+    {"field": "producer_operation_id", "allocated_at": "external_operation_reserved", "bound_at": "external_operation_reserved", "immutable_after": "external_operation_reserved"},
+    {"field": "workspace_id", "allocated_at": "external_operation_reserved", "bound_at": "external_operation_reserved", "immutable_after": "external_operation_reserved"},
+    {"field": "task_digest", "allocated_at": "task_committed", "bound_at": "task_committed", "immutable_after": "task_committed"},
+    {"field": "workspace_manifest_digest", "allocated_at": "workspace_manifest_committed", "bound_at": "workspace_manifest_committed", "immutable_after": "workspace_manifest_committed"},
+    {"field": "reservation_digest", "allocated_at": "reservation_committed", "bound_at": "reservation_committed", "immutable_after": "reservation_committed"},
+    {"field": "operation_contract_digest", "allocated_at": "core_contract_committed", "bound_at": "core_contract_committed", "immutable_after": "core_contract_committed"},
+    {"field": "pause_id", "allocated_at": "pause_prepared_recorded", "bound_at": "pause_bound", "immutable_after": "pause_bound"},
+    {"field": "pause_binding_digest", "allocated_at": "pause_prepared_recorded", "bound_at": "pause_bound", "immutable_after": "pause_bound"}
+  ],
+  "cross_machine_invariants": [
+    {"invariant_id": "CTRL-OWN-001", "kind": "atomic_acquisition", "phase": "pause_and_terminal_ownership_reserved", "must_acquire": ["pause_claim_owner", "run_terminal_closure_owner"]},
+    {"invariant_id": "CTRL-OWN-002", "kind": "atomic_acquisition", "phase": "pause_and_terminal_cancel_ownership_reserved", "must_acquire": ["pause_cancel_owner", "run_terminal_closure_owner"]},
+    {"invariant_id": "CTRL-TERM-001", "kind": "terminal_owner_closure", "owner": "run_terminal_closure_owner", "pending_allowed_operation_statuses": ["accepted", "in_progress"], "terminal_operation_closure_values": ["committed", "unavailable"]},
+    {"invariant_id": "CTRL-TERM-002", "kind": "single_assignment_resolution", "phase": "terminal_eligibility_verified", "fields": ["resolved_terminal_disposition", "resolved_preclose_heads"]},
+    {"invariant_id": "PAUSE-LIFE-001", "kind": "pause_visibility_and_finality", "publicly_resumable_states": ["opened"], "terminal_states": ["consumed", "cancelled"], "reopen_edges": []},
+    {"invariant_id": "EXT-CANCEL-001", "kind": "final_proof_union", "consumer_phase": "external_terminal_closure_verified", "producer_terminal_phases": ["terminal_evidence_committed", "cancellation_evidence_committed"], "forbidden_intermediate_phases": ["termination_evidence_committed"]},
+    {"invariant_id": "CONT-001", "kind": "outcome_partition", "classes": ["committed_result_replay", "materializable_publication_prefix", "non_materializable_domain_gap", "integrity_conflict"]},
+    {"invariant_id": "VERSION-001", "kind": "runtime_compatibility", "runtime_schema": "0.4", "resume_exact_schemas": ["0.4"], "source_only_schemas": ["0.2", "0.3"]}
+  ],
+  "compatibility": [
+    {"execution_schema": "0.2", "contract": "legacy_creation_bytes", "phase_b_0_4_behavior": "no_in_place_resume_or_fork; replay_only_when_root_inputs_validate"},
+    {"execution_schema": "0.3", "contract": "pause_and_run_lifecycle_semantic_predecessor", "phase_b_0_4_behavior": "no_in_place_resume_or_migration; validated source may replay or fork to a new 0.4 child"},
+    {"execution_schema": "0.4", "contract": "full_bootstrap_budget_and_control_protocol", "phase_b_0_4_behavior": "resume_only_exact_supported_schema_policy_and_runtime_fingerprint"}
+  ]
+}

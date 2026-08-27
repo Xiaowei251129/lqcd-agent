@@ -42,6 +42,7 @@ OpenAI官方Codex SDK文档确认Python SDK通过JSON-RPC控制本地app-server�
 - [`A03_ARTIFACT_INVALIDATION.md`](A03_ARTIFACT_INVALIDATION.md)
 - [`A03C01_EXECUTION_HEAD_INTEGRITY.md`](A03C01_EXECUTION_HEAD_INTEGRITY.md)
 - [`A04_PAUSE_RESUME_SEMANTICS.md`](A04_PAUSE_RESUME_SEMANTICS.md)
+- [`Control Protocol 0.4`](CONTROL_PROTOCOL_0_4.json)
 - `src/lqcd_agent/coder/task_packet.py`
 - `src/lqcd_agent/coder/codex_handoff.py`
 - `src/lqcd_agent/coder/codex_handoff_worker.py`
@@ -59,6 +60,7 @@ OpenAI官方Codex SDK文档确认Python SDK通过JSON-RPC控制本地app-server�
 - 冻结 content-addressed change bundle、trusted verification evidence 和 code artifact 注册规则；
 - 冻结 success、no-change、failure、human escalation 与 budget outcome taxonomy；
 - 冻结 A04 `external_result` Pause、dispatch/delivery idempotency 和 crash 行为；
+- 以tracked [`CONTROL_PROTOCOL_0_4.json`](CONTROL_PROTOCOL_0_4.json)作为ExternalOperation phase/status graph、pre-start dependency DAG、field binding和final-proof union的唯一机器可读枚举；
 - 冻结 Code Agent result 到 A01 Analysis/Coordinator 路线的 guards，以及 verified bundle 到 fresh Analysis execution 的交接；
 - 冻结 Fake backend 必须覆盖的 deterministic scenarios；
 - 将产品 subgraph、Fake backend、真实 backend、workspace manager 与 graph integration 分别交给 A07 和后续 Phase B/Phase C implementation tickets。
@@ -203,30 +205,9 @@ terminal_evidence_reference / terminal_evidence_digest
 
 ExternalOperation使用两阶段identity/core publication消除task、workspace、reservation与producer identity之间的创建环。第一笔external-operation authority transaction只执行`external_operation_reserved`：可信Host分配并持久化`producer_operation_id`、Run/Cycle/Attempt、backend/deadline policy、`workspace_id`、managed workspace locator digest、initial owner和`lease_epoch`，同时将task、manifest、reservation、core和Pause字段显式保存为null。该stub已经是workspace创建的唯一fencing authority，但尚不授权materialize workspace、创建Pause或dispatch。
 
-随后固定phase与穷尽allowed-edge graph为；normal path按顺序前进，cancellation branch只能从明确标记为cancellable的nonterminal phase进入且一旦进入不能返回normal path：
+ExternalOperation exact phase enum、normal/cancellation success edges、phase-to-status mapping、authority、effect class、continuation policy和required evidence只由tracked [`CONTROL_PROTOCOL_0_4.json`](CONTROL_PROTOCOL_0_4.json)定义；本ticket不再维护可漂移的第二份phase graph。语义上normal path仍是`external_operation_reserved`预留identity/epoch，随后冻结task、manifest、reservation和immutable core，materialize workspace并绑定Pause，只有public paused checkpoint完成后才授权dispatch，最终以`terminal_evidence_committed`关闭。Cancellation只能从机器合同列出的nonterminal phase进入，依次形成intent、非terminal termination observation与final `cancellation_evidence_committed`，进入后不能回到normal path。
 
-```text
-external_operation_reserved
--> task_committed
--> workspace_manifest_committed
--> reservation_committed
--> core_contract_committed
--> workspace_materialized
--> pause_bound
--> dispatch_authorized
--> dispatch_receipt_committed
--> result_reference_committed
--> terminal_evidence_committed
-
-cancellation branch from exactly one of:
-external_operation_reserved | task_committed | workspace_manifest_committed
-| reservation_committed | core_contract_committed | workspace_materialized
-| pause_bound | dispatch_authorized | dispatch_receipt_committed
-| result_reference_committed
--> cancel_intent_committed
--> termination_evidence_committed
--> cancellation_evidence_committed
-```
+Design-time validator必须证明该联合success graph无环、所有phase可达、每个nonterminal phase都有穷尽successor且只能终结于两种final proof之一；pre-start dependency DAG还必须证明producer/workspace identity先于task/manifest/reservation引用，immutable core先于physical workspace，Pause identity先在`pause_prepared_recorded`分配再由ExternalOperation绑定，public paused checkpoint先于dispatch。下文只解释这些phase的业务语义，不得扩展机器枚举。
 
 `CodeAgentTask`引用已存在的`producer_operation_id`和允许该route的A06 BudgetDecision；`WorkspaceManifest`再引用task与同一producer/workspace identity，但此时physical workspace仍不存在。A06 aggregate reservation随后绑定exact task和manifest digests。`core_contract_committed`使用current external-operation epoch和phase revision执行一次性CAS，填入task、manifest、reservation references/digests并计算immutable `operation_contract_digest`；此后这些字段不可变。只有core commit后，current epoch worker才能按manifest materialize workspace并提交`workspace_materialized`。这条DAG不允许先创建task/workspace/reservation再补建producer operation，也不允许physical workspace早于durable epoch owner或immutable core。
 
@@ -698,6 +679,7 @@ A07和后续implementation tickets至少必须覆盖：
 
 ```bash
 git diff --check
+python scripts/validate_phase_a_control_protocol.py
 ```
 
 还必须验证：

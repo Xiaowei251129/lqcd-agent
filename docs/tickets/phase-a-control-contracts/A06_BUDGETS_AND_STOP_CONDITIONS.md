@@ -40,6 +40,7 @@ A01 已冻结四层回退的逻辑路线，A02 已冻结 Run/Cycle/Attempt/Trans
 - [`A03C01_EXECUTION_HEAD_INTEGRITY.md`](A03C01_EXECUTION_HEAD_INTEGRITY.md)
 - [`A04_PAUSE_RESUME_SEMANTICS.md`](A04_PAUSE_RESUME_SEMANTICS.md)
 - [`A05_CODE_AGENT_CONTRACT.md`](A05_CODE_AGENT_CONTRACT.md)
+- [`Control Protocol 0.4`](CONTROL_PROTOCOL_0_4.json)
 - [`A03 Transition Publication-order Clarification`](../corrections/A03_TRANSITION_PUBLICATION_ORDER_CLARIFICATION.md)
 - `src/lqcd_agent/graph/state.py`
 - `src/lqcd_agent/graph/routing.py`
@@ -55,6 +56,7 @@ A01 已冻结四层回退的逻辑路线，A02 已冻结 Run/Cycle/Attempt/Trans
 - 冻结 failure fingerprint、重复失败、risk-first escalation 与停止语义；
 - 冻结 Human `approve_budget_window` 的 exact scope、single-use consumption 和绝对 ceiling；
 - 冻结 Pause deadline，以及 start/resume/replay/fork 的 policy compatibility；
+- 复用tracked [`CONTROL_PROTOCOL_0_4.json`](CONTROL_PROTOCOL_0_4.json)中互斥的continuation/outcome classes、Run lifecycle edge与pre-start dependency DAG，不在budget prose中建立第二套状态机；
 - 把 runtime、schema validators、budget ledger 和 tests 交给后续 Phase B implementation tickets。
 
 ## Non-goals
@@ -261,7 +263,7 @@ Settlement只能使用可信Host measurement、Backend receipt、tool audit、`W
 
 ### Unified stop and settlement outcome matrix
 
-本合同按A04互斥优先级分类crash与stop evidence。`materializable_publication_prefix`要求所有已存在bytes/heads exact、后续identity/digest已在coordinator或ledger中预计算、且补齐不重新求值decision、不创建新domain identity、不调用Agent/provider/tool/Backend或执行其他外部副作用；它保持operation `in_progress/materialization_pending`。`non_materializable_domain_gap`表示缺少上述预授权、必须重新求值route/grant或外部副作用结果不确定；它终止为`recovery_required`，原Run不自动继续。已证明tamper、counter/policy冲突或违规activity属于control integrity failure；只有权威Run closure仍可完整验证和安全append时，唯一terminal owner才能进一步发布`run_status: failed`，authority自身不可验证时必须返回`terminal_closure = unavailable`。
+本合同按A04互斥优先级分类crash与stop evidence；四个control outcome class的机器枚举由 [`CONTROL_PROTOCOL_0_4.json`](CONTROL_PROTOCOL_0_4.json)唯一冻结，下面的settlement table只增加budget后果，不能改写其status或continuation权限。`materializable_publication_prefix`要求所有已存在bytes/heads exact、后续identity/digest已在coordinator或ledger中预计算、且补齐不重新求值decision、不创建新domain identity、不调用Agent/provider/tool/Backend或执行其他外部副作用；它保持operation `in_progress/materialization_pending`。`non_materializable_domain_gap`表示缺少上述预授权、必须重新求值route/grant或外部副作用结果不确定；它终止为`recovery_required`，原Run不自动继续。已证明tamper、counter/policy冲突或违规activity属于control integrity failure；只有权威Run closure仍可完整验证和安全append时，唯一terminal owner才能进一步发布`run_status: failed`，authority自身不可验证时必须返回`terminal_closure = unavailable`。
 
 | Observed boundary | Settlement | Run/control outcome | Required behavior |
 |---|---|---|---|
@@ -503,6 +505,7 @@ A07及后续Phase B implementation tickets至少必须映射并验证：
 
 ```bash
 git diff --check
+python scripts/validate_phase_a_control_protocol.py
 ```
 
 还必须验证：

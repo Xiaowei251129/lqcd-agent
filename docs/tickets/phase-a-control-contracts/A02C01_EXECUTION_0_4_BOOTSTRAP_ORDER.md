@@ -36,6 +36,7 @@ Schema `0.4+` 必须显式扩展 bootstrap，而不是让初始 Cycle/Attempt/Tr
 - [`A03C01_EXECUTION_HEAD_INTEGRITY.md`](A03C01_EXECUTION_HEAD_INTEGRITY.md)
 - [`A04_PAUSE_RESUME_SEMANTICS.md`](A04_PAUSE_RESUME_SEMANTICS.md)
 - [`A06_BUDGETS_AND_STOP_CONDITIONS.md`](A06_BUDGETS_AND_STOP_CONDITIONS.md)
+- [`Control Protocol 0.4`](CONTROL_PROTOCOL_0_4.json)
 - [`A02 Human Gate Commit-order Clarification`](../corrections/A02_HUMAN_GATE_COMMIT_ORDER_CLARIFICATION.md)
 - [`A03 Transition Publication-order Clarification`](../corrections/A03_TRANSITION_PUBLICATION_ORDER_CLARIFICATION.md)
 
@@ -44,6 +45,7 @@ Schema `0.4+` 必须显式扩展 bootstrap，而不是让初始 Cycle/Attempt/Tr
 - 冻结 schema `0.4+` 的 bootstrap policy、identity、ledger、invalidation、checkpoint 和 side-effect 顺序；
 - 冻结 `start_run` bootstrap 的幂等 identity、合法 incomplete prefix 和 fail-closed crash 行为；
 - 冻结项目自有`ControlOperation 0.1`、幂等键tombstone、operation phase和per-Run ledger之前的持久化边界；
+- 以tracked [`CONTROL_PROTOCOL_0_4.json`](CONTROL_PROTOCOL_0_4.json)作为`start_run` phase、edge、authority与evidence的唯一机器可读枚举；
 - 明确本 ticket 对 A02 §5 的版本限定 supersession；
 - 向 A04、A06、A07 与 Phase B implementation tickets提供一个唯一 bootstrap contract；
 - 执行时只同步治理与目标合同文档，不实现 runtime。
@@ -141,18 +143,7 @@ Append-only JSONL与immutable file publication必须完整写入一个record/fil
 
 可信Host先验证`StartRunRequest`、Actor scope、output-root reserved control path与allowlisted canonical BudgetPolicy input。失败时不得创建ControlOperation、Run root或任何execution identity。验证成功后的第一项durable mutation必须是在coordinator中占用幂等键、创建`start_run` operation、分配target Run locator与initial `lease_epoch`，并保存后续只能exact materialize的canonical BudgetPolicy bytes/digest；只有该transaction提交后才能创建Run root、policy file或正式ledger。
 
-`start_run`固定使用以下单调operation phases：
-
-```text
-operation_reserved
--> run_root_created
--> policy_published
--> run_ledger_started
--> bootstrap_records_complete
--> running_lifecycle_recorded
--> checkpoint_committed
--> result_committed
-```
+`start_run/not_applicable`的exact phase enum、success edges、phase authority、required evidence与continuation policy只由tracked [`CONTROL_PROTOCOL_0_4.json`](CONTROL_PROTOCOL_0_4.json)定义。本节后续顺序是该机器合同的语义说明，不得增加隐藏phase、跳过edge或形成第二份独立枚举；design-time validator必须在冻结前证明该success graph全部可达、无环且只能终结于`result_committed`。
 
 验证成功后的权威顺序固定为：
 
@@ -245,6 +236,7 @@ Bootstrap使用A02/A03复合Transition publication顺序：先分配scheduled ta
 
 ```bash
 git diff --check
+python scripts/validate_phase_a_control_protocol.py
 ```
 
 还必须验证全部relative Markdown links、ticket metadata、A02/A03/A03C01正文hash未变化，且本ticket没有runtime/tests/configs diff。

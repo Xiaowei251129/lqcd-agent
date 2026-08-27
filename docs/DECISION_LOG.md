@@ -816,6 +816,42 @@ Related Documents:
 - [A07 Phase B Harness Acceptance](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)
 - [Phase B Requirement Catalog](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)
 
+## 2026-08-27: Make the Phase A Control Protocol a Single Machine-readable Authority
+
+Decision:
+
+- Add tracked `CONTROL_PROTOCOL_0_4.json` as the only machine-readable enumeration of ControlOperation type/variant phases and success edges, phase authority/evidence/ownership contracts, ExternalOperation normal/cancellation edges and statuses, Pause and Run lifecycle edges, control outcome classes, pre-start dependency order, field binding, cross-machine invariants and schema compatibility.
+- Keep explanatory prose in A02C01 and A04–A07, but remove duplicate exact phase graphs from A02C01, A04 and A05. Prose may explain semantics and evidence but cannot add a type, variant, phase, edge or exception that is absent from the protocol.
+- Add a Python-standard-library design-time validator that rejects duplicate JSON keys, incomplete type/variant sets, unreachable or nonterminating phases, hidden cycles, non-atomic combined ownership, nonterminal cancellation proof, circular construction, field binding before allocation, catalog/prose ID drift, stale protocol digest and missing protocol references.
+- Bind the exact protocol SHA-256 into the requirement catalog and require the future Phase B acceptance matrix and completion evidence to bind both protocol and catalog digests.
+- Keep the only intentional lifecycle cycle explicit as `running <-> paused`, guarded by a new Pause identity, a new ControlOperation identity and budget admission or terminal reserve. ControlOperation, ExternalOperation and construction success graphs remain acyclic.
+- Remove the stale prose-only `paused -> completed` lifecycle edge. Normal completion requires a committed `memory_report -> END` while the Run is running; a paused Run has no executor that can produce that trigger and may only resume or close as halted/failed.
+- Keep `REPO_CURRENT_STATE.md` limited to the latest verified facts. Historical catalog counts and digests remain recoverable from Git and this log instead of appearing beside current evidence. The superseded 2026-08-26 review snapshot had 80 required catalog entries and SHA-256 `f66a96f9c488c3f9571e398b8381b2d037bd32f56dc7b3a951717e10fda2ceac`.
+
+Confirmed:
+
+- This is a pre-freeze specification-engineering correction, not a runtime, test, graph, provider or Phase B implementation change.
+- Coordinator remains the sole product route and mutation authority; LangGraph continues to own graph execution and checkpoint mechanics only.
+- A01–A03, A03C01 and their completion/correction history remain frozen. A02C01 and A04–A07 remain `review`.
+- B00 must consume the frozen protocol rather than re-derive a state machine from Markdown, and must convert the same validations into collectable acceptance tests and exact traces.
+
+Rejected Alternatives:
+
+- Keeping exact phase lists independently in A02C01, A04, A05, A07 and implementation code: rejected because local edits repeatedly created cross-document drift and stale audits.
+- Treating every graph cycle as invalid: rejected because Pause/resume is an intentional product lifecycle cycle, but it must carry explicit monotonic identity and budget guards.
+- Copying TradingAgents' application-level checkpoint design as the control authority: rejected because explicit conditional path maps and graph fingerprints are useful patterns, but node checkpoints do not provide mutation idempotency, fencing, external-operation cancellation or Run terminal closure ownership.
+
+Related Documents:
+
+- [Control Protocol 0.4](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)
+- [Protocol Validator](../scripts/validate_phase_a_control_protocol.py)
+- [A02C01 Execution 0.4 Bootstrap Order](tickets/phase-a-control-contracts/A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md)
+- [A04 Pause and Resume Semantics](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)
+- [A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)
+- [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)
+- [A07 Phase B Harness Acceptance](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)
+- [Phase B Requirement Catalog](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)
+
 ## 2026-08-26: Add a Durable Control-operation Coordinator and Exact Termination Boundary
 
 Decision:

@@ -36,6 +36,7 @@ A02 已冻结 Run/Cycle/Attempt/Transition identity，A03 与 A03C01 已冻结 a
 - [`A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md`](A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md)
 - [`A03_ARTIFACT_INVALIDATION.md`](A03_ARTIFACT_INVALIDATION.md)
 - [`A03C01_EXECUTION_HEAD_INTEGRITY.md`](A03C01_EXECUTION_HEAD_INTEGRITY.md)
+- [`Control Protocol 0.4`](CONTROL_PROTOCOL_0_4.json)
 - `src/lqcd_agent/graph/analysis_graph.py`
 - `src/lqcd_agent/graph/run_graph.py`
 - `src/lqcd_agent/demo/server.py`
@@ -44,6 +45,7 @@ A02 已冻结 Run/Cycle/Attempt/Transition identity，A03 与 A03C01 已冻结 a
 
 - 冻结项目自有的 `start_run`、`resume_run`、`replay_run`、`fork_run` 与 `cancel_pause` 外部合同，以及内部`publish_pause`与`close_run`publication合同；
 - 复用A02C01 `ControlOperation 0.1`冻结所有public mutation的durable journal、operation phase、worker lease和result replay；
+- 以tracked [`CONTROL_PROTOCOL_0_4.json`](CONTROL_PROTOCOL_0_4.json)作为ControlOperation type/variant、phase、success edge、authority、ownership以及Pause/Run lifecycle edge的唯一机器可读枚举；
 - 冻结 Pause identity、append-only lifecycle、Run 状态约束和安全 checkpoint 边界；
 - 分离权威control `run_status`与现有领域/workflow `status`，消除terminal `pending`死区；
 - 冻结 `human_input`、`external_result`、`recovery_decision` 三类 typed Pause；
@@ -104,13 +106,7 @@ Execution schema `0.3`新增权威control字段`run_status = initializing | runn
 
 ### Append-only Run lifecycle authority
 
-Execution ledger增加独立`record_type = run_lifecycle`。每条record至少冻结`from_status`、`to_status`、typed reason、触发它的nullable control operation/Attempt/Pause/budget event identity、append前的`previous_execution_head`与当时artifact heads。该record自身的event identity、sequence与canonical digest派生resulting execution head，record payload不得嵌入自己的未来digest/head；下游checkpoint和control record引用该resulting head。合法状态变化固定为：
-
-```text
-initializing -> running | failed
-running -> paused | completed | halted | failed
-paused -> running | completed | halted | failed
-```
+Execution ledger增加独立`record_type = run_lifecycle`。每条record至少冻结`from_status`、`to_status`、typed reason、触发它的nullable control operation/Attempt/Pause/budget event identity、append前的`previous_execution_head`与当时artifact heads。该record自身的event identity、sequence与canonical digest派生resulting execution head，record payload不得嵌入自己的未来digest/head；下游checkpoint和control record引用该resulting head。Exact lifecycle edges只由 [`CONTROL_PROTOCOL_0_4.json`](CONTROL_PROTOCOL_0_4.json)定义；唯一允许的循环是带new Pause identity、new ControlOperation identity及budget admission/terminal reserve单调guards的`running <-> paused`。正常`completed`只由running状态下已经提交的`memory_report -> END`触发；paused Run没有可产生normal END的执行者，因此不存在orphan `paused -> completed`边，只能恢复为running或通过terminal owner进入halted/failed。
 
 `completed | halted | failed`全部terminal且不可逆。A02C01 bootstrap追加`initializing -> running`后，只有包含该resulting execution head的checkpoint与committed start result完整时才能执行Planner；Pause `opened`、`consumed`或`cancelled`必须与相应`run_lifecycle`变化建立exact reference。缺失、重复、非法from/to或terminal后继续追加非audit execution record均fail closed。
 
@@ -198,90 +194,9 @@ Internal `close_run`同样必须在任何terminal lifecycle bytes前建立Contro
 
 `operation_status`严格复用A02C01：`accepted -> in_progress -> committed | failed | recovery_required`，后三者均为不可逆terminal tombstone。所有下列非terminal phase都对应`in_progress`；只有`result_committed`使status成为`committed`。Exact durable prefix尚缺预计算、无副作用publication suffix时，query返回`in_progress/materialization_pending`并允许current-epoch worker继续；缺少预授权事实、发生结果不确定副作用或无法安全继续原动作时才终止为`recovery_required`，之后不得推进phase。
 
-Operation-type/variant-specific phase enum与穷尽allowed-edge graph固定为。下列`->`是唯一允许的success edge，分支标签是reservation transaction已冻结且进入request digest的`operation_variant`；未列出的edge全部非法：
+Operation type/variant-specific exact phase enum与穷尽success-edge graph只由tracked [`CONTROL_PROTOCOL_0_4.json`](CONTROL_PROTOCOL_0_4.json)定义；本ticket不再维护可漂移的第二份phase列表。冻结的分支集合为：`start_run/not_applicable`、`publish_pause/not_applicable`、`resume_run/continue_execution`、`resume_run/abandon_and_halt`、`cancel_pause/not_applicable`、`replay_run/not_applicable`、`fork_run/not_applicable`与`close_run/not_applicable`。Reservation transaction必须把variant写入request digest；未出现在机器合同中的type、variant、phase或edge全部非法。
 
-```text
-publish_pause:
-operation_reserved
--> pause_prepared_recorded
--> pause_dependencies_bound
--> prepared_checkpoint_committed
--> paused_lifecycle_recorded
--> pause_opened_recorded
--> public_paused_checkpoint_committed
--> result_committed
-
-resume_run:
-operation_reserved
--> resume_disposition_committed
-
-  continue_execution:
-  -> pause_ownership_reserved
-  -> pause_claimed_recorded
-  -> prestart_records_committed
-  -> pause_consumed_recorded
-  -> running_lifecycle_recorded
-  -> resume_checkpoint_committed
-  -> invocation_authorized
-  -> stable_boundary_committed
-  -> result_committed
-
-  abandon_and_halt:
-  -> pause_and_terminal_ownership_reserved
-  -> pause_claimed_recorded
-  -> pause_consumed_recorded
-  -> target_disposition_committed
-  -> resource_disposition_committed
-  -> terminal_eligibility_verified
-  -> terminal_lifecycle_recorded
-  -> terminal_checkpoint_committed
-  -> result_committed
-
-cancel_pause:
-operation_reserved
--> pause_and_terminal_cancel_ownership_reserved
--> cancel_intent_committed
--> external_terminal_closure_verified
--> pause_cancelled_recorded
--> target_disposition_committed
--> resource_disposition_committed
--> terminal_eligibility_verified
--> terminal_lifecycle_recorded
--> terminal_checkpoint_committed
--> result_committed
-
-replay_run:
-operation_reserved
--> source_snapshot_committed
--> child_run_root_created
--> child_policy_published
--> child_run_ledger_started
--> child_lineage_recorded
--> child_bootstrap_records_complete
--> child_running_lifecycle_recorded
--> child_checkpoint_committed
--> result_committed
-
-fork_run:
-operation_reserved
--> source_snapshot_committed
--> child_run_root_created
--> child_policy_published
--> child_run_ledger_started
--> child_lineage_recorded
--> child_bootstrap_records_complete
--> child_running_lifecycle_recorded
--> child_checkpoint_committed
--> result_committed
-
-close_run:
-operation_reserved
--> terminal_ownership_reserved
--> terminal_eligibility_verified
--> terminal_lifecycle_recorded
--> terminal_checkpoint_committed
--> result_committed
-```
+机器合同同时为每个phase冻结authority、effect class、continuation policy、required evidence和ownership acquisition。Design-time validator必须证明每个ControlOperation success graph全部phase可达、无隐藏cycle、每个nonterminal phase都有穷尽successor且所有合法success path只到达`result_committed`；`failed | recovery_required`只能作为冻结当前phase的不可逆interrupt terminal status，不能伪装成success edge。下文保留各phase的语义、evidence与cross-machine约束说明，但不能扩展机器枚举。
 
 Schema/auth/scope rejection发生在operation acceptance前，不创建operation row；same-key conflict返回已有operation identity但不推进其status/phase。成功的reservation transaction将`accepted`推进为`in_progress + operation_reserved`。任一nonterminal phase都可以在保存typed evidence后终止为`failed`或`recovery_required`，终止时phase冻结在最后成功边界且以后不得推进；不存在从terminal status回到`in_progress`、跨过中间phase或从一类operation phase跳入另一类operation phase的边。
 
@@ -577,6 +492,7 @@ A07 与后续 Phase B implementation tickets 至少必须覆盖：
 
 ```bash
 git diff --check
+python scripts/validate_phase_a_control_protocol.py
 ```
 
 还必须验证：

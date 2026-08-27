@@ -42,6 +42,7 @@ A07必须冻结“什么证据才算Phase B完成”：control correctness使用
 - [`A05_CODE_AGENT_CONTRACT.md`](A05_CODE_AGENT_CONTRACT.md)
 - [`A06_BUDGETS_AND_STOP_CONDITIONS.md`](A06_BUDGETS_AND_STOP_CONDITIONS.md)
 - [`PHASE_B_REQUIREMENT_CATALOG.json`](PHASE_B_REQUIREMENT_CATALOG.json)
+- [`Control Protocol 0.4`](CONTROL_PROTOCOL_0_4.json)
 - [`Phase B Overview`](../phase-b-graph-harness/OVERVIEW.md)
 - `tests/test_graph_smoke.py`
 - `tests/test_execution_identity.py`
@@ -56,12 +57,13 @@ A07必须冻结“什么证据才算Phase B完成”：control correctness使用
 - 冻结normalized exact trajectory、process restart、independent-client concurrency和durability-boundary fault injection；
 - 冻结machine-readable `PhaseBAcceptanceMatrix 0.1`及zero-gap gate；
 - 冻结machine-readable `PhaseBRequirementCatalog 0.1`、stable requirement IDs及catalog-digest stale gate；
+- 冻结machine-readable `ControlProtocol 0.4`作为ControlOperation、ExternalOperation、Run lifecycle、outcome partition与construction DAG的单一枚举，并把exact-byte digest绑定到catalog和matrix；
 - 冻结legacy handoff compatibility、capability eval和parallel graph的边界；
 - 冻结B00–B05 implementation ticket拆分与Phase B退出门槛。
 
 ## Non-goals
 
-- 不实现或修改runtime、graph、state/schema validator、checkpoint、tests、fixtures、matrix或CLI；
+- 不实现或修改runtime、graph、runtime state/schema validator、checkpoint、tests、fixtures、matrix或CLI；本轮tracked标准库脚本只做design-time exact-byte协议审查，不是Phase B实现或runtime dependency；
 - 不创建B00–B05 ticket文件，不提前执行Phase B；
 - 不选择或引入LangSmith、Harbor、AgentEvals、其他第三方eval平台或新dependency；
 - 不实现parallel reducer、fan-out/fan-in、并行Agent、并行artifact merge或相关race resolution；
@@ -90,6 +92,7 @@ A07必须冻结“什么证据才算Phase B完成”：control correctness使用
 
 - A01–A06及A03C01 ticket正文；
 - 与本ticket同一frozen snapshot中的`PHASE_B_REQUIREMENT_CATALOG.json` exact bytes；catalog变更必须使用新的acceptance corrective ticket和version；
+- 与本ticket同一frozen snapshot中的`CONTROL_PROTOCOL_0_4.json` exact bytes；protocol变更必须同步catalog-bound SHA，并使用新的acceptance corrective ticket和version；
 - `src/`、`tests/`、`evaluation/`、`configs/`、`raw_data/`、`outputs/`和accepted artifacts；
 - `docs/ARCHITECTURE.md`、`docs/AGENT_ROLES_AND_BOUNDARIES.md`、`docs/STATE_SCHEMA.md`、`docs/ARTIFACT_CONTRACTS.md`和`docs/SECURITY_AND_DATA_POLICY.md`；
 - graph topology、runtime schema、checkpoint backend、dependency versions、providers、认证与secrets；
@@ -156,7 +159,7 @@ Smoke必须分别核对最终control `run_status`和领域`status`、execution/a
 tests/phase_b/acceptance_matrix.json
 ```
 
-该文件不是runtime config或Agent input。Top-level至少包含`schema_version = 0.1`、`phase = phase-b-graph-harness`、`requirement_catalog_version`、`requirement_catalog_sha256`和ordered `scenarios`。初次冻结的catalog content version固定为`0.1.0`，与JSON schema version独立。Catalog digest必须是A07冻结时tracked `PHASE_B_REQUIREMENT_CATALOG.json` exact bytes的SHA-256；不接受运行时重新解释ticket prose。
+该文件不是runtime config或Agent input。Top-level至少包含`schema_version = 0.1`、`phase = phase-b-graph-harness`、`requirement_catalog_version`、`requirement_catalog_sha256`、`control_protocol_version`、`control_protocol_sha256`和ordered `scenarios`。初次冻结的catalog content version固定为`0.1.0`，与JSON schema version独立。两个digest必须分别是A07冻结时tracked `PHASE_B_REQUIREMENT_CATALOG.json`与`CONTROL_PROTOCOL_0_4.json` exact bytes的SHA-256；不接受运行时重新解释ticket prose或从测试实现反向发明phase graph。
 
 每个scenario至少包含：
 
@@ -177,7 +180,7 @@ Matrix validator提供严格分离的construction与final模式。Construction�
 
 - catalog中的A01、A02、A02C01、A03、A03C01、A04、A05、A06或A07任一required ID没有required scenario，或required owner集合不与这九个ticket exact相等；
 - matrix引用unknown/non-required ID，或catalog required ID重复、缺失、顺序漂移；
-- matrix声明的catalog version/digest与tracked exact bytes不一致；
+- matrix声明的catalog或control-protocol version/digest与tracked exact bytes不一致；
 - nodeid无法collect，或required test被skip、xfail、deselect或仅在live opt-in时运行；
 - applicable expected trace、required invariant或其fixture缺失，或schema不合法；
 - pass report包含unknown、uncovered或stale scenario；
@@ -197,7 +200,17 @@ Catalog不是runtime config、Agent input或测试结果。它为A01–A03/A03C0
 
 Machine zero-gap只证明required matrix与已冻结catalog set-equal，不宣称机器可以从自然语言ticket正文自动推导全部规范。Catalog对ticket prose与correction registry的语义完整性由A07从`review`提升为`ready`前的人工交叉审核确认；冻结后catalog成为Phase B机器验收的唯一required-set输入。Validator必须独立检查owner集合、stable ID、source locator、required ordering和catalog digest，不能用一份手写matrix反向定义catalog expected set。
 
-A07从`review`提升为`ready`时，其ticket正文与catalog exact bytes必须在同一frozen commit中；completion record记录catalog SHA-256。后续correction/corrective ticket改变任何required语义时，必须提升catalog version、更新受影响entry并由新的acceptance corrective ticket重新冻结，不能保留旧digest或只改自由文本label。
+A07从`review`提升为`ready`时，其ticket正文、protocol与catalog exact bytes必须在同一frozen commit中；completion record记录protocol和catalog SHA-256。后续correction/corrective ticket改变任何required语义时，必须提升适用content version、更新受影响entry并由新的acceptance corrective ticket重新冻结，不能保留旧digest或只改自由文本label。
+
+## `ControlProtocol 0.4`
+
+Tracked machine contract固定为 [`CONTROL_PROTOCOL_0_4.json`](CONTROL_PROTOCOL_0_4.json)。它不是runtime config、Agent input、bounded state或LangGraph topology；它是Phase A在冻结前用于消除prose drift的单一机器枚举，B00必须原样消费并生成runtime enum/router/static assertions，不能从A04/A05自然语言重新推导另一张图。
+
+Protocol至少冻结：七类ControlOperation及其variant、phase和success edges；每个phase的authority、effect class、continuation policy、required evidence与atomic ownership acquisition；ExternalOperation normal/cancellation联合图及phase/status mapping；Pause lifecycle的prepared/opened/claimed/consumed/cancelled edge、visibility与finality；Run lifecycle及唯一显式允许的`running <-> paused`循环与单调guards；四类互斥control outcomes；ExternalOperation pre-start/Pausing dependency DAG；identity/digest field的allocation/binding/immutability点；combined ownership、terminal closure、final-proof union和schema compatibility invariants。除显式声明且带单调guard的Run lifecycle循环外，ControlOperation、ExternalOperation、Pause lifecycle和construction success graph都必须无环。
+
+Tracked [`scripts/validate_phase_a_control_protocol.py`](../../../scripts/validate_phase_a_control_protocol.py)使用Python标准库strict读取protocol和catalog，拒绝duplicate keys、unknown/missing type或variant、unknown phase/edge、unreachable/orphan/nonterminating phase、隐藏cycle、非原子combined ownership、nonterminal final proof、construction DAG循环、field先引用后分配、prose/catalog ID gap、stale protocol digest及required文档未引用protocol。该脚本只是pre-freeze design lint；B00仍必须把同一规则转为collectable tests、matrix coverage与fault traces。
+
+A07从`review`提升为`ready`时，ticket、protocol和catalog exact bytes必须位于同一frozen commit；catalog保存protocol reference与SHA-256，completion同时记录protocol和catalog SHA-256。冻结后任何phase、edge、authority、evidence、outcome、DAG、field binding或compatibility变更都必须通过新的corrective ticket提升适用content version并重新绑定两个digest，不能只修改prose。
 
 ## Normalized Exact Trajectory Contract
 
@@ -354,6 +367,7 @@ Matrix必须逐项映射：
 - `A07-META-007`：compatibility、capability、live-provider、benchmark与单一happy-path结果单独报告且不能计入required control acceptance；
 - `A07-META-008`：B00先建立验收基础，B01–B04分别拥有并转绿其subsystem requirements，B05只在全部前置scenario已通过后生成最终zero-gap与exit evidence。
 - `A07-META-009`：B00静态验证每个ControlOperation type/variant的router outputs、phase enum与allowed-edge map互相穷尽，所有phase可达、所有合法路径终结、无跨variant/skip/orphan edge；验证cancel/abandon combined-ownership不存在可观察half-owner状态、owner operation terminal不遗留pending closure，并交叉验证A04引用的A05 active-cancellation或already-normal-terminal proof确为terminal及B02拥有`close_run`实现。
+- `A07-META-010`：tracked Control Protocol exact bytes是ControlOperation、ExternalOperation、Pause/Run lifecycle的phase/status/edge/authority/evidence/ownership/outcome/dependency/field-binding/compatibility唯一机器枚举；strict design validator与catalog-bound SHA必须拒绝prose drift、stale snapshot、unknown branch、Pause reopen、hidden cycle、circular construction和先引用后分配。
 
 ## Fault Injection and Crash Outcomes
 
@@ -410,7 +424,7 @@ Harness必须拒绝不在A01 matrix中的并行branch或多target Transition，�
 
 A07执行只把以下拆分同步到Phase B Overview，不创建ticket文件。Phase A全部completed后，按顺序起草并确认：
 
-1. **B00 — Acceptance Foundation**：先实现catalog/matrix strict schemas、owner/version/digest validator、pytest node collection、normalized trace codec与failpoint registry skeleton；创建只包含已经collectable meta tests的matrix骨架，并分离construction/owned/final validation modes，不得用placeholder、skip或xfail伪造已覆盖。
+1. **B00 — Acceptance Foundation**：先消费frozen `CONTROL_PROTOCOL_0_4.json`并实现protocol/catalog/matrix strict schemas、type/variant/edge与dependency-DAG validator、owner/version/digest validator、pytest node collection、normalized trace codec与failpoint registry skeleton；创建只包含已经collectable meta tests的matrix骨架，并分离construction/owned/final validation modes，不得从prose重建另一份状态图，也不得用placeholder、skip或xfail伪造已覆盖。
 2. **B01 — Execution 0.4 Control Foundation**：BudgetPolicy/ledger、append-only run lifecycle、bounded projection、trusted clock、canonical validators及execution/artifact/checkpoint cross-head integrity，并增加及转绿B01-owned scenarios。
 3. **B02 — Durable Control Operations**：实现`<output_root>/.lqcd/control_operations.sqlite`的FULL durability profile、`ControlOperation 0.1` type/variant allowed-edge graph、`lease_epoch` fencing、project-owned start/resume/replay/fork/cancel、internal `publish_pause`与`close_run`、single Run terminal closure ownership/revision及cancel/abandon的atomic combined-ownership phase、invocation capability fencing、`pause_prepared`/`pause_opened`双checkpoint Pause publication、child saga、tombstone、result replay和process-restart recovery，并增加及转绿B02-owned scenarios。
 4. **B03 — Graph-managed Fake Code Agent**：`CodeAgentSubgraph`、`CodingBackend` port、coordinator-owned`ExternalOperation 0.1`、durable watchdog、deterministic ContainmentProvider fixture、`FakeCodingBackend`、图外ingress validator、trusted verification、content-addressed bundle和fresh Analysis handoff，并增加及转绿B03-owned scenarios。
@@ -440,6 +454,7 @@ Phase B completion record必须列出matrix digest、required/covered/passed tot
 - decision-complete的六层Phase B acceptance model；
 - `PhaseBAcceptanceMatrix 0.1` schema与zero-gap规则；
 - `PhaseBRequirementCatalog 0.1`、stable IDs、required-set equality和catalog SHA-256 stale gate；
+- `ControlProtocol 0.4`、strict design validator、catalog-bound protocol SHA-256及B00消费边界；
 - A01、A02、A02C01、A03、A03C01、A04–A07 required scenario inventory；
 - exact trajectory、fault/concurrency、legacy和parallel边界；
 - B00–B05拆分及Phase B exit gate；
@@ -456,7 +471,7 @@ Phase B completion record必须列出matrix digest、required/covered/passed tot
 - mutation coordinator与LangGraph checkpoint物理及authority分离，FULL durability profile、same-key/different-payload、lease epoch takeover/stale-owner拒绝和operation result replay均由两个独立process确定性验证；
 - Fake Code Agent完整经过graph-managed pre-start、A04 Pause、A06 aggregate settlement、trusted verification、Code Bundle与fresh Analysis handoff，且不调用Codex SDK或完整SandboxAgent；
 - legacy只能作为compatibility entrypoint，parallel明确不属于Phase B；
-- machine-readable matrix能够机械拒绝missing/stale/uncollectable/skipped coverage；
+- machine-readable protocol和matrix能够机械拒绝unknown/unreachable/nonterminating/cyclic phase graph及missing/stale/uncollectable/skipped coverage；
 - B00–B05可以直接起草而无需重新决定实施顺序或职责边界；
 - 本ticket执行不产生runtime/tests/configs/Phase B ticket diff。
 
@@ -467,8 +482,9 @@ Phase B completion record必须列出matrix digest、required/covered/passed tot
 - YAML保持`status: review`，直到A02C01与A04–A07完成交叉审查、catalog核验并获得用户最终确认；
 - ticket内没有待确认架构问题、未决占位符或内嵌执行记录；
 - `PHASE_B_REQUIREMENT_CATALOG.json`通过strict JSON、content version、unique ID、owner/source和required-set验证；owner集合exact等于A01、A02、A02C01、A03、A03C01、A04、A05、A06、A07，且每个冻结/显式required ID恰有一个catalog entry；
+- `CONTROL_PROTOCOL_0_4.json`通过strict JSON、type/variant/phase/edge穷尽、reachability/termination、declared-cycle、ownership、final-proof、dependency DAG、field-binding和compatibility验证；catalog中的protocol reference/digest与exact bytes一致；
 - A01 route/forbidden、A02 identity/lifecycle、A03 registry/invalidation、A03C01 heads、A02C01 bootstrap/durability/fencing、A04–A06 scenarios与A07 meta requirements都已映射到machine-checkable coverage rule，matrix只能引用catalog ID；
-- A07 ticket正文与catalog exact bytes将在同一frozen commit中，completion记录catalog version与SHA-256；
+- A07 ticket正文、protocol与catalog exact bytes将在同一frozen commit中，completion记录protocol/catalog version与SHA-256；
 - A02C01与A04–A06之间没有需要改变bootstrap、run lifecycle、Pause、lease fencing、ExternalOperation、Code Agent、budget或stop matrix语义的未决冲突；
 - A05要求的Backend/workspace/fresh Analysis scenarios和A06要求的aggregate/active-time/semantic fingerprint scenarios均逐项进入matrix coverage；
 - dependency、Allowed Files与Do Not Touch无冲突，所有相对Markdown links和Read First仓库路径有效；
@@ -481,6 +497,7 @@ Phase B completion record必须列出matrix digest、required/covered/passed tot
 
 ```bash
 git diff --check
+python scripts/validate_phase_a_control_protocol.py
 ```
 
 还必须验证：
