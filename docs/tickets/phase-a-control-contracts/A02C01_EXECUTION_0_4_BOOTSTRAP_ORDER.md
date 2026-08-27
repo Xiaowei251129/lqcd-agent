@@ -2,7 +2,7 @@
 ticket_id: A02C01
 phase: phase-a-control-contracts
 status: review
-type: corrective-implementation
+type: corrective-design
 depends_on: [A02, A03, A03C01]
 ---
 
@@ -104,6 +104,9 @@ operation_phase
 phase_revision
 worker_owner_id
 worker_lease_expires_at
+lease_epoch
+canonical_policy_reference
+canonical_policy_digest
 result_reference
 result_digest
 error_code
@@ -114,27 +117,55 @@ updated_at
 - `(idempotency_scope, idempotency_key)`全局唯一；`operation_type`、canonical request与actor scope都进入`request_digest`，不能通过换operation type复用同一key；
 - `operation_id`与new target Run locator由可信Host分配并在任何Run root、policy或ledger bytes创建前持久化；调用方不能选择现有Run或覆盖identity；
 - `operation_status = accepted | in_progress | committed | failed | recovery_required`只表达控制调用结果，不是A04 `run_status`、领域`status`或Pause lifecycle；`operation_phase`是operation-type-specific单调phase，`phase_revision`只能compare-and-set递增；
-- worker lease只允许另一worker继续同一`operation_id`的已验证phase；lease过期不释放幂等键、不创建新operation、不重新分配Run identity，也不授权重做外部副作用；
+- `lease_epoch`是每次lease acquisition或takeover时在同一coordinator transaction中严格递增的fencing token；本ControlOperation直接拥有的phase compare-and-set、ledger/control publication与workspace lease materialization都必须验证exact `operation_id + worker_owner_id + lease_epoch + expected phase_revision`，任何旧epoch写入都必须拒绝；A05 `ExternalOperation`维护自己的独立单调epoch，不复用committed parent epoch，只有同一动作同时推进两类authority时才分别验证两者；
+- worker lease只允许另一worker使用新`lease_epoch`继续同一`operation_id`的已验证phase；lease过期不释放幂等键、不创建新operation、不重新分配Run identity，也不授权重做外部副作用；
 - committed、failed与recovery-required operation及其幂等键作为tombstone保留，至少与其可能引用的Run/artifact寿命一致；归档必须保留等价的key、request digest、result/error和identity证据；
 - 同scope/key同digest返回原`operation_id`和已持久结果；同scope/key不同digest返回`conflict`且不创建第二个operation；
-- Phase B SQLite reference implementation必须用单一write transaction（至少等价于`BEGIN IMMEDIATE`）完成key占用、operation row和target Run locator分配，并在返回success前持久化result reference/digest；
+- Phase B SQLite reference implementation必须用单一write transaction（至少等价于`BEGIN IMMEDIATE`）完成key占用、operation row、target Run locator、canonical policy bytes/digest和initial `lease_epoch`分配，并在返回success前持久化result reference/digest；
 - coordinator是mutation admission、ownership、phase与result replay的authority；Run创建后的领域/control历史仍以append-only`execution_history.jsonl`为authority，checkpoint只保存graph恢复状态，immutable artifacts/manifest保存科学产物。三者不能互相伪造或成为同一事实的可漂移双重authority。
+
+### Reference durability profile
+
+Phase B project-owned SQLite authority必须在创建任何Run bytes前验证实际生效的durability profile：local filesystem、`journal_mode = WAL`、`synchronous = FULL`、foreign keys enabled和policy-bounded busy timeout。实现必须检查SQLite返回的journal mode，不能假设请求的pragma已生效；不满足locking、atomic-rename、file-sync或directory-sync前提的filesystem必须preflight失败。
+
+Coordinator备份、迁移或恢复必须使用SQLite backup API或等价的一致snapshot机制，并把database、WAL与SHM视为同一durability unit；运行中不得用raw file copy只复制主database。该profile只冻结Phase B reference backend，不宣称任意硬件、filesystem或远程mount都提供相同power-loss保证，harness必须包含进程重启和durability-boundary fault tests。
+
+Append-only JSONL与immutable file publication必须完整写入一个record/file、flush userspace buffers、对file执行durable sync，并在首次创建或rename新名称时sync parent directory后才确认该publication phase。EOF trailing partial record、缺少newline的未完成record、digest不完整或parent publication不确定都不是合法history；reader必须fail closed，不能静默截断后把后续bytes当成完整prefix。
 
 本ticket只使用`operation_type = start_run`。A04必须复用同一coordinator定义其余public mutations和Pause claim，不能新建第二套idempotency store。
 
 ## Execution 0.4 Bootstrap Contract
 
-可信Host先验证`StartRunRequest`、Actor scope、output-root reserved control path与allowlisted canonical BudgetPolicy input。失败时不得创建ControlOperation、Run root或任何execution identity。验证成功后的第一项durable mutation必须是在coordinator中占用幂等键、创建`start_run` operation并分配target Run locator；只有该transaction提交后才能创建policy bytes、Run root或正式ledger。
+可信Host先验证`StartRunRequest`、Actor scope、output-root reserved control path与allowlisted canonical BudgetPolicy input。失败时不得创建ControlOperation、Run root或任何execution identity。验证成功后的第一项durable mutation必须是在coordinator中占用幂等键、创建`start_run` operation、分配target Run locator与initial `lease_epoch`，并保存后续只能exact materialize的canonical BudgetPolicy bytes/digest；只有该transaction提交后才能创建Run root、policy file或正式ledger。
+
+`start_run`固定使用以下单调operation phases：
+
+```text
+operation_reserved
+-> run_root_created
+-> policy_published
+-> run_ledger_started
+-> bootstrap_records_complete
+-> running_lifecycle_recorded
+-> checkpoint_committed
+-> result_committed
+```
 
 验证成功后的权威顺序固定为：
 
 ```text
 BEGIN IMMEDIATE coordinator transaction
 -> reserve idempotency key and create start_run ControlOperation
--> allocate immutable target Run locator and commit
--> create immutable BudgetPolicy bytes and canonical digest
+-> allocate immutable target Run locator and initial lease_epoch
+-> persist canonical BudgetPolicy bytes/digest and commit operation_reserved
+-> exclusively create the Run root and durably publish its parent entry
+-> compare-and-set operation phase to run_root_created
+-> exclusively publish the exact immutable BudgetPolicy bytes
+-> compare-and-set operation phase to policy_published
 -> append Run created
-   bind operation_id, idempotency-key digest, request digest and policy reference/digest
+   bind run_status = initializing, operation_id, idempotency-key digest,
+   request digest and policy reference/digest
+-> compare-and-set operation phase to run_ledger_started
 -> append budget policy_initialized
    bind exact Run-creation record and policy bytes
 -> append budget decision_recorded(allow, action = bootstrap_initial_route)
@@ -145,8 +176,13 @@ BEGIN IMMEDIATE coordinator transaction
 -> apply A03 method_planner target invalidation
    require an empty/new-Run current set and record only canonical no-op/clear evidence
 -> append START -> method_planner Transition committed
--> persist and validate bounded state/checkpoint plus execution/artifact heads
--> commit ControlOperation result reference/digest
+-> compare-and-set operation phase to bootstrap_records_complete
+-> append run_lifecycle(initializing -> running, reason = bootstrap_completed)
+-> compare-and-set operation phase to running_lifecycle_recorded
+-> persist checkpoint containing the resulting run_lifecycle execution head
+-> validate bounded state/checkpoint plus execution/artifact heads
+-> compare-and-set operation phase to checkpoint_committed
+-> commit ControlOperation result reference/digest and result_committed
 -> return the Run and permit Planner side effects
 ```
 
@@ -159,18 +195,20 @@ Bootstrap使用A02/A03复合Transition publication顺序：先分配scheduled ta
 - `operation_id`及target Run locator先由可信Host在coordinator事务中分配，并与`idempotency_key`、canonical request digest、actor digest和后续policy digest绑定；调用方不能选择现有Run root。
 - 同key同digest在完整bootstrap后返回同一结果，不创建第二个Run、Cycle、Attempt、Transition、policy或decision。
 - 同key不同digest必须在读取原operation后返回`conflict`；不能另建operation、另选Run identity或覆盖原request/result。
-- coordinator transaction提交后但Run root创建前退出时，同key同digest只能领取同一operation的expired worker lease并从已记录phase继续；不得把没有Run目录解释为“请求从未发生”。
+- coordinator transaction提交后但Run root创建前退出时，同key同digest只能以新`lease_epoch`领取同一operation的expired worker lease并从已记录phase继续；不得把没有Run目录解释为“请求从未发生”。
 - 在任何Planner/Agent/provider/tool/domain-artifact副作用前，进程崩溃后只允许同key同digest继续一个严格合法的bootstrap前缀。
-- 合法前缀必须从`Run created`开始，按本ticket顺序连续、identity/digest/head exact-match，且不得包含未知record、重复identity、target `started`、domain artifact、external reservation或已公开Pause。
+- 合法prefix class显式包括：`operation_reserved`后无Run root、已持久化空Run root、只含exact policy file、从`Run created(initializing)`开始的连续ledger prefix、完整bootstrap records、已追加`run_lifecycle(initializing -> running)`但尚未完成checkpoint，以及已完成checkpoint但尚未提交operation result。每一class都必须与coordinator phase、policy digest、identity和heads exact-match，且不得包含未知record、重复identity、target `started`、domain artifact、external reservation或已公开Pause。
 - 继续合法前缀只能append缺失的确定性后缀和持久化缺失checkpoint；不能重写、删除、重新编号或替换已存在record。
-- 任一额外record、顺序缺口、digest/head mismatch、side-effect evidence、并发不同请求或无法证明前缀完整时返回`recovery_required`，不得自动repair、replay或改用新identity继续原Run。
-- 每个成功持久化边界后才能用compare-and-set推进`operation_phase`；phase落后于exact durable prefix时允许同operation补记phase，phase领先、identity/digest冲突或无法证明唯一owner时进入`recovery_required`，不能倒退phase。
+- 额外record、顺序缺口、partial JSONL bytes、digest/head mismatch、tamper或已发生Planner/Agent/provider/tool/domain side effect属于integrity failure：隔离该Run并返回`failed`，不得自动repair、replay、截断history或改用新identity继续原Run；若损坏head本身不允许安全追加`run_lifecycle`，coordinator仍保存typed failed result且该Run保持不可读/不可执行，不能伪造halted ledger closure。
+- 只有已存在bytes/identity/heads全部exact、没有新副作用而coordinator/checkpoint/result publication尚未闭合时才返回`recovery_required`并允许同operation补齐确定性后缀。并发不同request按幂等规则返回`conflict`，不是recovery。
+- 每个成功持久化边界后才能用包含owner与`lease_epoch`的compare-and-set推进`operation_phase`；phase落后于exact durable prefix时允许同operation补记phase，phase领先或identity/digest冲突属于`failed` integrity outcome，stale epoch只拒绝该writer且不改变authoritative outcome，已有exact bytes但暂时无法证明唯一current owner时进入`recovery_required`。Phase不能倒退。
 - 完整bootstrap和ControlOperation committed result前Run不得以`running`或其他可执行状态对外发布；查询只能返回typed initializing/recovery control outcome，不得暴露raw checkpoint恢复入口。
 
 ## Required A07 Scenario
 
 - `A02C01-BOOTSTRAP-001`：验证schema `0.4`完整顺序、每个durable边界的合法前缀继续、冲突前缀fail closed、Planner副作用只能在bootstrap head/checkpoint exact-match后开始，以及schema `0.2`历史顺序保持不变。
-- `A02C01-BOOTSTRAP-002`：使用两个独立client/process验证coordinator先于Run root原子占用key和Run locator、same-key/same-digest结果重放、same-key/different-digest冲突、worker lease只继续原operation、terminal key tombstone及coordinator/checkpoint/ledger authority分离。
+- `A02C01-BOOTSTRAP-002`：使用两个独立client/process验证coordinator先于Run root原子占用key、Run locator、canonical policy bytes/digest和initial lease epoch，same-key/same-digest结果重放、same-key/different-digest冲突、worker lease只以新epoch继续原operation、stale-owner publication拒绝、terminal key tombstone及coordinator/checkpoint/ledger authority分离。
+- `A02C01-BOOTSTRAP-003`：验证SQLite effective durability profile、consistent backup boundary、root/policy/file/directory sync failpoints、empty-root与policy-only合法prefix，以及partial JSONL record、raw database-only copy或不支持filesystem均fail closed。
 
 ## Deliverables
 
@@ -185,7 +223,9 @@ Bootstrap使用A02/A03复合Transition publication顺序：先分配scheduled ta
 - A02 schema `0.2`正文、runtime和历史Run均未修改；
 - START Transition遵守scheduled target allocation → A03 invalidation → Transition append顺序；
 - Planner side effect只可能发生在完整bootstrap、checkpoint和heads验证后；
-- 同key合法prefix continuation与任意冲突/副作用prefix的fail-closed边界可机器验证；
+- 同key对empty-root、policy-only、ledger、lifecycle与checkpoint合法prefix的continuation，以及任意冲突/副作用prefix的fail-closed边界可机器验证；
+- worker lease takeover产生更高`lease_epoch`，所有由该ControlOperation直接拥有的stale-owner phase、ledger、workspace或result写入被拒绝；A05 external-operation写入由其独立epoch fencing拒绝；
+- SQLite、JSONL和immutable file的durability acknowledgement boundary明确且可注入故障验证；
 - operation status/phase、A04 Run status、领域status和ledger history各自authority明确且不可互相代替；
 - A04、A06、A07不再定义互相冲突的bootstrap顺序。
 
@@ -194,7 +234,7 @@ Bootstrap使用A02/A03复合Transition publication顺序：先分配scheduled ta
 - YAML保持`status: review`，直到本ticket、A04–A07和requirement catalog完成交叉核验并获得用户最终确认；
 - A02/A03/A03C01正文与runtime diff均为零，两个commit-order clarification已进入correction index；
 - A04、A06、A07依赖本ticket并使用同一schema `0.4`顺序、prefix continuation和fail-closed边界；
-- `PHASE_B_REQUIREMENT_CATALOG.json`恰好包含`A02C01-BOOTSTRAP-001`和`A02C01-BOOTSTRAP-002`；
+- `PHASE_B_REQUIREMENT_CATALOG.json`恰好包含`A02C01-BOOTSTRAP-001`、`A02C01-BOOTSTRAP-002`和`A02C01-BOOTSTRAP-003`；
 - Phase Overview、Docs Index和Current State一致记录本ticket为`review`且不把target contract描述为当前runtime；
 - ticket内没有未决设计问题、占位符或内嵌执行记录。
 

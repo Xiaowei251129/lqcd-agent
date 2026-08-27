@@ -179,7 +179,7 @@ Control Attempts固定为：
 
 新增或未知Attempt kind不能静默归类，必须先由新的design/corrective ticket更新合同。一次Attempt不能同时计入Work和Control。
 
-A05 `CodeAgentSubgraph`的pre-start trusted control stages不是独立Agent工作：task冻结、workspace准备、budget reservation、Pause发布以及Host-owned Backend调度都不能创建额外Work/Control Attempt，也不能增加automatic route计数。`code_agent` Work Attempt仍在其inbound Transition提交并以`scheduled`分配target identity时计数；`consume_code_agent_result`只有在A04 claim与本ticket要求的settlement完成后，才可把该既有Attempt推进到`started`。
+A05 `CodeAgentSubgraph`的pre-start trusted control stages不是独立Agent工作：task冻结、workspace准备、budget reservation、Pause发布以及Host-owned Backend调度都不能创建额外Work/Control Attempt，也不能增加automatic route计数。`code_agent` Work Attempt仍在其inbound Transition提交并以`scheduled`分配target identity时计数；`consume_code_agent_result`只有在A04 claim、本ticket要求的settlement、`pause_consumed`、paused-to-running lifecycle与resume checkpoint完成后，才可把该既有Attempt推进到`started`。
 
 Automatic route budget固定为：
 
@@ -225,9 +225,9 @@ Cycle/Attempt/Transition/automatic route用量由其authoritative execution reco
 
 ### Schema `0.4` bootstrap extension
 
-新Run必须完整遵守A02C01，不把bootstrap作为admission例外。Host先create-new并验证canonical policy bytes；正式ledger随后固定append`Run created -> policy_initialized -> bootstrap decision_recorded(allow) -> initial Cycle -> Planner Attempt scheduled -> A03 initial invalidation -> START Transition`，再验证checkpoint/heads，最后才允许Planner side effect。Bootstrap decision覆盖一次initial Cycle、一次Planner Work Attempt和一次START Transition；实际用量仍从A02 records重放派生。
+新Run必须完整遵守A02C01，不把bootstrap作为admission例外。Coordinator先持久化operation、target locator、canonical policy bytes/digest和initial `lease_epoch`，再按`run_root_created -> policy_published -> run_ledger_started -> bootstrap_records_complete -> running_lifecycle_recorded -> checkpoint_committed -> result_committed`物化。正式ledger固定append`Run created(initializing) -> policy_initialized -> bootstrap decision_recorded(allow) -> initial Cycle -> Planner Attempt scheduled -> A03 initial invalidation -> START Transition -> run_lifecycle(initializing -> running)`，checkpoint包含最后resulting execution head后才允许Planner side effect。Bootstrap decision覆盖一次initial Cycle、一次Planner Work Attempt和一次START Transition；实际用量仍从A02 records重放派生。
 
-任一partial bootstrap只能按A02C01由同一`ControlOperation.operation_id`、同key同digest继续严格合法且无副作用的确定性前缀；未知record、head/digest冲突、target已`started`或任何Agent/provider/tool/domain-artifact副作用均返回`recovery_required`。Schema `0.2`历史顺序不迁移、不补写budget events。
+任一partial bootstrap只能按A02C01由同一`ControlOperation.operation_id`、同key同digest继续严格合法且无副作用的确定性前缀；existing bytes/heads exact而publication closure未完成时可为`recovery_required`，未知/partial record、head/digest冲突、target已`started`或任何Agent/provider/tool/domain-artifact副作用均为`failed` integrity outcome。Schema `0.2`历史顺序不迁移、不补写budget events。
 
 ## Resource Reservation and Crash Accounting
 
@@ -248,23 +248,35 @@ validate current heads and policy
 对A05 `external_result` Pause，每个scheduled `code_agent` Attempt固定建立且只建立一个aggregate reservation：
 
 - `resource_kind = code_backend_operation`；
-- identity绑定target `code_agent` Attempt、A05 `producer_operation_id`、task identity/digest、`code_task_context_digest`、backend kind/runtime fingerprint、`WorkspaceManifest` identity/digest和exact Pause；
+- pre-prepared reservation identity绑定target `code_agent` Attempt、A05 `producer_operation_id`、task identity/digest、`code_task_context_digest`、backend kind/runtime fingerprint与`WorkspaceManifest` identity/digest，但不得提前分配、猜测或反向声明尚不存在的Pause；后续`pause_prepared`单向绑定该exact reservation identity/digest；
 - `maximum_charge`是在现有hard dimensions上的typed envelope，至少统一预留适用的LLM calls、tool calls与active seconds；它不是新的budget dimension，也不允许Backend为内部调用建立独立ledger/counter；
 - verification commands不属于Backend aggregate；它们在target Attempt启动后的trusted verification中继续按既有Code Attempt维度独立预留和结算；
 - 相同Attempt、task、operation或workspace不能建立第二份aggregate；`lookup`与`fetch_result`只能读取同一operation，不能创建operation、刷新reservation、增加上限、退款或触发retry。
 
-固定durable顺序为：aggregate `resource_reserved`必须在Pause `opened`前持久化，且Pause绑定exact reservation identity/digest；Pause对外可见后到claim前不得append budget或execution record。`dispatch`、`lookup`、`fetch_result`、`BackendDispatchReceipt`、`BackendOperationStatus`、workspace evidence、immutable external result和delivery snapshot都位于不推进budget/execution head的immutable control/audit namespace。`resume_run`对A04 exact `opened_execution_head`原子claim后，必须在target Attempt `started`前append该aggregate的唯一`resource_settled`；任何可重放graph node都不能在Pause发布前启动Backend。
+固定durable顺序为：aggregate `resource_reserved`与A05 `ExternalOperation 0.1`必须在A04 `pause_prepared`前持久化，且两者此时都不得拥有Pause identity；`pause_prepared`单向绑定exact reservation、producer operation与immutable external-operation core contract digest，随后ExternalOperation以fenced one-time CAS补齐exact Pause binding，`pause_opened`再绑定该closure。Pause不冻结其可合法递增的monitoring `lease_epoch`。Pause对外可见后到claim前不得append budget或execution record。`dispatch`、`lookup`、`fetch_result`、`BackendDispatchReceipt`、`BackendOperationStatus`、workspace evidence、immutable external result和delivery snapshot都位于不推进budget/execution head的immutable control/audit namespace。`resume_run`对A04 exact `opened_execution_head`原子claim后，必须验证external-operation epoch history与latest evidence，并在target Attempt `started`前append该aggregate的唯一`resource_settled`；settlement必须绑定producing resume/cancel ControlOperation `operation_id + lease_epoch + phase_revision`、reservation和latest external-operation terminal evidence/epoch，stale writer不能结算。任何可重放graph node都不能在Pause发布前启动Backend。
 
-若operator对尚未claim的`external_result` Pause执行`cancel_pause`，可信Host先按A05证明从未dispatch，或停止exact Backend operation、撤销write lease并持久化不推进execution head的terminal control evidence；然后A04 `cancelled` event对exact `opened_execution_head`提交并把Run置为`halted`，为绑定的scheduled code_agent Attempt append`abandoned`，最后append该aggregate唯一的`resource_settled`。可证明从未dispatch时actual可以为零；已dispatch时使用可信actual，缺失/矛盾/停止不完整时按reserved maximum。若在`cancelled`后、Attempt abandonment或settlement前崩溃，ledger replay仍把unsettled reservation计为maximum，Run保持`halted`、target永不启动且不得自动repair、resume或重新dispatch。
+若operator对尚未claim的`external_result` Pause执行`cancel_pause`，可信Host先按A05证明从未dispatch，或在durable external-operation row持久化cancel intent，再由current-epoch watchdog停止exact Backend operation、撤销write lease并持久化不推进execution head的terminal control evidence。随后按A04固定提交`pause_cancelled -> abandoned(if any) -> resource_settled -> run_lifecycle(paused -> halted | failed) -> terminal checkpoint`。可证明从未dispatch时actual可以为零；已dispatch且usage可信时使用actual，usage未知但停止完整时按reserved maximum。只有termination、lease revocation和post-stop stability全部确认后才选择halted；停止完整性失败选择failed。任一publication partial只能由原operation/current epoch补齐仍exact的无副作用后缀；target永不启动且不得resume或重新dispatch。
 
-Settlement只能使用可信Host measurement、Backend receipt、tool audit、`WorkspaceSeal`和immutable result交叉验证后的actual vector。FakeCodingBackend fixture必须提供deterministic usage并走同一reservation/settlement入口；CodexSdkBackend reported usage只是evidence，不能自行结算。可信actual任一hard dimension缺失、矛盾或不可验证时，该维度按reserved maximum charge结算；只有token/cost允许保持audit-only typed `unknown`。达到maximum/timeout并成功停止exact operation是policy-enforced outcome：terminal stop映射`halted`，允许回到Coordinator的operation timeout保留typed non-success outcome。actual超过maximum、Host无法及时阻止新side effect、停止后仍有activity或无法证明`cancel`/lease revocation完整则是control failure，必须映射`run_status = failed`；不能把账面charge截断到maximum或标成`halted`后继续。claim后settlement不完整时同样按maximum charge计费并返回`recovery_required`，不得重新dispatch或启动target Attempt。
+Settlement只能使用可信Host measurement、Backend receipt、tool audit、`WorkspaceSeal`和immutable result交叉验证后的actual vector。FakeCodingBackend fixture必须提供deterministic usage并走同一reservation/settlement入口；CodexSdkBackend reported usage只是evidence，不能自行结算。只有token/cost允许保持audit-only typed `unknown`。所有hard dimension、停止证据与publication partial严格按下节统一matrix处理，不能用maximum accounting把control failure改写为受控停止。
+
+### Unified stop and settlement outcome matrix
+
+| Observed boundary | Settlement | Run/control outcome | Required behavior |
+|---|---|---|---|
+| termination confirmed，trusted hard usage完整且未超maximum | actual vector | terminal policy/operator stop为`halted`；非terminal retryable timeout可以形成canonical typed non-success并交给Coordinator | 持久化terminal evidence后才发布相应run lifecycle |
+| termination confirmed，但任一hard usage缺失/unknown且没有矛盾、超额或继续活动证据 | affected dimensions按reserved maximum | terminal policy/operator stop仍可`halted` | 保留unknown audit reason，不退款、不推断actual |
+| termination unconfirmed、write lease revocation unconfirmed、post-stop activity、watchdog失去原operation identity，或可信actual超过maximum | 保守记录reserved maximum及任何可信observed overage；不能截断observed overage | quarantine workspace/operation并`run_status = failed` | 禁止bundle、resume、retry、redispatch或以`cancelled/halted`结束 |
+| side-effect-free publication partial，且已存在bytes/heads/identity全部exact | unsettled reservation在重放中暂按maximum | `recovery_required` | 仅原operation/current epoch补齐确定性publication后缀，不重做副作用 |
+| policy/head/counter/ledger/digest/clock tamper或无法验证 | 按适用reservation保守结算 | `run_status = failed` | fail closed；不得签发grant或把失败改成halted |
+
+`halted`只表示控制层证明停止已完成且权威evidence闭合；`failed`表示控制边界失去证明或观察到违规；`recovery_required`只表示仍可精确识别、无新副作用的publication未闭合。三者不得因UI、错误文本或账面maximum互换。
 
 Active time按可信Host clock与durable lifecycle边界计算：
 
 - task冻结、workspace创建与policy检查等pre-start Host setup从开始到Pause安全发布，只计Run active time；这些stage不启动target Attempt、不产生额外Attempt，也不得调用Backend；
 - Backend active interval从成功`dispatch`开始，到immutable external result与`WorkspaceSeal`均完成时结束；该interval在Run paused期间仍结算到`code_backend_operation` aggregate预留的target-Attempt与Run active dimensions，但不能据此把Attempt标为`started`；
 - Backend完成后等待Host delivery、claim或operator恢复的时间属于被动paused time，不计active time；`lookup`或`fetch_result`轮询不能延长Backend active interval或刷新预算；
-- aggregate active/tool/LLM maximum、operation timeout或operator cancellation到达时，可信Host必须通过A05 `cancel`语义阻止exact operation的新side effect、终止完整process tree、在bounded grace后强制终止残留进程、有界关闭output readers并撤销workspace写lease；失败时适用上一段的`run_status = failed`规则；
+- aggregate active/tool/LLM maximum、operation timeout或operator cancellation到达时，可信Host必须先持久化cancel intent，再由A05 durable watchdog和ContainmentProvider阻止exact operation的新side effect、撤销workspace write capability、终止完整process tree、在bounded grace后containment kill-all、有界关闭output readers并verify-empty；失败时适用上一节`run_status = failed`规则；
 - target Attempt从claim后settlement完成并提交`started`起，到`finished`、安全Pause或明确失败的active interval计入Attempt和Run；trusted verification处于这个interval中；
 - 单次project-owned provider/tool/verification timeout必须小于等于该operation自己的limit、Attempt剩余active seconds和Run剩余active seconds三者的最小值；Backend timeout则必须小于等于aggregate reserved active seconds与Run剩余active seconds的最小值；
 - clock回退、active interval缺失或crash导致无法可靠settle时，普通Attempt operation按该Attempt可用的剩余active window保守计费，Backend aggregate按reserved maximum active seconds计费，并停止自动重试。
@@ -299,9 +311,9 @@ Graph state不是budget authority。它只保存从validated policy与execution 
 7. validate the resulting heads; reserve each resource immediately before its side effect, or perform the A05 pre-start aggregate reservation and Pause publication before Backend dispatch
 ```
 
-Budget admission只检查proposed action，不得提前创建target Attempt、commit Transition、清除current artifacts、消费grant或调用Agent/provider/tool。如果capacity不足，existing current artifacts与source Attempt保持不变，只能进入本ticket允许的Gate或halt路径。Admission成功后严格采用A02/A03及其clarification的复合publication：scheduled target allocation先于A03 invalidation，invalidation先于committed Transition record。该顺序不被本ticket重新声明为跨存储原子事务；任一partial head按A04返回`recovery_required`，且target不得启动。
+Budget admission只检查proposed action，不得提前创建target Attempt、commit Transition、清除current artifacts、消费grant或调用Agent/provider/tool。如果capacity不足，existing current artifacts与source Attempt保持不变，只能进入本ticket允许的Gate或halt路径。Admission成功后严格采用A02/A03及其clarification的复合publication：scheduled target allocation先于A03 invalidation，invalidation先于committed Transition record。该顺序不被本ticket重新声明为跨存储原子事务；existing records/heads exact的side-effect-free partial按A04返回`recovery_required`，实际head/digest conflict进入`failed`，且target不得启动。
 
-对已由Transition分配的`code_agent` target，subgraph pre-start stages只执行可信task/workspace/policy准备、aggregate reservation与Pause publication；Pause安全`opened`后才允许Host-owned幂等`dispatch`。Backend不能由可重放graph node启动。Host保存immutable result后，`resume_run`必须先claim、再settle，最后才允许`consume_code_agent_result`提交该scheduled Attempt的`started` lifecycle；任何顺序颠倒均fail closed。
+对已由Transition分配的`code_agent` target，subgraph pre-start stages只执行可信task/workspace/policy准备、aggregate reservation、ExternalOperation创建与Pause publication；A04 public paused checkpoint完整包含`opened_execution_head`后才允许current-epoch Host-owned幂等`dispatch`。Backend不能由可重放graph node启动。Host保存immutable result后，`resume_run`必须依次claim、settle、append `pause_consumed`、append `run_lifecycle(paused -> running)`并持久化resume checkpoint，最后才允许`consume_code_agent_result`提交该scheduled Attempt的`started` lifecycle；任何顺序颠倒均fail closed。
 
 一个`allow` decision只绑定该次exact proposed action，不能作为后续任意route的额度票据。若进程在`decision_recorded`之后、对应reservation或Transition commit之前崩溃，恢复必须报告A04 `recovery_required`并禁止自动重放decision、消费grant、调度Attempt或修补partial sequence；只有在完整source heads仍可验证时由operator显式replay/fork。本ticket不引入partial-commit repair。
 
@@ -377,7 +389,7 @@ current Attempt -> Decision Coordinator -> Human Gate request -> PAUSE
 
 若budget decision本身已经由current Coordinator产生，可以省略第一条inbound Transition和对应的新Coordinator Attempt；未使用的reserve仍保留，不能转给普通路线。reserve中的target Attempt和Transition仍计入Run absolute totals。每次普通admission必须证明动作提交后仍剩余完整5/6 reserve；否则该普通动作不得执行。
 
-该reserve只保证一次well-formed Human Response validation和随后收尾，不保证无限invalid-response retries。每个invalid response仍消费一个Human Gate validation Control Attempt与一条external control Transition；validator终结后先为exact next Pause proposal append本ticket的`decision_recorded(allow_repause | halt)`。只有仍能保留下一次validation加`Decision Coordinator -> Memory Report -> END`所需的3个Control Attempts和4条Transitions时，A04才按old Pause `consumed` → checkpoint → new Pause `opened`顺序发布新的`human_input` Pause。否则旧Pause以`run_status = halted`、next Pause为null完成`consumed`并持久化terminal head，不创建无容量的新Pause，也不接受新的response。
+该reserve只保证一次well-formed Human Response validation和随后收尾，不保证无限invalid-response retries。每份response在validator `started`前已按A04完成old `pause_consumed`、`run_lifecycle(paused -> running)`与resume checkpoint；每个invalid response仍消费一个Human Gate validation Control Attempt与一条external control Transition。Validator终结后先为exact next Pause proposal append本ticket的`decision_recorded(allow_repause | halt)`。只有仍能保留下一次validation加`Decision Coordinator -> Memory Report -> END`所需的3个Control Attempts和4条Transitions时，A04才按new `pause_prepared` → prepared checkpoint → `run_lifecycle(running -> paused)` → new `pause_opened` → public paused checkpoint顺序发布新的`human_input` Pause；否则追加`run_lifecycle(running -> halted)`及terminal checkpoint，不创建无容量的新Pause，也不接受新的response。
 
 若进入Human Gate前已经无法保留所需reserve，控制层不得尝试部分链或先运行Gate Agent，必须直接提交最小`halted` audit evidence。任何伪造`stop_sequence_id`、不在allowed tail中的edge或试图从reserve返回Work Attempt都fail closed。
 
@@ -396,7 +408,7 @@ Grant至少绑定：
 
 Grant只允许对应automatic route allowance增加一次admission机会；historical used值继续增加。它不能增加Cycles、Work Attempts、Control Attempts、Transitions、LLM/tool/verification/active-time global hard ceilings，不能恢复terminal reserve，也不能绕过risk、security、data、accepted-result、head或compatibility检查。
 
-Grant必须与exact target Transition形成一个不可拆分的逻辑commit，并用`grant_consumed`绑定该Transition。实现若能在同一durable transaction中提交两类record可以一次完成；否则固定安全顺序为先append引用deterministic intended Transition/target identity的`grant_consumed`，再进入A02/A03 composite commit：创建适用的Human Request、preallocate target Attempt、完成A03 invalidation、append committed Transition，最后验证heads。任一中间崩溃都返回A04 `recovery_required`，已消费grant不退款、不自动补写Transition或invalidation，scheduled target不得启动。相同grant重复消费、错误route/fingerprint/Cycle/target、snapshot或actor不一致、旧Pause授权复用、竞争claim落败、target在签发后改变，均拒绝且不能自动签发替代grant。
+Grant必须与exact target Transition形成一个不可拆分的逻辑commit，并用`grant_consumed`绑定该Transition。实现若能在同一durable transaction中提交两类record可以一次完成；否则固定安全顺序为先append引用deterministic intended Transition/target identity的`grant_consumed`，再进入A02/A03 composite commit：创建适用的Human Request、preallocate target Attempt、完成A03 invalidation、append committed Transition，最后验证heads。中间崩溃仅在existing records/heads exact且无新副作用时返回A04 `recovery_required`；实际identity/head/digest conflict进入`failed`。已消费grant不退款、不自动补写Transition或invalidation，scheduled target不得启动。相同grant重复消费、错误route/fingerprint/Cycle/target、snapshot或actor不一致、旧Pause授权复用、竞争claim落败、target在签发后改变，均拒绝且不能自动签发替代grant。
 
 A04 `approve_rerun`仍表示同一Run/Cycle中的新Analysis Attempt；它不自动扩大budget。如果该route已经用尽automatic allowance，必须同时满足本节exact grant合同。replan仍创建新Cycle并受Cycles/Run与automatic replan上限约束。
 
@@ -426,11 +438,11 @@ A07及后续Phase B implementation tickets至少必须映射并验证：
 - `A06-BUDGET-001`：每个automatic route在limit前允许，达到limit后进入Gate；initial forward execution不误扣automatic额度；
 - `A06-BUDGET-002`：Work/Control/Transition absolute ceilings和5/6 terminal reserve，普通route无法消费reserve；invalid response只有在仍保留下一次validation及后续收尾合计3 Control/4 Transition时才创建新Pause；
 - `A06-BUDGET-003`：LLM/tool/verification reservation、settlement、unsettled crash charge和重复operation拒绝；
-- `A06-BUDGET-004`：每个`code_agent` Attempt恰有一个`code_backend_operation` aggregate reservation，绑定operation/task/backend/WorkspaceManifest/Pause并覆盖现有LLM/tool/active dimensions；Fake deterministic usage与future real backend evidence走同一lifecycle；
-- `A06-BUDGET-005`：aggregate的pre-open reservation、Pause期间dispatch/lookup/fetch/result zero budget/execution-head drift、post-claim/pre-start maximum-or-actual settlement，以及claim后settlement crash fail-closed；
+- `A06-BUDGET-004`：每个`code_agent` Attempt恰有一个`code_backend_operation` aggregate reservation，pre-prepared时绑定operation/task/backend/WorkspaceManifest并由后续`pause_prepared`单向绑定，覆盖现有LLM/tool/active dimensions；Fake deterministic usage与future real backend evidence走同一lifecycle；
+- `A06-BUDGET-005`：aggregate与ExternalOperation的pre-prepared reservation/creation、不预占Pause identity与prepared后one-time binding、Pause期间dispatch/lookup/fetch/result zero budget/execution-head drift、post-claim/pre-start maximum-or-actual settlement，以及claim后settlement crash fail-closed；
 - `A06-BUDGET-006`：pre-start setup、Backend operation、paused delivery等待与post-start trusted verification的Run/Attempt active-time边界和fake clock；
 - `A06-BUDGET-007`：`lookup`/`fetch_result`不创建新operation、不刷新预算、不退款，Backend及任何provider thread/job/session没有独立budget/retry/stop authority；
-- `A06-BUDGET-008`：aggregate maximum/timeout与operator cancellation必须经A05 `cancel`语义停止exact operation的完整process tree、bounded grace后强制终止残留、关闭output readers并撤销write lease；成功的terminal policy stop为`halted`，超额usage、停止失败或停止后activity为`failed`；
+- `A06-BUDGET-008`：aggregate maximum/timeout与operator cancellation先持久化cancel intent，再经A05 watchdog、exact `cancel`和ContainmentProvider停止完整process tree、撤销write lease、bounded grace、kill-all、关闭output readers并verify-empty；完整terminal stop为`halted`，usage未知但停止完整按maximum且可halted，超额usage、停止/lease失败或停止后activity为`failed`；
 - `A06-BUDGET-009`：second exact fingerprint升级；新Attempt/workspace/job identity不改变`code_task_context_digest`或`analysis_execution_context_digest`，backend/base/policy/verified patch/effective tree等material evidence变化才生成新context/fingerprint；
 - `A06-BUDGET-010`：first-occurrence technical/risk gates，以及policy/security/data/scientific failure immediate escalation；
 - `A06-BUDGET-011`：single-use Human grant、错误actor/scope/route/fingerprint/target、竞争与重复消费拒绝，global ceiling不可突破；
@@ -440,6 +452,7 @@ A07及后续Phase B implementation tickets至少必须映射并验证：
 - `A06-BUDGET-015`：missing token/cost usage保持`unknown`且不参与hard gate；
 - `A06-BUDGET-016`：budget stop不能绕过risk floor、Human Gate、A03 invalidation或accepted-result保护；
 - `A06-BUDGET-017`：terminal resource exhaustion不触发新的provider/tool调用或accepted memory。
+- `A06-BUDGET-018`：统一outcome matrix区分confirmed-stop actual、confirmed-stop unknown/max、unconfirmed/quarantined failed、side-effect-free partial recovery_required与integrity failed，三类Run/control outcome不可互换。
 
 所有runtime、execution schema validator、budget ledger builder、fake clock、graph integration和tests必须拆入新的Phase B implementation tickets；不能在执行本design ticket时顺带实现。
 
@@ -458,7 +471,7 @@ A07及后续Phase B implementation tickets至少必须映射并验证：
 - policy、ledger、bounded state、Pause、CodeAgentTask、Backend aggregate、WorkspaceManifest与runtime fingerprint具有唯一且可验证的digest关系；
 - failure fingerprint只对material evidence敏感，第二次exact occurrence不能自动回退；
 - CodeAgentSubgraph pre-start stages不创建额外Attempt或automatic route计数；CodingBackend只消费单一aggregate envelope，不能拥有独立budget、refund、retry或stop authority；
-- aggregate maximum/timeout在side effect前由可信Host强制执行，operator cancellation与A04 Pause lifecycle有确定顺序；超额usage、停止失败或停止后activity不能被maximum settlement掩盖；
+- aggregate maximum/timeout由durable watchdog和current lease epoch强制执行，operator cancellation与A04 Pause lifecycle有确定顺序；unknown usage、超额usage、停止失败、lease revocation失败、publication partial与停止后activity严格按统一matrix分类，不能被maximum settlement掩盖；
 - Human grant只有exact +1能力，不能重置计数、恢复reserve或突破Run hard ceilings；
 - terminal reserve按A02/A04的request/validation双Attempt模型固定为5 Control/6 Transition，invalid response不能创建无容量的新Pause；
 - Pause expiry没有隐藏background mutation，resume/replay/fork compatibility明确；
