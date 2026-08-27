@@ -78,7 +78,7 @@ A02C01与A04–A07从`review`提升为`ready`前必须运行tracked design valid
 python scripts/validate_phase_a_control_protocol.py
 ```
 
-该检查strict读取[`CONTROL_PROTOCOL_0_4.json`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)和[`PHASE_B_REQUIREMENT_CATALOG.json`](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)，验证ControlOperation type/variant/phase/edge穷尽与终结、ExternalOperation final-proof union、Pause lifecycle visibility/finality、Run lifecycle唯一声明循环、atomic combined ownership、pre-start dependency DAG、field allocation/binding顺序、ticket/catalog stable IDs、required文档引用以及protocol exact-byte SHA绑定。它是design-time lint，不表示Phase B runtime、fault fixture或acceptance matrix已经实现；B00仍须把同一合同转为collectable tests和normalized traces。
+该检查strict读取[`CONTROL_PROTOCOL_0_4.json`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)和[`PHASE_B_REQUIREMENT_CATALOG.json`](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)，验证ControlOperation graph终结、multi-successor guard互斥/穷尽、tagged evidence与incoming edge匹配、十一种variant overlay、单一transaction domain、normal/cancel/interrupt CAS交错、typed terminal consumer、Pause aborted/interrupted/quarantined finality、Run lifecycle循环、pre-start DAG、field binding、ticket/catalog stable IDs及protocol SHA。它是design-time lint，不表示Phase B runtime、fault fixture或acceptance matrix已经实现；B00仍须把同一合同转为collectable tests和normalized traces。
 
 ### A02 Execution Identity 验收
 

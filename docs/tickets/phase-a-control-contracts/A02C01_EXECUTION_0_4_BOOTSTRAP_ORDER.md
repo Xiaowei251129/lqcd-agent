@@ -89,7 +89,7 @@ Schema `0.4+` 必须显式扩展 bootstrap，而不是让初始 Cycle/Attempt/Tr
 
 ## Project-owned `ControlOperation 0.1`
 
-Phase B必须在可信`<output_root>/.lqcd/control_operations.sqlite`实现project-owned durable operation coordinator。它位于所有`<case_id>/<run_id>/`目录之外，与每个Run的`checkpoints/graph_checkpoints.sqlite`分离；LangGraph checkpoint不得存放幂等键、claim ownership或operation result authority。若目标filesystem不能提供SQLite所需的exclusive transaction/locking与durability语义，Host必须在创建Run root前preflight失败。
+Phase B必须在可信`<output_root>/.lqcd/control_operations.sqlite`实现project-owned durable operation coordinator。它位于所有`<case_id>/<run_id>/`目录之外，与每个Run的`checkpoints/graph_checkpoints.sqlite`分离；LangGraph checkpoint不得存放幂等键、claim ownership或operation result authority。A04 Pause/Run ownership与A05 ExternalOperation logical tables必须位于这个同一物理SQLite transaction domain，不能把`external_operation_db`逻辑authority实现为另一个数据库；只有这样cancel arbitration才能在一个write transaction内CAS全部参与者。若目标filesystem不能提供SQLite所需的exclusive transaction/locking与durability语义，Host必须在创建Run root前preflight失败。
 
 Coordinator至少维护以下logical fields；implementation ticket可以规范化为多个table，但不能改变其authority：
 
@@ -122,7 +122,7 @@ updated_at
 - `operation_id`与new target Run locator由可信Host分配并在任何Run root、policy或ledger bytes创建前持久化；调用方不能选择现有Run或覆盖identity；
 - `operation_status = accepted | in_progress | committed | failed | recovery_required`只表达控制调用结果，不是A04 `run_status`、领域`status`或Pause lifecycle；`operation_phase`是operation-type/variant-specific无环transition graph中的当前节点，`phase_revision`只能compare-and-set递增。每种variant必须冻结穷尽的allowed-edge map；线性operation只是每个nonterminal phase恰有一个successor的特例，不能用“单调”隐藏合法分支、跳phase或运行时发明新边；
 - `accepted -> in_progress -> committed | failed | recovery_required`是唯一合法status graph。`committed | failed | recovery_required`都是不可逆terminal tombstone：仍可由exact、无副作用、预计算bytes唯一确定的publication suffix没有进入recovery，它保持`in_progress`并由同一operation的新current epoch继续；只有缺少预授权事实、发生过结果不确定副作用或已无法安全materialize原动作时才进入`recovery_required`，此后原operation不得继续，只能由显式replay/fork或operator resolution产生新的operation；
-- `lease_epoch`是每次lease acquisition或takeover时在同一coordinator transaction中严格递增的fencing token；本ControlOperation直接拥有的phase compare-and-set、ledger/control publication与workspace lease materialization都必须验证exact `operation_id + worker_owner_id + lease_epoch + expected phase_revision`，任何旧epoch写入都必须拒绝；A05 `ExternalOperation`维护自己的独立单调epoch，不复用committed parent epoch，只有同一动作同时推进两类authority时才分别验证两者；
+- `lease_epoch`是每次lease acquisition或takeover时在同一coordinator transaction中严格递增的fencing token；本ControlOperation直接拥有的phase compare-and-set、ledger/control publication与workspace lease materialization都必须验证exact `operation_id + worker_owner_id + lease_epoch + expected phase_revision`，任何旧epoch写入都必须拒绝；A05 `ExternalOperation`维护自己的独立单调epoch，不复用committed parent epoch，但其row与ControlOperation位于同一物理SQLite transaction domain；同一仲裁动作必须分别CAS两类epoch/revision并一次提交；
 - worker lease只允许另一worker使用新`lease_epoch`继续同一`operation_id`的已验证phase；lease过期不释放幂等键、不创建新operation、不重新分配Run identity，也不授权重做外部副作用；
 - committed、failed与recovery-required operation及其幂等键作为tombstone保留，至少与其可能引用的Run/artifact寿命一致；归档必须保留等价的key、request digest、result/error和identity证据；
 - 同scope/key同digest返回原`operation_id`和已持久结果；同scope/key不同digest返回`conflict`且不创建第二个operation；
@@ -143,7 +143,7 @@ Append-only JSONL与immutable file publication必须完整写入一个record/fil
 
 可信Host先验证`StartRunRequest`、Actor scope、output-root reserved control path与allowlisted canonical BudgetPolicy input。失败时不得创建ControlOperation、Run root或任何execution identity。验证成功后的第一项durable mutation必须是在coordinator中占用幂等键、创建`start_run` operation、分配target Run locator与initial `lease_epoch`，并保存后续只能exact materialize的canonical BudgetPolicy bytes/digest；只有该transaction提交后才能创建Run root、policy file或正式ledger。
 
-`start_run/not_applicable`的exact phase enum、success edges、phase authority、required evidence与continuation policy只由tracked [`CONTROL_PROTOCOL_0_4.json`](CONTROL_PROTOCOL_0_4.json)定义。本节后续顺序是该机器合同的语义说明，不得增加隐藏phase、跳过edge或形成第二份独立枚举；design-time validator必须在冻结前证明该success graph全部可达、无环且只能终结于`result_committed`。
+`start_run/not_applicable`的exact phase enum、success edges、phase authority、required evidence与continuation policy只由tracked [`CONTROL_PROTOCOL_0_4.json`](CONTROL_PROTOCOL_0_4.json)定义。其`operation_reserved` effective contract是共享phase contract加exact variant overlay；overlay必须冻结target Run identity/locator及canonical BudgetPolicy bytes/digest，B00不得从本段prose补回缺失字段。本节后续顺序是机器合同的语义说明，不得增加隐藏phase、跳过edge或形成第二份独立枚举；design-time validator必须在冻结前证明success graph全部可达、无环、只能终结于声明的terminal outcome，并证明overlay完整。
 
 验证成功后的权威顺序固定为：
 
@@ -203,6 +203,7 @@ Bootstrap使用A02/A03复合Transition publication顺序：先分配scheduled ta
 - `A02C01-BOOTSTRAP-001`：验证schema `0.4`完整顺序、每个durable边界的合法前缀以`in_progress/materialization_pending`继续、冲突前缀fail closed、Planner副作用只能在bootstrap head/checkpoint exact-match后开始，以及schema `0.2`历史顺序保持不变。
 - `A02C01-BOOTSTRAP-002`：使用两个独立client/process验证coordinator先于Run root原子占用key、Run locator、canonical policy bytes/digest和initial lease epoch，same-key/same-digest结果重放、same-key/different-digest冲突、worker lease只以新epoch继续原operation、stale-owner publication拒绝、terminal key tombstone及coordinator/checkpoint/ledger authority分离。
 - `A02C01-BOOTSTRAP-003`：验证SQLite effective durability profile、consistent backup boundary、root/policy/file/directory sync failpoints、empty-root与policy-only合法prefix，以及partial JSONL record、raw database-only copy或不支持filesystem均fail closed；bootstrap integrity failure还必须区分appendable deterministic failed closure与unappendable `terminal_closure: unavailable`，不能从`start_run` failure推导Run status。
+- `A02C01-BOOT-004`：机器合同必须把ControlOperation、Pause owner、Run terminal owner和ExternalOperation row冻结在同一物理`coordinator_sqlite` transaction domain，并为`start_run/not_applicable`的`operation_reserved` overlay冻结target Run identity/locator、canonical BudgetPolicy bytes/digest和immutable-at-reservation binding；缺transaction object、字段、错误authority/type、nullable或重复base字段均在B00前失败。
 
 ## Deliverables
 
@@ -228,7 +229,7 @@ Bootstrap使用A02/A03复合Transition publication顺序：先分配scheduled ta
 - YAML保持`status: review`，直到本ticket、A04–A07和requirement catalog完成交叉核验并获得用户最终确认；
 - A02/A03/A03C01正文与runtime diff均为零，两个commit-order clarification已进入correction index；
 - A04、A06、A07依赖本ticket并使用同一schema `0.4`顺序、prefix continuation和fail-closed边界；
-- `PHASE_B_REQUIREMENT_CATALOG.json`恰好包含`A02C01-BOOTSTRAP-001`、`A02C01-BOOTSTRAP-002`和`A02C01-BOOTSTRAP-003`；
+- `PHASE_B_REQUIREMENT_CATALOG.json`恰好包含`A02C01-BOOTSTRAP-001`、`A02C01-BOOTSTRAP-002`、`A02C01-BOOTSTRAP-003`和`A02C01-BOOT-004`；
 - Phase Overview、Docs Index和Current State一致记录本ticket为`review`且不把target contract描述为当前runtime；
 - ticket内没有未决设计问题、占位符或内嵌执行记录。
 

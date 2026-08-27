@@ -8,6 +8,8 @@
 
 根据Phase A已冻结的控制合同，直接消费tracked [`CONTROL_PROTOCOL_0_4.json`](../phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)，复用A02 identity protocol、A02C01 schema `0.4` bootstrap与`ControlOperation 0.1`、A03 artifact invalidation infrastructure，实现独立于LangGraph checkpoint的durable mutation/resume、有限循环和A01产品路线改造，并使用Fake Agents建立分层graph harness证明控制系统正确。实现者不得从A04/A05 prose重新发明type、variant、phase、edge、ownership、outcome或construction order。
 
+B00首先实现machine schema 0.3的strict protocol/catalog/matrix foundation：验证单一`coordinator_sqlite` transaction domain、ControlOperation guarded branches与effective overlays、tagged evidence unions、ExternalOperation normal/cancel/interrupt CAS及唯一final evidence、Pause finality、dependency DAG和exact digests。B02随后实现durable operations、cancel arbitration、internal `publish_pause`/`close_run`/`resolve_external_interrupt`和Run/Pause ownership；B03实现ExternalOperation/watchdog/containment与Fake Code Agent。任何职责边界或evidence字段都不得留给B00–B05从ticket prose补推。
+
 A02/A03 的 re-review、analysis rerun、code fix 和 replan tests只证明 transition-time identity与invalidation protocol；它们不是 Phase B 的完整 product-route、forbidden-route、budget 或 recovery coverage。Phase B必须复用这些 primitives，不得另建第二套 current-selection或失效规则。
 
 ## 进入条件

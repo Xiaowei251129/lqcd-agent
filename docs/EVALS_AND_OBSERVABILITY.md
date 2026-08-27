@@ -92,7 +92,7 @@ hidden expected behavior 不得进入 Agent input、provider prompt 或 final-re
 4. Phase D 对 physics/RAG 能力做有来源、可比较、支持 abstention 的评估；
 5. Phase E 形成 integrated benchmark 与下一 milestone。
 
-具体 Phase B acceptance 当前由`review`状态的 [A07](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)、tracked [`Control Protocol 0.4`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)和requirement catalog共同冻结。现在不能把尚未提升为`ready`的 transition coverage、trajectory score 或 cost threshold 写成当前runtime要求；Phase B B00必须消费frozen protocol/catalog及其exact digests，而不是从自然语言或实现反向定义验收范围。
+具体 Phase B acceptance 当前由`review`状态的 [A07](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)、tracked [`Control Protocol 0.4`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json) machine schema 0.3和catalog version 0.3.0共同冻结。B00必须消费其中的transaction domain、resolution CAS、guarded branches、tagged evidence unions、interrupt disposition、terminal tuple与variant overlay及其exact digests，而不是从自然语言或实现反向定义验收范围。现在不能把尚未提升为`ready`的transition coverage、trajectory score或cost threshold写成当前runtime要求。
 
 ## Raw-data-backed Evals 的前置条件
 

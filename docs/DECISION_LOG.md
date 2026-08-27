@@ -958,3 +958,75 @@ Related Documents:
 - [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)
 - [A07 Phase B Harness Acceptance](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)
 - [Phase B Requirement Catalog](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)
+
+## 2026-08-27: Linearize External Resolution and Quarantine Unprovable Stops
+
+Decision:
+
+- Place ControlOperation rows, Pause ownership, Run terminal ownership and ExternalOperation rows in one physical `coordinator_sqlite` transaction domain. Their logical authorities and lease epochs remain distinct, but cancel arbitration does not cross a database boundary.
+- Replace the earlier cancel sequence with one `cancel_arbitrated` transaction. It CAS-compares the exact Pause/opened head, empty Pause and Run owners, and ExternalOperation identity, phase revision, lease epoch and empty resolution owner before recording `cancel_won`, `normal_terminal_won`, `preexisting_stop_resolution` or `no_external_operation`.
+- Make `normal`, `cancel` and `interrupt` one-time ExternalOperation resolution owners. Normal terminal and cancel/interrupt intent CAS operations use the same empty-owner predicate; the first commit wins and every later writer can only follow the winner's persisted path.
+- Converge all ExternalOperation resolutions on the single terminal phase `external_final_evidence_committed`. A complete stop proof is `safe_stop`; missing termination, write-lease revocation, containment, bounded-drain or post-stop proof is `unavailable` and maps to `recovery_required`.
+- Add terminal Pause state `quarantined`. An unavailable ExternalOperation proof quarantines the Pause and records the already-owned Run terminal closure as unavailable without appending a fabricated `halted` or `failed` lifecycle.
+- Add an exact `operation_reserved` evidence overlay for each of the eight ControlOperation type/variant combinations. The effective reservation contract is the shared phase contract plus its one variant overlay; missing or conflicting evidence is invalid.
+- Upgrade the Control Protocol machine schema to `0.2` and the requirement catalog content version to `0.2.0`. Keep execution schema and protocol version at `0.4`.
+
+Confirmed:
+
+- Coordinator remains the only product route and fallback authority. LangGraph remains responsible only for graph execution, checkpoint and interrupt behavior.
+- Provider cancellation occurs only after local cancel intent commits and never redispatches work. A watchdog takeover monitors, cancels or recovers the original producer operation under a newer fenced lease epoch.
+- A `quarantined` Pause is never resumable, claimable, consumable, cancellable or reopenable. `recovery_required` is terminal and cannot advance another phase.
+- The revised design changes control-plane protocol closure, not A01 routing or the frozen A01–A03/A03C01 contracts. A02C01 and A04–A07 remain in review and no Phase B ticket or runtime implementation is created.
+- TradingAgents remains useful as a reference for explicit graph branches and construction checks, but it does not provide the durable multi-authority arbitration required here.
+
+Rejected Alternatives:
+
+- Acquiring Pause and Run owners before deciding ExternalOperation resolution: rejected because normal completion can win between the two decisions and leave no legal proof path.
+- Allowing a nonterminal ExternalOperation phase to carry a terminal status: rejected because the state cannot be resumed or consumed by a total terminal-proof union.
+- Publishing `run_status: failed` when containment or stop completion is unprovable: rejected because uncertainty is not proof of a failed authoritative lifecycle and may coexist with continuing side effects.
+- Using one generic `operation_reserved` evidence list for every variant: rejected because B00 could validate a request while omitting the exact policy, Pause head, source revision or closure key needed for idempotency and fencing.
+
+Related Documents:
+
+- [Control Protocol 0.4](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)
+- [Protocol Validator](../scripts/validate_phase_a_control_protocol.py)
+- [A02C01 Execution 0.4 Bootstrap Order](tickets/phase-a-control-contracts/A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md)
+- [A04 Pause and Resume Semantics](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)
+- [A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)
+- [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)
+- [A07 Phase B Harness Acceptance](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)
+- [Phase B Requirement Catalog](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)
+
+## 2026-08-27: Give External Interrupts an Independent Guarded Closure
+
+Decision:
+
+- Add internal `resolve_external_interrupt` variants `recoverable_timeout`, `controlled_halt` and `integrity_failure`. Interrupt resolution no longer depends on phases that exist only in `cancel_pause`.
+- A safe Backend operation timeout consumes the exact opened `external_result` Pause, forms a canonical failed Code Agent outcome and returns graph execution to Coordinator. Safe hard-limit, policy and terminal operator stops close the Run. Safely contained, proven integrity violations may publish `run_status: failed` only when Run authority remains appendable.
+- Treat any false or unknown termination, write-lease revocation, containment emptiness, bounded drain or post-stop stability dimension as `recovery_required` with an unavailable Run closure. Appendability of the Run ledger does not turn missing stop proof into a failed lifecycle.
+- Model Pause snapshots as `absent | prepared | opened`. Safe terminal interrupt maps them to N/A, `aborted` or `interrupted`; unavailable proof maps prepared/opened to `quarantined` and absent to N/A. All terminal Pause states are irreversible.
+- Make cancel branching explicit. A preexisting interrupt winner yields `resolution_winner_observed` and no cancel Pause/Run ownership. Typed-null cancellation uses a `PauseCancelProof/no_external_operation` variant and never invents ExternalOperation final evidence.
+- Upgrade the Control Protocol machine schema to `0.3` and catalog content version to `0.3.0`. Every multi-successor phase has a finite disjoint exhaustive guard, and polymorphic proof fields use tagged evidence unions whose incoming-edge bindings are validated.
+
+Confirmed:
+
+- Coordinator remains the sole product route, fallback and terminal-closure authority. LangGraph remains limited to graph execution, checkpoint and interrupt mechanics.
+- Backend dispatch remains after public Pause publication. A pre-Pause ordinary operation timeout is invalid; a pre-Pause hard-limit or policy stop uses a terminal interrupt variant with typed `not_dispatched` evidence.
+- This is a Phase A review-contract correction only. It does not alter frozen A01–A03/A03C01 content, create Phase B tickets or implement runtime.
+
+Rejected Alternatives:
+
+- Letting timeout or hard-limit callbacks call `cancel_pause`: rejected because system stop may occur without an operator cancel request and cancellation ownership semantics do not represent recoverable timeout.
+- Allowing cancel to acquire Pause/Run owners after observing an interrupt winner: rejected because it creates two consumers for one ExternalOperation final proof.
+- Mapping post-stop activity or missing containment evidence to appendable `run_status: failed`: rejected because ongoing or unproved side effects make authoritative closure unavailable, not proven failed.
+- Leaving branch selection in prose: rejected because B00 cannot prove guard coverage, evidence shape or a unique successor from an allowed-edge list alone.
+
+Related Documents:
+
+- [Control Protocol 0.4](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)
+- [Protocol Validator](../scripts/validate_phase_a_control_protocol.py)
+- [A04 Pause and Resume Semantics](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)
+- [A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)
+- [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)
+- [A07 Phase B Harness Acceptance](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)
+- [Phase B Requirement Catalog](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)

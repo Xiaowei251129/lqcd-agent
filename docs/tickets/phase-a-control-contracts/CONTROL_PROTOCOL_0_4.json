@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.1",
+  "schema_version": "0.3",
   "protocol_version": "0.4",
   "protocol_id": "phase-a-control-protocol",
   "status": "review",
@@ -24,8 +24,17 @@
     "backend_provider",
     "quarantine_store"
   ],
+  "transaction_domains": [
+    {
+      "transaction_domain": "coordinator_sqlite",
+      "authorities": ["coordinator_db", "external_operation_db"],
+      "atomic_objects": ["control_operation", "pause_ownership", "run_terminal_closure", "external_operation"],
+      "profile": "single_sqlite_database_transaction"
+    }
+  ],
   "effect_classes": [
     "authority_reservation",
+    "atomic_arbitration",
     "deterministic_publication",
     "verification",
     "capability_publication",
@@ -70,6 +79,74 @@
       "permitted_action": "fail_closed_and_publish_failed_run_only_when_authority_is_appendable"
     }
   ],
+  "cas_guards": [
+    {
+      "guard_id": "external_normal_terminal_cas",
+      "transaction_domain": "coordinator_sqlite",
+      "compare_fields": ["external_operation_id", "phase_revision", "lease_epoch", "resolution_owner"],
+      "required_resolution_owner": null,
+      "assigns_resolution_owner": "normal",
+      "increments_phase_revision": true
+    },
+    {
+      "guard_id": "external_cancel_intent_cas",
+      "transaction_domain": "coordinator_sqlite",
+      "compare_fields": ["external_operation_id", "phase_revision", "lease_epoch", "resolution_owner"],
+      "required_resolution_owner": null,
+      "assigns_resolution_owner": "cancel",
+      "increments_phase_revision": true
+    },
+    {
+      "guard_id": "external_interrupt_intent_cas",
+      "transaction_domain": "coordinator_sqlite",
+      "compare_fields": ["external_operation_id", "phase_revision", "lease_epoch", "resolution_owner"],
+      "required_resolution_owner": null,
+      "assigns_resolution_owner": "interrupt",
+      "increments_phase_revision": true
+    },
+    {
+      "guard_id": "cancel_control_combined_cas",
+      "transaction_domain": "coordinator_sqlite",
+      "compare_fields": ["pause_id", "opened_execution_head", "pause_owner", "run_terminal_closure_owner", "external_operation_id", "phase_revision", "lease_epoch", "resolution_owner"],
+      "required_empty_fields": ["pause_owner", "run_terminal_closure_owner"],
+      "conditionally_delegates_to": "external_cancel_intent_cas",
+      "external_operation_present_condition": "reserved_external_operation_id_is_non_null",
+      "external_operation_absent_condition": "reserved_external_operation_id_is_typed_null_and_no_external_row_exists",
+      "resolution_cases": [
+        {"case": "external_absent", "required_resolution_owner": "not_applicable", "external_mutation": "none", "outcome": "no_external_operation"},
+        {"case": "external_unresolved", "required_resolution_owner": null, "external_mutation": "delegate_external_cancel_intent_cas", "outcome": "cancel_won"},
+        {"case": "external_normal", "required_resolution_owner": "normal", "external_mutation": "none", "outcome": "normal_terminal_won"},
+        {"case": "external_cancel", "required_resolution_owner": "cancel", "external_mutation": "none", "outcome": "preexisting_cancel_resolution"},
+        {"case": "external_interrupt", "required_resolution_owner": "interrupt", "external_mutation": "none", "outcome": "preexisting_interrupt_resolution"}
+      ],
+      "ownership_by_outcome": [
+        {"outcome": "no_external_operation", "acquires": ["pause_cancel_owner", "run_terminal_closure_owner"]},
+        {"outcome": "cancel_won", "acquires": ["pause_cancel_owner", "run_terminal_closure_owner", "external_resolution_owner"]},
+        {"outcome": "normal_terminal_won", "acquires": ["pause_cancel_owner", "run_terminal_closure_owner"]},
+        {"outcome": "preexisting_cancel_resolution", "acquires": ["pause_cancel_owner", "run_terminal_closure_owner"]},
+        {"outcome": "preexisting_interrupt_resolution", "acquires": []}
+      ],
+      "control_operation_phase_revision_incremented": true,
+      "external_phase_revision_incremented_only_when": "cancel_won",
+      "increments_phase_revision": true
+    },
+    {
+      "guard_id": "interrupt_control_combined_cas",
+      "transaction_domain": "coordinator_sqlite",
+      "compare_fields": ["external_operation_id", "phase_revision", "lease_epoch", "resolution_owner", "run_execution_head", "run_artifact_head", "run_policy_head", "pause_snapshot", "pause_owner", "run_terminal_closure_owner"],
+      "required_resolution_owner": null,
+      "assigns_resolution_owner": "interrupt",
+      "conditionally_delegates_to": "external_interrupt_intent_cas",
+      "variant_acquisitions": [
+        {"operation_variant": "recoverable_timeout", "allowed_external_phases": ["dispatch_authorized", "dispatch_receipt_committed"], "required_pause_snapshot": "opened", "acquires": ["external_resolution_owner", "pause_interrupt_owner"]},
+        {"operation_variant": "controlled_halt", "allowed_external_phases": ["external_operation_reserved", "task_committed", "workspace_manifest_committed", "reservation_committed", "core_contract_committed", "workspace_materialized", "pause_bound", "dispatch_authorized", "dispatch_receipt_committed", "result_reference_committed"], "required_pause_snapshot": "absent_or_prepared_or_opened", "acquires": ["external_resolution_owner", "run_terminal_closure_owner", "applicable_pause_disposition_owner"]},
+        {"operation_variant": "integrity_failure", "allowed_external_phases": ["external_operation_reserved", "task_committed", "workspace_manifest_committed", "reservation_committed", "core_contract_committed", "workspace_materialized", "pause_bound", "dispatch_authorized", "dispatch_receipt_committed", "result_reference_committed"], "required_pause_snapshot": "absent_or_prepared_or_opened", "acquires": ["external_resolution_owner", "run_terminal_closure_owner", "applicable_pause_disposition_owner"]}
+      ],
+      "control_operation_phase_revision_incremented": true,
+      "external_phase_revision_incremented": true,
+      "increments_phase_revision": true
+    }
+  ],
   "state_machines": {
     "control_operation": {
       "authority": "coordinator_db",
@@ -87,6 +164,7 @@
               "operation_variant": "not_applicable",
               "initial_phase": "operation_reserved",
               "committed_phase": "result_committed",
+              "terminal_outcomes": [{"phase": "result_committed", "status": "committed", "proof_kind": "committed_result"}],
               "phases": ["operation_reserved", "run_root_created", "policy_published", "run_ledger_started", "bootstrap_records_complete", "running_lifecycle_recorded", "checkpoint_committed", "result_committed"],
               "success_edges": [["operation_reserved", "run_root_created"], ["run_root_created", "policy_published"], ["policy_published", "run_ledger_started"], ["run_ledger_started", "bootstrap_records_complete"], ["bootstrap_records_complete", "running_lifecycle_recorded"], ["running_lifecycle_recorded", "checkpoint_committed"], ["checkpoint_committed", "result_committed"]]
             }
@@ -99,6 +177,7 @@
               "operation_variant": "not_applicable",
               "initial_phase": "operation_reserved",
               "committed_phase": "result_committed",
+              "terminal_outcomes": [{"phase": "result_committed", "status": "committed", "proof_kind": "committed_result"}],
               "phases": ["operation_reserved", "pause_prepared_recorded", "pause_dependencies_bound", "prepared_checkpoint_committed", "paused_lifecycle_recorded", "pause_opened_recorded", "public_paused_checkpoint_committed", "result_committed"],
               "success_edges": [["operation_reserved", "pause_prepared_recorded"], ["pause_prepared_recorded", "pause_dependencies_bound"], ["pause_dependencies_bound", "prepared_checkpoint_committed"], ["prepared_checkpoint_committed", "paused_lifecycle_recorded"], ["paused_lifecycle_recorded", "pause_opened_recorded"], ["pause_opened_recorded", "public_paused_checkpoint_committed"], ["public_paused_checkpoint_committed", "result_committed"]]
             }
@@ -111,6 +190,7 @@
               "operation_variant": "continue_execution",
               "initial_phase": "operation_reserved",
               "committed_phase": "result_committed",
+              "terminal_outcomes": [{"phase": "result_committed", "status": "committed", "proof_kind": "committed_result"}],
               "phases": ["operation_reserved", "resume_disposition_committed", "pause_ownership_reserved", "pause_claimed_recorded", "prestart_records_committed", "pause_consumed_recorded", "running_lifecycle_recorded", "resume_checkpoint_committed", "invocation_authorized", "stable_boundary_committed", "result_committed"],
               "success_edges": [["operation_reserved", "resume_disposition_committed"], ["resume_disposition_committed", "pause_ownership_reserved"], ["pause_ownership_reserved", "pause_claimed_recorded"], ["pause_claimed_recorded", "prestart_records_committed"], ["prestart_records_committed", "pause_consumed_recorded"], ["pause_consumed_recorded", "running_lifecycle_recorded"], ["running_lifecycle_recorded", "resume_checkpoint_committed"], ["resume_checkpoint_committed", "invocation_authorized"], ["invocation_authorized", "stable_boundary_committed"], ["stable_boundary_committed", "result_committed"]]
             },
@@ -118,6 +198,7 @@
               "operation_variant": "abandon_and_halt",
               "initial_phase": "operation_reserved",
               "committed_phase": "result_committed",
+              "terminal_outcomes": [{"phase": "result_committed", "status": "committed", "proof_kind": "committed_result"}],
               "phases": ["operation_reserved", "resume_disposition_committed", "pause_and_terminal_ownership_reserved", "pause_claimed_recorded", "pause_consumed_recorded", "target_disposition_committed", "resource_disposition_committed", "terminal_eligibility_verified", "terminal_lifecycle_recorded", "terminal_checkpoint_committed", "result_committed"],
               "success_edges": [["operation_reserved", "resume_disposition_committed"], ["resume_disposition_committed", "pause_and_terminal_ownership_reserved"], ["pause_and_terminal_ownership_reserved", "pause_claimed_recorded"], ["pause_claimed_recorded", "pause_consumed_recorded"], ["pause_consumed_recorded", "target_disposition_committed"], ["target_disposition_committed", "resource_disposition_committed"], ["resource_disposition_committed", "terminal_eligibility_verified"], ["terminal_eligibility_verified", "terminal_lifecycle_recorded"], ["terminal_lifecycle_recorded", "terminal_checkpoint_committed"], ["terminal_checkpoint_committed", "result_committed"]]
             }
@@ -130,8 +211,50 @@
               "operation_variant": "not_applicable",
               "initial_phase": "operation_reserved",
               "committed_phase": "result_committed",
-              "phases": ["operation_reserved", "pause_and_terminal_cancel_ownership_reserved", "cancel_intent_committed", "external_terminal_closure_verified", "pause_cancelled_recorded", "target_disposition_committed", "resource_disposition_committed", "terminal_eligibility_verified", "terminal_lifecycle_recorded", "terminal_checkpoint_committed", "result_committed"],
-              "success_edges": [["operation_reserved", "pause_and_terminal_cancel_ownership_reserved"], ["pause_and_terminal_cancel_ownership_reserved", "cancel_intent_committed"], ["cancel_intent_committed", "external_terminal_closure_verified"], ["external_terminal_closure_verified", "pause_cancelled_recorded"], ["pause_cancelled_recorded", "target_disposition_committed"], ["target_disposition_committed", "resource_disposition_committed"], ["resource_disposition_committed", "terminal_eligibility_verified"], ["terminal_eligibility_verified", "terminal_lifecycle_recorded"], ["terminal_lifecycle_recorded", "terminal_checkpoint_committed"], ["terminal_checkpoint_committed", "result_committed"]]
+              "terminal_outcomes": [
+                {"phase": "result_committed", "status": "committed", "proof_kind": "committed_result"},
+                {"phase": "terminal_closure_unavailable_recorded", "status": "recovery_required", "proof_kind": "unavailable"}
+              ],
+              "phases": ["operation_reserved", "cancel_arbitrated", "resolution_winner_observed", "external_terminal_closure_verified", "external_unavailable_verified", "pause_cancelled_recorded", "pause_quarantined_recorded", "terminal_closure_unavailable_recorded", "target_disposition_committed", "resource_disposition_committed", "terminal_eligibility_verified", "terminal_lifecycle_recorded", "terminal_checkpoint_committed", "result_committed"],
+              "success_edges": [["operation_reserved", "cancel_arbitrated"], ["cancel_arbitrated", "resolution_winner_observed"], ["cancel_arbitrated", "external_terminal_closure_verified"], ["cancel_arbitrated", "external_unavailable_verified"], ["cancel_arbitrated", "pause_cancelled_recorded"], ["resolution_winner_observed", "result_committed"], ["external_terminal_closure_verified", "pause_cancelled_recorded"], ["external_unavailable_verified", "pause_quarantined_recorded"], ["pause_quarantined_recorded", "terminal_closure_unavailable_recorded"], ["pause_cancelled_recorded", "target_disposition_committed"], ["target_disposition_committed", "resource_disposition_committed"], ["resource_disposition_committed", "terminal_eligibility_verified"], ["terminal_eligibility_verified", "terminal_lifecycle_recorded"], ["terminal_lifecycle_recorded", "terminal_checkpoint_committed"], ["terminal_checkpoint_committed", "result_committed"]]
+            }
+          ]
+        },
+        {
+          "operation_type": "resolve_external_interrupt",
+          "variants": [
+            {
+              "operation_variant": "recoverable_timeout",
+              "initial_phase": "operation_reserved",
+              "committed_phase": "result_committed",
+              "terminal_outcomes": [
+                {"phase": "result_committed", "status": "committed", "proof_kind": "coordinator_recovery_committed"},
+                {"phase": "terminal_closure_unavailable_recorded", "status": "recovery_required", "proof_kind": "unavailable"}
+              ],
+              "phases": ["operation_reserved", "interrupt_and_pause_ownership_reserved", "external_final_evidence_verified", "canonical_failed_delivery_committed", "pause_claimed_recorded", "prestart_records_committed", "pause_consumed_recorded", "running_lifecycle_recorded", "resume_checkpoint_committed", "invocation_authorized", "coordinator_transition_committed", "stable_boundary_committed", "interrupt_terminal_ownership_reserved", "interrupt_pause_quarantined_recorded", "terminal_closure_unavailable_recorded", "result_committed"],
+              "success_edges": [["operation_reserved", "interrupt_and_pause_ownership_reserved"], ["interrupt_and_pause_ownership_reserved", "external_final_evidence_verified"], ["external_final_evidence_verified", "canonical_failed_delivery_committed"], ["external_final_evidence_verified", "interrupt_terminal_ownership_reserved"], ["canonical_failed_delivery_committed", "pause_claimed_recorded"], ["pause_claimed_recorded", "prestart_records_committed"], ["prestart_records_committed", "pause_consumed_recorded"], ["pause_consumed_recorded", "running_lifecycle_recorded"], ["running_lifecycle_recorded", "resume_checkpoint_committed"], ["resume_checkpoint_committed", "invocation_authorized"], ["invocation_authorized", "coordinator_transition_committed"], ["coordinator_transition_committed", "stable_boundary_committed"], ["stable_boundary_committed", "result_committed"], ["interrupt_terminal_ownership_reserved", "interrupt_pause_quarantined_recorded"], ["interrupt_pause_quarantined_recorded", "terminal_closure_unavailable_recorded"]]
+            },
+            {
+              "operation_variant": "controlled_halt",
+              "initial_phase": "operation_reserved",
+              "committed_phase": "result_committed",
+              "terminal_outcomes": [
+                {"phase": "result_committed", "status": "committed", "proof_kind": "halted_closure_committed"},
+                {"phase": "terminal_closure_unavailable_recorded", "status": "recovery_required", "proof_kind": "unavailable"}
+              ],
+              "phases": ["operation_reserved", "interrupt_and_terminal_ownership_reserved", "external_final_evidence_verified", "interrupt_safe_pause_disposition_committed", "interrupt_unavailable_pause_disposition_committed", "resource_disposition_committed", "terminal_eligibility_verified", "terminal_lifecycle_recorded", "terminal_checkpoint_committed", "terminal_closure_unavailable_recorded", "result_committed"],
+              "success_edges": [["operation_reserved", "interrupt_and_terminal_ownership_reserved"], ["interrupt_and_terminal_ownership_reserved", "external_final_evidence_verified"], ["external_final_evidence_verified", "interrupt_safe_pause_disposition_committed"], ["external_final_evidence_verified", "interrupt_unavailable_pause_disposition_committed"], ["interrupt_safe_pause_disposition_committed", "resource_disposition_committed"], ["resource_disposition_committed", "terminal_eligibility_verified"], ["terminal_eligibility_verified", "terminal_lifecycle_recorded"], ["terminal_lifecycle_recorded", "terminal_checkpoint_committed"], ["terminal_checkpoint_committed", "result_committed"], ["interrupt_unavailable_pause_disposition_committed", "terminal_closure_unavailable_recorded"]]
+            },
+            {
+              "operation_variant": "integrity_failure",
+              "initial_phase": "operation_reserved",
+              "committed_phase": "result_committed",
+              "terminal_outcomes": [
+                {"phase": "result_committed", "status": "committed", "proof_kind": "failed_closure_committed"},
+                {"phase": "terminal_closure_unavailable_recorded", "status": "recovery_required", "proof_kind": "unavailable"}
+              ],
+              "phases": ["operation_reserved", "interrupt_and_terminal_ownership_reserved", "external_final_evidence_verified", "interrupt_safe_pause_disposition_committed", "interrupt_unavailable_pause_disposition_committed", "resource_disposition_committed", "terminal_eligibility_verified", "terminal_lifecycle_recorded", "terminal_checkpoint_committed", "terminal_closure_unavailable_recorded", "result_committed"],
+              "success_edges": [["operation_reserved", "interrupt_and_terminal_ownership_reserved"], ["interrupt_and_terminal_ownership_reserved", "external_final_evidence_verified"], ["external_final_evidence_verified", "interrupt_safe_pause_disposition_committed"], ["external_final_evidence_verified", "interrupt_unavailable_pause_disposition_committed"], ["interrupt_safe_pause_disposition_committed", "resource_disposition_committed"], ["resource_disposition_committed", "terminal_eligibility_verified"], ["terminal_eligibility_verified", "terminal_lifecycle_recorded"], ["terminal_lifecycle_recorded", "terminal_checkpoint_committed"], ["terminal_checkpoint_committed", "result_committed"], ["interrupt_unavailable_pause_disposition_committed", "terminal_closure_unavailable_recorded"]]
             }
           ]
         },
@@ -142,6 +265,7 @@
               "operation_variant": "not_applicable",
               "initial_phase": "operation_reserved",
               "committed_phase": "result_committed",
+              "terminal_outcomes": [{"phase": "result_committed", "status": "committed", "proof_kind": "committed_result"}],
               "phases": ["operation_reserved", "source_snapshot_committed", "child_run_root_created", "child_policy_published", "child_run_ledger_started", "child_lineage_recorded", "child_bootstrap_records_complete", "child_running_lifecycle_recorded", "child_checkpoint_committed", "result_committed"],
               "success_edges": [["operation_reserved", "source_snapshot_committed"], ["source_snapshot_committed", "child_run_root_created"], ["child_run_root_created", "child_policy_published"], ["child_policy_published", "child_run_ledger_started"], ["child_run_ledger_started", "child_lineage_recorded"], ["child_lineage_recorded", "child_bootstrap_records_complete"], ["child_bootstrap_records_complete", "child_running_lifecycle_recorded"], ["child_running_lifecycle_recorded", "child_checkpoint_committed"], ["child_checkpoint_committed", "result_committed"]]
             }
@@ -154,6 +278,7 @@
               "operation_variant": "not_applicable",
               "initial_phase": "operation_reserved",
               "committed_phase": "result_committed",
+              "terminal_outcomes": [{"phase": "result_committed", "status": "committed", "proof_kind": "committed_result"}],
               "phases": ["operation_reserved", "source_snapshot_committed", "child_run_root_created", "child_policy_published", "child_run_ledger_started", "child_lineage_recorded", "child_bootstrap_records_complete", "child_running_lifecycle_recorded", "child_checkpoint_committed", "result_committed"],
               "success_edges": [["operation_reserved", "source_snapshot_committed"], ["source_snapshot_committed", "child_run_root_created"], ["child_run_root_created", "child_policy_published"], ["child_policy_published", "child_run_ledger_started"], ["child_run_ledger_started", "child_lineage_recorded"], ["child_lineage_recorded", "child_bootstrap_records_complete"], ["child_bootstrap_records_complete", "child_running_lifecycle_recorded"], ["child_running_lifecycle_recorded", "child_checkpoint_committed"], ["child_checkpoint_committed", "result_committed"]]
             }
@@ -166,9 +291,136 @@
               "operation_variant": "not_applicable",
               "initial_phase": "operation_reserved",
               "committed_phase": "result_committed",
+              "terminal_outcomes": [{"phase": "result_committed", "status": "committed", "proof_kind": "committed_result"}],
               "phases": ["operation_reserved", "terminal_ownership_reserved", "terminal_eligibility_verified", "terminal_lifecycle_recorded", "terminal_checkpoint_committed", "result_committed"],
               "success_edges": [["operation_reserved", "terminal_ownership_reserved"], ["terminal_ownership_reserved", "terminal_eligibility_verified"], ["terminal_eligibility_verified", "terminal_lifecycle_recorded"], ["terminal_lifecycle_recorded", "terminal_checkpoint_committed"], ["terminal_checkpoint_committed", "result_committed"]]
             }
+          ]
+        }
+      ],
+      "phase_contract_overlays": [
+        {
+          "operation_type": "start_run",
+          "operation_variant": "not_applicable",
+          "phase": "operation_reserved",
+          "required_evidence_additions": [
+            {"field": "target_run_identity", "type": "run_identity", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "reserved_run_locator", "type": "canonical_locator", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "canonical_budget_policy_bytes", "type": "canonical_bytes", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "budget_policy_digest", "type": "sha256", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"}
+          ]
+        },
+        {
+          "operation_type": "publish_pause",
+          "operation_variant": "not_applicable",
+          "phase": "operation_reserved",
+          "required_evidence_additions": [
+            {"field": "source_execution_artifact_checkpoint_heads", "type": "head_tuple", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "typed_pause_reason", "type": "pause_reason", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "requesting_and_target_identity", "type": "attempt_identity_tuple", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "deterministic_pause_identity_inputs", "type": "canonical_digest_input", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"}
+          ]
+        },
+        {
+          "operation_type": "resume_run",
+          "operation_variant": "continue_execution",
+          "phase": "operation_reserved",
+          "required_evidence_additions": [
+            {"field": "exact_pause_and_opened_head", "type": "pause_head_tuple", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "precomputed_next_event_identity_digest", "type": "event_identity_digest", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "target_prestart_closure", "type": "prestart_closure", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"}
+          ]
+        },
+        {
+          "operation_type": "resume_run",
+          "operation_variant": "abandon_and_halt",
+          "phase": "operation_reserved",
+          "required_evidence_additions": [
+            {"field": "exact_pause_and_opened_head", "type": "pause_head_tuple", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "run_terminal_closure_key", "type": "terminal_closure_key", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "precomputed_abandon_evidence", "type": "canonical_digest_input", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"}
+          ]
+        },
+        {
+          "operation_type": "cancel_pause",
+          "operation_variant": "not_applicable",
+          "phase": "operation_reserved",
+          "required_evidence_additions": [
+            {"field": "exact_pause_and_opened_head", "type": "pause_head_tuple", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "external_operation_identity", "type": "external_operation_id", "authority": "coordinator_db", "nullable": true, "binding": "immutable_at_reservation"},
+            {"field": "typed_cancel_reason", "type": "cancel_reason", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "precomputed_pause_cancel_or_quarantine_event", "type": "event_identity_digest", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"}
+          ]
+        },
+        {
+          "operation_type": "resolve_external_interrupt",
+          "operation_variant": "recoverable_timeout",
+          "phase": "operation_reserved",
+          "required_evidence_additions": [
+            {"field": "exact_external_operation_resolution_tuple", "type": "external_resolution_tuple", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "typed_interrupt_reason", "type": "interrupt_reason", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "exact_run_heads", "type": "head_tuple", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "pause_snapshot", "type": "pause_snapshot_union", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "resource_reservation_digest", "type": "sha256", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "deterministic_delivery_or_closure_identity", "type": "canonical_failed_delivery_identity", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "interrupt_disposition", "type": "interrupt_disposition", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"}
+          ]
+        },
+        {
+          "operation_type": "resolve_external_interrupt",
+          "operation_variant": "controlled_halt",
+          "phase": "operation_reserved",
+          "required_evidence_additions": [
+            {"field": "exact_external_operation_resolution_tuple", "type": "external_resolution_tuple", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "typed_interrupt_reason", "type": "interrupt_reason", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "exact_run_heads", "type": "head_tuple", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "pause_snapshot", "type": "pause_snapshot_union", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "resource_reservation_digest", "type": "sha256", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "deterministic_delivery_or_closure_identity", "type": "terminal_closure_key", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "interrupt_disposition", "type": "interrupt_disposition", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"}
+          ]
+        },
+        {
+          "operation_type": "resolve_external_interrupt",
+          "operation_variant": "integrity_failure",
+          "phase": "operation_reserved",
+          "required_evidence_additions": [
+            {"field": "exact_external_operation_resolution_tuple", "type": "external_resolution_tuple", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "typed_interrupt_reason", "type": "interrupt_reason", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "exact_run_heads", "type": "head_tuple", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "pause_snapshot", "type": "pause_snapshot_union", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "resource_reservation_digest", "type": "sha256", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "deterministic_delivery_or_closure_identity", "type": "terminal_closure_key", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "interrupt_disposition", "type": "interrupt_disposition", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"}
+          ]
+        },
+        {
+          "operation_type": "replay_run",
+          "operation_variant": "not_applicable",
+          "phase": "operation_reserved",
+          "required_evidence_additions": [
+            {"field": "validated_source_root_input", "type": "source_snapshot", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "reserved_child_run_locator", "type": "canonical_locator", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"}
+          ]
+        },
+        {
+          "operation_type": "fork_run",
+          "operation_variant": "not_applicable",
+          "phase": "operation_reserved",
+          "required_evidence_additions": [
+            {"field": "source_heads_and_control_revision", "type": "source_revision_tuple", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "lineage_snapshot_digest", "type": "sha256", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "reserved_child_run_locator", "type": "canonical_locator", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"}
+          ]
+        },
+        {
+          "operation_type": "close_run",
+          "operation_variant": "not_applicable",
+          "phase": "operation_reserved",
+          "required_evidence_additions": [
+            {"field": "run_terminal_closure_key", "type": "terminal_closure_key", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "terminal_trigger_identity", "type": "terminal_trigger", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"},
+            {"field": "requested_terminal_disposition", "type": "run_terminal_disposition", "authority": "coordinator_db", "nullable": false, "binding": "immutable_at_reservation"}
           ]
         }
       ],
@@ -189,16 +441,28 @@
         "resume_disposition_committed": {"authorities": ["coordinator_db"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["frozen_resume_variant", "exact_opened_pause"], "acquires": []},
         "pause_ownership_reserved": {"authorities": ["coordinator_db"], "effect_class": "authority_reservation", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["exact_pause_cas", "opened_execution_head"], "acquires": ["pause_claim_owner"], "atomic_acquire": true},
         "pause_and_terminal_ownership_reserved": {"authorities": ["coordinator_db"], "effect_class": "authority_reservation", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["exact_pause_cas", "empty_run_terminal_owner_cas", "terminal_resolution_contracts"], "acquires": ["pause_claim_owner", "run_terminal_closure_owner"], "atomic_acquire": true},
-        "pause_and_terminal_cancel_ownership_reserved": {"authorities": ["coordinator_db"], "effect_class": "authority_reservation", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["exact_pause_cas", "empty_run_terminal_owner_cas", "terminal_resolution_contracts"], "acquires": ["pause_cancel_owner", "run_terminal_closure_owner"], "atomic_acquire": true},
+        "cancel_arbitrated": {"authorities": ["coordinator_db", "external_operation_db"], "effect_class": "atomic_arbitration", "continuation_policy": "lookup_only_after_uncertain_effect", "required_evidence": ["exact_pause_cas", "empty_run_terminal_owner_cas", "external_operation_identity_or_typed_null", "external_revision_epoch_resolution_cas_or_typed_null_absence_proof", "arbitration_outcome", "winner_revision_and_proof_or_intent_digest_or_not_dispatched_digest"], "acquires": [], "conditional_acquires": ["pause_cancel_owner", "run_terminal_closure_owner", "external_resolution_owner"], "atomic_acquire": true, "transaction_domain": "coordinator_sqlite", "cas_guard": "cancel_control_combined_cas"},
+        "resolution_winner_observed": {"authorities": ["coordinator_db", "external_operation_db"], "effect_class": "verification", "continuation_policy": "exact_replay_only", "required_evidence": ["preexisting_interrupt_resolution_owner", "winner_operation_identity", "winner_phase_revision", "no_cancel_pause_or_run_ownership"], "acquires": []},
+        "interrupt_and_pause_ownership_reserved": {"authorities": ["coordinator_db", "external_operation_db"], "effect_class": "atomic_arbitration", "continuation_policy": "lookup_only_after_uncertain_effect", "required_evidence": ["recoverable_timeout_disposition", "exact_opened_external_result_pause", "exact_external_resolution_tuple", "empty_pause_owner_cas", "interrupt_intent_digest"], "acquires": ["external_resolution_owner", "pause_interrupt_owner"], "atomic_acquire": true, "transaction_domain": "coordinator_sqlite", "cas_guard": "interrupt_control_combined_cas"},
+        "interrupt_and_terminal_ownership_reserved": {"authorities": ["coordinator_db", "external_operation_db"], "effect_class": "atomic_arbitration", "continuation_policy": "lookup_only_after_uncertain_effect", "required_evidence": ["terminal_interrupt_disposition", "exact_external_resolution_tuple", "exact_run_heads", "pause_snapshot", "empty_run_terminal_owner_cas", "applicable_empty_pause_or_publication_owner_cas", "interrupt_intent_digest"], "acquires": ["external_resolution_owner", "run_terminal_closure_owner"], "conditional_acquires": ["applicable_pause_disposition_owner"], "atomic_acquire": true, "transaction_domain": "coordinator_sqlite", "cas_guard": "interrupt_control_combined_cas"},
+        "external_final_evidence_verified": {"authorities": ["external_operation_db", "quarantine_store"], "effect_class": "verification", "continuation_policy": "exact_replay_only", "required_evidence": ["interrupt_external_final_evidence_digest", "interrupt_disposition", "interrupt_resolution_owner_and_revision", "proof_kind"], "acquires": []},
+        "canonical_failed_delivery_committed": {"authorities": ["coordinator_db", "execution_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["safe_stop_final_evidence", "canonical_failed_code_agent_delivery", "exact_opened_external_result_pause"], "acquires": []},
+        "coordinator_transition_committed": {"authorities": ["execution_ledger", "coordinator_db"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["canonical_failed_code_agent_outcome", "attempt_attribution", "coordinator_route_transition"], "acquires": []},
+        "interrupt_terminal_ownership_reserved": {"authorities": ["coordinator_db"], "effect_class": "authority_reservation", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["unavailable_final_evidence", "empty_run_terminal_owner_cas", "terminal_closure_unavailable_identity"], "acquires": ["run_terminal_closure_owner"], "atomic_acquire": true},
+        "interrupt_pause_quarantined_recorded": {"authorities": ["execution_ledger", "quarantine_store"], "effect_class": "terminal_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["interrupt_pause_owner", "external_unavailable_final_proof", "quarantine_event_identity"], "acquires": []},
+        "interrupt_safe_pause_disposition_committed": {"authorities": ["coordinator_db", "execution_ledger"], "effect_class": "terminal_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["interrupt_safe_pause_disposition_proof"], "acquires": []},
+        "interrupt_unavailable_pause_disposition_committed": {"authorities": ["coordinator_db", "execution_ledger", "quarantine_store"], "effect_class": "terminal_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["interrupt_unavailable_pause_disposition_proof"], "acquires": []},
         "pause_claimed_recorded": {"authorities": ["execution_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["pause_owner_operation", "producing_lease_epoch"], "acquires": []},
         "prestart_records_committed": {"authorities": ["execution_ledger", "artifact_registry", "budget_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["reason_specific_target_closure", "invalidation_closure", "grant_or_settlement_closure"], "acquires": []},
         "pause_consumed_recorded": {"authorities": ["execution_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["pause_claim_head", "single_use_authorization"], "acquires": []},
         "resume_checkpoint_committed": {"authorities": ["checkpoint_store"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["consumed_pause_head", "running_lifecycle_head"], "acquires": []},
         "invocation_authorized": {"authorities": ["coordinator_db"], "effect_class": "capability_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["attempt_identity", "exact_heads", "lease_epoch", "terminal_closure_revision"], "acquires": []},
         "stable_boundary_committed": {"authorities": ["coordinator_db", "checkpoint_store"], "effect_class": "verification", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["committed_pause_or_close_or_running_checkpoint"], "acquires": []},
-        "cancel_intent_committed": {"authorities": ["coordinator_db", "external_operation_db"], "effect_class": "external_effect_intent", "continuation_policy": "lookup_only_after_uncertain_effect", "required_evidence": ["cancel_classification", "typed_cancel_reason"], "acquires": []},
-        "external_terminal_closure_verified": {"authorities": ["external_operation_db"], "effect_class": "verification", "continuation_policy": "exact_replay_only", "required_evidence": ["final_cancellation_or_preexisting_normal_terminal_proof"], "acquires": []},
-        "pause_cancelled_recorded": {"authorities": ["execution_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["final_external_terminal_proof", "stop_integrity"], "acquires": []},
+        "external_terminal_closure_verified": {"authorities": ["external_operation_db"], "effect_class": "verification", "continuation_policy": "exact_replay_only", "required_evidence": ["external_final_evidence_digest", "safe_stop_proof_kind", "resolution_owner_and_revision"], "acquires": []},
+        "external_unavailable_verified": {"authorities": ["external_operation_db", "quarantine_store"], "effect_class": "verification", "continuation_policy": "exact_replay_only", "required_evidence": ["external_final_evidence_digest", "unavailable_proof_kind", "quarantine_evidence", "missing_proof_dimensions"], "acquires": []},
+        "pause_cancelled_recorded": {"authorities": ["execution_ledger"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["pause_cancel_proof"], "acquires": []},
+        "pause_quarantined_recorded": {"authorities": ["execution_ledger", "quarantine_store"], "effect_class": "terminal_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["external_unavailable_final_proof", "pause_cancel_owner", "quarantine_event_identity"], "acquires": []},
+        "terminal_closure_unavailable_recorded": {"authorities": ["coordinator_db"], "effect_class": "terminal_publication", "continuation_policy": "no_continuation_after_terminal", "required_evidence": ["run_terminal_closure_owner", "terminal_closure_unavailable_proof", "unavailable_tombstone"], "acquires": []},
         "target_disposition_committed": {"authorities": ["execution_ledger", "coordinator_db"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["target_abandoned_or_not_applicable"], "acquires": []},
         "resource_disposition_committed": {"authorities": ["budget_ledger", "coordinator_db"], "effect_class": "deterministic_publication", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["resource_settlement_or_not_applicable"], "acquires": []},
         "terminal_ownership_reserved": {"authorities": ["coordinator_db"], "effect_class": "authority_reservation", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["deterministic_terminal_trigger", "empty_run_terminal_owner_cas", "terminal_resolution_contracts"], "acquires": ["run_terminal_closure_owner"], "atomic_acquire": true},
@@ -218,15 +482,37 @@
     },
     "external_operation": {
       "authority": "external_operation_db",
-      "statuses": ["reserved", "active", "cancel_requested", "completed", "failed", "cancelled", "recovery_required"],
+      "transaction_domain": "coordinator_sqlite",
+      "statuses": ["reserved", "active", "stop_requested", "completed", "failed", "cancelled", "interrupted", "recovery_required"],
       "initial_status": "reserved",
-      "terminal_statuses": ["completed", "failed", "cancelled", "recovery_required"],
-      "interrupt_terminal_statuses": ["failed", "recovery_required"],
-      "interrupt_rule": "any_nonterminal_phase_may_atomically_enter_interrupt_terminal_status_and_freeze_phase",
+      "terminal_statuses": ["completed", "failed", "cancelled", "interrupted", "recovery_required"],
+      "resolution_owner_values": ["normal", "cancel", "interrupt"],
+      "final_proof_classification": {
+        "dimensions": ["termination_or_not_dispatched", "write_lease_revocation", "verify_empty", "bounded_drain", "post_stop_stability"],
+        "safe_stop_predicate": "termination_is_confirmed_or_typed_not_dispatched_and_every_other_dimension_is_true",
+        "unavailable_predicate": "any_dimension_is_false_unknown_or_missing",
+        "precedence": "unavailable_dominates_safe_stop",
+        "unavailable_terminal_status": "recovery_required",
+        "forbidden_unavailable_run_lifecycle": ["halted", "failed"]
+      },
       "initial_phase": "external_operation_reserved",
-      "terminal_phases": ["terminal_evidence_committed", "cancellation_evidence_committed"],
-      "phases": ["external_operation_reserved", "task_committed", "workspace_manifest_committed", "reservation_committed", "core_contract_committed", "workspace_materialized", "pause_bound", "dispatch_authorized", "dispatch_receipt_committed", "result_reference_committed", "terminal_evidence_committed", "cancel_intent_committed", "termination_evidence_committed", "cancellation_evidence_committed"],
-      "success_edges": [["external_operation_reserved", "task_committed"], ["task_committed", "workspace_manifest_committed"], ["workspace_manifest_committed", "reservation_committed"], ["reservation_committed", "core_contract_committed"], ["core_contract_committed", "workspace_materialized"], ["workspace_materialized", "pause_bound"], ["pause_bound", "dispatch_authorized"], ["dispatch_authorized", "dispatch_receipt_committed"], ["dispatch_receipt_committed", "result_reference_committed"], ["result_reference_committed", "terminal_evidence_committed"], ["external_operation_reserved", "cancel_intent_committed"], ["task_committed", "cancel_intent_committed"], ["workspace_manifest_committed", "cancel_intent_committed"], ["reservation_committed", "cancel_intent_committed"], ["core_contract_committed", "cancel_intent_committed"], ["workspace_materialized", "cancel_intent_committed"], ["pause_bound", "cancel_intent_committed"], ["dispatch_authorized", "cancel_intent_committed"], ["dispatch_receipt_committed", "cancel_intent_committed"], ["result_reference_committed", "cancel_intent_committed"], ["cancel_intent_committed", "termination_evidence_committed"], ["termination_evidence_committed", "cancellation_evidence_committed"]],
+      "terminal_phases": ["external_final_evidence_committed"],
+      "terminal_outcomes": [
+        {"resolution_kind": "normal", "interrupt_disposition": "not_applicable", "proof_kind": "safe_stop", "statuses": ["completed", "failed"], "consumer": {"kind": "domain_flow", "reference": "external_result_delivery_or_cancel_observer"}},
+        {"resolution_kind": "cancel", "interrupt_disposition": "not_applicable", "proof_kind": "safe_stop", "statuses": ["cancelled", "failed"], "consumer": {"kind": "control_operation", "operation_type": "cancel_pause", "operation_variant": "not_applicable", "phase": "external_terminal_closure_verified"}},
+        {"resolution_kind": "interrupt", "interrupt_disposition": "recoverable_timeout", "proof_kind": "safe_stop", "statuses": ["interrupted"], "consumer": {"kind": "control_operation", "operation_type": "resolve_external_interrupt", "operation_variant": "recoverable_timeout", "phase": "external_final_evidence_verified"}},
+        {"resolution_kind": "interrupt", "interrupt_disposition": "controlled_halt", "proof_kind": "safe_stop", "statuses": ["interrupted"], "consumer": {"kind": "control_operation", "operation_type": "resolve_external_interrupt", "operation_variant": "controlled_halt", "phase": "external_final_evidence_verified"}},
+        {"resolution_kind": "interrupt", "interrupt_disposition": "integrity_failure", "proof_kind": "safe_stop", "statuses": ["interrupted"], "consumer": {"kind": "control_operation", "operation_type": "resolve_external_interrupt", "operation_variant": "integrity_failure", "phase": "external_final_evidence_verified"}},
+        {"resolution_kind": "normal", "interrupt_disposition": "not_applicable", "proof_kind": "unavailable", "statuses": ["recovery_required"], "consumer": {"kind": "domain_flow", "reference": "normal_resolution_recovery"}},
+        {"resolution_kind": "cancel", "interrupt_disposition": "not_applicable", "proof_kind": "unavailable", "statuses": ["recovery_required"], "consumer": {"kind": "control_operation", "operation_type": "cancel_pause", "operation_variant": "not_applicable", "phase": "external_unavailable_verified"}},
+        {"resolution_kind": "interrupt", "interrupt_disposition": "recoverable_timeout", "proof_kind": "unavailable", "statuses": ["recovery_required"], "consumer": {"kind": "control_operation", "operation_type": "resolve_external_interrupt", "operation_variant": "recoverable_timeout", "phase": "external_final_evidence_verified"}},
+        {"resolution_kind": "interrupt", "interrupt_disposition": "controlled_halt", "proof_kind": "unavailable", "statuses": ["recovery_required"], "consumer": {"kind": "control_operation", "operation_type": "resolve_external_interrupt", "operation_variant": "controlled_halt", "phase": "external_final_evidence_verified"}},
+        {"resolution_kind": "interrupt", "interrupt_disposition": "integrity_failure", "proof_kind": "unavailable", "statuses": ["recovery_required"], "consumer": {"kind": "control_operation", "operation_type": "resolve_external_interrupt", "operation_variant": "integrity_failure", "phase": "external_final_evidence_verified"}}
+      ],
+      "cancellable_work_phases": ["external_operation_reserved", "task_committed", "workspace_manifest_committed", "reservation_committed", "core_contract_committed", "workspace_materialized", "pause_bound", "dispatch_authorized", "dispatch_receipt_committed", "result_reference_committed"],
+      "interruptible_work_phases": ["external_operation_reserved", "task_committed", "workspace_manifest_committed", "reservation_committed", "core_contract_committed", "workspace_materialized", "pause_bound", "dispatch_authorized", "dispatch_receipt_committed", "result_reference_committed"],
+      "phases": ["external_operation_reserved", "task_committed", "workspace_manifest_committed", "reservation_committed", "core_contract_committed", "workspace_materialized", "pause_bound", "dispatch_authorized", "dispatch_receipt_committed", "result_reference_committed", "cancel_intent_committed", "interrupt_stop_intent_committed", "termination_evidence_committed", "external_final_evidence_committed"],
+      "success_edges": [["external_operation_reserved", "task_committed"], ["task_committed", "workspace_manifest_committed"], ["workspace_manifest_committed", "reservation_committed"], ["reservation_committed", "core_contract_committed"], ["core_contract_committed", "workspace_materialized"], ["workspace_materialized", "pause_bound"], ["pause_bound", "dispatch_authorized"], ["dispatch_authorized", "dispatch_receipt_committed"], ["dispatch_receipt_committed", "result_reference_committed"], ["result_reference_committed", "external_final_evidence_committed"], ["external_operation_reserved", "cancel_intent_committed"], ["task_committed", "cancel_intent_committed"], ["workspace_manifest_committed", "cancel_intent_committed"], ["reservation_committed", "cancel_intent_committed"], ["core_contract_committed", "cancel_intent_committed"], ["workspace_materialized", "cancel_intent_committed"], ["pause_bound", "cancel_intent_committed"], ["dispatch_authorized", "cancel_intent_committed"], ["dispatch_receipt_committed", "cancel_intent_committed"], ["result_reference_committed", "cancel_intent_committed"], ["external_operation_reserved", "interrupt_stop_intent_committed"], ["task_committed", "interrupt_stop_intent_committed"], ["workspace_manifest_committed", "interrupt_stop_intent_committed"], ["reservation_committed", "interrupt_stop_intent_committed"], ["core_contract_committed", "interrupt_stop_intent_committed"], ["workspace_materialized", "interrupt_stop_intent_committed"], ["pause_bound", "interrupt_stop_intent_committed"], ["dispatch_authorized", "interrupt_stop_intent_committed"], ["dispatch_receipt_committed", "interrupt_stop_intent_committed"], ["result_reference_committed", "interrupt_stop_intent_committed"], ["cancel_intent_committed", "termination_evidence_committed"], ["interrupt_stop_intent_committed", "termination_evidence_committed"], ["termination_evidence_committed", "external_final_evidence_committed"]],
       "phase_statuses": {
         "external_operation_reserved": ["reserved"],
         "task_committed": ["reserved"],
@@ -238,10 +524,10 @@
         "dispatch_authorized": ["active"],
         "dispatch_receipt_committed": ["active"],
         "result_reference_committed": ["active"],
-        "terminal_evidence_committed": ["completed", "failed"],
-        "cancel_intent_committed": ["cancel_requested"],
-        "termination_evidence_committed": ["cancel_requested"],
-        "cancellation_evidence_committed": ["cancelled", "failed"]
+        "cancel_intent_committed": ["stop_requested"],
+        "interrupt_stop_intent_committed": ["stop_requested"],
+        "termination_evidence_committed": ["stop_requested"],
+        "external_final_evidence_committed": ["completed", "failed", "cancelled", "interrupted", "recovery_required"]
       },
       "phase_contracts": {
         "external_operation_reserved": {"authorities": ["external_operation_db"], "effect_class": "authority_reservation", "continuation_policy": "materialize_if_precomputed", "required_evidence": ["producer_operation_id", "workspace_id", "managed_workspace_locator_digest", "initial_lease_epoch"], "acquires": ["external_operation_owner"], "atomic_acquire": true},
@@ -254,21 +540,22 @@
         "dispatch_authorized": {"authorities": ["external_operation_db"], "effect_class": "external_effect_intent", "continuation_policy": "lookup_only_after_uncertain_effect", "required_evidence": ["public_paused_checkpoint", "immutable_core_digest", "current_external_lease_epoch"], "acquires": []},
         "dispatch_receipt_committed": {"authorities": ["external_operation_db", "backend_provider"], "effect_class": "external_effect_observation", "continuation_policy": "lookup_only_after_uncertain_effect", "required_evidence": ["stable_provider_operation_reference", "dispatch_receipt_digest"], "acquires": []},
         "result_reference_committed": {"authorities": ["external_operation_db", "workspace", "backend_provider"], "effect_class": "external_effect_observation", "continuation_policy": "lookup_only_after_uncertain_effect", "required_evidence": ["immutable_result_reference", "result_digest", "workspace_seal_digest"], "acquires": []},
-        "terminal_evidence_committed": {"authorities": ["external_operation_db", "workspace", "backend_provider"], "effect_class": "terminal_publication", "continuation_policy": "no_continuation_after_terminal", "required_evidence": ["termination", "write_lease_revocation", "verify_empty", "bounded_drain", "post_stop_stability"], "acquires": []},
-        "cancel_intent_committed": {"authorities": ["external_operation_db", "backend_provider"], "effect_class": "external_effect_intent", "continuation_policy": "lookup_only_after_uncertain_effect", "required_evidence": ["typed_cancel_reason", "current_external_lease_epoch"], "acquires": []},
+        "cancel_intent_committed": {"authorities": ["external_operation_db"], "effect_class": "external_effect_intent", "continuation_policy": "lookup_only_after_uncertain_effect", "required_evidence": ["typed_cancel_reason", "current_external_lease_epoch", "current_phase_revision", "resolution_owner_cancel"], "acquires": ["external_resolution_owner"], "atomic_acquire": true, "transaction_domain": "coordinator_sqlite", "cas_guard": "external_cancel_intent_cas"},
+        "interrupt_stop_intent_committed": {"authorities": ["external_operation_db", "quarantine_store"], "effect_class": "external_effect_intent", "continuation_policy": "lookup_only_after_uncertain_effect", "required_evidence": ["typed_interrupt_reason", "current_external_lease_epoch", "current_phase_revision", "resolution_owner_interrupt"], "acquires": ["external_resolution_owner"], "atomic_acquire": true, "transaction_domain": "coordinator_sqlite", "cas_guard": "external_interrupt_intent_cas"},
         "termination_evidence_committed": {"authorities": ["external_operation_db", "backend_provider"], "effect_class": "external_effect_observation", "continuation_policy": "lookup_only_after_uncertain_effect", "required_evidence": ["termination_or_not_dispatched_observation"], "acquires": []},
-        "cancellation_evidence_committed": {"authorities": ["external_operation_db", "workspace", "backend_provider"], "effect_class": "terminal_publication", "continuation_policy": "no_continuation_after_terminal", "required_evidence": ["termination_or_not_dispatched", "write_lease_revocation", "verify_empty", "bounded_drain", "post_stop_stability"], "acquires": []}
+        "external_final_evidence_committed": {"authorities": ["external_operation_db", "workspace", "backend_provider", "quarantine_store"], "effect_class": "terminal_publication", "continuation_policy": "no_continuation_after_terminal", "required_evidence": ["resolution_kind", "proof_kind", "terminal_status", "termination_or_not_dispatched", "write_lease_revocation", "verify_empty", "bounded_drain", "post_stop_stability", "quarantine_and_missing_proof_dimensions_when_unavailable", "final_phase_revision"], "acquires": [], "normal_resolution_cas_guard": "external_normal_terminal_cas"}
       }
     },
     "pause_lifecycle": {
       "authority": "execution_ledger",
-      "states": ["prepared", "opened", "claimed", "consumed", "cancelled"],
+      "states": ["prepared", "opened", "claimed", "consumed", "cancelled", "aborted", "interrupted", "quarantined"],
       "initial_state": "prepared",
       "active_states": ["opened"],
       "publicly_resumable_states": ["opened"],
-      "terminal_states": ["consumed", "cancelled"],
-      "allowed_edges": [["prepared", "opened"], ["opened", "claimed"], ["opened", "cancelled"], ["claimed", "consumed"]],
-      "visibility_rule": "prepared_is_private; opened_requires_public_paused_checkpoint; claimed_is_transitional_and_not_resumable; consumed_and_cancelled_are_irreversible"
+      "public_resume_predicate": ["pause_status_is_opened", "pause_owner_is_null", "run_terminal_closure_owner_is_null"],
+      "terminal_states": ["consumed", "cancelled", "aborted", "interrupted", "quarantined"],
+      "allowed_edges": [["prepared", "opened"], ["prepared", "aborted"], ["prepared", "quarantined"], ["opened", "claimed"], ["opened", "cancelled"], ["opened", "interrupted"], ["opened", "quarantined"], ["claimed", "consumed"]],
+      "visibility_rule": "prepared_is_private; opened_requires_public_paused_checkpoint_and_empty_pause_and_run_terminal_owners; claimed_is_transitional_and_not_resumable; consumed_cancelled_aborted_interrupted_and_quarantined_are_irreversible"
     },
     "run_lifecycle": {
       "authority": "execution_ledger",
@@ -281,6 +568,182 @@
       ]
     }
   },
+  "branch_contracts": [
+    {
+      "branch_id": "external_work_resolution",
+      "machine": "external_operation",
+      "sources": [
+        {"phase": "external_operation_reserved", "normal_target": "task_committed"},
+        {"phase": "task_committed", "normal_target": "workspace_manifest_committed"},
+        {"phase": "workspace_manifest_committed", "normal_target": "reservation_committed"},
+        {"phase": "reservation_committed", "normal_target": "core_contract_committed"},
+        {"phase": "core_contract_committed", "normal_target": "workspace_materialized"},
+        {"phase": "workspace_materialized", "normal_target": "pause_bound"},
+        {"phase": "pause_bound", "normal_target": "dispatch_authorized"},
+        {"phase": "dispatch_authorized", "normal_target": "dispatch_receipt_committed"},
+        {"phase": "dispatch_receipt_committed", "normal_target": "result_reference_committed"},
+        {"phase": "result_reference_committed", "normal_target": "external_final_evidence_committed"}
+      ],
+      "discriminants": [
+        {"field": "resolution_action", "values": ["normal_progress", "cancel", "interrupt"], "binding": "immutable_before_successor_selection", "authority": "external_operation_db"}
+      ],
+      "valid_combinations": [
+        {"resolution_action": "normal_progress"},
+        {"resolution_action": "cancel"},
+        {"resolution_action": "interrupt"}
+      ],
+      "cases": [
+        {"when": {"resolution_action": ["normal_progress"]}, "target": "$normal_target"},
+        {"when": {"resolution_action": ["cancel"]}, "target": "cancel_intent_committed"},
+        {"when": {"resolution_action": ["interrupt"]}, "target": "interrupt_stop_intent_committed"}
+      ]
+    },
+    {
+      "branch_id": "cancel_arbitration_result",
+      "machine": "control_operation",
+      "operation_type": "cancel_pause",
+      "operation_variant": "not_applicable",
+      "source_phase": "cancel_arbitrated",
+      "discriminants": [
+        {"field": "arbitration_outcome", "values": ["no_external_operation", "cancel_won", "normal_terminal_won", "preexisting_cancel_resolution", "preexisting_interrupt_resolution"], "binding": "immutable_at_cancel_arbitrated", "authority": "coordinator_db"},
+        {"field": "external_final_proof_kind", "values": ["not_applicable", "safe_stop", "unavailable"], "binding": "immutable_before_successor_selection", "authority": "external_operation_db"}
+      ],
+      "valid_combinations": [
+        {"arbitration_outcome": "no_external_operation", "external_final_proof_kind": "not_applicable"},
+        {"arbitration_outcome": "cancel_won", "external_final_proof_kind": "safe_stop"},
+        {"arbitration_outcome": "cancel_won", "external_final_proof_kind": "unavailable"},
+        {"arbitration_outcome": "normal_terminal_won", "external_final_proof_kind": "safe_stop"},
+        {"arbitration_outcome": "normal_terminal_won", "external_final_proof_kind": "unavailable"},
+        {"arbitration_outcome": "preexisting_cancel_resolution", "external_final_proof_kind": "safe_stop"},
+        {"arbitration_outcome": "preexisting_cancel_resolution", "external_final_proof_kind": "unavailable"},
+        {"arbitration_outcome": "preexisting_interrupt_resolution", "external_final_proof_kind": "not_applicable"}
+      ],
+      "cases": [
+        {"when": {"arbitration_outcome": ["no_external_operation"], "external_final_proof_kind": ["not_applicable"]}, "target": "pause_cancelled_recorded", "evidence_union": "PauseCancelProof", "evidence_variant": "no_external_operation"},
+        {"when": {"arbitration_outcome": ["cancel_won", "normal_terminal_won", "preexisting_cancel_resolution"], "external_final_proof_kind": ["safe_stop"]}, "target": "external_terminal_closure_verified"},
+        {"when": {"arbitration_outcome": ["cancel_won", "normal_terminal_won", "preexisting_cancel_resolution"], "external_final_proof_kind": ["unavailable"]}, "target": "external_unavailable_verified"},
+        {"when": {"arbitration_outcome": ["preexisting_interrupt_resolution"], "external_final_proof_kind": ["not_applicable"]}, "target": "resolution_winner_observed"}
+      ]
+    },
+    {
+      "branch_id": "recoverable_timeout_final_proof",
+      "machine": "control_operation",
+      "operation_type": "resolve_external_interrupt",
+      "operation_variant": "recoverable_timeout",
+      "source_phase": "external_final_evidence_verified",
+      "discriminants": [
+        {"field": "external_final_proof_kind", "values": ["safe_stop", "unavailable"], "binding": "immutable_at_external_final_evidence", "authority": "external_operation_db"}
+      ],
+      "valid_combinations": [{"external_final_proof_kind": "safe_stop"}, {"external_final_proof_kind": "unavailable"}],
+      "cases": [
+        {"when": {"external_final_proof_kind": ["safe_stop"]}, "target": "canonical_failed_delivery_committed"},
+        {"when": {"external_final_proof_kind": ["unavailable"]}, "target": "interrupt_terminal_ownership_reserved"}
+      ]
+    },
+    {
+      "branch_id": "controlled_halt_final_proof",
+      "machine": "control_operation",
+      "operation_type": "resolve_external_interrupt",
+      "operation_variant": "controlled_halt",
+      "source_phase": "external_final_evidence_verified",
+      "discriminants": [
+        {"field": "external_final_proof_kind", "values": ["safe_stop", "unavailable"], "binding": "immutable_at_external_final_evidence", "authority": "external_operation_db"}
+      ],
+      "valid_combinations": [{"external_final_proof_kind": "safe_stop"}, {"external_final_proof_kind": "unavailable"}],
+      "cases": [
+        {"when": {"external_final_proof_kind": ["safe_stop"]}, "target": "interrupt_safe_pause_disposition_committed"},
+        {"when": {"external_final_proof_kind": ["unavailable"]}, "target": "interrupt_unavailable_pause_disposition_committed"}
+      ]
+    },
+    {
+      "branch_id": "integrity_failure_final_proof",
+      "machine": "control_operation",
+      "operation_type": "resolve_external_interrupt",
+      "operation_variant": "integrity_failure",
+      "source_phase": "external_final_evidence_verified",
+      "discriminants": [
+        {"field": "external_final_proof_kind", "values": ["safe_stop", "unavailable"], "binding": "immutable_at_external_final_evidence", "authority": "external_operation_db"}
+      ],
+      "valid_combinations": [{"external_final_proof_kind": "safe_stop"}, {"external_final_proof_kind": "unavailable"}],
+      "cases": [
+        {"when": {"external_final_proof_kind": ["safe_stop"]}, "target": "interrupt_safe_pause_disposition_committed"},
+        {"when": {"external_final_proof_kind": ["unavailable"]}, "target": "interrupt_unavailable_pause_disposition_committed"}
+      ]
+    }
+  ],
+  "evidence_unions": [
+    {
+      "union_id": "PauseCancelProof",
+      "evidence_field": "pause_cancel_proof",
+      "tag_field": "proof_variant",
+      "variants": [
+        {"tag": "external_safe_stop", "required_fields": ["external_final_digest", "resolution_revision", "termination_or_not_dispatched", "write_lease_revocation", "verify_empty", "bounded_drain", "post_stop_stability"], "forbidden_fields": ["typed_null_external_identity", "external_absence_proof"]},
+        {"tag": "no_external_operation", "required_fields": ["typed_null_external_identity", "external_absence_proof", "not_dispatched"], "forbidden_fields": ["external_final_digest", "resolution_revision"]}
+      ],
+      "consumer_bindings": [
+        {"machine": "control_operation", "operation_type": "cancel_pause", "operation_variant": "not_applicable", "phase": "pause_cancelled_recorded", "incoming_phase": "external_terminal_closure_verified", "allowed_variants": ["external_safe_stop"]},
+        {"machine": "control_operation", "operation_type": "cancel_pause", "operation_variant": "not_applicable", "phase": "pause_cancelled_recorded", "incoming_phase": "cancel_arbitrated", "allowed_variants": ["no_external_operation"]}
+      ]
+    },
+    {
+      "union_id": "PauseSnapshot",
+      "evidence_field": "pause_snapshot",
+      "tag_field": "pause_snapshot",
+      "variants": [
+        {"tag": "absent", "required_fields": ["pause_absence_proof"], "forbidden_fields": ["pause_id", "pause_head"]},
+        {"tag": "prepared", "required_fields": ["pause_id", "pause_prepared_head"], "forbidden_fields": ["pause_opened_head"]},
+        {"tag": "opened", "required_fields": ["pause_id", "pause_opened_head", "public_paused_checkpoint"], "forbidden_fields": ["pause_absence_proof"]}
+      ]
+    },
+    {
+      "union_id": "InterruptSafePauseDispositionProof",
+      "evidence_field": "interrupt_safe_pause_disposition_proof",
+      "tag_field": "pause_disposition",
+      "correlates_with": {
+        "union_id": "PauseSnapshot",
+        "operation_variants": ["resolve_external_interrupt/controlled_halt", "resolve_external_interrupt/integrity_failure"],
+        "tag_mapping": {"absent": "absent_not_applicable", "prepared": "prepared_aborted", "opened": "opened_interrupted"}
+      },
+      "variants": [
+        {"tag": "absent_not_applicable", "required_fields": ["pause_snapshot_absent", "no_pause_event"], "forbidden_fields": ["pause_event_digest"]},
+        {"tag": "prepared_aborted", "required_fields": ["pause_snapshot_prepared", "pause_aborted_event_digest"], "forbidden_fields": ["pause_interrupted_event_digest"]},
+        {"tag": "opened_interrupted", "required_fields": ["pause_snapshot_opened", "pause_interrupted_event_digest"], "forbidden_fields": ["pause_aborted_event_digest"]}
+      ]
+    },
+    {
+      "union_id": "InterruptUnavailablePauseDispositionProof",
+      "evidence_field": "interrupt_unavailable_pause_disposition_proof",
+      "tag_field": "pause_disposition",
+      "correlates_with": {
+        "union_id": "PauseSnapshot",
+        "operation_variants": ["resolve_external_interrupt/controlled_halt", "resolve_external_interrupt/integrity_failure"],
+        "tag_mapping": {"absent": "absent_not_applicable", "prepared": "prepared_quarantined", "opened": "opened_quarantined"}
+      },
+      "variants": [
+        {"tag": "absent_not_applicable", "required_fields": ["pause_snapshot_absent", "no_pause_event"], "forbidden_fields": ["pause_event_digest"]},
+        {"tag": "prepared_quarantined", "required_fields": ["pause_snapshot_prepared", "pause_quarantined_event_digest"], "forbidden_fields": ["no_pause_event"]},
+        {"tag": "opened_quarantined", "required_fields": ["pause_snapshot_opened", "pause_quarantined_event_digest"], "forbidden_fields": ["no_pause_event"]}
+      ]
+    },
+    {
+      "union_id": "TerminalClosureUnavailableProof",
+      "evidence_field": "terminal_closure_unavailable_proof",
+      "tag_field": "pause_disposition",
+      "variants": [
+        {"tag": "cancel_opened_quarantined", "required_fields": ["pause_quarantined_head", "external_unavailable_final_digest"], "forbidden_fields": ["pause_not_applicable"]},
+        {"tag": "recoverable_opened_quarantined", "required_fields": ["pause_quarantined_head", "external_unavailable_final_digest"], "forbidden_fields": ["pause_not_applicable"]},
+        {"tag": "terminal_absent_not_applicable", "required_fields": ["pause_not_applicable", "pause_disposition_proof_digest", "external_unavailable_final_digest"], "forbidden_fields": ["pause_quarantined_head"]},
+        {"tag": "terminal_prepared_quarantined", "required_fields": ["pause_quarantined_head", "pause_disposition_proof_digest", "external_unavailable_final_digest"], "forbidden_fields": ["pause_not_applicable"]},
+        {"tag": "terminal_opened_quarantined", "required_fields": ["pause_quarantined_head", "pause_disposition_proof_digest", "external_unavailable_final_digest"], "forbidden_fields": ["pause_not_applicable"]}
+      ],
+      "consumer_bindings": [
+        {"machine": "control_operation", "operation_type": "cancel_pause", "operation_variant": "not_applicable", "phase": "terminal_closure_unavailable_recorded", "incoming_phase": "pause_quarantined_recorded", "allowed_variants": ["cancel_opened_quarantined"]},
+        {"machine": "control_operation", "operation_type": "resolve_external_interrupt", "operation_variant": "recoverable_timeout", "phase": "terminal_closure_unavailable_recorded", "incoming_phase": "interrupt_pause_quarantined_recorded", "allowed_variants": ["recoverable_opened_quarantined"]},
+        {"machine": "control_operation", "operation_type": "resolve_external_interrupt", "operation_variant": "controlled_halt", "phase": "terminal_closure_unavailable_recorded", "incoming_phase": "interrupt_unavailable_pause_disposition_committed", "allowed_variants": ["terminal_absent_not_applicable", "terminal_prepared_quarantined", "terminal_opened_quarantined"]},
+        {"machine": "control_operation", "operation_type": "resolve_external_interrupt", "operation_variant": "integrity_failure", "phase": "terminal_closure_unavailable_recorded", "incoming_phase": "interrupt_unavailable_pause_disposition_committed", "allowed_variants": ["terminal_absent_not_applicable", "terminal_prepared_quarantined", "terminal_opened_quarantined"]}
+      ]
+    }
+  ],
   "dependency_dags": [
     {
       "dag_id": "external_operation_prestart_and_pause_publication",
@@ -314,11 +777,18 @@
   ],
   "cross_machine_invariants": [
     {"invariant_id": "CTRL-OWN-001", "kind": "atomic_acquisition", "phase": "pause_and_terminal_ownership_reserved", "must_acquire": ["pause_claim_owner", "run_terminal_closure_owner"]},
-    {"invariant_id": "CTRL-OWN-002", "kind": "atomic_acquisition", "phase": "pause_and_terminal_cancel_ownership_reserved", "must_acquire": ["pause_cancel_owner", "run_terminal_closure_owner"]},
+    {"invariant_id": "CTRL-OWN-002", "kind": "conditional_atomic_acquisition", "phase": "cancel_arbitrated", "ownership_by_outcome_guard": "cancel_control_combined_cas", "no_ownership_outcomes": ["preexisting_interrupt_resolution"], "transaction_domain": "coordinator_sqlite"},
+    {"invariant_id": "CTRL-OWN-003", "kind": "interrupt_atomic_acquisition", "phases": ["interrupt_and_pause_ownership_reserved", "interrupt_and_terminal_ownership_reserved"], "cas_guard": "interrupt_control_combined_cas", "transaction_domain": "coordinator_sqlite"},
     {"invariant_id": "CTRL-TERM-001", "kind": "terminal_owner_closure", "owner": "run_terminal_closure_owner", "pending_allowed_operation_statuses": ["accepted", "in_progress"], "terminal_operation_closure_values": ["committed", "unavailable"]},
     {"invariant_id": "CTRL-TERM-002", "kind": "single_assignment_resolution", "phase": "terminal_eligibility_verified", "fields": ["resolved_terminal_disposition", "resolved_preclose_heads"]},
-    {"invariant_id": "PAUSE-LIFE-001", "kind": "pause_visibility_and_finality", "publicly_resumable_states": ["opened"], "terminal_states": ["consumed", "cancelled"], "reopen_edges": []},
-    {"invariant_id": "EXT-CANCEL-001", "kind": "final_proof_union", "consumer_phase": "external_terminal_closure_verified", "producer_terminal_phases": ["terminal_evidence_committed", "cancellation_evidence_committed"], "forbidden_intermediate_phases": ["termination_evidence_committed"]},
+    {"invariant_id": "PAUSE-LIFE-001", "kind": "pause_visibility_and_finality", "publicly_resumable_states": ["opened"], "public_resume_predicate": ["pause_status_is_opened", "pause_owner_is_null", "run_terminal_closure_owner_is_null"], "terminal_states": ["consumed", "cancelled", "aborted", "interrupted", "quarantined"], "reopen_edges": []},
+    {"invariant_id": "EXT-CANCEL-001", "kind": "single_final_proof", "producer_terminal_phase": "external_final_evidence_committed", "safe_consumer_phase": "external_terminal_closure_verified", "unavailable_consumer_phase": "external_unavailable_verified", "forbidden_intermediate_phases": ["cancel_intent_committed", "interrupt_stop_intent_committed", "termination_evidence_committed"]},
+    {"invariant_id": "EXT-ARB-001", "kind": "single_assignment_linearization", "competing_cas_guards": ["external_normal_terminal_cas", "external_cancel_intent_cas", "external_interrupt_intent_cas"], "compare_fields": ["external_operation_id", "phase_revision", "lease_epoch", "resolution_owner"], "exactly_one_winner": true},
+    {"invariant_id": "EXT-INT-001", "kind": "interrupt_disposition_closure", "control_operation_type": "resolve_external_interrupt", "variants": ["recoverable_timeout", "controlled_halt", "integrity_failure"], "safe_timeout_consumer": "coordinator_transition_committed", "unavailable_closure": "terminal_closure_unavailable_recorded"},
+    {"invariant_id": "TX-DOMAIN-001", "kind": "single_transaction_domain", "transaction_domain": "coordinator_sqlite", "atomic_objects": ["control_operation", "pause_ownership", "run_terminal_closure", "external_operation"]},
+    {"invariant_id": "CTRL-RES-001", "kind": "variant_reservation_evidence", "phase": "operation_reserved", "required_operation_variant_count": 11, "merge_rule": "shared_phase_contract_plus_exact_variant_overlay"},
+    {"invariant_id": "BRANCH-001", "kind": "guarded_branch_partition", "branch_contracts": ["external_work_resolution", "cancel_arbitration_result", "recoverable_timeout_final_proof", "controlled_halt_final_proof", "integrity_failure_final_proof"], "coverage": "mutually_exclusive_and_exhaustive"},
+    {"invariant_id": "EVIDENCE-001", "kind": "tagged_evidence_union", "evidence_unions": ["PauseCancelProof", "PauseSnapshot", "InterruptSafePauseDispositionProof", "InterruptUnavailablePauseDispositionProof", "TerminalClosureUnavailableProof"]},
     {"invariant_id": "CONT-001", "kind": "outcome_partition", "classes": ["committed_result_replay", "materializable_publication_prefix", "non_materializable_domain_gap", "integrity_conflict"]},
     {"invariant_id": "VERSION-001", "kind": "runtime_compatibility", "runtime_schema": "0.4", "resume_exact_schemas": ["0.4"], "source_only_schemas": ["0.2", "0.3"]}
   ],
