@@ -45,7 +45,7 @@ Ready ticket 不能静默覆盖 `AGENTS.md`、安全策略或当前 public contr
 
 Phase Overview 不是执行 prompt。只有经过用户确认并标记为 `status: ready` 的具体 ticket 才能执行；`ready`后ticket正文冻结，执行结果和后续纠偏不得回写原计划。
 
-当前Phase A状态是A01–A03及A03C01 `completed`，A02C01与A04–A07 `review`。A03的fallback invalidation harness不表示A01目标回退线路、durable resume、graph-managed Code Agent或budget manager已经完成。2026-08-26至27日交叉审查及源码对照结论已进入review稿和companion requirement catalog，包括独立`ControlOperation` coordinator、exact operation phases、状态authority分离、ExternalOperation两阶段bootstrap、terminal closure与完整process-tree取消；用户最终确认、提升为`ready`并建立frozen-ticket commit前仍不可执行。
+当前Phase A状态是A01–A03及A03C01 `completed`，A02C01与A04–A07 `review`。A03的fallback invalidation harness不表示A01目标回退线路、durable resume、graph-managed Code Agent或budget manager已经完成。2026-08-26至27日交叉审查及源码对照结论已进入review稿和companion requirement catalog，包括独立`ControlOperation` coordinator、type/variant穷尽phase graph、cancel/abandon atomic combined ownership、状态authority分离、ExternalOperation两阶段bootstrap与两类final terminal proof、single-owner terminal closure及完整process-tree取消；独立交叉审核、用户最终确认、提升为`ready`并建立frozen-ticket commit前仍不可执行。
 
 ## Milestones
 

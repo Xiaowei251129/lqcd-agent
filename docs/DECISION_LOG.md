@@ -887,3 +887,38 @@ Related Documents:
 - [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)
 - [A07 Phase B Harness Acceptance](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)
 - [Phase B Requirement Catalog](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)
+
+## 2026-08-27: Make Control Branches Exhaustive and Run Closure Single-owner
+
+Decision:
+
+- Replace prose exceptions to a linear ControlOperation phase list with type/variant-specific exhaustive allowed-edge graphs. `resume_run` freezes `continue_execution | abandon_and_halt` at reservation; only the continue branch enters `running`, while abandon owns and completes an embedded terminal tail.
+- Require cancel and abandon to atomically acquire their Pause ownership and the Run terminal closure ownership in one coordinator transaction represented by one combined-ownership phase. There is no durable state in which one of those two owners has changed and the other has not.
+- Give every Run a single-assignment terminal closure owner, monotonic closure revision and deterministic trigger-bound request identity. Ownership fences stale invocation capabilities and non-owner Run writes. Normal END, ordinary failure, budget/policy/operator stop and invalid-response capacity stop use `close_run`; cancel and abandon use the same ownership and eligibility contract in their embedded tails.
+- Treat `termination_evidence_committed` as a nonterminal cancellation observation. Pause cancellation accepts exactly one final ExternalOperation proof: active/non-dispatched cancellation uses `cancellation_evidence_committed`; an operation already normal-terminal before Pause cancellation keeps its immutable `terminal_evidence_committed`. Both require termination, write-lease revocation, containment verify-empty, bounded drain and post-stop stability.
+- Separate ControlOperation failure from authoritative Run closure. If Run authority is intact and appendable, the owner can publish `run_status: failed`; if the authority itself cannot be verified or appended, the operation reports `terminal_closure: unavailable` and must not fabricate a failed lifecycle.
+- Freeze cancel disposition and pre-close resolution contracts before side effects, then resolve final disposition and heads exactly once from terminal cancellation/settlement evidence. Freeze Pause compatibility against the source Run's actual execution schema, and assign B02 explicit ownership of `close_run` plus the combined-ownership/fencing protocol. B00 must statically reject unreachable, unterminated, cross-variant, skipped, half-ownership or terminal-owner-pending phase paths.
+
+Confirmed:
+
+- This is a medium contract closure within the existing Coordinator/control-plane architecture. It does not change A01 routing, grant product-route authority to LangGraph, create Phase B tickets, or implement runtime.
+- A01–A03, A03C01 and their existing completion/correction history remain frozen. A02C01 and A04–A07 remain `review` pending an independent cross-audit and final confirmation.
+- TradingAgents' explicit LangGraph conditional-edge maps and graph-construction checks at comparative source commit `a33fd4c0f134485a43553a2c23a63cb14adbd88f` support making branch coverage executable. Its application-level graph pattern does not replace this project's stronger coordinator, fencing, durability, cancellation or authority contracts.
+- OpenAI Codex invocation-lifetime capabilities, typed approval identities and bounded process cleanup remain design references rather than normative dependencies or evidence that a production backend has passed C00.
+
+Rejected Alternatives:
+
+- Keeping a mandatory linear resume path with a prose-only abandon exception: rejected because a validator and implementation cannot derive one legal trajectory.
+- Acquiring Pause ownership and terminal closure ownership in separate committed phases: rejected because a competing close can strand a half-owned Pause or terminal Run.
+- Letting termination observation close an ExternalOperation or Pause: rejected because termination alone does not prove lease revocation, containment emptiness or post-stop stability.
+- Mapping every control-integrity failure to `run_status: failed`: rejected because a corrupted authoritative head may make an append-only failed lifecycle impossible.
+- Appending `halted` directly from END, capacity, policy or operator code and constructing a close operation afterward: rejected because restart and competing triggers can create duplicate terminal publication.
+
+Related Documents:
+
+- [A02C01 Execution 0.4 Bootstrap Order](tickets/phase-a-control-contracts/A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md)
+- [A04 Pause and Resume Semantics](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)
+- [A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)
+- [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)
+- [A07 Phase B Harness Acceptance](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)
+- [Phase B Requirement Catalog](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)

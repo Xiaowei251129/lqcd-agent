@@ -203,7 +203,7 @@ terminal_evidence_reference / terminal_evidence_digest
 
 ExternalOperation使用两阶段identity/core publication消除task、workspace、reservation与producer identity之间的创建环。第一笔external-operation authority transaction只执行`external_operation_reserved`：可信Host分配并持久化`producer_operation_id`、Run/Cycle/Attempt、backend/deadline policy、`workspace_id`、managed workspace locator digest、initial owner和`lease_epoch`，同时将task、manifest、reservation、core和Pause字段显式保存为null。该stub已经是workspace创建的唯一fencing authority，但尚不授权materialize workspace、创建Pause或dispatch。
 
-随后固定phase与唯一前向顺序为：
+随后固定phase与穷尽allowed-edge graph为；normal path按顺序前进，cancellation branch只能从明确标记为cancellable的nonterminal phase进入且一旦进入不能返回normal path：
 
 ```text
 external_operation_reserved
@@ -217,15 +217,24 @@ external_operation_reserved
 -> dispatch_receipt_committed
 -> result_reference_committed
 -> terminal_evidence_committed
+
+cancellation branch from exactly one of:
+external_operation_reserved | task_committed | workspace_manifest_committed
+| reservation_committed | core_contract_committed | workspace_materialized
+| pause_bound | dispatch_authorized | dispatch_receipt_committed
+| result_reference_committed
+-> cancel_intent_committed
+-> termination_evidence_committed
+-> cancellation_evidence_committed
 ```
 
 `CodeAgentTask`引用已存在的`producer_operation_id`和允许该route的A06 BudgetDecision；`WorkspaceManifest`再引用task与同一producer/workspace identity，但此时physical workspace仍不存在。A06 aggregate reservation随后绑定exact task和manifest digests。`core_contract_committed`使用current external-operation epoch和phase revision执行一次性CAS，填入task、manifest、reservation references/digests并计算immutable `operation_contract_digest`；此后这些字段不可变。只有core commit后，current epoch worker才能按manifest materialize workspace并提交`workspace_materialized`。这条DAG不允许先创建task/workspace/reservation再补建producer operation，也不允许physical workspace早于durable epoch owner或immutable core。
 
-Status与phase映射固定为：`external_operation_reserved`到`pause_bound`使用`reserved`；`dispatch_authorized`到`result_reference_committed`使用`active`；`terminal_evidence_committed`根据可信Backend终止证据进入terminal `completed | failed`。Backend成功结束并返回canonical non-success CodeAgent result时ExternalOperation仍可`completed`，产品outcome由后续Host验证决定；Backend自身失败或operation integrity failure才使ExternalOperation `failed`。`cancel_intent_committed`与`termination_evidence_committed`使用`cancel_requested`，`cancellation_evidence_committed`在stop integrity confirmed时进入`cancelled`，否则进入`failed`。任一nonterminal phase可以终止为`recovery_required`或`failed`并冻结phase；terminal status不得再推进或切回dispatch分支。
+Status与phase映射固定为：`external_operation_reserved`到`pause_bound`使用`reserved`；`dispatch_authorized`到`result_reference_committed`使用`active`；正常completion的`terminal_evidence_committed`根据可信Backend结束与最终stop-integrity证据进入terminal `completed | failed`。该normal terminal evidence必须聚合process termination、write-lease revocation、containment `verify_empty`、bounded drain与post-stop stability；全部确认且result closure可信时为`completed`，任一停止/完整性条件失败时为`failed`并保留quarantine evidence。Backend成功结束并返回canonical non-success CodeAgent result时ExternalOperation仍可`completed`，产品outcome由后续Host验证决定；Backend自身失败或operation integrity failure才使ExternalOperation `failed`。Cancellation branch的`cancel_intent_committed`与`termination_evidence_committed`都使用`cancel_requested`：前者冻结取消意图，后者只冻结process termination或typed `not_dispatched` observation，尚未证明write-lease revocation、verify-empty与post-stop stability。只有`cancellation_evidence_committed`聚合相同等级的全部stop-integrity evidence后才进入terminal `cancelled | failed`。任一nonterminal phase可以终止为`recovery_required`或`failed`并冻结phase；terminal status不得再推进或切回dispatch分支。
 
 `pause_id`与`pause_binding_digest`在`pause_prepared`前保持null；不得预占或推测A04尚未分配的Pause identity。A04 append `pause_prepared`后，coordinator必须用current external-operation `lease_epoch`和phase revision执行一次性CAS，把该row推进到`pause_bound`并绑定exact `pause_id`、prepared event identity/digest与reservation；同值重放读取原binding，不同Pause或digest冲突。`pause_opened`绑定该closure，dispatch在完整public paused checkpoint前仍被禁止。动态owner、epoch、observation与terminal evidence不进入immutable core contract digest。
 
-停止分支可从允许取消的任一non-terminal phase进入`cancel_intent_committed -> termination_evidence_committed -> cancellation_evidence_committed`；从未dispatch时`termination_evidence_committed`保存typed `not_dispatched` proof。`dispatch_authorized`必须在调用Backend前提交，因此在调用返回不确定时只能lookup原operation；phase只能按已存在的exact durable evidence补记或前进，不能倒退、跳过所需receipt/evidence或把cancel分支改回dispatch。预计算且exact的pre-dispatch publication prefix保持non-terminal并可由new current epoch materialize；dispatch/terminate等副作用结果不确定且无法由lookup/terminal evidence闭合时终止为`recovery_required`，此后不得继续原operation。
+停止分支可从允许取消的任一non-terminal phase进入`cancel_intent_committed -> termination_evidence_committed -> cancellation_evidence_committed`；从未dispatch时`termination_evidence_committed`保存typed `not_dispatched` proof，但final cancellation evidence仍必须明确证明没有active lease/process/post-stop activity。`cancellation_evidence_committed`必须引用termination observation、write-lease revocation、containment `verify_empty`、bounded drain与post-stop stability evidence及其digests；它是仍处于nonterminal/cancellation branch的ExternalOperation可供A04引用的唯一cancellation-terminal phase。若ExternalOperation在`cancel_pause`取得ownership前已经不可逆提交normal `terminal_evidence_committed`，A04不得要求它切换branch或追加第二个terminal phase，而只能验证该normal evidence包含上一段同等级的最终stop-integrity closure。`dispatch_authorized`必须在调用Backend前提交，因此在调用返回不确定时只能lookup原operation；phase只能按已存在的exact durable evidence补记或前进，不能倒退、跳过所需receipt/evidence或把cancel分支改回dispatch。预计算且exact的pre-dispatch publication prefix保持non-terminal并可由new current epoch materialize；dispatch/terminate等副作用结果不确定且无法由lookup/terminal evidence闭合时终止为`recovery_required`，此后不得继续原operation。
 
 该record是dispatch ownership、restart-safe monitoring、deadline与cancel intent的authority，但不是Run/Pause/Attempt或budget authority。ExternalOperation在自己的row/history中维护独立单调`lease_epoch`，复用A02C01相同的acquire/takeover和compare-and-set语义；它不复用已committed parent ControlOperation的旧epoch。创建、dispatch authorization、lease takeover、status observation、cancel intent与terminal commit都必须验证external-operation current epoch和phase revision；若当前动作同时materialize public control phase，还必须独立验证相应ControlOperation epoch。Stale worker不能调用dispatch/fetch/cancel、刷新workspace lease或发布receipt/result。
 
@@ -237,7 +246,7 @@ Budget、Pause deadline与Run cancellation authority仍只属于A04/A06可信控
 
 Linux strict provider使用dedicated cgroup v2或等价不可breakaway containment；Windows strict provider使用Job Object或等价机制。独立process group/session只能作为containment内部的graceful cleanup或非严格开发provider，因为不可信descendant可能创建新session/process group；仅有process-group kill的host不能声明`strict_descendant_containment`，也不能通过真实Backend capability gate。Phase B可以用deterministic containment fixture证明control contract，平台真实containment属于明确分离的capability evaluation。
 
-完整受控停止按A06 outcome matrix映射为A04`halted`或当前Attempt的typed cancelled outcome；无法证明termination、lease revocation或post-stop stability属于control/runtime integrity failure，映射为`run_status = failed`，workspace隔离保留，不得注册bundle或重新dispatch。
+完整受控停止按A06 outcome matrix映射为A04`halted`或当前Attempt的typed cancelled outcome；无法证明termination、lease revocation或post-stop stability属于control/runtime integrity failure，workspace隔离保留且不得注册bundle或重新dispatch。Run authority仍可验证和安全append时由唯一terminal owner发布`run_status = failed`；authority自身不可验证时只返回control failure与`terminal_closure = unavailable`。
 
 ## Contract and Identity Version
 
@@ -380,11 +389,11 @@ Dispatch/delivery 必须满足：
 - dispatch receipt与delivery snapshot位于immutable control/audit namespace，在Pause claim前不append execution/budget record、不改变bounded graph state或A04 `opened_execution_head`；
 - dispatch outcome 不确定时只能使用`CodingBackend.lookup(producer_operation_id)`确认原operation并恢复同一receipt reference，不得自动启动第二个backend operation；Run保持paused，直到exact result到达、operator显式取消，或A06后续定义的policy触发受控升级；
 - backend完成后必须通过`fetch_result`取得immutable result reference并验证exact receipt、task、workspace、operation和digest，不能接受模型文本或Codex thread summary作为delivery authority；
-- operation timeout、aggregate hard limit或operator取消必须先持久化external-operation cancel intent，再由durable watchdog通过`CodingBackend.cancel`停止exact operation并撤销写lease；`cancel_pause`本身仍遵守A04 lifecycle，不能由backend调用或替代；
+- nonterminal ExternalOperation的operation timeout、aggregate hard limit或active operator取消必须先持久化external-operation cancel intent，再由durable watchdog通过`CodingBackend.cancel`停止exact operation、撤销写lease并完成`cancellation_evidence_committed`；已normal terminal的operation保持其final `terminal_evidence_committed`，`cancel_pause`本身仍遵守A04 lifecycle且不能由backend调用或替代；
 - `resume_run` 只接收 immutable `CodeAgentExternalResult` snapshot/reference 与 digest，不接受 workspace path、state patch 或 route；
 - claim 后崩溃、重复 delivery 与 head mismatch 完全遵守 A04，不建立 Code Agent 专用 resume/retry入口。
 
-对尚未claim的`external_result` Pause执行`cancel_pause`时，可信Host必须先证明operation尚未dispatch，或在external-operation authority持久化cancel intent并由current-epoch watchdog对已dispatch operation执行幂等`cancel`、撤销write lease并持久化terminal status/seal control evidence；随后才按A04对exact `opened_execution_head`追加`pause_cancelled`和对应`run_lifecycle`。Backend不能自行取消Pause。停止或lease证据不完整时不得接受result，workspace必须隔离，Run按A06 stop matrix映射`failed`并保守结算，不能追加成功halted lifecycle。
+对尚未claim的`external_result` Pause执行`cancel_pause`时，可信Host先分类ExternalOperation：若尚未terminal，则证明operation未dispatch，或持久化cancel intent并由current-epoch watchdog对已dispatch operation执行幂等`cancel`、撤销write lease，最终提交包含termination/not-dispatched、lease revocation、verify-empty、bounded drain和post-stop stability的`cancellation_evidence_committed`并进入terminal `cancelled | failed`；若operation已经提交normal `terminal_evidence_committed`，则保持原terminal status/phase并验证其中相同等级的final stop-integrity closure，不得重开或改写为cancelled。A04只能引用这两类穷尽的final terminal proof之一，随后才可对exact `opened_execution_head`追加`pause_cancelled`和embedded terminal tail；中间`termination_evidence_committed`始终不足。Backend不能自行取消Pause。停止或lease证据不完整时不得接受result，workspace必须隔离；Run authority仍可安全append时按A06 stop matrix由唯一terminal owner发布`failed`，authority自身不可验证时返回`terminal_closure = unavailable`，两者都不能追加成功halted lifecycle。
 
 Resume在claim前必须完成delivery envelope的duplicate-key、schema、identity、owner、path、digest、member-shape、dispatch receipt、workspace manifest/seal和reservation/usage preflight。Claim必须对exact A04 `opened_execution_head`成功；随后在target code_agent Attempt `started`前append exact `resource_settled`。Claim后settlement崩溃在existing evidence exact、settlement identity/digest已预计算且仅无副作用publication未闭合时保持`in_progress/materialization_pending`；缺少可信settlement evidence或副作用结果不确定时终止为`recovery_required`，实际usage/identity/head mismatch进入`failed`。后两者都不得重新dispatch或启动target Attempt。Settlement完整后，target code_agent Attempt只`started`一次；`CodeAgentSubgraph` materialize已通过preflight的change，在fresh verifier workspace运行trusted verification/scope checks，计算canonical result，注册bundle，然后写terminal Attempt lifecycle，不再次Pause。若结果表达`needs_input`或`needs_human`，先完成当前Attempt并交给Coordinator，由Coordinator按A04建立新的`human_input` Pause。
 
@@ -400,7 +409,7 @@ Backend 返回的 external result 是 untrusted ingress，即使来自本地 Fak
 
 Trusted `CodeAgentSubgraph`必须重新验证 schema、identity、path containment、base-to-result content、member digests、scope、authorization和budget envelope。Required verification由trusted verifier在fresh materialized workspace中重新运行；backend或Codex自报“tests passed”只能作为audit evidence，不能满足route guard。Backend实际usage超过aggregate maximum、停止后继续产生side effect或无法验证停止边界时属于control/policy failure，不得通过按maximum结算掩盖超额执行。Canonical `status`、`usable`、`failure_class`和`retryability`必须由trusted validator根据validated change、policy和verification evidence计算或约束，不能直接复制backend声明。
 
-Malformed、duplicate-key、identity mismatch、digest mismatch、path escape或无法完整验证的external result不能注册为合法`CodeAgentResult`。这些问题在preflight发现时拒绝claim并保持原Pause；claim后若观察到实际tamper、mismatch或违规content，必须quarantine并按A06 integrity matrix进入`run_status = failed`。只有已存在bytes/identity/heads全部exact、没有违规或新副作用且closure suffix已预计算时，原operation才保持`in_progress/materialization_pending`并补齐；无法安全继续但没有完整性违规时终止为`recovery_required`。后两种情况都不得自动重跑Attempt。不得把invalid payload静默规范化为success、复用旧bundle或让Agent选择fallback route。
+Malformed、duplicate-key、identity mismatch、digest mismatch、path escape或无法完整验证的external result不能注册为合法`CodeAgentResult`。这些问题在preflight发现时拒绝claim并保持原Pause；claim后若观察到实际tamper、mismatch或违规content，必须quarantine并按A04/A06 integrity matrix处理：Run authority仍可验证和安全append时发布`run_status = failed`，authority自身不可验证时返回`terminal_closure = unavailable`。只有已存在bytes/identity/heads全部exact、没有违规或新副作用且closure suffix已预计算时，原operation才保持`in_progress/materialization_pending`并补齐；无法安全继续但没有完整性违规时终止为`recovery_required`。后两种情况都不得自动重跑Attempt。不得把invalid payload静默规范化为success、复用旧bundle或让Agent选择fallback route。
 
 Backend若在自身边界发现内部输出无效，可以返回一个schema-valid、无usable change的`failed` envelope，并使用`failure_class = result_invalid`；该可信可归属的failure evidence经Host验证后才可形成canonical failed bundle并交给Coordinator。它与把malformed ingress规范化为合法结果不是同一行为。
 
@@ -420,7 +429,7 @@ Backend若在自身边界发现内部输出无效，可以返回一个schema-val
 
 不定义模糊的`partial_success`。只要change非空但required verification失败或不完整，结果就是`failed`；change evidence可以保留为audit-only，但`usable=false`且不能进入Analysis。
 
-`policy_blocked`只表示安全的pre-change拒绝。External payload实际包含out-of-scope member、path escape、forbidden target或其他违规filesystem content时属于invalid ingress：不注册canonical code artifact；claim前只记录control rejection evidence并保留Pause，claim后观察到实际违规content时quarantine并进入`run_status = failed`。无违规content、已有bytes与heads均exact且suffix已预计算的side-effect-free publication partial保持`in_progress/materialization_pending`；`recovery_required`只用于无法继续原operation的terminal不确定性。
+`policy_blocked`只表示安全的pre-change拒绝。External payload实际包含out-of-scope member、path escape、forbidden target或其他违规filesystem content时属于invalid ingress：不注册canonical code artifact；claim前只记录control rejection evidence并保留Pause，claim后观察到实际违规content时quarantine并进入A04/A06 integrity outcome，只有Run authority仍可验证和安全append时才发布`run_status = failed`。无违规content、已有bytes与heads均exact且suffix已预计算的side-effect-free publication partial保持`in_progress/materialization_pending`；`recovery_required`只用于无法继续原operation的terminal不确定性。
 
 `scope_violation`与`policy_violation` failure class在canonical `CodeAgentResult`中只允许描述已验证的pre-change `policy_blocked`拒绝或无违规content的安全失败。若external result或workspace实际含违规content，这两个label只能作为control rejection audit reason，不能把invalid ingress规范化、注册或路由为合法failed bundle。
 
@@ -567,7 +576,7 @@ Analysis注册的artifact必须依赖exact source Code Bundle；base、patch、e
 
 - Code Bundle已注册但outbound Transition尚未提交：保留current code，验证heads后继续正常route commit，不重跑backend；
 - Transition已提交但spec或Analysis workspace尚未materialize：保持target Attempt为`scheduled`，按deterministic spec/workspace identity幂等创建，不重新提交Transition；
-- Analysis启动前发现已知publication phase尚未完成、所有已存在bytes仍exact且spec/workspace identity/digest已预计算时保持`in_progress/materialization_pending`并只补齐该suffix；若target execution是否已开始或产生副作用无法证明，则终止为`recovery_required`。Code/artifact head、spec、workspace或effective tree发生不一致、篡改或无法闭合时映射`run_status = failed`。旧target不得重复启动、自动abandon或被retarget，同一source Attempt不得提交第二条outbound Transition；只有满足A04 source validation时才允许operator显式replay/fork到新Run；
+- Analysis启动前发现已知publication phase尚未完成、所有已存在bytes仍exact且spec/workspace identity/digest已预计算时保持`in_progress/materialization_pending`并只补齐该suffix；若target execution是否已开始或产生副作用无法证明，则终止为`recovery_required`。Code/artifact head、spec、workspace或effective tree发生不一致、篡改或无法闭合时进入A04/A06 integrity outcome：authority仍可验证和安全append时发布`run_status = failed`，否则`terminal_closure = unavailable`。旧target不得重复启动、自动abandon或被retarget，同一source Attempt不得提交第二条outbound Transition；只有满足A04 source validation时才允许operator显式replay/fork到新Run；
 - Analysis subprocess已运行但artifact未完整注册：不得根据process exit或文件存在声称成功，按A02/A04 recovery与Attempt lifecycle处理。
 
 Patch promotion与fresh Analysis execution是不同操作。Analysis可以消费Run-local verified bundle，但A05不允许把该patch自动写回control repository、commit、merge、push或发布。
@@ -668,6 +677,7 @@ A07和后续implementation tickets至少必须覆盖：
 - `A05-CODE-022`：ExternalOperation两阶段identity/core及完整phase在dispatch前持久化；Host crash后watchdog以新lease epoch只materialize预计算的pre-dispatch suffix或lookup/fetch/cancel原operation，stale worker写入拒绝，unknown状态绝不redispatch；
 - `A05-CODE-023`：malformed/tampered/identity-digest-path invalid ingress在图外拒绝且不产生产品Transition；claim后预计算、exact、side-effect-free publication partial保持`in_progress/materialization_pending`，不可继续的不确定性为terminal `recovery_required`，实际tamper/mismatch为`failed`；schema-valid、Attempt-attributable `failed/result_invalid`经Host验证后形成canonical failed bundle并进入Coordinator；
 - `A05-CODE-024`：strict containment fixture证明breakaway/concurrent-fork descendant仍被kill-all；仅process-group provider不能声明strict capability，真实Backend在缺少restart-safe lookup/cancel或strict containment时capability gate失败。
+- `A05-CODE-025`：nonterminal ExternalOperation cancellation严格经过`cancel_intent_committed -> termination_evidence_committed -> cancellation_evidence_committed`，前两者保持`cancel_requested`；已经normal terminal的operation保持原`terminal_evidence_committed`。A04只接受这两种包含termination、lease revocation、verify-empty、bounded drain与post-stop stability的final terminal proof，缺失任一证据或仅有中间termination observation都不得关闭Pause。
 
 ## Pre-freeze Review Gate
 
