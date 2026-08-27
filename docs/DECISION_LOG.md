@@ -815,3 +815,40 @@ Related Documents:
 - [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)
 - [A07 Phase B Harness Acceptance](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)
 - [Phase B Requirement Catalog](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)
+
+## 2026-08-26: Add a Durable Control-operation Coordinator and Exact Termination Boundary
+
+Decision:
+
+- Add `ControlOperation 0.1` as the durable authority for public mutation idempotency, ownership, monotonic phase, worker lease, and result replay.
+- Place the Phase B SQLite reference coordinator at `<output_root>/.lqcd/control_operations.sqlite`, outside every per-Run root and separate from LangGraph checkpoint databases.
+- Require `start_run` to reserve the idempotency key, operation identity, and target Run locator in one single-writer transaction before creating policy, Run-root, ledger, or checkpoint bytes.
+- Reuse the same coordinator for `resume_run`, `replay_run`, `fork_run`, and `cancel_pause`; a Pause claim is owned by one stable operation even if its processing worker lease expires.
+- Keep four state dimensions orthogonal: operation status/phase, Run `run_status`, Pause lifecycle, and domain/workflow `status`.
+- Require a local real backend to cancel the exact complete process tree through graceful termination, a bounded grace period, forced termination of survivors, bounded output-reader shutdown, write-lease revocation, and post-stop activity checks.
+- Preserve A04 terminal semantics: a successfully enforced policy/security/operator stop is `halted`; unverified heads/counters, termination failure, lease-revocation failure, or post-stop activity is a control/runtime failure with `run_status = failed`.
+
+Confirmed:
+
+- `execution_history.jsonl` remains the append-only authority for Run history after Run creation. The coordinator owns mutation admission and processing ownership; LangGraph checkpoints own graph recovery state; immutable artifacts and manifests own scientific result bytes.
+- Cross-store phases must exact-match, but no store may silently become a second mutable authority for another store's facts.
+- Only the original same-key/same-digest operation may materialize a precomputed side-effect-free record after a crash. A worker lease never authorizes a second operation or replay of an uncertain external effect.
+- OpenAI Codex source at comparative review commit `7c3747941a6b664c30f1e6aa72a917fd74dc22d2` and local CLI `0.134.0` informed the transaction, event projection, exact interrupt, and process-tree termination design. This is implementation evidence, not a normative dependency or a passed C00 capability result.
+- Phase B must verify SQLite transaction/claim behavior with independent processes and deterministic failpoints. Phase C must pin and black-box test the actual SDK/CLI/app-server build rather than infer capabilities from a moving source branch.
+
+Rejected Alternatives:
+
+- Recording the idempotency key first inside the new Run ledger: rejected because the ledger does not exist before the first Run-root mutation.
+- Reusing the LangGraph checkpoint database as the operation journal: rejected because checkpoint recovery and public mutation ownership have different authority and lifecycle boundaries.
+- Letting an expired worker lease release a Pause claim: rejected because it could create two consumers for one recovery window.
+- Treating provider thread/job identity as the product operation identity: rejected because provider identity may be absent, unstable, or backend-specific.
+- Marking failed cancellation or post-stop activity as a normal `halted` outcome: rejected because it hides loss of runtime containment.
+- Automatically repairing malformed control-ledger tails: rejected because audit integrity must fail closed when exact bytes and heads cannot be proven.
+
+Related Documents:
+
+- [A02C01 Execution 0.4 Bootstrap Order](tickets/phase-a-control-contracts/A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md)
+- [A04 Pause and Resume Semantics](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)
+- [A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)
+- [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)
+- [A07 Phase B Harness Acceptance](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)

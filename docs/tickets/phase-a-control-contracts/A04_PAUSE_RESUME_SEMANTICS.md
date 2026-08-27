@@ -43,6 +43,7 @@ A02 已冻结 Run/Cycle/Attempt/Transition identity，A03 与 A03C01 已冻结 a
 ## Scope
 
 - 冻结项目自有的 `start_run`、`resume_run`、`replay_run`、`fork_run` 与 `cancel_pause` 外部合同；
+- 复用A02C01 `ControlOperation 0.1`冻结所有public mutation的durable journal、operation phase、worker lease和result replay；
 - 冻结 Pause identity、append-only lifecycle、Run 状态约束和安全 checkpoint 边界；
 - 分离权威control `run_status`与现有领域/workflow `status`，消除terminal `pending`死区；
 - 冻结 `human_input`、`external_result`、`recovery_decision` 三类 typed Pause；
@@ -55,7 +56,7 @@ A02 已冻结 Run/Cycle/Attempt/Transition identity，A03 与 A03C01 已冻结 a
 ## Non-goals
 
 - 不实现 API、CLI、UI、runtime、graph edge、checkpoint adapter 或测试；
-- 不选择或部署生产 checkpoint backend、认证服务、分布式锁或事务系统；
+- 不选择或部署生产 checkpoint backend、认证服务或分布式事务系统；Phase B按A02C01实现独立于LangGraph checkpoint的project-owned SQLite coordinator；
 - 不实现 Code Agent、自动 timeout、预算、failure fingerprint 或 Phase B harness；
 - 不提供 arbitrary state patch、自由 route、raw checkpoint 恢复、force overwrite 或自动 partial-commit repair；
 - 不迁移或自动修复 schema `0.2` 及更早的实验 Run；
@@ -142,6 +143,31 @@ Typed resume input 只能是 `human_response`、`external_result` 或 `recovery_
 
 Start、replay 和 fork 分别建立 `root`、`replay_of` 与 `fork_of` typed lineage。所有请求字段、source validation result 与返回的 child Run identity 都纳入该操作的 canonical request/result digest。
 
+### Durable operation journal and authority split
+
+所有通过认证且schema-valid的public mutation都必须先进入A02C01定义的`<output_root>/.lqcd/control_operations.sqlite`；不能先写Run ledger、checkpoint、Pause、child Run或外部副作用，再补记幂等键。`start_run`复用A02C01已经分配的target Run locator；`resume_run`和`cancel_pause`绑定exact source Run/Pause/opened head；`replay_run`和`fork_run`在coordinator transaction中分配不可变child Run locator。
+
+每个operation保持四类状态严格分离：
+
+- `operation_status/operation_phase`：一次API mutation的持久进度、ownership和结果重放；
+- `run_status`：Run是否running、paused或terminal；
+- Pause `opened | claimed | consumed | cancelled`：单个恢复窗口的append-only领域control history；
+- 现有领域`status`：scientific/workflow disposition。
+
+`operation_status`变化不能自行改变`run_status`，worker lease过期不能重新打开Pause，checkpoint中的projection也不能创建或取得operation ownership。读取/query接口可以投影上述状态，但不得因读取、poll或Host启动而创建operation、刷新lease或写入任何Run history。
+
+对`resume_run`和`cancel_pause`，coordinator必须在一个single-writer transaction中完成：验证或创建same-key/same-digest operation、compare-and-set exact active `pause_id`与`opened_execution_head`、建立唯一Pause claim/cancel ownership、保存预计算的下一ledger event identity/digest，并提交operation phase。不同key竞争只能有一个owner；另一个请求即使payload相同也返回`conflict`，不能等待lease后创建第二个claim。
+
+worker lease仅调度同一`operation_id`的materialization：
+
+- transaction提交前退出，没有claim/cancel ownership，same request可正常重试；
+- `resume_run` transaction已提交但`claimed` ledger record尚未append时，只允许同一operation在重新验证opened head未变化后create-new exact预计算record；不得运行graph、Backend、validator或其他外部副作用；
+- `cancel_pause` transaction提交后由同一operation执行A05要求的exact幂等Backend cancel与terminal evidence publication（如适用），再在opened head未变化时append预计算`cancelled` record；worker lease只能继续该停止流程，不能dispatch、启动target或创建替代operation；
+- ledger record完整后，operation phase只能向前；若后续target allocation、settlement、checkpoint或result head进入本ticket定义的不确定边界，返回`recovery_required`，不得借worker lease重跑Attempt或外部副作用；
+- coordinator、execution ledger、artifact heads与checkpoint projection不能exact闭合时，`operation_status = recovery_required`并保持original ownership/tombstone，不能创建替代operation。
+
+Bounded state可以保存nullable `active_control_operation_id`、`active_control_operation_status`、`active_control_operation_phase`与phase revision作为受限projection；每次恢复必须从coordinator读取并与Pause/ledger heads exact-match。它们不进入Agent prompt，也不能替代coordinator查询。
+
 ## Execution Schema `0.3` and Pause Identity
 
 A04 将 execution schema 从 `0.2` 升级为 `0.3`。每个 Run 维护单调递增的正整数 `pause_index`，并据此分配 Run-local、唯一、无间隙的 `pause_id = pause_NNNNNN`。Pause identity 不能由调用方选择或复用。
@@ -171,7 +197,7 @@ opened -> cancelled
 
 ### `claimed`
 
-`claimed` 事件保留所有 `opened` identity，引用 exact `opened_execution_head`，并增加稳定的 control operation ID、`idempotency_key`、canonical request digest、trusted actor identity/scopes、typed input reference 与 digest。
+`claimed` 事件保留所有 `opened` identity，引用 exact `opened_execution_head`，并增加coordinator中稳定的 control operation ID、operation phase revision、`idempotency_key`、canonical request digest、trusted actor identity/scopes、typed input reference 与 digest。
 
 ### `consumed` and `cancelled`
 
@@ -179,7 +205,7 @@ opened -> cancelled
 
 任一必需字段缺失、identity 改变、事件乱序、重复消费、对非 active Pause 操作或多个成功 claim 都必须 fail closed。已 claim 的 Pause 不能再取消、重新打开或由另一请求接管。`recovery_required` 是 control operation outcome，不新增可恢复 Run status；claimed operation 未形成 validated `consumed` head 时，物理 checkpoint 中即使仍显示 `paused` 也不满足 resume eligibility。
 
-Bounded graph state增加权威`run_status`及nullable active Pause projection：counter、active `pause_id`、reason、lifecycle status、requesting Attempt、target Attempt和typed scope。`run_status: paused`必须与execution ledger中最新`opened`且未claim/cancel的Pause exact-match；无active Pause时所有nullable Pause字段必须显式为空。现有领域`status`不得覆盖`run_status`或把terminal `pending`伪装成可resume状态。
+Bounded graph state增加权威`run_status`及nullable active Pause projection：counter、active `pause_id`、reason、lifecycle status、requesting Attempt、target Attempt和typed scope，并保存上一节规定的nullable active ControlOperation projection。`run_status: paused`必须与execution ledger中最新`opened`且未claim/cancel的Pause及coordinator ownership exact-match；无active Pause时所有nullable Pause字段必须显式为空。现有领域`status`不得覆盖`run_status`或把terminal `pending`伪装成可resume状态。
 
 Schema `0.2` 及更早的实验 Run 默认不可 resume，也不自动迁移。只有 root inputs 仍可完整验证时才允许显式 replay；只有最新 source head 满足本 ticket 的 fork 验证规则时才允许显式 fork。
 
@@ -245,6 +271,7 @@ halt:
 - 同一 key、同一 request 返回同一个 control operation result，不重新执行；
 - 同一 key、不同 request digest 必须 conflict；
 - 多个不同 key 竞争同一 Pause 时，只有第一个成功原子 claim，其余请求 conflict；
+- 上述key、operation和Pause ownership必须由A02C01 coordinator transaction持久化，不能使用进程内lock、checkpoint metadata或先append后补登记；worker lease过期只允许继续同一operation的确定性无副作用phase；
 - `external_result` Pause必须绑定在`opened`前已持久化的exact resource reservation；Pause对外可见后到claim前不得append任何execution/budget record，dispatch receipt与delivery snapshot只能作为不推进execution head的immutable control evidence；
 - `external_result` claim必须对exact `opened_execution_head`执行compare-and-set；claim成功后、target Attempt `started`前才允许append该reservation的exact settlement。claim后settlement未完整即进入`recovery_required`，不得重新dispatch或启动target Attempt；
 - null-target `human_input` Pause claim成功后，target allocation、A03 invalidation、Transition append或validator start任一partial sequence都进入`recovery_required`；同key重试不得再分配第二个Attempt或第二条Transition；null-target `recovery_decision`不得分配target；
@@ -320,6 +347,7 @@ Fork source head 不是可继续执行的 checkpoint。所有 child execution �
 
 - 只有`run_status: paused`且具有最新exact active `pause_id`的Run可resume；`running`、`completed`、`failed`、`halted`及伪paused projection均拒绝，领域`status: pending`到达END时映射为`run_status: completed`而不是生命周期死区；
 - 三类 typed Pause 均可跨进程恢复且最多消费一次；
+- public mutation在写Run/child/Pause/checkpoint前已取得durable operation ownership，且active operation projection不能冒充Run或Pause authority；
 - 外部接口不暴露 raw LangGraph checkpoint，也不接受 arbitrary state/route patch；
 - 重复 key、变更 payload、竞争 claim、错误 actor、错误 Run/Pause 和过期 Pause 都有确定的 fail-closed 结果；
 - invalid Human Response在A06容量允许时生成新Pause，否则安全`halted`；旧Pause与single-use authorization均不复用；
@@ -348,6 +376,7 @@ A07 与后续 Phase B implementation tickets 至少必须覆盖：
 - `A04-PAUSE-011`：replay/fork生成新child identities，source与accepted artifacts bytes不变；
 - `A04-PAUSE-012`：fork拒绝旧checkpoint、被后续history否定的artifact与非最新source head；
 - `A04-PAUSE-013`：replay/fork不继承Human authorization、accepted status或active Pause。
+- `A04-PAUSE-014`：所有public mutation先进入独立`ControlOperation` coordinator；两个独立process验证same-key replay、changed-payload conflict、single Pause owner、worker lease只继续原operation、operation/run/domain/Pause状态正交以及coordinator/checkpoint/ledger authority分离。
 
 ## Pre-freeze Review Gate
 

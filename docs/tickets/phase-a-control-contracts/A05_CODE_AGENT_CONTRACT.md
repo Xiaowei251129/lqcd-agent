@@ -163,14 +163,14 @@ cancel(producer_operation_id, typed_reason)
 - `dispatch` 对 exact operation/task/workspace 必须幂等；同 operation identity 的不同输入必须 conflict；
 - `lookup` 是 dispatch 结果不确定、Host 重启或 delivery 重试时的唯一查询入口，不能隐式启动新 operation；其status在operation已知时必须携带同一canonical dispatch receipt reference/digest，使Host能在“provider已接受但Run-local receipt尚未publication”的崩溃窗口恢复exact receipt；
 - `fetch_result` 只能返回已经持久化且可按 digest 验证的 immutable result reference，不能返回 mutable workspace path；
-- `cancel`只能作用于exact existing operation，必须幂等撤销workspace写lease并由Host终止其dedicated process/runtime；它不能创建替代operation、修改Run/Pause lifecycle或伪造完成结果；
+- `cancel`只能作用于exact existing operation，必须幂等撤销workspace写lease并由Host终止其dedicated process/runtime及全部descendant process/tool；它不能创建替代operation、修改Run/Pause lifecycle或伪造完成结果；
 - `BackendDispatchReceipt`至少绑定Host-owned producer operation、task、workspace、backend kind/version、nullable provider operation/thread references、dispatch status与canonical digest；
 - `BackendOperationStatus`只允许`accepted | running | completed | failed | cancelled | unknown`，并绑定operation/backend identity与查询时间；除`unknown`外必须引用原`BackendDispatchReceipt`，`unknown`必须显式使用null receipt且表示不能证明原operation状态，不授权再次dispatch；
 - provider job/thread identity只在candidate backend实际提供且C00证明可稳定恢复时记录；不适用或不可证明时必须显式为null，不能伪造synthetic provider identity。Fake只需稳定的Host-owned producer operation identity；
 - provider job ID、Codex thread ID或其他provider reference只属于backend audit evidence，不能代替Run、Cycle、Attempt、Transition、Pause、reservation或producer operation identity；
 - `FakeCodingBackend`和任何通过C00的真实backend必须通过相同port、ingress validator、trusted verifier与registry path，不能建立provider-specific route或resume API。
 
-Budget、Pause deadline与Run cancellation authority仍只属于A04/A06可信控制层。Backend只执行控制层对exact operation下达的停止命令；Host wrapper必须在aggregate hard limit、operation timeout或`cancel_pause`要求停止external execution时阻止新的tool/LLM side effect并终止dedicated runtime。无法证明停止、写lease撤销或停止后filesystem稳定时，Run/result fail closed且workspace隔离保留，不得注册bundle或重新dispatch。
+Budget、Pause deadline与Run cancellation authority仍只属于A04/A06可信控制层。Backend只执行控制层对exact operation下达的停止命令；Host wrapper必须在aggregate hard limit、operation timeout或`cancel_pause`要求停止external execution时先禁止新的tool/LLM side effect，再终止dedicated runtime的完整process tree。Local process backend必须使用独立process group/session，先发送graceful termination，经过policy-bounded grace period后对仍存活的整个group强制kill，并有界关闭或中止stdout/stderr reader；其他runtime必须提供语义等价的job/container termination。随后Host验证无存活descendant、无新tool event、write lease已撤销且filesystem在观察边界内稳定。完整受控停止映射为A04 `halted`或当前Attempt的typed cancelled outcome；无法证明termination、lease revocation或post-stop stability属于control/runtime integrity failure，映射为`run_status = failed`，workspace隔离保留，不得注册bundle或重新dispatch。
 
 ## Contract and Identity Version
 
@@ -280,11 +280,11 @@ Codex SDK sandbox preset是filesystem access policy，不替代worktree identity
 
 ### Phase C `C00_CODEX_SDK_BACKEND_FEASIBILITY` gate
 
-Phase C在创建真实backend implementation ticket前必须先创建、审查、批准并执行独立C00 feasibility ticket。C00使用pinned SDK/runtime版本和非生产fixture，只验证能力，不接入产品graph、不降低A05合同，至少证明：
+Phase C在创建真实backend implementation ticket前必须先创建、审查、批准并执行独立C00 feasibility ticket。C00使用pinned SDK/runtime版本和非生产fixture，只验证能力，不接入产品graph、不降低A05合同。Capability report必须记录SDK distribution version、Codex CLI/app-server build version及可追溯的release tag或open-source commit；moving `main`源码只能解释候选实现，不能替代实际build的黑盒能力测试。C00至少证明：
 
 1. Host-owned producer operation可以在进程重启后对同一provider execution执行稳定lookup，不重复dispatch；
 2. 每次真实tool invocation可由SDK事件或Host wrapper可靠派生连续、完整、不可伪造的`tool_audit.jsonl`；
-3. timeout/operator cancel可以终止exact operation、撤销write lease，并证明停止后没有新的process/tool/filesystem activity；
+3. timeout/operator cancel可以终止exact operation的完整process tree，经过bounded grace和强制终止后撤销write lease，并证明停止后没有新的process/tool/filesystem activity或挂住的output reader；
 4. workspace-write只覆盖exact Attempt worktree且没有额外writable roots、credential、raw/accepted/control data暴露；
 5. terminal result、dispatch receipt、usage evidence、WorkspaceSeal和content digests可以create-new持久化并在重启后exact读取；
 6. unknown provider state、event缺失、result冲突和Host crash均能映射为本ticket的fail-closed outcome，不需要第二套Run/Pause/budget authority。
@@ -497,7 +497,7 @@ Analysis注册的artifact必须依赖exact source Code Bundle；base、patch、e
 
 - Code Bundle已注册但outbound Transition尚未提交：保留current code，验证heads后继续正常route commit，不重跑backend；
 - Transition已提交但spec或Analysis workspace尚未materialize：保持target Attempt为`scheduled`，按deterministic spec/workspace identity幂等创建，不重新提交Transition；
-- Analysis启动前发现code/artifact head、spec、workspace或effective tree不一致：返回`recovery_required`或按完整性政策`halted`；旧target不得启动、自动abandon或被retarget，同一source Attempt不得提交第二条outbound Transition，原Run不再自动继续；只有满足A04 source validation时才允许operator显式replay/fork到新Run；
+- Analysis启动前发现已知publication phase尚未完成但所有已存在bytes仍exact时返回`recovery_required`；code/artifact head、spec、workspace或effective tree发生不一致、篡改或无法闭合时映射`run_status = failed`。旧target不得启动、自动abandon或被retarget，同一source Attempt不得提交第二条outbound Transition，原Run不再自动继续；只有满足A04 source validation时才允许operator显式replay/fork到新Run；
 - Analysis subprocess已运行但artifact未完整注册：不得根据process exit或文件存在声称成功，按A02/A04 recovery与Attempt lifecycle处理。
 
 Patch promotion与fresh Analysis execution是不同操作。Analysis可以消费Run-local verified bundle，但A05不允许把该patch自动写回control repository、commit、merge、push或发布。
@@ -561,7 +561,7 @@ Phase B product topology可以在显式implementation ticket中选择保留legac
 - 若C00选择Python `CodexSdkBackend`，它必须使用`Sandbox.workspace_write`、无额外writable roots且默认关闭workspace network；SDK选择本身不能替代C00对lookup/cancel/tool-audit/restart能力的证明；
 - 主图只消费validated content-addressed bundle，不消费mutable workspace或Markdown声明；
 - external dispatch/delivery、Pause claim和进程崩溃均single-operation且fail closed；
-- aggregate hard limit、operation timeout与operator cancellation由可信Host通过exact `cancel`强制执行；Backend不能超额后只靠usage report结算，也不能取消Run/Pause；
+- aggregate hard limit、operation timeout与operator cancellation由可信Host通过exact `cancel`强制执行到完整process tree并验证post-stop inactivity；Backend不能超额后只靠usage report结算，也不能取消Run/Pause；terminal policy/operator stop为`halted`，允许回到Coordinator的timeout保留typed non-success outcome，停止完整性无法证明则为`failed`；
 - backend result只有在fresh trusted workspace验证后才能注册，registered bundle只有通过`AnalysisExecutionSpec`在新worktree/subprocess中执行；
 - scope/path/symlink、policy、authorization、digest或trusted verification任一失败都不能进入Analysis；
 - `success`以外的所有valid status进入Coordinator，invalid ingress不能注册为成功artifact；
@@ -579,7 +579,7 @@ A07和后续implementation tickets至少必须覆盖：
 - `A05-CODE-004`：pre-start control stages重复进入时task/workspace/reservation/Pause exact幂等，且不产生target `started`、backend dispatch或code artifact；
 - `A05-CODE-005`：same operation/task重复dispatch、conflicting dispatch、same delivery重复resume和竞争claim；
 - `A05-CODE-006`：dispatch状态不确定时`lookup`返回running/completed/unknown且绝不创建第二operation；known operation必须返回同一receipt reference/digest并支持receipt publication崩溃恢复，unknown不得伪造receipt；
-- `A05-CODE-007`：operation timeout、aggregate hard limit和operator cancellation通过同一`cancel`port停止exact operation、撤销write lease且不创建替代operation；
+- `A05-CODE-007`：operation timeout、aggregate hard limit和operator cancellation通过同一`cancel`port停止exact operation的完整process tree，执行graceful terminate→bounded grace→force kill、有界关闭output readers、撤销write lease并验证post-stop无activity；terminal policy/operator stop映射`halted`，可恢复的operation timeout保留typed non-success outcome，停止完整性失败映射`failed`，且都不创建替代operation；
 - `A05-CODE-008`：process在dispatch receipt、backend completion、result snapshot、Pause claim、settlement、bundle registration各边界退出；
 - `A05-CODE-009`：success result通过`AnalysisExecutionSpec`进入fresh Analysis Attempt，plan/code dependencies和A03 invalidation正确；
 - `A05-CODE-010`：no-change、failed、needs-input、needs-human、budget-exhausted、policy-blocked全部进入Coordinator；
@@ -588,7 +588,7 @@ A07和后续implementation tickets至少必须覆盖：
 - `A05-CODE-013`：wrong Run/Case/Cycle/Attempt/Transition/task/base/workspace/pause/result/member digest拒绝；
 - `A05-CODE-014`：missing/tampered/reused workspace、foreign lease、base drift、path swap与seal后filesystem变化拒绝；
 - `A05-CODE-015`：Code Bundle已注册但Transition未提交、Transition已提交但Analysis workspace未创建的幂等恢复；
-- `A05-CODE-016`：Analysis spec、patch、effective tree、runtime或current head mismatch时旧target不启动、不自动abandon、不retarget、不从同一source提交第二条outbound Transition且不读取control repository；原Run只进入`recovery_required`/`halted`边界；
+- `A05-CODE-016`：Analysis handoff的side-effect-free partial publication只返回`recovery_required`；spec、patch、effective tree、runtime或current head mismatch映射`failed`，旧target不启动、不自动abandon、不retarget、不从同一source提交第二条outbound Transition且不读取control repository；
 - `A05-CODE-017`：non-empty unverified change不能伪装partial success；
 - `A05-CODE-018`：Human授权scope/digest错误、已消费授权或执行中扩权全部fail closed；
 - `A05-CODE-019`：multiple code attempts使用独立workspace和artifact，旧code/downstream不再current但canonical bytes保留；

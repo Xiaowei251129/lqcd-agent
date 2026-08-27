@@ -138,9 +138,9 @@ Cycle/Attempt规则必须在真实trajectory中成立：initial/replan创建Cycl
 
 ### Layer 4 — Durable Recovery, Concurrency and Fault Injection
 
-至少使用现有SQLite能力作为durable test backend，并在新的Python process中重新打开Run；Memory checkpoint只能用于不声称跨进程durability的unit tests。生产backend选择仍不属于Phase B。
+必须使用A02C01规定的`<output_root>/.lqcd/control_operations.sqlite`作为durable mutation/claim reference backend，并与per-Run LangGraph checkpoint database物理分离；在新的Python process中重新打开coordinator、Run与checkpoint。Memory checkpoint只能用于不声称跨进程durability的unit tests。生产分布式backend选择仍不属于Phase B。
 
-Pause claim、idempotency和grant竞争必须由两个独立control clients验证，不能只依赖同一对象或进程内lock。Fault injection只允许位于本ticket列出的durability boundaries，并必须证明恢复结果是exact resume once或typed fail-closed outcome。
+Pause claim、idempotency和grant竞争必须由两个独立control clients/processes验证，coordinator write path至少使用等价于`BEGIN IMMEDIATE`的single-writer transaction，不能只依赖同一对象、进程内lock或LangGraph checkpoint metadata。Fault injection只允许位于本ticket列出的durability boundaries，并必须证明恢复结果是exact same-operation continuation或typed fail-closed outcome。
 
 ### Layer 5 — Project Interface and Smoke
 
@@ -175,7 +175,7 @@ Matrix、catalog及expected fixtures使用strict duplicate-key JSON读取。`req
 
 Matrix validator必须从catalog构造ordered `required_requirement_ids`，从全部required scenarios构造`covered_requirement_ids`，要求两者set-equal并生成deterministic zero-gap report。以下任一情况必须退出非零：
 
-- catalog中的A01 route/forbidden、A02C01 bootstrap或A04–A06任一required ID没有required scenario；
+- catalog中的A01 route/forbidden、A02C01 bootstrap/control-operation或A04–A06任一required ID没有required scenario；
 - matrix引用unknown/non-required ID，或catalog required ID重复、缺失、顺序漂移；
 - matrix声明的catalog version/digest与tracked exact bytes不一致；
 - nodeid无法collect，或required test被skip、xfail、deselect或仅在live opt-in时运行；
@@ -205,11 +205,11 @@ Deterministic required trajectory将以下字段投影为ordered canonical JSON�
 - `CodeAgentSubgraph` pre-start/consume control stage与零额外Attempt副作用；
 - selected route key、source/target、trigger class和guard result；
 - Run/Cycle/Attempt/Transition identity、index、lineage和lifecycle；
-- Pause、Human Request/Response、budget event、aggregate Backend reservation和grant lifecycle；
+- ControlOperation status/phase/lease/result、Pause、Human Request/Response、budget event、aggregate Backend reservation和grant lifecycle；
 - semantic Backend operation status、dispatch/lookup/fetch/cancel outcome与operation binding；
 - WorkspaceManifest/lease/materialization/WorkspaceSeal、dispatch receipt、immutable external result、Code Bundle与AnalysisExecutionSpec的identity/digest projection；
 - artifact registration、current set/clear、managed projection、fresh Analysis worktree/subprocess和protection events；
-- 每个step后的bounded state heads、current artifact IDs、budget used/remaining、control `run_status`与领域`status`。
+- 每个step后的bounded state heads、current artifact IDs、budget used/remaining、nullable active ControlOperation projection、control `run_status`与领域`status`。
 
 Projection排除timestamp、duration、临时output root、物理workspace path、process ID、opaque backend-generated checkpoint以及provider job/thread/session字面值。排除不表示忽略：测试仍必须验证timestamp顺序/clock policy、path containment、checkpoint binding、opaque identity唯一性、operation/workspace绑定和所有canonical digests。
 
@@ -285,6 +285,7 @@ Matrix必须逐项映射：
 - `external_result` 在`opened`前完成exact aggregate Backend reservation，Pause期间dispatch/lookup/fetch/result/delivery不推进budget或execution head，claim后唯一settlement先于target `started`；
 - replay/fork创建全新child identities，source及accepted bytes不变且不继承Pause、current pointer、authorization或accepted status；
 - fork只接受latest validated paused/terminal head并拒绝旧checkpoint或被history否定的artifact。
+- `start_run`、`resume_run`、`replay_run`、`fork_run`和`cancel_pause`在任何Run/child/Pause/checkpoint mutation前进入独立ControlOperation coordinator；两个process验证same-key replay、changed-payload conflict、single Pause owner、worker lease只继续原operation、terminal tombstone以及operation/run/domain/Pause四类状态不互相覆盖。
 
 ## Required A05 Graph-managed Fake Code Agent Scenarios
 
@@ -294,7 +295,7 @@ Matrix必须逐项映射：
 - pre-start task冻结、WorkspaceManifest创建、aggregate reservation和Pause publication在重放时幂等，且不claim/start target Attempt、不启动Backend、不注册code artifact、不创建额外Attempt/Transition或增加automatic route计数；
 - aggregate Backend operation的pre-open reservation、Pause期间zero budget/execution-head drift、post-claim/pre-start唯一settlement和claim后settlement crash fail-closed；
 - `dispatch`使用`producer_operation_id`幂等：duplicate返回同一receipt，conflicting payload拒绝；`lookup = running | completed | unknown`都只能描述原operation且不得启动第二个operation，known status返回同一receipt reference/digest以恢复receipt-publication crash，unknown使用null receipt；`fetch_result`不得刷新预算或退款；
-- aggregate hard limit、operation timeout与operator cancellation通过`cancel`停止exact operation、撤销write lease且不创建替代operation；duplicate cancel幂等，wrong operation拒绝，停止失败或停止后activity fail closed；
+- aggregate hard limit、operation timeout与operator cancellation通过`cancel`停止exact operation的完整process tree，按graceful terminate→bounded grace→force kill处理残留进程并有界关闭output readers、撤销write lease且不创建替代operation；duplicate cancel幂等，wrong operation拒绝，terminal policy/operator stop为`halted`，停止失败或停止后activity为`failed`；
 - dispatch前、receipt publication前后、Backend完成前后、immutable result/seal publication前后、delivery snapshot前后、claim前后与consume前后的全部crash窗口不得重复Backend operation或target Attempt；
 - result重复投递same bytes幂等，conflicting bytes拒绝；competing claim只有一个consumer成功；
 - valid scoped `success`经过trusted verification后注册canonical content-addressed Code Bundle，且bundle包含`backend_dispatch_receipt.json`与`workspace_seal.json`；
@@ -309,7 +310,7 @@ Matrix必须逐项映射：
 - Code Bundle注册并成为current后，source wrapper才能让`commit_transition`先分配new scheduled Analysis Attempt、再提交绑定该exact target的`code_agent -> analysis_engineer` Transition，并发布绑定bundle/base/patch/effective-tree/target/Transition/runtime的`AnalysisExecutionSpec`；
 - Analysis必须在fresh worktree与fresh subprocess从exact base应用verified change，并成功注册Analysis artifact；不得读取主控制仓库、复用Code Agent workspace或以module reload加载新代码；
 - bundle已注册但Transition未提交时可幂等继续交接；Transition已提交但Analysis workspace未创建时可按同一spec幂等materialize；
-- spec、patch、effective tree、runtime fingerprint或code/artifact head mismatch时旧Analysis target不得`started`、不得自动abandon或retarget，同一source不得提交第二条outbound Transition；原Run返回`recovery_required`/`halted`，只有通过A04 source validation后才可显式replay/fork；
+- side-effect-free Analysis handoff partial publication返回`recovery_required`；spec、patch、effective tree、runtime fingerprint或code/artifact head mismatch映射`run_status = failed`，旧Analysis target不得`started`、不得自动abandon或retarget，同一source不得提交第二条outbound Transition；只有通过A04 source validation后才可显式replay/fork；
 - Fake与future Codex fixture通过同一`dispatch`/`lookup`/`fetch_result`/`cancel` port、validator、verifier、registration及fresh Analysis入口；legacy artifact不能读取为canonical Code Agent result。
 
 ## Required A06 Budget and Stop Scenarios
@@ -321,7 +322,7 @@ Matrix必须逐项映射：
 - LLM/tool/verification reservation、settlement、unsettled crash full charge和duplicate operation拒绝；
 - 每个`code_agent` Attempt恰有一个`code_backend_operation` aggregate，绑定operation/task/backend/WorkspaceManifest/Pause并统一预留现有LLM/tool/active dimensions；第二份aggregate或Backend-owned counter拒绝；
 - aggregate的pre-open reservation、Pause期间dispatch/lookup/fetch/result zero budget/execution-head drift、post-claim/pre-start settlement、可信actual缺失时maximum settlement和claim后settlement crash fail-closed；
-- aggregate maximum/timeout由可信Host在side effect前强制执行；actual超额、cancel/lease revocation失败或停止后activity不能通过maximum accounting掩盖，必须fail closed；
+- aggregate maximum/timeout由可信Host在side effect前强制执行并停止完整process tree；成功terminal policy stop为`halted`，actual超额、cancel/lease revocation失败或停止后activity是control failure并映射`failed`，不能通过maximum accounting掩盖；
 - Fake fixture提供deterministic usage并与future Codex Backend走同一lifecycle；Backend receipt/tool audit/seal矛盾时按maximum结算且fail closed；
 - pre-start Host setup只计Run、Backend operation结算到aggregate预留的target-Attempt与Run active dimensions但不启动Attempt、result后delivery等待不计active time、post-start trusted verification计Attempt与Run，以及所有fake clock boundary；
 - first retryable technical fingerprint允许，second exact fingerprint升级；新Attempt/workspace/job/thread/operation identity不改变`code_task_context_digest`或`analysis_execution_context_digest`；
@@ -330,7 +331,7 @@ Matrix必须逐项映射：
 - high/critical、ambiguous、policy/security/data及non-retryable scientific failure第一次即Gate；
 - single-use grant的correct consumption，以及wrong actor/scope/route/fingerprint/target、competition、duplicate consumption和global ceiling拒绝；
 - expired Pause返回`pause_expired`且无自动event/cancel，必须显式cancel/replay/fork；
-- policy bytes/digest、ledger event identity/counter、reservation、fingerprint、grant和bounded projection tamper fail closed；
+- policy bytes/digest、ledger event identity/counter、reservation、fingerprint、grant和bounded projection tamper作为control integrity failure映射`run_status = failed`；
 - start默认profile、resume exact policy、replay/fork计数清零、schema `0.3`不迁移；
 - missing token/cost保持`unknown`且不参与hard gate；
 - budget stop不绕过risk、Human Gate、A03 invalidation或accepted-result保护，resource exhaustion后不调用provider/tool或accepted memory。
@@ -339,11 +340,12 @@ Matrix必须逐项映射：
 
 Required failpoints固定在以下durable publication boundaries：
 
+- A02C01 coordinator `BEGIN IMMEDIATE`前、key/operation/target locator transaction提交后但Run root创建前，以及每个operation phase/result compare-and-set前后；
 - A02C01 schema `0.4`的Run creation、`policy_initialized`、bootstrap `decision_recorded`、initial Cycle、Planner Attempt、A03 initial invalidation、START Transition和checkpoint前后；
 - WorkspaceManifest publication、workspace materialization/lease以及aggregate reservation前后；
 - checkpoint写入前，以及checkpoint写入后但Pause `opened`前；
 - Pause `opened`后、Backend dispatch前、`BackendDispatchReceipt` publication前后、Backend completion前后、WorkspaceSeal与immutable result publication前后；
-- delivery snapshot前后、claim前后、settlement前后，以及settlement后但`consume_code_agent_result`/Attempt `started`前；
+- delivery snapshot前后、coordinator Pause claim transaction前后、预计算`claimed` event publication前后、settlement前后，以及settlement后但`consume_code_agent_result`/Attempt `started`前；
 - budget `decision_recorded`后但Transition或resource reservation前；
 - `grant_consumed`前后以及其后target Attempt allocation/A03 invalidation/Transition append完整commit前；无跨record transaction时partial sequence必须`recovery_required`、grant不退款且target不启动；
 - invalid Human Response的repause `decision_recorded`、old Pause `consumed`、new checkpoint和new Pause `opened`前后；
@@ -353,7 +355,7 @@ Required failpoints固定在以下durable publication boundaries：
 - Analysis Transition提交后但`AnalysisExecutionSpec` publication、fresh workspace materialization、fresh subprocess启动或Analysis artifact publication前后；
 - artifact history/index/projection publication或bounded-state sync出现partial/corrupt head。
 
-Bootstrap fault scenarios必须证明只有同一start operation的严格合法、无副作用prefix可以确定性继续，任何冲突或side-effect prefix均fail closed。Transition fault scenarios必须证明scheduled target allocation先于A03 invalidation、invalidation先于committed Transition append。Invalid-response fault scenarios必须证明旧Pause一经`consumed`不再打开，未完成`opened`的新Pause不接收输入。External-result fault scenarios还必须证明：aggregate `resource_reserved`先于Pause `opened`，Pause期间的dispatch/lookup/fetch/result/delivery evidence不推进budget或execution head，唯一`resource_settled`后于claim且先于target Attempt `started`；hard limit/timeout/cancellation通过exact `cancel`停止operation。Fresh Analysis fault scenarios必须证明exact spec可幂等materialize，但任何spec/head/digest冲突都不启动旧target、不retarget、不从同一source提交第二条outbound Transition，并进入A04允许的显式replay/fork或halt边界。
+Bootstrap fault scenarios必须证明coordinator transaction先于任何Run root bytes，且只有同一start operation的严格合法、无副作用prefix可以确定性继续，任何冲突或side-effect prefix均fail closed。Pause claim fault scenarios必须证明transaction提交前可重试、提交后只有原operation可materialize exact预计算claim record、worker lease不释放Pause ownership，且claim后的不确定副作用不能自动重跑。Transition fault scenarios必须证明scheduled target allocation先于A03 invalidation、invalidation先于committed Transition append。Invalid-response fault scenarios必须证明旧Pause一经`consumed`不再打开，未完成`opened`的新Pause不接收输入。External-result fault scenarios还必须证明：aggregate `resource_reserved`先于Pause `opened`，Pause期间的dispatch/lookup/fetch/result/delivery evidence不推进budget或execution head，唯一`resource_settled`后于claim且先于target Attempt `started`；hard limit/timeout/cancellation通过exact `cancel`停止完整process tree。Fresh Analysis fault scenarios必须证明exact side-effect-free spec publication可幂等materialize，但任何spec/head/digest冲突都不启动旧target、不retarget、不从同一source提交第二条outbound Transition，并进入`run_status = failed`与A04允许的显式replay/fork边界。
 
 每个failpoint必须记录预期类别：
 
@@ -386,7 +388,7 @@ Harness必须拒绝不在A01 matrix中的并行branch或多target Transition，�
 A07执行只把以下拆分同步到Phase B Overview，不创建ticket文件。Phase A全部completed后，按顺序起草并确认：
 
 1. **B01 — Execution 0.4 Control Foundation**：BudgetPolicy/ledger、bounded projection、trusted clock、canonical validators及execution/artifact/checkpoint cross-head integrity。
-2. **B02 — Durable Control Operations**：project-owned start/resume/replay/fork/cancel、Pause publication、SQLite durable test store、atomic claim、idempotency和process-restart recovery。
+2. **B02 — Durable Control Operations**：实现`<output_root>/.lqcd/control_operations.sqlite`、`ControlOperation 0.1`、project-owned start/resume/replay/fork/cancel、Pause publication、`BEGIN IMMEDIATE` atomic ownership/claim、worker lease、tombstone、result replay、coordinator/checkpoint/ledger cross-validation和process-restart recovery。
 3. **B03 — Graph-managed Fake Code Agent**：`CodeAgentSubgraph`、`CodingBackend` port、`FakeCodingBackend`、A05 task/result与workspace contracts、production ingress validator、trusted verification、content-addressed bundle、external-result Pause integration和fresh Analysis handoff service。
 4. **B04 — Target Product Topology and Budgeted Loops**：把B03接入A01 edges、Coordinator四层fallback、Human Gate return、A03 invalidation、A06 aggregate Backend reservation/admission/grant和terminal behavior。
 5. **B05 — Acceptance Matrix and End-to-End Harness**：为本ticket全部新增scenario建立matrix/meta-validator、normalized traces、workspace/Backend/Analysis fault与concurrency tests、compatibility regression、CLI smoke和zero-gap evidence。
@@ -427,6 +429,7 @@ Phase B completion record必须列出matrix digest、required/covered/passed tot
 - A04–A06的每个required downstream bullet都被本ticket保留，没有由实现者自行抽样；
 - deterministic control test使用exact normalized trace，capability eval不能替代control acceptance；
 - process restart、independent-client claim和每个durability boundary都有确定的success/fail-closed结果；
+- mutation coordinator与LangGraph checkpoint物理及authority分离，same-key/different-payload、lease takeover和operation result replay均由两个独立process确定性验证；
 - Fake Code Agent完整经过graph-managed pre-start、A04 Pause、A06 aggregate settlement、trusted verification、Code Bundle与fresh Analysis handoff，且不调用Codex SDK或完整SandboxAgent；
 - legacy只能作为compatibility entrypoint，parallel明确不属于Phase B；
 - machine-readable matrix能够机械拒绝missing/stale/uncollectable/skipped coverage；
@@ -439,8 +442,8 @@ Phase B completion record必须列出matrix digest、required/covered/passed tot
 
 - YAML保持`status: review`，直到A02C01与A04–A07完成交叉审查、catalog核验并获得用户最终确认；
 - ticket内没有待确认架构问题、未决占位符或内嵌执行记录；
-- `PHASE_B_REQUIREMENT_CATALOG.json`通过strict JSON、unique ID、owner/source和required-set验证；A01全部17条route、9条forbidden behavior、A02C01 bootstrap以及A04/A05/A06每个显式required ID均恰有一个catalog entry；
-- A01每个route/forbidden behavior、A02C01 bootstrap以及A04–A06每个required scenario都已映射到machine-checkable coverage rule，matrix只能引用catalog ID；
+- `PHASE_B_REQUIREMENT_CATALOG.json`通过strict JSON、unique ID、owner/source和required-set验证；A01全部17条route、9条forbidden behavior、A02C01 bootstrap/control-operation以及A04/A05/A06每个显式required ID均恰有一个catalog entry；
+- A01每个route/forbidden behavior、A02C01 bootstrap/control-operation以及A04–A06每个required scenario都已映射到machine-checkable coverage rule，matrix只能引用catalog ID；
 - A07 ticket正文与catalog exact bytes将在同一frozen commit中，completion记录catalog version与SHA-256；
 - A04–A06之间没有需要改变Pause、Code Agent、budget或stop语义的未决冲突；
 - A05要求的Backend/workspace/fresh Analysis scenarios和A06要求的aggregate/active-time/semantic fingerprint scenarios均逐项进入matrix coverage；

@@ -104,6 +104,8 @@ A01 已冻结四层回退的逻辑路线，A02 已冻结 Run/Cycle/Attempt/Trans
 - **Budget grant**：由一次 validated Human Response 派生、只允许 exact route/fingerprint/target 使用一次的有限授权。
 - **Hard ceiling**：同一 Run 内永远不能由 grant、resume 或 route payload突破的 Work Attempt、Control Attempt 和 Transition 总上限。
 - **Terminal control reserve**：从总 hard ceiling 中预留、只允许安全收尾链消费的 Control Attempt 与 Transition 额度。
+- **Controlled halt**：policy、budget、security或operator在control evidence仍完整时做出的受控终止，映射A04 `run_status = halted`。
+- **Control failure**：head/counter/timer/termination/lease或其他runtime integrity无法验证，映射A04 `run_status = failed`；不能用`halted`掩盖实现失控或证据损坏。
 
 Agent、model/provider output、tool output、CodingBackend、graph route payload和Human自由文本都是不可信输入。它们可以提供候选诊断或usage evidence，但不能选择profile、改写policy、直接递增/递减counter、签发grant、决定retry/stop或提交Transition。Codex thread/job ID以及未来SandboxAgent session ID只能作为审计identity，不能成为预算authority或替代A02/A04/A05 identity。
 
@@ -111,7 +113,7 @@ Agent、model/provider output、tool output、CodingBackend、graph route payloa
 
 `BudgetPolicy`、`BudgetDecision`、`FailureFingerprint` 和 `BudgetGrant` 使用独立 schema version `0.1`。后续实现本合同会把 execution schema 从 A04 的 `0.3` 升级为 `0.4`；A03 artifact registry schema不因本 ticket 改变。
 
-每个新 Run 在正式 Run creation record 前由可信 Host 选择一个 allowlisted profile，并生成：
+每个新 Run 在A02C01 coordinator transaction已经持久分配`start_run` operation和target Run locator之后、正式 Run creation record之前，由可信 Host 选择一个 allowlisted profile，并生成：
 
 ```text
 <run_root>/budget_policy.json
@@ -225,7 +227,7 @@ Cycle/Attempt/Transition/automatic route用量由其authoritative execution reco
 
 新Run必须完整遵守A02C01，不把bootstrap作为admission例外。Host先create-new并验证canonical policy bytes；正式ledger随后固定append`Run created -> policy_initialized -> bootstrap decision_recorded(allow) -> initial Cycle -> Planner Attempt scheduled -> A03 initial invalidation -> START Transition`，再验证checkpoint/heads，最后才允许Planner side effect。Bootstrap decision覆盖一次initial Cycle、一次Planner Work Attempt和一次START Transition；实际用量仍从A02 records重放派生。
 
-任一partial bootstrap只能按A02C01由同一`start_operation_id`、同key同digest继续严格合法且无副作用的确定性前缀；未知record、head/digest冲突、target已`started`或任何Agent/provider/tool/domain-artifact副作用均返回`recovery_required`。Schema `0.2`历史顺序不迁移、不补写budget events。
+任一partial bootstrap只能按A02C01由同一`ControlOperation.operation_id`、同key同digest继续严格合法且无副作用的确定性前缀；未知record、head/digest冲突、target已`started`或任何Agent/provider/tool/domain-artifact副作用均返回`recovery_required`。Schema `0.2`历史顺序不迁移、不补写budget events。
 
 ## Resource Reservation and Crash Accounting
 
@@ -255,14 +257,14 @@ validate current heads and policy
 
 若operator对尚未claim的`external_result` Pause执行`cancel_pause`，可信Host先按A05证明从未dispatch，或停止exact Backend operation、撤销write lease并持久化不推进execution head的terminal control evidence；然后A04 `cancelled` event对exact `opened_execution_head`提交并把Run置为`halted`，为绑定的scheduled code_agent Attempt append`abandoned`，最后append该aggregate唯一的`resource_settled`。可证明从未dispatch时actual可以为零；已dispatch时使用可信actual，缺失/矛盾/停止不完整时按reserved maximum。若在`cancelled`后、Attempt abandonment或settlement前崩溃，ledger replay仍把unsettled reservation计为maximum，Run保持`halted`、target永不启动且不得自动repair、resume或重新dispatch。
 
-Settlement只能使用可信Host measurement、Backend receipt、tool audit、`WorkspaceSeal`和immutable result交叉验证后的actual vector。FakeCodingBackend fixture必须提供deterministic usage并走同一reservation/settlement入口；CodexSdkBackend reported usage只是evidence，不能自行结算。可信actual任一hard dimension缺失、矛盾或不可验证时，该维度按reserved maximum charge结算；只有token/cost允许保持audit-only typed `unknown`。actual超过maximum、Host无法在maximum/timeout前阻止新side effect、停止后仍有activity或无法证明`cancel`/lease revocation完整时，按policy/control integrity failure fail closed并停止该Run，不能把账面charge截断到maximum后继续。claim后settlement不完整时同样按maximum charge计费并返回`recovery_required`，不得重新dispatch或启动target Attempt。
+Settlement只能使用可信Host measurement、Backend receipt、tool audit、`WorkspaceSeal`和immutable result交叉验证后的actual vector。FakeCodingBackend fixture必须提供deterministic usage并走同一reservation/settlement入口；CodexSdkBackend reported usage只是evidence，不能自行结算。可信actual任一hard dimension缺失、矛盾或不可验证时，该维度按reserved maximum charge结算；只有token/cost允许保持audit-only typed `unknown`。达到maximum/timeout并成功停止exact operation是policy-enforced outcome：terminal stop映射`halted`，允许回到Coordinator的operation timeout保留typed non-success outcome。actual超过maximum、Host无法及时阻止新side effect、停止后仍有activity或无法证明`cancel`/lease revocation完整则是control failure，必须映射`run_status = failed`；不能把账面charge截断到maximum或标成`halted`后继续。claim后settlement不完整时同样按maximum charge计费并返回`recovery_required`，不得重新dispatch或启动target Attempt。
 
 Active time按可信Host clock与durable lifecycle边界计算：
 
 - task冻结、workspace创建与policy检查等pre-start Host setup从开始到Pause安全发布，只计Run active time；这些stage不启动target Attempt、不产生额外Attempt，也不得调用Backend；
 - Backend active interval从成功`dispatch`开始，到immutable external result与`WorkspaceSeal`均完成时结束；该interval在Run paused期间仍结算到`code_backend_operation` aggregate预留的target-Attempt与Run active dimensions，但不能据此把Attempt标为`started`；
 - Backend完成后等待Host delivery、claim或operator恢复的时间属于被动paused time，不计active time；`lookup`或`fetch_result`轮询不能延长Backend active interval或刷新预算；
-- aggregate active/tool/LLM maximum、operation timeout或operator cancellation到达时，可信Host必须通过A05 `cancel`语义阻止exact operation的新side effect、终止dedicated runtime并撤销workspace写lease；失败时适用上一段的fail-closed规则；
+- aggregate active/tool/LLM maximum、operation timeout或operator cancellation到达时，可信Host必须通过A05 `cancel`语义阻止exact operation的新side effect、终止完整process tree、在bounded grace后强制终止残留进程、有界关闭output readers并撤销workspace写lease；失败时适用上一段的`run_status = failed`规则；
 - target Attempt从claim后settlement完成并提交`started`起，到`finished`、安全Pause或明确失败的active interval计入Attempt和Run；trusted verification处于这个interval中；
 - 单次project-owned provider/tool/verification timeout必须小于等于该operation自己的limit、Attempt剩余active seconds和Run剩余active seconds三者的最小值；Backend timeout则必须小于等于aggregate reserved active seconds与Run剩余active seconds的最小值；
 - clock回退、active interval缺失或crash导致无法可靠settle时，普通Attempt operation按该Attempt可用的剩余active window保守计费，Backend aggregate按reserved maximum active seconds计费，并停止自动重试。
@@ -353,7 +355,8 @@ Fingerprint还必须包含`causal_context_digest`：它由目标program/tool/ver
 
 - Automatic route额度耗尽、第二次exact fingerprint、Work Attempt不足，或LLM/tool/verification/active-time资源不足时，进入Human Gate，但前提是terminal reserve与绝对ceilings仍可完整承载该收尾链。
 - Human Gate可以解释停止、请求外部动作或签发一次有限grant；它不能直接执行工作Agent、修改policy或accepted memory。
-- Control Attempt或Transition绝对ceiling将被突破、terminal reserve已经受损、无法证明heads/counters一致，或没有足够reserve到达安全结尾时，直接fail closed为Run `status: halted`。
+- Control Attempt或Transition绝对ceiling将被突破、terminal reserve已按validated history合法耗尽，或没有足够reserve到达安全结尾时，提交deterministic stop evidence并令`run_status = halted`。
+- 无法证明heads/counters/policy/clock一致，reservation或grant history损坏，或Host不能证明external operation已经停止时，属于control integrity failure并令`run_status = failed`；不得签发新的BudgetDecision、Pause或grant来把失败改写为受控停止。
 - `halted`只允许写必要的deterministic audit/control evidence；不得运行Agent、provider/tool、Code Agent，不得生成或更新accepted memory。
 
 不得新增`budget_exhausted` Run status。预算结果由`BudgetDecision`与typed reason表达，并映射为A04 paused Human Gate或既有`halted` terminal状态；A05的`budget_exhausted`只能是structured Code Agent/control outcome，不是Run status。
@@ -403,7 +406,7 @@ Pause deadline由`opened_at + policy.pause_deadline_seconds`派生，使用trust
 
 - deadline前成功claim的resume继续遵守A04 single-use lifecycle；后续执行时钟越过deadline不撤销已成功claim。
 - deadline后调用`resume_run`返回typed `pause_expired`，不得claim、consume、创建Attempt、commit Transition或修改Run/Pause/history。
-- Run在存储上保持`status: paused`，但该Pause已不具备resume资格；只有trusted operator显式调用`cancel_pause`、`replay_run`或`fork_run`才能继续处置。
+- Run在存储上保持`run_status = paused`，但该Pause已不具备resume资格；只有trusted operator显式调用`cancel_pause`、`replay_run`或`fork_run`才能继续处置。
 - 不自动cancel、不自动转`halted`、不自动replay/fork，也不因轮询或进程启动写事件。
 - clock regression、trusted time缺失或deadline计算溢出时fail closed并拒绝resume。
 
@@ -427,12 +430,12 @@ A07及后续Phase B implementation tickets至少必须映射并验证：
 - `A06-BUDGET-005`：aggregate的pre-open reservation、Pause期间dispatch/lookup/fetch/result zero budget/execution-head drift、post-claim/pre-start maximum-or-actual settlement，以及claim后settlement crash fail-closed；
 - `A06-BUDGET-006`：pre-start setup、Backend operation、paused delivery等待与post-start trusted verification的Run/Attempt active-time边界和fake clock；
 - `A06-BUDGET-007`：`lookup`/`fetch_result`不创建新operation、不刷新预算、不退款，Backend及任何provider thread/job/session没有独立budget/retry/stop authority；
-- `A06-BUDGET-008`：aggregate maximum/timeout与operator cancellation必须经A05 `cancel`语义停止exact operation并撤销write lease；超额usage、停止失败或停止后activity均fail closed；
+- `A06-BUDGET-008`：aggregate maximum/timeout与operator cancellation必须经A05 `cancel`语义停止exact operation的完整process tree、bounded grace后强制终止残留、关闭output readers并撤销write lease；成功的terminal policy stop为`halted`，超额usage、停止失败或停止后activity为`failed`；
 - `A06-BUDGET-009`：second exact fingerprint升级；新Attempt/workspace/job identity不改变`code_task_context_digest`或`analysis_execution_context_digest`，backend/base/policy/verified patch/effective tree等material evidence变化才生成新context/fingerprint；
 - `A06-BUDGET-010`：first-occurrence technical/risk gates，以及policy/security/data/scientific failure immediate escalation；
 - `A06-BUDGET-011`：single-use Human grant、错误actor/scope/route/fingerprint/target、竞争与重复消费拒绝，global ceiling不可突破；
 - `A06-BUDGET-012`：Pause deadline前后边界，expired resume无mutation且必须显式cancel/replay/fork；
-- `A06-BUDGET-013`：budget policy、state projection、ledger counter、event identity、reservation、fingerprint和grant篡改fail closed；
+- `A06-BUDGET-013`：budget policy、state projection、ledger counter、event identity、reservation、fingerprint和grant篡改作为control integrity failure映射`run_status = failed`；
 - `A06-BUDGET-014`：schema `0.4` start遵守A02C01 bootstrap、resume exact policy、replay/fork计数清零和schema `0.3`不迁移；
 - `A06-BUDGET-015`：missing token/cost usage保持`unknown`且不参与hard gate；
 - `A06-BUDGET-016`：budget stop不能绕过risk floor、Human Gate、A03 invalidation或accepted-result保护；

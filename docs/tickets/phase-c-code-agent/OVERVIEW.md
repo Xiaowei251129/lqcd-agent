@@ -16,7 +16,7 @@
 
 ## 首个 Gate
 
-Phase C第一份ticket必须是`C00_CODEX_SDK_BACKEND_FEASIBILITY`。它使用pinned候选SDK/runtime验证Host-owned operation identity、restart lookup、tool audit、exact cancel与停止后无activity、workspace-write边界、immutable result/seal和fail-closed recovery。Python Codex SDK是条件性首选候选，不因文档提供thread或sandbox能力就跳过C00；C00失败时必须另建design ticket选择替代backend，不能降低A05合同。
+Phase C第一份ticket必须是`C00_CODEX_SDK_BACKEND_FEASIBILITY`。它记录candidate SDK、CLI/app-server build及release/commit provenance，并使用pinned候选runtime验证Host-owned operation identity、restart lookup、tool audit、完整process-tree exact cancel、bounded grace/force kill、output-reader termination、停止后无activity、workspace-write边界、immutable result/seal和fail-closed recovery。Python Codex SDK是条件性首选候选，不因文档或moving `main`源码提供thread、interrupt或sandbox能力就跳过C00；C00失败时必须另建design ticket选择替代backend，不能降低A05合同。
 
 ## 退出方向
 
