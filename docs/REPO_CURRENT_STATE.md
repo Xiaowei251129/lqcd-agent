@@ -4,10 +4,10 @@
 
 - **更新时间**：2026-08-26
 - **当前分支**：`codex/phase-11-agent-harness-upgrade`
-- **当前阶段**：Phase A 控制合同澄清；A01–A03及A03C01已完成，A04–A07最终交叉审查已完成
-- **活动 ticket**：A04–A07 `review`；G01、A01–A03及A03C01 `completed`
+- **当前阶段**：Phase A控制合同澄清；A01–A03及A03C01已完成，A02C01与A04–A07交叉审查修订稿处于`review`
+- **活动 ticket**：A02C01、A04–A07 `review`；G01、A01–A03及A03C01 `completed`
 - **稳定基线**：[`v0.2-demo`](milestones/V0_2_DEMO_BASELINE.md)
-- **本轮范围**：完善并交叉审查A04–A07控制合同，不执行设计ticket或runtime；四份ticket已达到待用户统一确认的review状态
+- **本轮范围**：按2026-08-26批准的交叉审查建议修订控制合同、correction records和requirement catalog；不执行设计ticket或runtime，修订稿已通过静态/回归核验并等待最终冻结确认
 
 ## 当前稳定实现
 
@@ -81,6 +81,16 @@ A03 implementation 已完成：
 
 A03没有实现PAUSE/resume、partial-commit recovery、Fake/real Code Agent、budgets、failure fingerprint或A01新产品edges；这些工作仍分别由A04、A05、A06与A07/Phase B承接。
 
+当前target-contract review状态：
+
+- A02C01新增schema `0.4+` bootstrap corrective contract：policy和bootstrap admission先于initial Cycle/Planner Attempt/START Transition，完整heads/checkpoint验证先于Planner副作用；schema `0.2`历史正文和runtime不变；
+- A02/A03独立clarification统一复合Transition publication为Human Request（如有）→scheduled target allocation→A03 invalidation→committed Transition append→target start，已完成ticket正文不回写；
+- A04新增权威`run_status = running | paused | completed | failed | halted`，现有领域`status`不再决定resume；invalid Human Response固定使用decision→old Pause consumed→checkpoint→new Pause opened或halt顺序；
+- A05把Python Codex SDK从固定真实backend改为C00 capability gate后的条件性首选，Host-owned producer operation保持产品权威identity；Phase B仍只使用Fake；
+- A06直接依赖A02C01，并统一bootstrap、admission、grant与invalid-response reserve顺序；
+- A07新增tracked `PHASE_B_REQUIREMENT_CATALOG.json`，为A01 routes/forbidden behaviors、A02C01及A04–A06 required bullets分配stable IDs，未来matrix必须与catalog required ID集合set-equal并绑定exact catalog SHA-256；
+- 上述内容仍是`review` target contract，不表示当前runtime已具有schema `0.4`、durable resume、Code Agent、budget manager或Phase B product graph。
+
 第二阶段文档迁移此前已通过 scope check、Markdown link check、ticket metadata、tag、`git diff --check` 与完整 `pytest -q` 验收。
 
 ## 当前验证状态
@@ -99,24 +109,26 @@ A01 是纯设计 ticket。A02 corrective implementation的历史证据为 target
 
 A03C01当前证据为registry suite `106 passed`、focused registry/identity/state suite `139 passed`、full deterministic suite `325 passed`和synthetic benchmark tests `6 passed`；compileall通过。新的`/private/tmp/lqcd-agent-a03c01-final-20260822-smoke` CLI Run验证了history/index/state heads、9个exact projection owners、canonical/projection bytes和accepted-result protection。stale Attempt、same-request stale Response及协调删除target Attempt/artifact并清空nonterminal target的三项独立实验均fail closed。Markdown links、Allowed Files/Do Not Touch、ticket metadata、原A03/legacy-history hash和`git diff --check`在completion record中记录最终结果。A03/A03C01均不要求且未运行live-provider测试。
 
+2026-08-26本轮review文档核验结果：strict JSON和duplicate-ID检查通过；`PHASE_B_REQUIREMENT_CATALOG.json`包含78个required entries，owner计数为A01 26、A02C01 1、A04 13、A05 21、A06 17，正文required ID集合与catalog exact-equal；311个现行relative Markdown links全部有效；A01–A03及A03C01正文zero diff；`git diff --check`通过；现有full deterministic suite `325 passed in 25.35s`。Catalog当前SHA-256为`184f5d48721e9aeed3255ac5701c8d88de5f4ff6502d8a2d1eb6cb19786cf1cf`，最终冻结时必须对届时exact bytes重新计算并写入A07 completion record。
+
 2026-08-22起，`ready` ticket正文冻结；completion和maintenance/corrective历史分别进入`docs/tickets/completions/`与`docs/tickets/corrections/`。A01/A02不追溯改写；A03已把初次completion和六轮pre-governance corrective history从原ticket拆出。A03详细implementation ticket执行前没有独立commit，仓库明确保留这一provenance限制，不声称可以恢复不存在的committed中间版本。
 
 ## 下一项工作
 
-G01治理和A03C01 execution-head修复已经完成并形成独立本地基线提交，原A03 ticket及pre-governance legacy corrective history保持冻结。[A04 Pause/Resume](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)、[A05 Code Agent](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)、[A06 Budget/Stop](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)与[A07 Phase B Acceptance](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)的最终交叉审查已完成，当前均保持`review`。下一步是用户统一确认；确认后冻结为`ready`，在开始执行A04前创建只包含frozen tickets及状态元数据的Git commit。
+G01治理和A03C01 execution-head修复已经完成并形成独立本地基线提交，原A02/A03 ticket及pre-governance legacy corrective history保持冻结。[A02C01 Bootstrap](tickets/phase-a-control-contracts/A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md)、[A04 Pause/Resume](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)、[A05 Code Agent](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)、[A06 Budget/Stop](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)与[A07 Phase B Acceptance](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)已吸收2026-08-26交叉审查决定并通过本轮静态/回归核验，当前均保持`review`。下一步是用户确认最终正文/catalog；确认后按依赖顺序冻结为`ready`，执行前创建包含frozen tickets、corrections、catalog及状态元数据的Git commit。
 
 建议顺序：
 
-1. 用户统一确认A04–A07最终正文，然后冻结为`ready`；
-2. 开始执行A04前，先创建只包含四份frozen tickets及状态元数据的Git commit；
-3. 按A04 → A05 → A06 → A07分别执行并提交四份design ticket；
-4. Phase A完成后再起草B01–B05 implementation tickets。
+1. 用户确认A02C01、A04–A07最终正文和A07 requirement catalog；
+2. 按A02C01 → A04 → A05 → A06 → A07依赖顺序提升为`ready`，并在每次执行前保存frozen Git snapshot；
+3. 分别执行并建立独立completion record，不把结果回写冻结正文；
+4. Phase A完成后再起草B01–B05 implementation tickets；Phase C从C00 backend capability gate开始。
 
 ## Blockers
 
-当前无 runtime blocker。
+当前无runtime blocker。文档治理上的阻塞是A02C01与A04–A07仍为`review`，在最终确认和frozen commit前不能执行。
 
-治理上的主动限制是：A02/A03只实现identity与artifact control plane，不实现A04 resume API、A05 Code Agent、A06 budgets或A01的新product runtime edges。A04–A07当前仅为`review`合同稿；它们在统一冻结为`ready`前均不可执行。
+治理上的主动限制是：A02/A03只实现identity与artifact control plane，不实现A02C01 schema `0.4` bootstrap、A04 resume API、A05 Code Agent、A06 budgets或A01的新product runtime edges。A02C01与A04–A07当前仅为`review`合同稿；它们在冻结为`ready`前均不可执行。
 
 ## 入口
 

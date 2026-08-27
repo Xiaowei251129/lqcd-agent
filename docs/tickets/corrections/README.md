@@ -9,6 +9,8 @@
 
 当前记录：
 
+- [`A02 Human Gate Commit-order Clarification`](A02_HUMAN_GATE_COMMIT_ORDER_CLARIFICATION.md)
+- [`A03 Transition Publication-order Clarification`](A03_TRANSITION_PUBLICATION_ORDER_CLARIFICATION.md)
 - [`A03_LEGACY_CORRECTIVE_HISTORY.md`](A03_LEGACY_CORRECTIVE_HISTORY.md)
 
 已完成的独立corrective ticket：

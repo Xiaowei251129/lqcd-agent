@@ -776,3 +776,42 @@ Related Documents:
 - [Artifact Contracts](ARTIFACT_CONTRACTS.md)
 - [Verification Guide](VERIFICATION_GUIDE.md)
 - [Repository Current State](REPO_CURRENT_STATE.md)
+
+## 2026-08-26: Resolve Cross-contract Gaps Before Freezing Phase A
+
+Decision:
+
+- Keep A01–A03 completed ticket bodies immutable and use separate correction/corrective records for later clarification or schema-versioned supersession.
+- Add A02C01 as the schema `0.4+` bootstrap corrective contract so policy initialization and admission evidence precede initial Cycle, Planner Attempt, and START Transition creation.
+- Standardize composite Transition publication as optional Human Request creation, scheduled target allocation, A03 target invalidation, committed Transition append, head validation, and only then target start.
+- Separate the authoritative control `run_status = running | paused | completed | failed | halted` from the existing domain/workflow `status`; a pending report may terminate with `run_status = completed` and is never a resumable lifecycle state.
+- Publish a replacement Human-input Pause after an invalid response only through budget decision, old Pause consumption, checkpoint persistence, and new Pause opened; insufficient terminal-tail capacity halts without opening another Pause.
+- Treat Python Codex SDK as a conditional preferred backend that must pass an independent Phase C C00 capability gate; preserve a Host-owned producer operation identity and provider-independent `CodingBackend` port.
+- Add a tracked Phase B requirement catalog with stable IDs for every A01 route/forbidden behavior, A02C01 bootstrap requirement, and A04–A06 required scenario; future acceptance matrices must cover the required ID set exactly and bind the catalog byte digest.
+
+Confirmed:
+
+- A02 schema `0.2` runtime and historical bootstrap bytes are unchanged. A02C01 applies only to schema `0.4+` and allows deterministic continuation only for an exact, side-effect-free bootstrap prefix.
+- A03's phrase “Transition commit” denotes entry into the composite control operation, not that the committed Transition record is appended before invalidation.
+- Partial allocation, invalidation, Transition, Pause publication, grant, settlement, or bootstrap sequences remain fail closed and do not gain general automatic repair authority.
+- A04–A07 and A02C01 remain `review` target contracts until their final text, companion catalog, links, and frozen Git snapshots are confirmed. None of these decisions claims that the current runtime already implements schema `0.4`, durable resume, Code Agent, budgets, or the Phase B product graph.
+- Phase B remains deterministic and Fake-backed. Phase C starts with `C00_CODEX_SDK_BACKEND_FEASIBILITY`; a failed capability gate requires a new backend-selection design rather than weakening audit, cancellation, workspace, result, or recovery contracts.
+
+Rejected Alternatives:
+
+- Exempting bootstrap from budget admission: rejected because it would leave the initial Cycle, Attempt, and Transition outside the authoritative accounting contract.
+- Rewriting completed A02/A03 bodies: rejected because correction and corrective-ticket governance preserves the approved historical contract.
+- Appending the Transition record before A03 invalidation: rejected because it conflicts with target preallocation, current implementation, and cross-head validation.
+- Treating domain `pending` as neither terminal nor resumable: rejected because it creates an unreachable lifecycle dead end after a valid report.
+- Free-form acceptance `contract_refs`: rejected because a validator cannot prove zero-gap or stale coverage from prose labels.
+- Locking Codex SDK before verifying durable lookup, exact cancellation, tool audit, workspace containment, immutable result extraction, and restart behavior: rejected because documented thread and sandbox support does not prove the stronger A05 backend contract.
+
+Related Documents:
+
+- [A02C01 Execution 0.4 Bootstrap Order](tickets/phase-a-control-contracts/A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md)
+- [A03 Transition Publication-order Clarification](tickets/corrections/A03_TRANSITION_PUBLICATION_ORDER_CLARIFICATION.md)
+- [A04 Pause and Resume Semantics](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)
+- [A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)
+- [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)
+- [A07 Phase B Harness Acceptance](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)
+- [Phase B Requirement Catalog](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)

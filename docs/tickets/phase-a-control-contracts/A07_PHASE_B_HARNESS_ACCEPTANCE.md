@@ -3,14 +3,14 @@ ticket_id: A07
 phase: phase-a-control-contracts
 status: review
 type: design
-depends_on: [A01, A02, A03, A03C01, A04, A05, A06]
+depends_on: [A01, A02, A02C01, A03, A03C01, A04, A05, A06]
 ---
 
 # 冻结 Phase B Harness 验收合同
 
 ## Goal
 
-把A01–A06及A03C01已经冻结的控制合同转化为Phase B可以直接实施、机器检查且无法用局部happy-path测试替代的验收体系。
+把A01–A03/A03C01已完成合同、A02C01 corrective contract及A04–A06待冻结合同转化为Phase B可以直接实施、机器检查且无法用局部happy-path测试替代的验收体系。
 
 本ticket只确认测试分层、scenario coverage、machine-readable matrix、Phase B拆票和退出门槛，并同步验收类source-of-truth文档；不实现runtime、tests、Fake Code Agent或Phase B implementation tickets。
 
@@ -35,11 +35,13 @@ A07必须冻结“什么证据才算Phase B完成”：control correctness使用
 - [`docs/REPO_CURRENT_STATE.md`](../../REPO_CURRENT_STATE.md)
 - [`A01_TRANSITION_MATRIX.md`](A01_TRANSITION_MATRIX.md)
 - [`A02_RUN_CYCLE_ATTEMPT_MODEL.md`](A02_RUN_CYCLE_ATTEMPT_MODEL.md)
+- [`A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md`](A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md)
 - [`A03_ARTIFACT_INVALIDATION.md`](A03_ARTIFACT_INVALIDATION.md)
 - [`A03C01_EXECUTION_HEAD_INTEGRITY.md`](A03C01_EXECUTION_HEAD_INTEGRITY.md)
 - [`A04_PAUSE_RESUME_SEMANTICS.md`](A04_PAUSE_RESUME_SEMANTICS.md)
 - [`A05_CODE_AGENT_CONTRACT.md`](A05_CODE_AGENT_CONTRACT.md)
 - [`A06_BUDGETS_AND_STOP_CONDITIONS.md`](A06_BUDGETS_AND_STOP_CONDITIONS.md)
+- [`PHASE_B_REQUIREMENT_CATALOG.json`](PHASE_B_REQUIREMENT_CATALOG.json)
 - [`Phase B Overview`](../phase-b-graph-harness/OVERVIEW.md)
 - `tests/test_graph_smoke.py`
 - `tests/test_execution_identity.py`
@@ -50,9 +52,10 @@ A07必须冻结“什么证据才算Phase B完成”：control correctness使用
 - 冻结Phase B的六层deterministic acceptance model；
 - 冻结A01 target routes、forbidden behaviors及guard rejection的覆盖规则；
 - 冻结A02/A03/A03C01 identity、invalidation、head和tamper evidence如何进入product graph验收；
-- 冻结A04 Pause/Resume/Replay/Fork、A05 Fake Code Agent和A06 Budget/Stop的required scenarios；
+- 冻结A04 Pause/Resume/Replay/Fork、A05 Graph-managed Fake Code Agent与fresh Analysis handoff、A06 Budget/Stop的required scenarios；
 - 冻结normalized exact trajectory、process restart、independent-client concurrency和durability-boundary fault injection；
 - 冻结machine-readable `PhaseBAcceptanceMatrix 0.1`及zero-gap gate；
+- 冻结machine-readable `PhaseBRequirementCatalog 0.1`、stable requirement IDs及catalog-digest stale gate；
 - 冻结legacy handoff compatibility、capability eval和parallel graph的边界；
 - 冻结B01–B05 implementation ticket拆分与Phase B退出门槛。
 
@@ -64,6 +67,7 @@ A07必须冻结“什么证据才算Phase B完成”：control correctness使用
 - 不实现parallel reducer、fan-out/fan-in、并行Agent、并行artifact merge或相关race resolution；
 - 不选择生产checkpoint backend、认证系统、distributed lock或跨存储事务；
 - 不用live provider、真实sleep、历史`outputs/`或未批准raw numeric data证明control correctness；
+- Phase B不安装或调用Codex SDK、不运行live provider，也不引入仍为beta的完整Agents SDK `SandboxAgent` runtime；`CodexSdkBackend`及其版本/模型/依赖属于Phase C；
 - 不改变A01 route authority、A02 identity、A03 artifact/accepted-result、A04 recovery、A05 Code Agent或A06 budget语义；
 - 不把测试通过解释为scientific acceptance、production readiness或真实Code Agent完成。
 
@@ -85,6 +89,7 @@ A07必须冻结“什么证据才算Phase B完成”：control correctness使用
 ## Do Not Touch
 
 - A01–A06及A03C01 ticket正文；
+- 与本ticket同一frozen snapshot中的`PHASE_B_REQUIREMENT_CATALOG.json` exact bytes；catalog变更必须使用新的acceptance corrective ticket和version；
 - `src/`、`tests/`、`evaluation/`、`configs/`、`raw_data/`、`outputs/`和accepted artifacts；
 - `docs/ARCHITECTURE.md`、`docs/AGENT_ROLES_AND_BOUNDARIES.md`、`docs/STATE_SCHEMA.md`、`docs/ARTIFACT_CONTRACTS.md`和`docs/SECURITY_AND_DATA_POLICY.md`；
 - graph topology、runtime schema、checkpoint backend、dependency versions、providers、认证与secrets；
@@ -93,7 +98,7 @@ A07必须冻结“什么证据才算Phase B完成”：control correctness使用
 
 ## Acceptance Authority and Evidence Classes
 
-Phase B control correctness的唯一完成证据是本ticket定义的required deterministic scenarios。每个scenario必须使用production route selector、validator、ledger builder、registry、Pause、budget和adapter入口；test-only fixture只能注入确定输入、clock、fault point和external outcome，不能直接patch成功state、伪造trusted evidence或跳过durable lifecycle。
+Phase B control correctness的唯一完成证据是本ticket定义的required deterministic scenarios。每个scenario必须使用production route selector、validator、ledger builder、registry、Pause、budget、`CodeAgentSubgraph`与`CodingBackend` port入口；test-only fixture只能注入确定输入、clock、fault point和external outcome，不能直接patch成功state、伪造trusted evidence或跳过durable lifecycle。
 
 证据分为三类：
 
@@ -107,13 +112,15 @@ Phase B control correctness的唯一完成证据是本ticket定义的required de
 
 ### Layer 0 — Schema, Replay and Invariants
 
-使用production canonical serializer和validator验证execution schema `0.4`、A03 registry、Pause、Code Agent、BudgetPolicy/Decision/Fingerprint/Grant和bounded state。每个typed record至少覆盖valid round trip、required field缺失、unknown field/value、duplicate JSON key、identity/digest变化、counter gap/duplicate以及ledger/state/head不一致。
+使用production canonical serializer和validator验证execution schema `0.4`、A03 registry、Pause、Code Agent、`BackendDispatchReceipt`、`BackendOperationStatus`、`WorkspaceManifest`、`WorkspaceSeal`、`AnalysisExecutionSpec`、aggregate Backend reservation、BudgetPolicy/Decision/Fingerprint/Grant和bounded state。每个typed record至少覆盖valid round trip、required field缺失、unknown field/value、duplicate JSON key、identity/digest变化、counter gap/duplicate以及ledger/state/head不一致。
 
 Layer 0必须复用A02/A03/A03C01现有完整性测试和实现入口；Phase B只增加新schema及跨合同关系，不复制第二套identity、current-selection或projection逻辑。
 
-### Layer 1 — Node, Adapter and Trusted Boundary
+### Layer 1 — Node, Subgraph, Backend and Trusted Boundary
 
-每个work/control node使用deterministic fixture验证typed input、scoped context、structured outcome、artifact registration和禁止authority。Fake Code Agent与未来real adapter接收相同A05 task/result schema，并经过同一个production ingress validator、trusted verifier interface和artifact registration path。
+每个work/control node与`CodeAgentSubgraph` control stage使用deterministic fixture验证typed input、scoped context、structured outcome、artifact registration和禁止authority。Pre-start task/workspace/reservation/Pause stages不能claim或启动target Attempt，也不能创建额外Work/Control Attempt或automatic route计数；`consume_code_agent_result`只能在A04 claim与A06唯一settlement完成后，把同一scheduled target Attempt启动一次。
+
+`FakeCodingBackend`与future `CodexSdkBackend`必须接收相同A05 task/result schema，经过同一`dispatch`/`lookup`/`fetch_result`/`cancel` port、production ingress validator、trusted verifier、artifact registry和fresh Analysis入口。Phase B只实例化Fake；Backend、provider job/thread或未来SandboxAgent不能写graph state、分配identity、推进head或拥有budget/retry/stop authority。
 
 Fake fixture只能由trusted harness的stable scenario ID选择；Agent task或自由文本不能选择outcome。Agent/provider/tool payload不能分配identity、提交Transition、改写current pointer、policy/counter、Pause、grant或accepted memory。
 
@@ -139,7 +146,7 @@ Pause claim、idempotency和grant竞争必须由两个独立control clients验�
 
 通过A04项目自有`start_run`、`resume_run`、`replay_run`、`fork_run`和`cancel_pause`入口执行deterministic tests及新的`/private/tmp/lqcd-agent-phase-b-*` CLI smoke。不得直接调用raw LangGraph checkpoint resume或提交arbitrary state/route patch。
 
-Smoke必须核对最终Run status、execution/artifact/checkpoint heads、canonical/projection bytes、budget counters、Pause lifecycle、child lineage和accepted-result protection；CLI输出成功文本不能替代这些断言。
+Smoke必须分别核对最终control `run_status`和领域`status`、execution/artifact/checkpoint heads、canonical/projection bytes、budget counters、Pause lifecycle、child lineage和accepted-result protection；CLI输出成功文本不能替代这些断言。
 
 ## `PhaseBAcceptanceMatrix 0.1`
 
@@ -149,10 +156,12 @@ Smoke必须核对最终Run status、execution/artifact/checkpoint heads、canoni
 tests/phase_b/acceptance_matrix.json
 ```
 
-该文件不是runtime config或Agent input。Top-level至少包含`schema_version = 0.1`、`phase = phase-b-graph-harness`和ordered `scenarios`。每个scenario至少包含：
+该文件不是runtime config或Agent input。Top-level至少包含`schema_version = 0.1`、`phase = phase-b-graph-harness`、`requirement_catalog_version`、`requirement_catalog_sha256`和ordered `scenarios`。Catalog digest必须是A07冻结时tracked `PHASE_B_REQUIREMENT_CATALOG.json` exact bytes的SHA-256；不接受运行时重新解释ticket prose。
+
+每个scenario至少包含：
 
 - unique stable `scenario_id`；
-- 一个或多个frozen `contract_refs`，格式为ticket ID加section/route/scenario label；
+- 一个或多个frozen `contract_refs`，每项必须是catalog中存在且`required: true`的stable `requirement_id`；
 - `layer = schema | node | route | trajectory | recovery | interface`；
 - deterministic `fixture_id`与project-owned `entrypoint`；
 - nullable normalized `expected_trace_fixture`；
@@ -160,14 +169,15 @@ tests/phase_b/acceptance_matrix.json
 - 一个或多个collectable `pytest_nodeids`；
 - `required: true | false`和typed evidence class。
 
-Matrix及expected fixtures使用strict duplicate-key JSON读取。`scenario_id`必须全局唯一；每个scenario内部的`contract_refs`和`pytest_nodeids`不得重复。Contract ref和pytest nodeid可以跨scenario复用，`layer`必须属于固定enum，所有required fields不得缺失或指向不存在对象。Required scenario必须至少映射一个实际收集的test；同一test可以支持多个scenario，但必须分别报告每个scenario结果。
+Matrix、catalog及expected fixtures使用strict duplicate-key JSON读取。`requirement_id`和`scenario_id`分别全局唯一；每个scenario内部的`contract_refs`和`pytest_nodeids`不得重复。Contract ref和pytest nodeid可以跨scenario复用，`layer`必须属于固定enum，所有required fields不得缺失或指向不存在对象。Required scenario必须至少映射一个实际收集的test；同一test可以支持多个scenario，但必须分别报告每个scenario结果。
 
 `expected_trace_fixture`对`route`、`trajectory`、`recovery`和`interface`层为required；纯`schema`或`node` scenario可以为null，但仍必须提供typed `expected_result`和足以证明合同的`required_invariants`。
 
-Matrix validator必须生成deterministic zero-gap report，并在以下任一情况退出非零：
+Matrix validator必须从catalog构造ordered `required_requirement_ids`，从全部required scenarios构造`covered_requirement_ids`，要求两者set-equal并生成deterministic zero-gap report。以下任一情况必须退出非零：
 
-- A01 target row或forbidden behavior没有required scenario；
-- A04–A06任一required scenario bullet没有contract mapping；
+- catalog中的A01 route/forbidden、A02C01 bootstrap或A04–A06任一required ID没有required scenario；
+- matrix引用unknown/non-required ID，或catalog required ID重复、缺失、顺序漂移；
+- matrix声明的catalog version/digest与tracked exact bytes不一致；
 - nodeid无法collect，或required test被skip、xfail、deselect或仅在live opt-in时运行；
 - applicable expected trace、required invariant或其fixture缺失，或schema不合法；
 - pass report包含unknown、uncovered或stale scenario；
@@ -175,18 +185,33 @@ Matrix validator必须生成deterministic zero-gap report，并在以下任一�
 
 Phase B completion record必须引用matrix digest、scenario totals和zero-gap report，不能只记录`pytest`总pass count。
 
+## `PhaseBRequirementCatalog 0.1`
+
+Tracked companion contract固定为：
+
+```text
+docs/tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json
+```
+
+Catalog不是runtime config、Agent input或测试结果。它为A01冻结rows/forbidden bullets分配不回写原正文的stable IDs，并逐项收录A02C01、A04、A05、A06正文中显式标记的required IDs。每项至少包含`requirement_id`、`owner_ticket`、`source_locator`、`kind`、`summary`和`required`。
+
+A07从`review`提升为`ready`时，其ticket正文与catalog exact bytes必须在同一frozen commit中；completion record记录catalog SHA-256。后续correction/corrective ticket改变任何required语义时，必须提升catalog version、更新受影响entry并由新的acceptance corrective ticket重新冻结，不能保留旧digest或只改自由文本label。
+
 ## Normalized Exact Trajectory Contract
 
 Deterministic required trajectory将以下字段投影为ordered canonical JSON并exact比较：
 
 - physical node与canonical Attempt kind；
+- `CodeAgentSubgraph` pre-start/consume control stage与零额外Attempt副作用；
 - selected route key、source/target、trigger class和guard result；
 - Run/Cycle/Attempt/Transition identity、index、lineage和lifecycle；
-- Pause、Human Request/Response、budget event、reservation和grant lifecycle；
-- artifact registration、current set/clear、managed projection和protection events；
-- 每个step后的bounded state heads、current artifact IDs、budget used/remaining和Run status。
+- Pause、Human Request/Response、budget event、aggregate Backend reservation和grant lifecycle；
+- semantic Backend operation status、dispatch/lookup/fetch/cancel outcome与operation binding；
+- WorkspaceManifest/lease/materialization/WorkspaceSeal、dispatch receipt、immutable external result、Code Bundle与AnalysisExecutionSpec的identity/digest projection；
+- artifact registration、current set/clear、managed projection、fresh Analysis worktree/subprocess和protection events；
+- 每个step后的bounded state heads、current artifact IDs、budget used/remaining、control `run_status`与领域`status`。
 
-Projection排除timestamp、duration、临时output root、process ID及opaque backend-generated checkpoint字面值。排除不表示忽略：测试仍必须验证timestamp顺序/clock policy、path containment、checkpoint binding、opaque identity唯一性和所有canonical digests。
+Projection排除timestamp、duration、临时output root、物理workspace path、process ID、opaque backend-generated checkpoint以及provider job/thread/session字面值。排除不表示忽略：测试仍必须验证timestamp顺序/clock policy、path containment、checkpoint binding、opaque identity唯一性、operation/workspace绑定和所有canonical digests。
 
 同一deterministic fixture只允许一个exact semantic trace。只有Capability evaluation可以声明多个contract-conformant path classes；required control test不能用宽松“包含这些节点”、unordered subset或只看final status替代exact trace。
 
@@ -211,7 +236,7 @@ Projection排除timestamp、duration、临时output root、process ID及opaque b
 - re-review、analysis rerun、code fix和replan四层fallback；
 - high/critical、诊断歧义、第二次exact fingerprint和route/resource exhaustion进入Human Gate；
 - valid Human response回Coordinator并只派发exact authorized target；
-- accept、reject/failed、hold/pending和halted收尾，accepted memory仅在policy允许时产生。
+- accept、reject/failed、hold/pending report正常收尾均产生`run_status = completed`并保留typed领域disposition；control failure与halted分别保持`failed | halted`，accepted memory仅在policy允许时产生。
 
 下列A01 forbidden behaviors必须逐类具有negative compiled-graph scenario：
 
@@ -226,6 +251,8 @@ Projection排除timestamp、duration、临时output root、process ID及opaque b
 - Agent从未审核单次经历直接改写长期规则、skill或routing policy。
 
 Forbidden scenario必须证明错误target未被scheduled、current artifacts未被提前清除、target side effect未发生且accepted state未变化；只检查router返回值不足以验收。
+
+A02/A04为Human Response validation使用的external control Transition不是A01 product edge：它必须单独进入identity/Pause coverage，不能计作任一A01 positive route，也不能伪装成`human_gate -> human_gate`。真正的Human Gate validation Attempt完成后仍只能按A01提交`human_gate -> decision_coordinator`。
 
 ## A02/A03/A03C01 Product Integration Coverage
 
@@ -248,41 +275,58 @@ Matrix必须逐项映射：
 - process退出后`human_input`、`external_result`和`recovery_decision` Pause准确恢复且最多消费一次；
 - same key/same payload返回同一结果，same key/different payload拒绝，不同key竞争同一Pause只有一个claim成功；
 - 错误actor/scope、Run/Pause、typed payload digest、expired Pause及runtime/policy fingerprint拒绝且无mutation；
-- invalid Human Response消费旧Pause并创建新`pause_id`，旧authorization不继承；
-- `success`、`failed`、`pending`、`halted`和pre-A04/A06 schema Run不能resume；
-- cancel只作用于latest opened Pause并转`halted`；
-- `external_result` 在`opened`前完成exact resource reservation，Pause期间dispatch/delivery不推进execution head，claim后settlement先于target `started`；
+- invalid Human Response消费旧Pause；A06容量仍能保留下一次validation及其后续收尾合计所需的3个Control Attempts/4条Transitions时，严格按decision → old consumed → checkpoint → new opened创建新`pause_id`，否则安全`halted`，旧authorization不继承；
+- `human_input` Pause使用null target，成功claim后才按A02 external control Transition恰好分配一个scheduled Human Gate validation Attempt；invalid response终结该validator，并在A06容量允许时打开下一个null-target Pause、否则安全`halted`，claim前不预分配下一Attempt，且不产生`human_gate -> human_gate`产品Transition；
+- null-target `human_input` claim后、external control Transition/target Attempt完整commit前后的崩溃返回`recovery_required`，同key重试不重复分配；`recovery_decision`只允许exact existing target的`continue_existing_target`或existing/null target的`abandon_and_halt`，null target不得分配Attempt；
+- recovery continue必须证明target从未started、无side effect/unsettled resource并只启动一次；recovery halt按A02 abandon existing target并转`halted`；wrong target/action、route/state patch、side-effect retry以及用recovery Pause代替replay/fork全部拒绝；
+- 只有exact `run_status: paused`且有active opened Pause可以resume；`running | completed | failed | halted`、缺少exact active Pause的伪`paused`和pre-A04/A06 schema Run不能resume，领域`status: pending`在正常END后对应`run_status: completed`；
+- cancel只作用于latest opened Pause并转`halted`；existing scheduled target必须写`abandoned`，null target不得创建Attempt；cancelled与abandoned之间崩溃返回`recovery_required`且target永不启动；
+- `external_result` cancel先证明未dispatch或停止exact Backend operation并撤销lease，再提交A04 `cancelled`、abandon scheduled code target，最后actual-or-maximum settle aggregate；cancelled后abandonment/settlement前崩溃保持`halted`且按maximum计费；
+- `external_result` 在`opened`前完成exact aggregate Backend reservation，Pause期间dispatch/lookup/fetch/result/delivery不推进budget或execution head，claim后唯一settlement先于target `started`；
 - replay/fork创建全新child identities，source及accepted bytes不变且不继承Pause、current pointer、authorization或accepted status；
 - fork只接受latest validated paused/terminal head并拒绝旧checkpoint或被history否定的artifact。
 
-## Required A05 Fake Code Agent Scenarios
+## Required A05 Graph-managed Fake Code Agent Scenarios
 
 Matrix必须逐项映射：
 
 - Planner implementation gap与Coordinator code fix两种task origin；
-- external operation的pre-open reservation、Pause期间zero execution-head drift、post-claim/pre-start settlement和claim后settlement crash fail-closed；
-- valid scoped `success`进入fresh Analysis Attempt并注册canonical content-addressed code bundle；
+- pre-start task冻结、WorkspaceManifest创建、aggregate reservation和Pause publication在重放时幂等，且不claim/start target Attempt、不启动Backend、不注册code artifact、不创建额外Attempt/Transition或增加automatic route计数；
+- aggregate Backend operation的pre-open reservation、Pause期间zero budget/execution-head drift、post-claim/pre-start唯一settlement和claim后settlement crash fail-closed；
+- `dispatch`使用`producer_operation_id`幂等：duplicate返回同一receipt，conflicting payload拒绝；`lookup = running | completed | unknown`都只能描述原operation且不得启动第二个operation，known status返回同一receipt reference/digest以恢复receipt-publication crash，unknown使用null receipt；`fetch_result`不得刷新预算或退款；
+- aggregate hard limit、operation timeout与operator cancellation通过`cancel`停止exact operation、撤销write lease且不创建替代operation；duplicate cancel幂等，wrong operation拒绝，停止失败或停止后activity fail closed；
+- dispatch前、receipt publication前后、Backend完成前后、immutable result/seal publication前后、delivery snapshot前后、claim前后与consume前后的全部crash窗口不得重复Backend operation或target Attempt；
+- result重复投递same bytes幂等，conflicting bytes拒绝；competing claim只有一个consumer成功；
+- valid scoped `success`经过trusted verification后注册canonical content-addressed Code Bundle，且bundle包含`backend_dispatch_receipt.json`与`workspace_seal.json`；
 - `no_change`、`failed`、`needs_input`、`needs_human`、`budget_exhausted`和safe `policy_blocked`全部进入Coordinator；
-- adapter自报pass但trusted verification failed/blocked/timeout时拒绝Analysis；
+- Backend自报pass但trusted verification failed/blocked/timeout时拒绝Analysis；
 - out-of-scope file、path/symlink escape、Git metadata、secret/raw/accepted/control target拒绝；
-- wrong Run/Case/Cycle/Attempt/Transition/task/base/workspace/Pause/result/member digest及duplicate-key/malformed ingress拒绝；
-- duplicate/conflicting dispatch、duplicate delivery、competing claim和claim后crash不得重复external operation；
+- `WorkspaceManifest`或`WorkspaceSeal`缺失、digest篡改、跨Attempt复用、foreign lease、base revision/tree drift、workspace path swap及seal后filesystem变化全部fail closed；
+- wrong Run/Case/Cycle/Attempt/Transition/task/operation/base/workspace/Pause/result/member digest及duplicate-key/malformed ingress拒绝；
 - non-empty unverified/partial change不能作为success；
 - Human authorization scope/digest错误、已消费授权或执行中扩权必须创建新请求/Attempt或fail closed；
 - multiple code attempts使用独立workspace/artifact，旧code及downstream不再current但canonical bytes保留；
-- Fake与future real fixture通过同一validator/verifier/registration入口；legacy artifact不能读取为canonical Code Agent result。
+- Code Bundle注册并成为current后，source wrapper才能让`commit_transition`先分配new scheduled Analysis Attempt、再提交绑定该exact target的`code_agent -> analysis_engineer` Transition，并发布绑定bundle/base/patch/effective-tree/target/Transition/runtime的`AnalysisExecutionSpec`；
+- Analysis必须在fresh worktree与fresh subprocess从exact base应用verified change，并成功注册Analysis artifact；不得读取主控制仓库、复用Code Agent workspace或以module reload加载新代码；
+- bundle已注册但Transition未提交时可幂等继续交接；Transition已提交但Analysis workspace未创建时可按同一spec幂等materialize；
+- spec、patch、effective tree、runtime fingerprint或code/artifact head mismatch时旧Analysis target不得`started`、不得自动abandon或retarget，同一source不得提交第二条outbound Transition；原Run返回`recovery_required`/`halted`，只有通过A04 source validation后才可显式replay/fork；
+- Fake与future Codex fixture通过同一`dispatch`/`lookup`/`fetch_result`/`cancel` port、validator、verifier、registration及fresh Analysis入口；legacy artifact不能读取为canonical Code Agent result。
 
 ## Required A06 Budget and Stop Scenarios
 
 Matrix必须逐项映射：
 
 - initial forward不扣automatic route额度；每条automatic route在limit前允许、达到limit后Gate；
-- Work/Control/Transition absolute ceilings及4 Control Attempt/5 Transition terminal reserve；
+- Work/Control/Transition absolute ceilings及5 Control Attempt/6 Transition terminal reserve；Human Gate request与response validation分别计数，invalid retry后仍须保留下一次validation及后续收尾合计3 Control/4 Transition；
 - LLM/tool/verification reservation、settlement、unsettled crash full charge和duplicate operation拒绝；
-- `external_result` operation的pre-open reservation、Pause期间zero execution-head drift、post-claim/pre-start settlement和claim后settlement crash fail-closed；
-- per-Attempt/per-Run active time、paused time排除、external operation计费及fake clock boundary；
-- first retryable technical fingerprint允许，second exact fingerprint升级，material evidence变化生成新context/fingerprint；
-- identity、timestamp、summary、temporary path或重复Human approval不构成新evidence；
+- 每个`code_agent` Attempt恰有一个`code_backend_operation` aggregate，绑定operation/task/backend/WorkspaceManifest/Pause并统一预留现有LLM/tool/active dimensions；第二份aggregate或Backend-owned counter拒绝；
+- aggregate的pre-open reservation、Pause期间dispatch/lookup/fetch/result zero budget/execution-head drift、post-claim/pre-start settlement、可信actual缺失时maximum settlement和claim后settlement crash fail-closed；
+- aggregate maximum/timeout由可信Host在side effect前强制执行；actual超额、cancel/lease revocation失败或停止后activity不能通过maximum accounting掩盖，必须fail closed；
+- Fake fixture提供deterministic usage并与future Codex Backend走同一lifecycle；Backend receipt/tool audit/seal矛盾时按maximum结算且fail closed；
+- pre-start Host setup只计Run、Backend operation结算到aggregate预留的target-Attempt与Run active dimensions但不启动Attempt、result后delivery等待不计active time、post-start trusted verification计Attempt与Run，以及所有fake clock boundary；
+- first retryable technical fingerprint允许，second exact fingerprint升级；新Attempt/workspace/job/thread/operation identity不改变`code_task_context_digest`或`analysis_execution_context_digest`；
+- backend版本/runtime、base、policy、verified patch/effective tree或material input evidence变化会生成新context/fingerprint；timestamp、summary、physical path或重复Human approval不会；
+- `lookup`/`fetch_result`不能创建operation、刷新预算或退款；Backend、Codex thread/job与未来SandboxAgent没有独立budget、retry或stop authority；
 - high/critical、ambiguous、policy/security/data及non-retryable scientific failure第一次即Gate；
 - single-use grant的correct consumption，以及wrong actor/scope/route/fingerprint/target、competition、duplicate consumption和global ceiling拒绝；
 - expired Pause返回`pause_expired`且无自动event/cancel，必须显式cancel/replay/fork；
@@ -295,27 +339,33 @@ Matrix必须逐项映射：
 
 Required failpoints固定在以下durable publication boundaries：
 
+- A02C01 schema `0.4`的Run creation、`policy_initialized`、bootstrap `decision_recorded`、initial Cycle、Planner Attempt、A03 initial invalidation、START Transition和checkpoint前后；
+- WorkspaceManifest publication、workspace materialization/lease以及aggregate reservation前后；
 - checkpoint写入前，以及checkpoint写入后但Pause `opened`前；
-- Pause `opened`后、claim前，以及claim后但consume/result commit前；
+- Pause `opened`后、Backend dispatch前、`BackendDispatchReceipt` publication前后、Backend completion前后、WorkspaceSeal与immutable result publication前后；
+- delivery snapshot前后、claim前后、settlement前后，以及settlement后但`consume_code_agent_result`/Attempt `started`前；
 - budget `decision_recorded`后但Transition或resource reservation前；
+- `grant_consumed`前后以及其后target Attempt allocation/A03 invalidation/Transition append完整commit前；无跨record transaction时partial sequence必须`recovery_required`、grant不退款且target不启动；
+- invalid Human Response的repause `decision_recorded`、old Pause `consumed`、new checkpoint和new Pause `opened`前后；
 - `resource_reserved`后但`resource_settled`前；
 - Transition/invalidation commit后但target Attempt `started`前；
-- external dispatch前、dispatch后但delivery前，以及delivery claim后但canonical result registration前；
+- Code Bundle member/registry/current publication前后，以及bundle current后但Analysis Transition提交前；
+- Analysis Transition提交后但`AnalysisExecutionSpec` publication、fresh workspace materialization、fresh subprocess启动或Analysis artifact publication前后；
 - artifact history/index/projection publication或bounded-state sync出现partial/corrupt head。
 
-External-result fault scenarios还必须证明：`resource_reserved`先于Pause `opened`，Pause期间的dispatch/delivery evidence不推进execution head，`resource_settled`后于claim且先于target Attempt `started`。
+Bootstrap fault scenarios必须证明只有同一start operation的严格合法、无副作用prefix可以确定性继续，任何冲突或side-effect prefix均fail closed。Transition fault scenarios必须证明scheduled target allocation先于A03 invalidation、invalidation先于committed Transition append。Invalid-response fault scenarios必须证明旧Pause一经`consumed`不再打开，未完成`opened`的新Pause不接收输入。External-result fault scenarios还必须证明：aggregate `resource_reserved`先于Pause `opened`，Pause期间的dispatch/lookup/fetch/result/delivery evidence不推进budget或execution head，唯一`resource_settled`后于claim且先于target Attempt `started`；hard limit/timeout/cancellation通过exact `cancel`停止operation。Fresh Analysis fault scenarios必须证明exact spec可幂等materialize，但任何spec/head/digest冲突都不启动旧target、不retarget、不从同一source提交第二条outbound Transition，并进入A04允许的显式replay/fork或halt边界。
 
 每个failpoint必须记录预期类别：
 
 - durable safe boundary允许相同idempotency request准确继续一次；
 - 未完成Pause publication、claim后不确定性、unsettled reservation、partial Transition/result或head mismatch返回`recovery_required`或`halted`；
-- 禁止自动退款、重复provider/tool/adapter operation、重新执行target Attempt、恢复旧current artifact或自动partial repair。
+- 禁止自动退款、重复provider/tool/Backend operation、重新执行target Attempt、恢复旧current artifact、复用workspace或自动partial repair。
 
 Fault harness使用injected deterministic hooks和fake clock，不通过kill timing race或真实sleep制造概率性结果。Process-restart场景仍必须真实启动新的Python process并重新打开durable store。
 
 ## Legacy Compatibility Boundary
 
-Phase B canonical product graph在deterministic/mock profile下使用A05 Fake `code_agent`。当前`legacy_codex_handoff`只保留为显式命名的compatibility entrypoint：
+Phase B canonical product graph在deterministic/mock profile下使用A05 `CodeAgentSubgraph + FakeCodingBackend`。当前`legacy_codex_handoff`只保留为显式命名的compatibility entrypoint：
 
 - legacy继续使用`attempt_kind = legacy_codex_handoff`及现有artifact contract；
 - canonical graph、matrix和A01 target edge coverage不能调用legacy node；
@@ -337,9 +387,9 @@ A07执行只把以下拆分同步到Phase B Overview，不创建ticket文件。P
 
 1. **B01 — Execution 0.4 Control Foundation**：BudgetPolicy/ledger、bounded projection、trusted clock、canonical validators及execution/artifact/checkpoint cross-head integrity。
 2. **B02 — Durable Control Operations**：project-owned start/resume/replay/fork/cancel、Pause publication、SQLite durable test store、atomic claim、idempotency和process-restart recovery。
-3. **B03 — Canonical Fake Code Agent**：A05 schemas、production ingress validator、deterministic Fake adapter、trusted verification、content-addressed bundle和external-result Pause integration。
-4. **B04 — Target Product Topology and Budgeted Loops**：A01 edges、Coordinator四层fallback、Human Gate return、A03 invalidation、A06 admission/reserve/grant和terminal behavior。
-5. **B05 — Acceptance Matrix and End-to-End Harness**：matrix/meta-validator、normalized traces、fault/concurrency tests、compatibility regression、CLI smoke和zero-gap evidence。
+3. **B03 — Graph-managed Fake Code Agent**：`CodeAgentSubgraph`、`CodingBackend` port、`FakeCodingBackend`、A05 task/result与workspace contracts、production ingress validator、trusted verification、content-addressed bundle、external-result Pause integration和fresh Analysis handoff service。
+4. **B04 — Target Product Topology and Budgeted Loops**：把B03接入A01 edges、Coordinator四层fallback、Human Gate return、A03 invalidation、A06 aggregate Backend reservation/admission/grant和terminal behavior。
+5. **B05 — Acceptance Matrix and End-to-End Harness**：为本ticket全部新增scenario建立matrix/meta-validator、normalized traces、workspace/Backend/Analysis fault与concurrency tests、compatibility regression、CLI smoke和zero-gap evidence。
 
 Dependency顺序固定为B01；B02 depends on B01；B03 depends on B01/B02；B04 depends on B01–B03；B05 depends on B01–B04。每份implementation ticket必须自行冻结Allowed Files、Do Not Touch、migration边界和focused verification，不得把五份工作合成未审查的大型ticket。
 
@@ -353,6 +403,7 @@ Phase B只有同时满足以下条件才能标记completed：
 - synthetic benchmark tests及full mock-provider benchmark通过，capability结果与control evidence分开报告；
 - 新的`/private/tmp/lqcd-agent-phase-b-*` CLI smoke核对ledger/state/checkpoint/artifact/budget/Pause/child/accepted invariants；
 - legacy compatibility suite继续通过且单独计数；
+- Phase B没有安装或调用Codex SDK、运行live provider或引入完整Agents SDK SandboxAgent；Phase C Backend工作没有被Fake pass替代；
 - Markdown links、ticket metadata、scope、stale docs和`git diff --check`通过；
 - 没有读取raw numeric data、复用历史`outputs/`或运行live-provider测试。
 
@@ -362,6 +413,7 @@ Phase B completion record必须列出matrix digest、required/covered/passed tot
 
 - decision-complete的六层Phase B acceptance model；
 - `PhaseBAcceptanceMatrix 0.1` schema与zero-gap规则；
+- `PhaseBRequirementCatalog 0.1`、stable IDs、required-set equality和catalog SHA-256 stale gate；
 - A01–A06及A03C01 required scenario inventory；
 - exact trajectory、fault/concurrency、legacy和parallel边界；
 - B01–B05拆分及Phase B exit gate；
@@ -375,6 +427,7 @@ Phase B completion record必须列出matrix digest、required/covered/passed tot
 - A04–A06的每个required downstream bullet都被本ticket保留，没有由实现者自行抽样；
 - deterministic control test使用exact normalized trace，capability eval不能替代control acceptance；
 - process restart、independent-client claim和每个durability boundary都有确定的success/fail-closed结果；
+- Fake Code Agent完整经过graph-managed pre-start、A04 Pause、A06 aggregate settlement、trusted verification、Code Bundle与fresh Analysis handoff，且不调用Codex SDK或完整SandboxAgent；
 - legacy只能作为compatibility entrypoint，parallel明确不属于Phase B；
 - machine-readable matrix能够机械拒绝missing/stale/uncollectable/skipped coverage；
 - B01–B05可以直接起草而无需重新决定实施顺序或职责边界；
@@ -384,12 +437,15 @@ Phase B completion record必须列出matrix digest、required/covered/passed tot
 
 本ticket从`review`提升为`ready`前必须确认：
 
-- YAML保持`status: review`，直到A04–A07完成交叉审查并获得用户统一确认；
+- YAML保持`status: review`，直到A02C01与A04–A07完成交叉审查、catalog核验并获得用户最终确认；
 - ticket内没有待确认架构问题、未决占位符或内嵌执行记录；
-- A01每个target/forbidden route以及A04–A06每个required scenario都已映射到machine-checkable coverage rule；
+- `PHASE_B_REQUIREMENT_CATALOG.json`通过strict JSON、unique ID、owner/source和required-set验证；A01全部17条route、9条forbidden behavior、A02C01 bootstrap以及A04/A05/A06每个显式required ID均恰有一个catalog entry；
+- A01每个route/forbidden behavior、A02C01 bootstrap以及A04–A06每个required scenario都已映射到machine-checkable coverage rule，matrix只能引用catalog ID；
+- A07 ticket正文与catalog exact bytes将在同一frozen commit中，completion记录catalog version与SHA-256；
 - A04–A06之间没有需要改变Pause、Code Agent、budget或stop语义的未决冲突；
+- A05要求的Backend/workspace/fresh Analysis scenarios和A06要求的aggregate/active-time/semantic fingerprint scenarios均逐项进入matrix coverage；
 - dependency、Allowed Files与Do Not Touch无冲突，所有相对Markdown links和Read First仓库路径有效；
-- Phase A Overview、Docs Index和Current State一致记录A04–A07为`review`；
+- Phase A Overview、Docs Index和Current State一致记录A02C01与A04–A07为`review`；
 - review diff不包含runtime、tests、evaluation、configs、dependency或provider改动，且B01–B05 ticket文件不存在。
 
 ## Verification
@@ -418,6 +474,7 @@ git diff --check
 - 必须先选择第三方eval平台、生产checkpoint、认证、distributed lock或新dependency；
 - acceptance必须依赖live provider、真实sleep、raw numeric data或历史outputs；
 - Phase B无法将legacy与canonical Code Agent coverage分离，或必须实现parallel graph才能完成顺序合同；
+- Phase B必须安装/调用Codex SDK、运行live provider、引入完整SandboxAgent，或必须让Backend拥有第二套budget/retry/stop authority才能完成required control acceptance；
 - 需要扩大Allowed Files、触碰Do Not Touch或在本ticket中创建implementation ticket；
 - A04–A07交叉审查发现会改变本ticket核心acceptance contract的冲突。
 

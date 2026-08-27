@@ -37,9 +37,12 @@
 
 ## Review Tickets
 
+- [`A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md`](A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md)
 - [`A04_PAUSE_RESUME_SEMANTICS.md`](A04_PAUSE_RESUME_SEMANTICS.md)
 - [`A05_CODE_AGENT_CONTRACT.md`](A05_CODE_AGENT_CONTRACT.md)
 - [`A06_BUDGETS_AND_STOP_CONDITIONS.md`](A06_BUDGETS_AND_STOP_CONDITIONS.md)
 - [`A07_PHASE_B_HARNESS_ACCEPTANCE.md`](A07_PHASE_B_HARNESS_ACCEPTANCE.md)
 
-A01 已完成逻辑 transition contract。A02 已完成 formal execution identity；A03 已完成 immutable Attempt artifact namespace、typed current index、managed projections、Human Response snapshots及四层 invalidation harness；A03C01已补齐execution global-head与Transition target-shape完整性。四层 fallback仍是 harness-only，不是产品 edges。A04–A07 已完成最终交叉审查并保持 `review`；用户统一确认前不得提升为 `ready` 或执行。统一冻结后，在开始执行A04前先创建只包含frozen tickets及状态元数据的Git commit。
+A01已完成逻辑transition contract。A02已完成formal execution identity；A03已完成immutable Attempt artifact namespace、typed current index、managed projections、Human Response snapshots及四层invalidation harness；A03C01已补齐execution global-head与Transition target-shape完整性。四层fallback仍是harness-only，不是产品edges。
+
+2026-08-26交叉审查发现并已在review稿中修正schema `0.4` bootstrap、Transition/invalidation顺序、invalid-response repause publication、Run lifecycle/domain status分离、A07 stable requirement catalog及A05真实backend能力门禁问题。正文、catalog ID集合、relative links、frozen-ticket zero-diff和现有full suite已通过核验。A02C01与A04–A07当前保持`review`；用户最终确认前不得提升为`ready`或执行。依赖顺序为A02C01 → A04 → A05 → A06 → A07；统一冻结时必须把相关ticket正文、correction records及A07 catalog置于可恢复的Git历史。
