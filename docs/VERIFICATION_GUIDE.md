@@ -78,7 +78,7 @@ A02C01与A04–A07从`review`提升为`ready`前必须运行tracked design valid
 python scripts/validate_phase_a_control_protocol.py
 ```
 
-该检查strict读取[`CONTROL_PROTOCOL_0_4.json`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)和[`PHASE_B_REQUIREMENT_CATALOG.json`](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)，验证ControlOperation graph终结、multi-successor guard互斥/穷尽、tagged evidence与incoming edge匹配、十一种variant overlay、单一transaction domain、normal/cancel/interrupt CAS交错、typed terminal consumer、Pause aborted/interrupted/quarantined finality、Run lifecycle循环、pre-start DAG、field binding、ticket/catalog stable IDs及protocol SHA。它是design-time lint，不表示Phase B runtime、fault fixture或acceptance matrix已经实现；B00仍须把同一合同转为collectable tests和normalized traces。
+该检查strict读取[`CONTROL_PROTOCOL_0_4.json`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json) machine schema 0.4和[`PHASE_B_REQUIREMENT_CATALOG.json`](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json) catalog 0.4.0，验证ControlOperation graph终结、multi-successor guard互斥/穷尽、tagged evidence与incoming edge匹配、十一种variant overlay、单一transaction domain、normal/cancel/interrupt CAS交错、winner-observation组合owner状态、normal safe-stop preclassification、唯一stop route、typed terminal consumer、Pause aborted/interrupted/quarantined finality、Run lifecycle循环、pre-start DAG、field binding、129个ticket/catalog stable IDs及protocol SHA。它是design-time lint，不表示Phase B runtime、fault fixture或acceptance matrix已经实现；B00仍须把同一合同转为collectable tests和normalized traces。
 
 ### A02 Execution Identity 验收
 

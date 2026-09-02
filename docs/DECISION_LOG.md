@@ -1030,3 +1030,37 @@ Related Documents:
 - [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)
 - [A07 Phase B Harness Acceptance](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)
 - [Phase B Requirement Catalog](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)
+
+## 2026-08-27: Close Winner Observation and Make Stop Routing Unique
+
+Decision:
+
+- Make `cancel_arbitrated` ownership outcome-conditioned. Typed-null, cancel-won and normal-won require empty Pause and Run owners and may acquire them; preexisting cancel and interrupt winners use a read-only observation guard that accepts exact winner-owned state, verifies winner operation/revision/epoch coherence and mutates no domain owner.
+- Distinguish same-key replay from observing another winner. Same-key replay resumes the existing ControlOperation; a different cancel operation can only return the persisted winner identity, resolution revision and current state.
+- Classify normal final proof before the resolution CAS. `external_normal_terminal_cas` accepts only preclassified `safe_stop` and atomically publishes normal final evidence. A false, unknown or missing proof dimension deterministically creates or reuses `resolve_external_interrupt/integrity_failure` with reason `normal_finalization_unavailable`; `normal + unavailable` is not a legal terminal tuple.
+- Add one machine-readable stop-route authority selected before operation reservation. Explicit Pause cancellation uses `cancel_pause`; dispatched operation timeout uses recoverable interrupt; live-operation hard-limit, policy or terminal operator stop uses controlled-halt interrupt; integrity or unavailable normal finalization uses integrity interrupt; `close_run` is legal only when ExternalOperation is absent or safely terminal and detached.
+- Require `close_run` reservation to freeze the ExternalOperation precondition and proof digest. An interrupt terminal owner excludes a later `close_run`, so one trigger cannot produce two terminal operations.
+- Upgrade the Control Protocol machine schema to `0.4` and the requirement catalog content version to `0.4.0`. Extend the design validator from graph adjacency to composite resolution/Pause/Run owner states and exact stop-route mutations.
+
+Confirmed:
+
+- This closes two protocol-model gaps: a phantom winner-observation edge blocked by unconditional empty-owner guards, and an unowned `normal_resolution_recovery` string outside any ControlOperation graph.
+- Coordinator remains the sole product route and terminal authority. LangGraph remains responsible only for graph execution, checkpoints and interrupts.
+- A01 routing and frozen A01–A03/A03C01 content remain unchanged. A02C01 and A04–A07 remain in review; no Phase B ticket or runtime implementation is created.
+
+Rejected Alternatives:
+
+- Requiring empty Pause and Run owners for every cancel outcome: rejected because an interrupt or prior cancel winner may already own those fields, making the declared observation edge unreachable.
+- Letting normal resolution commit before stop-proof classification: rejected because unavailable evidence would then require a second owner or an unowned recovery flow.
+- Treating prose as stop-route authority: rejected because B00 could choose `cancel_pause`, `resolve_external_interrupt` or `close_run` differently for the same trigger and still pass a graph-only validator.
+- Creating `close_run` after an interrupt tail: rejected because it duplicates Run terminal ownership and makes same-trigger replay ambiguous.
+
+Related Documents:
+
+- [Control Protocol 0.4](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)
+- [Protocol Validator](../scripts/validate_phase_a_control_protocol.py)
+- [A04 Pause and Resume Semantics](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)
+- [A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)
+- [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)
+- [A07 Phase B Harness Acceptance](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)
+- [Phase B Requirement Catalog](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)

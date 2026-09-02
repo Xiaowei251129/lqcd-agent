@@ -97,6 +97,8 @@ EXPECTED_RESERVATION_OVERLAYS = {
         "run_terminal_closure_key": ("terminal_closure_key", "coordinator_db", False),
         "terminal_trigger_identity": ("terminal_trigger", "coordinator_db", False),
         "requested_terminal_disposition": ("run_terminal_disposition", "coordinator_db", False),
+        "external_operation_precondition": ("absent_or_safely_terminal_and_detached", "coordinator_db", False),
+        "external_operation_precondition_proof_digest": ("sha256", "coordinator_db", False),
     },
 }
 EXPECTED_OWNER_ORDER = [
@@ -116,10 +118,10 @@ EXPECTED_OWNER_COUNTS = {
     "A02C01": 4,
     "A03": 5,
     "A03C01": 4,
-    "A04": 19,
-    "A05": 28,
-    "A06": 20,
-    "A07": 13,
+    "A04": 20,
+    "A05": 29,
+    "A06": 21,
+    "A07": 14,
 }
 EXPECTED_OUTCOME_STATUS = {
     "committed_result_replay": ("committed", False),
@@ -510,6 +512,11 @@ def _validate_external_operation(protocol: dict[str, Any]) -> None:
         "safe_stop_predicate": "termination_is_confirmed_or_typed_not_dispatched_and_every_other_dimension_is_true",
         "unavailable_predicate": "any_dimension_is_false_unknown_or_missing",
         "precedence": "unavailable_dominates_safe_stop",
+        "resolution_timing": {
+            "normal": "preclassified_before_resolution_cas",
+            "cancel": "classified_after_cancel_intent_before_final_evidence",
+            "interrupt": "classified_after_interrupt_intent_before_final_evidence",
+        },
         "unavailable_terminal_status": "recovery_required",
         "forbidden_unavailable_run_lifecycle": ["halted", "failed"],
     }
@@ -586,6 +593,13 @@ def _validate_external_operation(protocol: dict[str, Any]) -> None:
         else:
             if not isinstance(consumer.get("reference"), str) or not consumer["reference"]:
                 raise ValidationError("external terminal domain consumer has an invalid reference")
+            if (
+                outcome["resolution_kind"] != "normal"
+                or outcome["interrupt_disposition"] != "not_applicable"
+                or outcome["proof_kind"] != "safe_stop"
+                or consumer["reference"] != "canonical_external_result_delivery"
+            ):
+                raise ValidationError("only normal safe-stop may use the whitelisted domain-flow consumer")
             consumer_identity = f"domain:{consumer['reference']}"
         outcome_tuple = (
             outcome["resolution_kind"],
@@ -598,12 +612,11 @@ def _validate_external_operation(protocol: dict[str, Any]) -> None:
             raise ValidationError("external_operation contains a duplicate terminal outcome")
         actual_outcomes.add(outcome_tuple)
     expected_outcomes = {
-        ("normal", "not_applicable", "safe_stop", ("completed", "failed"), "domain:external_result_delivery_or_cancel_observer"),
+        ("normal", "not_applicable", "safe_stop", ("completed", "failed"), "domain:canonical_external_result_delivery"),
         ("cancel", "not_applicable", "safe_stop", ("cancelled", "failed"), "cancel_pause/not_applicable.external_terminal_closure_verified"),
         ("interrupt", "recoverable_timeout", "safe_stop", ("interrupted",), "resolve_external_interrupt/recoverable_timeout.external_final_evidence_verified"),
         ("interrupt", "controlled_halt", "safe_stop", ("interrupted",), "resolve_external_interrupt/controlled_halt.external_final_evidence_verified"),
         ("interrupt", "integrity_failure", "safe_stop", ("interrupted",), "resolve_external_interrupt/integrity_failure.external_final_evidence_verified"),
-        ("normal", "not_applicable", "unavailable", ("recovery_required",), "domain:normal_resolution_recovery"),
         ("cancel", "not_applicable", "unavailable", ("recovery_required",), "cancel_pause/not_applicable.external_unavailable_verified"),
         ("interrupt", "recoverable_timeout", "unavailable", ("recovery_required",), "resolve_external_interrupt/recoverable_timeout.external_final_evidence_verified"),
         ("interrupt", "controlled_halt", "unavailable", ("recovery_required",), "resolve_external_interrupt/controlled_halt.external_final_evidence_verified"),
@@ -1085,8 +1098,18 @@ def _validate_transaction_domains_and_cas(protocol: dict[str, Any]) -> None:
     if set(by_id) != expected_guard_ids:
         raise ValidationError("CAS guard set is incomplete")
     resolution_fields = {"external_operation_id", "phase_revision", "lease_epoch", "resolution_owner"}
+    normal_guard = by_id["external_normal_terminal_cas"]
+    if set(normal_guard["compare_fields"]) != resolution_fields | {"preclassified_final_proof_kind"}:
+        raise ValidationError("normal terminal CAS does not fence the resolution tuple and preclassified proof")
+    if normal_guard.get("required_proof_kind") != "safe_stop":
+        raise ValidationError("normal terminal CAS accepts a proof other than safe_stop")
+    if normal_guard.get("commits_terminal_phase") != "external_final_evidence_committed":
+        raise ValidationError("normal terminal CAS is not atomic with final evidence publication")
+    if normal_guard.get("required_resolution_owner", "missing") is not None:
+        raise ValidationError("normal terminal CAS does not require an empty resolution owner")
+    if normal_guard.get("assigns_resolution_owner") != "normal":
+        raise ValidationError("normal terminal CAS assigns the wrong resolution owner")
     for guard_id, owner in (
-        ("external_normal_terminal_cas", "normal"),
         ("external_cancel_intent_cas", "cancel"),
         ("external_interrupt_intent_cas", "interrupt"),
     ):
@@ -1100,8 +1123,10 @@ def _validate_transaction_domains_and_cas(protocol: dict[str, Any]) -> None:
     combined = by_id["cancel_control_combined_cas"]
     if not resolution_fields <= set(combined["compare_fields"]):
         raise ValidationError("combined cancel CAS does not fence ExternalOperation resolution")
-    if set(combined.get("required_empty_fields", [])) != {"pause_owner", "run_terminal_closure_owner"}:
-        raise ValidationError("combined cancel CAS does not require empty Pause and Run owners")
+    if "required_empty_fields" in combined:
+        raise ValidationError("combined cancel CAS may not impose unconditional empty Pause and Run owners")
+    if not {"pause_status", "resolution_owner_operation_id"} <= set(combined["compare_fields"]):
+        raise ValidationError("combined cancel CAS does not compare winner identity and Pause lifecycle")
     if combined.get("conditionally_delegates_to") != "external_cancel_intent_cas":
         raise ValidationError("combined cancel CAS does not use the cancel resolution guard")
     if combined.get("external_operation_present_condition") != "reserved_external_operation_id_is_non_null":
@@ -1146,15 +1171,73 @@ def _validate_transaction_domains_and_cas(protocol: dict[str, Any]) -> None:
         raise ValidationError("combined cancel CAS does not advance the ControlOperation phase revision")
     if combined.get("external_phase_revision_incremented_only_when") != "cancel_won":
         raise ValidationError("combined cancel CAS changes ExternalOperation revision outside cancel_won")
-    expected_ownership_by_outcome = [
-        {"outcome": "no_external_operation", "acquires": ["pause_cancel_owner", "run_terminal_closure_owner"]},
-        {"outcome": "cancel_won", "acquires": ["pause_cancel_owner", "run_terminal_closure_owner", "external_resolution_owner"]},
-        {"outcome": "normal_terminal_won", "acquires": ["pause_cancel_owner", "run_terminal_closure_owner"]},
-        {"outcome": "preexisting_cancel_resolution", "acquires": ["pause_cancel_owner", "run_terminal_closure_owner"]},
-        {"outcome": "preexisting_interrupt_resolution", "acquires": []},
+    expected_outcome_guards = [
+        {
+            "outcome": "no_external_operation",
+            "required_pause_states": ["opened"],
+            "required_owner_shape": {"pause_owner": None, "run_terminal_closure_owner": None},
+            "external_revision_epoch_guard": "typed_null_absence_proof",
+            "required_winner_operation_type": "not_applicable",
+            "observation_only": False,
+            "acquires": ["pause_cancel_owner", "run_terminal_closure_owner"],
+        },
+        {
+            "outcome": "cancel_won",
+            "required_pause_states": ["opened"],
+            "required_owner_shape": {"pause_owner": None, "run_terminal_closure_owner": None},
+            "external_revision_epoch_guard": "exact_current_revision_epoch_empty_resolution_cas",
+            "required_winner_operation_type": "current_cancel_operation",
+            "observation_only": False,
+            "acquires": ["pause_cancel_owner", "run_terminal_closure_owner", "external_resolution_owner"],
+        },
+        {
+            "outcome": "normal_terminal_won",
+            "required_pause_states": ["opened"],
+            "required_owner_shape": {"pause_owner": None, "run_terminal_closure_owner": None},
+            "external_revision_epoch_guard": "stable_read_of_persisted_normal_winner",
+            "required_winner_operation_type": "normal_external_finalization",
+            "observation_only": False,
+            "acquires": ["pause_cancel_owner", "run_terminal_closure_owner"],
+        },
+        {
+            "outcome": "preexisting_cancel_resolution",
+            "required_pause_states": ["opened", "cancelled", "quarantined"],
+            "allowed_winner_owner_shapes": [
+                {"pause_owner": "winner_operation_id", "run_terminal_closure_owner": "winner_operation_id"}
+            ],
+            "external_revision_epoch_guard": "stable_read_of_persisted_cancel_winner",
+            "required_winner_operation_type": "cancel_pause",
+            "observation_only": True,
+            "acquires": [],
+        },
+        {
+            "outcome": "preexisting_interrupt_resolution",
+            "required_pause_states": ["opened", "claimed", "consumed", "interrupted", "quarantined"],
+            "allowed_winner_owner_shapes": [
+                {"pause_owner": "winner_operation_id", "run_terminal_closure_owner": None},
+                {"pause_owner": "winner_operation_id", "run_terminal_closure_owner": "winner_operation_id"},
+            ],
+            "external_revision_epoch_guard": "stable_read_of_persisted_interrupt_winner",
+            "required_winner_operation_type": "resolve_external_interrupt",
+            "observation_only": True,
+            "acquires": [],
+        },
     ]
-    if combined.get("ownership_by_outcome") != expected_ownership_by_outcome:
-        raise ValidationError("combined cancel CAS ownership outcomes are incomplete or unsafe")
+    if combined.get("outcome_guards") != expected_outcome_guards:
+        raise ValidationError("combined cancel CAS outcome guards are incomplete or unsafe")
+    if combined.get("same_key_replay_rule") != "resume_existing_control_operation_without_rearbitration":
+        raise ValidationError("combined cancel CAS can misclassify same-key replay as a preexisting winner")
+    expected_observation_evidence = {
+        "resolution_owner",
+        "resolution_owner_operation_id",
+        "winner_phase_revision",
+        "winner_lease_epoch",
+        "pause_status",
+        "pause_owner",
+        "run_terminal_closure_owner",
+    }
+    if set(combined.get("observation_evidence", [])) != expected_observation_evidence:
+        raise ValidationError("combined cancel CAS does not freeze complete winner observation evidence")
     control_contract = protocol["state_machines"]["control_operation"]["phase_contracts"]["cancel_arbitrated"]
     if control_contract.get("transaction_domain") != "coordinator_sqlite":
         raise ValidationError("cancel_arbitrated is outside the coordinator transaction domain")
@@ -1225,62 +1308,264 @@ def _validate_transaction_domains_and_cas(protocol: dict[str, Any]) -> None:
             raise ValidationError(f"{phase} is not bound to its coordinator CAS guard")
     if external_contracts["external_final_evidence_committed"].get("normal_resolution_cas_guard") != "external_normal_terminal_cas":
         raise ValidationError("external final evidence does not bind the normal terminal CAS guard")
+    if not {
+        "preclassified_final_proof_kind",
+        "proof_classification_timing",
+        "resolution_kind",
+        "interrupt_disposition",
+        "proof_kind",
+    } <= set(external_contracts["external_final_evidence_committed"]["required_evidence"]):
+        raise ValidationError("external final evidence does not bind proof classification and resolution timing")
+    final_branch = next(
+        contract for contract in protocol["branch_contracts"] if contract["branch_id"] == "external_final_resolution"
+    )
+    expected_final_combinations = [
+        {"resolution_action": "normal_progress", "preclassified_final_proof_kind": "safe_stop"},
+        {"resolution_action": "cancel", "preclassified_final_proof_kind": "not_applicable"},
+        {"resolution_action": "interrupt", "preclassified_final_proof_kind": "not_applicable"},
+    ]
+    expected_final_cases = [
+        {
+            "when": {
+                "resolution_action": ["normal_progress"],
+                "preclassified_final_proof_kind": ["safe_stop"],
+            },
+            "target": "$normal_target",
+        },
+        {
+            "when": {
+                "resolution_action": ["cancel"],
+                "preclassified_final_proof_kind": ["not_applicable"],
+            },
+            "target": "cancel_intent_committed",
+        },
+        {
+            "when": {
+                "resolution_action": ["interrupt"],
+                "preclassified_final_proof_kind": ["not_applicable"],
+            },
+            "target": "interrupt_stop_intent_committed",
+        },
+    ]
+    if final_branch.get("valid_combinations") != expected_final_combinations:
+        raise ValidationError("external final resolution permits a non-safe normal or preclassified stop intent")
+    if final_branch.get("cases") != expected_final_cases:
+        raise ValidationError("external final resolution cases do not enforce proof classification timing")
+
+
+def _validate_stop_route_contract(protocol: dict[str, Any]) -> None:
+    expected = {
+        "authority": "coordinator_db",
+        "routes": [
+            {
+                "external_context": "live_external_operation",
+                "triggers": ["explicit_pause_cancel"],
+                "operation_type": "cancel_pause",
+                "operation_variant": "not_applicable",
+            },
+            {
+                "external_context": "dispatched_external_operation_with_opened_external_result_pause",
+                "triggers": ["operation_timeout"],
+                "operation_type": "resolve_external_interrupt",
+                "operation_variant": "recoverable_timeout",
+            },
+            {
+                "external_context": "live_external_operation",
+                "triggers": ["aggregate_hard_limit", "policy_stop", "terminal_operator_stop"],
+                "operation_type": "resolve_external_interrupt",
+                "operation_variant": "controlled_halt",
+            },
+            {
+                "external_context": "live_external_operation",
+                "triggers": ["proven_integrity_trigger", "normal_finalization_unavailable"],
+                "operation_type": "resolve_external_interrupt",
+                "operation_variant": "integrity_failure",
+            },
+            {
+                "external_context": "no_unresolved_external_operation",
+                "triggers": ["normal_end", "non_pause_runtime_failure", "internal_terminal_decision"],
+                "operation_type": "close_run",
+                "operation_variant": "not_applicable",
+            },
+        ],
+        "close_run_external_preconditions": ["absent", "safely_terminal_and_detached"],
+        "forbidden_routes": [
+            "system_timeout_or_hard_limit_to_cancel_pause",
+            "live_external_operation_to_close_run",
+            "external_interrupt_owner_then_second_close_run",
+        ],
+        "selection_rule": "exactly_one_route_before_operation_reservation",
+    }
+    contract = protocol.get("stop_route_contract")
+    if contract != expected:
+        raise ValidationError("stop route contract is incomplete, overlapping, or ambiguous")
+    seen: set[tuple[str, str]] = set()
+    control_variants = _control_variant_index(protocol)
+    for route in contract["routes"]:
+        pair = (route["operation_type"], route["operation_variant"])
+        if pair not in control_variants:
+            raise ValidationError(f"stop route references an unknown ControlOperation variant: {pair}")
+        for trigger in route["triggers"]:
+            route_key = (route["external_context"], trigger)
+            if route_key in seen:
+                raise ValidationError(f"stop route is not unique: {route_key}")
+            seen.add(route_key)
 
 
 def _validate_resolution_interleavings(protocol: dict[str, Any]) -> None:
     guards = {guard["guard_id"]: guard for guard in protocol["cas_guards"]}
+    cancel_guard = guards["cancel_control_combined_cas"]
+    cancel_outcomes = {row["outcome"]: row for row in cancel_guard["outcome_guards"]}
+
+    def new_state() -> dict[str, Any]:
+        return {
+            "phase_revision": 17,
+            "lease_epoch": 5,
+            "resolution_owner": None,
+            "resolution_owner_operation_id": None,
+            "winner_operation_type": None,
+            "pause_status": "opened",
+            "pause_owner": None,
+            "run_terminal_closure_owner": None,
+            "cancel_control_phase": "operation_reserved",
+        }
 
     def apply_resolution(
         state: dict[str, Any],
         guard_id: str,
         expected_revision: int,
         expected_epoch: int,
+        operation_id: str,
+        operation_type: str,
+        proof_kind: str = "not_applicable",
     ) -> bool:
         guard = guards[guard_id]
         if state["phase_revision"] != expected_revision or state["lease_epoch"] != expected_epoch:
             return False
         if state["resolution_owner"] is not guard["required_resolution_owner"]:
             return False
+        if guard_id == "external_normal_terminal_cas" and proof_kind != guard["required_proof_kind"]:
+            return False
         state["resolution_owner"] = guard["assigns_resolution_owner"]
+        state["resolution_owner_operation_id"] = operation_id
+        state["winner_operation_type"] = operation_type
         state["phase_revision"] += 1
         return True
 
+    def observe_preexisting_winner(state: dict[str, Any], outcome: str) -> bool:
+        guard = cancel_outcomes[outcome]
+        expected_owner = "cancel" if outcome == "preexisting_cancel_resolution" else "interrupt"
+        if state["resolution_owner"] != expected_owner or not guard["observation_only"] or guard["acquires"]:
+            return False
+        if state["winner_operation_type"] != guard["required_winner_operation_type"]:
+            return False
+        if state["pause_status"] not in guard["required_pause_states"]:
+            return False
+        winner = state["resolution_owner_operation_id"]
+        actual_shape = {
+            "pause_owner": state["pause_owner"],
+            "run_terminal_closure_owner": state["run_terminal_closure_owner"],
+        }
+        allowed_shapes = [
+            {
+                field: winner if value == "winner_operation_id" else value
+                for field, value in shape.items()
+            }
+            for shape in guard["allowed_winner_owner_shapes"]
+        ]
+        if actual_shape not in allowed_shapes:
+            return False
+        before = (state["pause_owner"], state["run_terminal_closure_owner"], state["resolution_owner"])
+        state["cancel_control_phase"] = "resolution_winner_observed"
+        after = (state["pause_owner"], state["run_terminal_closure_owner"], state["resolution_owner"])
+        return before == after
+
     competing = (
-        ("external_normal_terminal_cas", "normal"),
-        ("external_cancel_intent_cas", "cancel"),
-        ("external_interrupt_intent_cas", "interrupt"),
+        ("external_normal_terminal_cas", "normal", "normal-finalizer", "normal_external_finalization", "safe_stop"),
+        ("external_cancel_intent_cas", "cancel", "cancel-operation", "cancel_pause", "not_applicable"),
+        ("external_interrupt_intent_cas", "interrupt", "interrupt-operation", "resolve_external_interrupt", "not_applicable"),
     )
-    for first_guard, first_owner in competing:
-        state = {"phase_revision": 17, "lease_epoch": 5, "resolution_owner": None}
-        results = [apply_resolution(state, first_guard, 17, 5)]
+    for first_guard, first_owner, operation_id, operation_type, proof_kind in competing:
+        state = new_state()
+        results = [apply_resolution(state, first_guard, 17, 5, operation_id, operation_type, proof_kind)]
         results.extend(
-            apply_resolution(state, later_guard, 17, 5)
-            for later_guard, _ in competing
+            apply_resolution(state, later_guard, 17, 5, later_id, later_type, later_proof)
+            for later_guard, _, later_id, later_type, later_proof in competing
             if later_guard != first_guard
         )
         if results.count(True) != 1 or state["resolution_owner"] != first_owner:
             raise ValidationError("normal/cancel/interrupt resolution interleaving does not have exactly one winner")
 
-    for guard_id, _ in competing:
-        stale_revision = {"phase_revision": 17, "lease_epoch": 5, "resolution_owner": None}
-        stale_epoch = {"phase_revision": 17, "lease_epoch": 5, "resolution_owner": None}
-        if apply_resolution(stale_revision, guard_id, 16, 5):
+    for guard_id, _, operation_id, operation_type, proof_kind in competing:
+        stale_revision = new_state()
+        stale_epoch = new_state()
+        if apply_resolution(stale_revision, guard_id, 16, 5, operation_id, operation_type, proof_kind):
             raise ValidationError(f"stale ExternalOperation phase revision can win {guard_id}")
-        if apply_resolution(stale_epoch, guard_id, 17, 4):
+        if apply_resolution(stale_epoch, guard_id, 17, 4, operation_id, operation_type, proof_kind):
             raise ValidationError(f"stale ExternalOperation lease epoch can win {guard_id}")
 
-    interrupt_state = {"phase_revision": 17, "lease_epoch": 5, "resolution_owner": None}
-    if not apply_resolution(interrupt_state, "external_interrupt_intent_cas", 17, 5):
-        raise ValidationError("interrupt resolution cannot acquire an unresolved ExternalOperation")
-    cancel_pause_owner = None
-    cancel_run_owner = None
-    if apply_resolution(interrupt_state, "external_cancel_intent_cas", 17, 5):
-        cancel_pause_owner = "cancel_operation"
-        cancel_run_owner = "cancel_operation"
-    if interrupt_state["resolution_owner"] != "interrupt":
-        raise ValidationError("interrupt winner can be replaced by cancel")
-    if cancel_pause_owner is not None or cancel_run_owner is not None:
-        raise ValidationError("cancel can acquire Pause or Run ownership after interrupt wins")
+    normal_unavailable = new_state()
+    if apply_resolution(
+        normal_unavailable,
+        "external_normal_terminal_cas",
+        17,
+        5,
+        "normal-finalizer",
+        "normal_external_finalization",
+        "unavailable",
+    ):
+        raise ValidationError("normal finalization can win with unavailable proof")
+    if not apply_resolution(
+        normal_unavailable,
+        "external_interrupt_intent_cas",
+        17,
+        5,
+        "integrity-operation",
+        "resolve_external_interrupt",
+    ):
+        raise ValidationError("normal unavailable proof cannot be reclassified to interrupt resolution")
+
+    interrupt_shapes = [
+        ("opened", "interrupt-operation", None),
+        ("interrupted", "interrupt-operation", "interrupt-operation"),
+    ]
+    for pause_status, pause_owner, run_owner in interrupt_shapes:
+        state = new_state()
+        if not apply_resolution(
+            state,
+            "external_interrupt_intent_cas",
+            17,
+            5,
+            "interrupt-operation",
+            "resolve_external_interrupt",
+        ):
+            raise ValidationError("interrupt resolution cannot acquire an unresolved ExternalOperation")
+        state["pause_status"] = pause_status
+        state["pause_owner"] = pause_owner
+        state["run_terminal_closure_owner"] = run_owner
+        if not observe_preexisting_winner(state, "preexisting_interrupt_resolution"):
+            raise ValidationError("cancel cannot reach read-only observation after interrupt wins")
+
+    cancel_state = new_state()
+    if not apply_resolution(
+        cancel_state,
+        "external_cancel_intent_cas",
+        17,
+        5,
+        "first-cancel-operation",
+        "cancel_pause",
+    ):
+        raise ValidationError("cancel resolution cannot acquire an unresolved ExternalOperation")
+    cancel_state["pause_owner"] = "first-cancel-operation"
+    cancel_state["run_terminal_closure_owner"] = "first-cancel-operation"
+    if not observe_preexisting_winner(cancel_state, "preexisting_cancel_resolution"):
+        raise ValidationError("later cancel cannot reach read-only observation of the first cancel winner")
+
+    mismatched_owner = dict(cancel_state)
+    mismatched_owner["pause_owner"] = "foreign-operation"
+    mismatched_owner["cancel_control_phase"] = "operation_reserved"
+    if observe_preexisting_winner(mismatched_owner, "preexisting_cancel_resolution"):
+        raise ValidationError("winner observation accepts incoherent domain ownership")
 
     absent_external_operation = {"external_operation_id": None, "external_row_exists": False}
     pause_owner = "cancel_operation"
@@ -1311,10 +1596,12 @@ def _validate_cross_machine_invariants(protocol: dict[str, Any]) -> None:
         "EXT-CANCEL-001",
         "EXT-ARB-001",
         "EXT-INT-001",
+        "WINNER-OBS-001",
         "TX-DOMAIN-001",
         "CTRL-RES-001",
         "BRANCH-001",
         "EVIDENCE-001",
+        "STOP-ROUTE-001",
         "CONT-001",
         "VERSION-001",
     }
@@ -1332,8 +1619,11 @@ def _validate_cross_machine_invariants(protocol: dict[str, Any]) -> None:
     cancel_ownership = by_id["CTRL-OWN-002"]
     if cancel_ownership.get("ownership_by_outcome_guard") != "cancel_control_combined_cas":
         raise ValidationError("CTRL-OWN-002 does not bind outcome-conditional cancel ownership")
-    if cancel_ownership.get("no_ownership_outcomes") != ["preexisting_interrupt_resolution"]:
-        raise ValidationError("CTRL-OWN-002 lets cancel own a preexisting interrupt resolution")
+    if set(cancel_ownership.get("no_ownership_outcomes", [])) != {
+        "preexisting_cancel_resolution",
+        "preexisting_interrupt_resolution",
+    }:
+        raise ValidationError("CTRL-OWN-002 lets cancel own a preexisting resolution winner")
     if cancel_ownership.get("transaction_domain") != "coordinator_sqlite":
         raise ValidationError("CTRL-OWN-002 is outside the coordinator transaction domain")
     interrupt_ownership = by_id["CTRL-OWN-003"]
@@ -1391,6 +1681,8 @@ def _validate_cross_machine_invariants(protocol: dict[str, Any]) -> None:
         "resolution_owner",
     } or arbitration.get("exactly_one_winner") is not True:
         raise ValidationError("EXT-ARB-001 does not establish a single linearization winner")
+    if arbitration.get("normal_requires_preclassified_proof_kind") != "safe_stop":
+        raise ValidationError("EXT-ARB-001 permits normal resolution without preclassified safe-stop proof")
     transaction = by_id["TX-DOMAIN-001"]
     if transaction.get("transaction_domain") != "coordinator_sqlite" or set(transaction.get("atomic_objects", [])) != {
         "control_operation",
@@ -1413,6 +1705,20 @@ def _validate_cross_machine_invariants(protocol: dict[str, Any]) -> None:
         raise ValidationError("EXT-INT-001 does not route safe timeout to Coordinator")
     if interrupt_closure.get("unavailable_closure") != "terminal_closure_unavailable_recorded":
         raise ValidationError("EXT-INT-001 does not close unavailable interrupt evidence")
+    if interrupt_closure.get("normal_unavailable_reclassification") != (
+        "resolve_external_interrupt/integrity_failure"
+    ):
+        raise ValidationError("EXT-INT-001 does not reclassify normal unavailable proof before resolution")
+    observation = by_id["WINNER-OBS-001"]
+    if observation.get("phase") != "resolution_winner_observed" or set(observation.get("outcomes", [])) != {
+        "preexisting_cancel_resolution",
+        "preexisting_interrupt_resolution",
+    }:
+        raise ValidationError("WINNER-OBS-001 does not cover both preexisting resolution winners")
+    if observation.get("required_owner_coherence") != "domain_owners_match_resolution_owner_operation_id":
+        raise ValidationError("WINNER-OBS-001 does not fence observed domain ownership")
+    if observation.get("domain_owner_mutations") != []:
+        raise ValidationError("WINNER-OBS-001 permits winner observation to mutate domain ownership")
     if reservation.get("phase") != "operation_reserved" or reservation.get("required_operation_variant_count") != 11:
         raise ValidationError("CTRL-RES-001 does not require all reservation overlays")
     if reservation.get("merge_rule") != "shared_phase_contract_plus_exact_variant_overlay":
@@ -1425,6 +1731,13 @@ def _validate_cross_machine_invariants(protocol: dict[str, Any]) -> None:
     union_ids = {union["union_id"] for union in protocol["evidence_unions"]}
     if set(by_id["EVIDENCE-001"].get("evidence_unions", [])) != union_ids:
         raise ValidationError("EVIDENCE-001 does not bind every tagged evidence union")
+    stop_route = by_id["STOP-ROUTE-001"]
+    if (
+        stop_route.get("contract") != "stop_route_contract"
+        or stop_route.get("selection") != "exactly_one_route_before_operation_reservation"
+        or stop_route.get("forbids_second_terminal_operation") is not True
+    ):
+        raise ValidationError("STOP-ROUTE-001 does not bind the unique stop route contract")
     outcome_names = {item["outcome_class"] for item in protocol["outcome_classes"]}
     if outcome_names != set(by_id["CONT-001"]["classes"]):
         raise ValidationError("CONT-001 does not match the outcome partition")
@@ -1457,10 +1770,11 @@ def _validate_protocol(protocol: dict[str, Any]) -> None:
         "dependency_dags",
         "field_bindings",
         "cross_machine_invariants",
+        "stop_route_contract",
         "compatibility",
     }
     _require_keys(protocol, required_top_level, "control protocol")
-    if protocol["schema_version"] != "0.3" or protocol["protocol_version"] != "0.4":
+    if protocol["schema_version"] != "0.4" or protocol["protocol_version"] != "0.4":
         raise ValidationError("control protocol version mismatch")
     if protocol["protocol_id"] != "phase-a-control-protocol" or protocol["status"] not in {"review", "ready"}:
         raise ValidationError("control protocol identity or lifecycle status mismatch")
@@ -1519,6 +1833,7 @@ def _validate_protocol(protocol: dict[str, Any]) -> None:
     _validate_evidence_unions(protocol)
     _validate_branch_contracts(protocol)
     _validate_transaction_domains_and_cas(protocol)
+    _validate_stop_route_contract(protocol)
     _validate_resolution_interleavings(protocol)
     _validate_cross_machine_invariants(protocol)
 
@@ -1539,7 +1854,7 @@ def _validate_catalog(catalog: dict[str, Any], protocol_sha256: str) -> None:
         },
         "requirement catalog",
     )
-    if catalog["schema_version"] != "0.1" or catalog["catalog_version"] != "0.3.0":
+    if catalog["schema_version"] != "0.1" or catalog["catalog_version"] != "0.4.0":
         raise ValidationError("requirement catalog version mismatch")
     if catalog["control_protocol_reference"] != PROTOCOL_PATH.name:
         raise ValidationError("requirement catalog control protocol reference mismatch")
@@ -1575,7 +1890,7 @@ def _validate_catalog(catalog: dict[str, Any], protocol_sha256: str) -> None:
     if len(ids) != len(set(ids)):
         raise ValidationError("requirement catalog contains duplicate IDs")
     actual_owner_counts = {owner: len(requirement_ids) for owner, requirement_ids in by_owner.items()}
-    if len(ids) != 125 or actual_owner_counts != EXPECTED_OWNER_COUNTS:
+    if len(ids) != 129 or actual_owner_counts != EXPECTED_OWNER_COUNTS:
         raise ValidationError(
             f"requirement catalog count mismatch: total={len(ids)}, owners={actual_owner_counts}"
         )
@@ -1646,12 +1961,16 @@ def _validate_stop_classification_documents(catalog: dict[str, Any]) -> None:
 
     by_id = {requirement["requirement_id"]: requirement for requirement in catalog["requirements"]}
     required_catalog_terms = {
+        "A04-PAUSE-020": {"winner observation", "never mutates domain ownership"},
         "A05-CODE-007": {"unavailable", "never a failed run lifecycle"},
         "A05-CODE-028": {"interrupt", "conflicting ownership"},
+        "A05-CODE-029": {"preclassified safe-stop", "integrity interrupt"},
         "A06-BUDGET-008": {"safe-stop", "unavailable"},
         "A06-BUDGET-018": {"unavailable", "safe-stop integrity-failed"},
         "A06-BUDGET-020": {"independent interrupt operation", "absent, prepared, and opened"},
+        "A06-BUDGET-021": {"exactly one", "second terminal operation"},
         "A07-META-013": {"exhaustive disjoint", "unavailable closures"},
+        "A07-META-014": {"composite-state", "normal-unavailable", "one stop route"},
     }
     for requirement_id, terms in required_catalog_terms.items():
         summary = by_id[requirement_id]["summary"].lower()
@@ -1709,7 +2028,7 @@ def _validate_negative_protocol_mutations(protocol: dict[str, Any]) -> None:
         )
 
     def leave_cancel_guard_gap(candidate: dict[str, Any]) -> None:
-        branch(candidate, "cancel_arbitration_result")["cases"][1]["when"]["arbitration_outcome"].remove(
+        branch(candidate, "cancel_arbitration_result")["cases"][3]["when"]["arbitration_outcome"].remove(
             "preexisting_cancel_resolution"
         )
 
@@ -1762,9 +2081,80 @@ def _validate_negative_protocol_mutations(protocol: dict[str, Any]) -> None:
     def let_cancel_own_interrupt_winner(candidate: dict[str, Any]) -> None:
         guard = next(item for item in candidate["cas_guards"] if item["guard_id"] == "cancel_control_combined_cas")
         ownership = next(
-            item for item in guard["ownership_by_outcome"] if item["outcome"] == "preexisting_interrupt_resolution"
+            item for item in guard["outcome_guards"] if item["outcome"] == "preexisting_interrupt_resolution"
         )
         ownership["acquires"] = ["pause_cancel_owner", "run_terminal_closure_owner"]
+
+    def restore_unconditional_empty_owner_guard(candidate: dict[str, Any]) -> None:
+        guard = next(item for item in candidate["cas_guards"] if item["guard_id"] == "cancel_control_combined_cas")
+        guard["required_empty_fields"] = ["pause_owner", "run_terminal_closure_owner"]
+
+    def corrupt_winner_owner_coherence(candidate: dict[str, Any]) -> None:
+        guard = next(item for item in candidate["cas_guards"] if item["guard_id"] == "cancel_control_combined_cas")
+        outcome = next(
+            item for item in guard["outcome_guards"] if item["outcome"] == "preexisting_interrupt_resolution"
+        )
+        outcome["allowed_winner_owner_shapes"][0]["pause_owner"] = "foreign_operation_id"
+
+    def require_reserved_revision_for_winner_observation(candidate: dict[str, Any]) -> None:
+        guard = next(item for item in candidate["cas_guards"] if item["guard_id"] == "cancel_control_combined_cas")
+        outcome = next(
+            item for item in guard["outcome_guards"] if item["outcome"] == "preexisting_interrupt_resolution"
+        )
+        outcome["external_revision_epoch_guard"] = "exact_reserved_revision_epoch_cas"
+
+    def insert_normal_unavailable_domain_flow(candidate: dict[str, Any]) -> None:
+        normal_safe = external_outcome(candidate, "normal", "not_applicable", "safe_stop")
+        normal_unavailable = deepcopy(normal_safe)
+        normal_unavailable["proof_kind"] = "unavailable"
+        normal_unavailable["statuses"] = ["recovery_required"]
+        normal_unavailable["consumer"] = {
+            "kind": "domain_flow",
+            "flow": "normal_resolution_recovery",
+        }
+        candidate["state_machines"]["external_operation"]["terminal_outcomes"].append(normal_unavailable)
+
+    def allow_normal_without_safe_stop(candidate: dict[str, Any]) -> None:
+        guard = next(item for item in candidate["cas_guards"] if item["guard_id"] == "external_normal_terminal_cas")
+        guard["required_proof_kind"] = "unavailable"
+
+    def add_normal_unavailable_branch(candidate: dict[str, Any]) -> None:
+        contract = branch(candidate, "external_final_resolution")
+        contract["valid_combinations"].append(
+            {"resolution_action": "normal_progress", "preclassified_final_proof_kind": "unavailable"}
+        )
+        contract["cases"].append(
+            {
+                "when": {
+                    "resolution_action": ["normal_progress"],
+                    "preclassified_final_proof_kind": ["unavailable"],
+                },
+                "target": "interrupt_stop_intent_committed",
+            }
+        )
+
+    def route_live_external_to_close_run(candidate: dict[str, Any]) -> None:
+        route = next(
+            item
+            for item in candidate["stop_route_contract"]["routes"]
+            if item["external_context"] == "live_external_operation" and "policy_stop" in item["triggers"]
+        )
+        route["operation_type"] = "close_run"
+        route["operation_variant"] = "not_applicable"
+
+    def route_hard_limit_to_cancel_pause(candidate: dict[str, Any]) -> None:
+        route = next(
+            item
+            for item in candidate["stop_route_contract"]["routes"]
+            if "aggregate_hard_limit" in item["triggers"]
+        )
+        route["operation_type"] = "cancel_pause"
+        route["operation_variant"] = "not_applicable"
+
+    def allow_second_close_after_interrupt(candidate: dict[str, Any]) -> None:
+        candidate["stop_route_contract"]["forbidden_routes"].remove(
+            "external_interrupt_owner_then_second_close_run"
+        )
 
     mutations: list[tuple[str, Callable[[dict[str, Any]], None]]] = [
         ("missing branch guard", remove_guard),
@@ -1780,6 +2170,15 @@ def _validate_negative_protocol_mutations(protocol: dict[str, Any]) -> None:
         ("quarantined Pause reopens", reopen_quarantined_pause),
         ("recovery-required phase advances", advance_recovery_required),
         ("cancel owns preexisting interrupt winner", let_cancel_own_interrupt_winner),
+        ("cancel winner observation requires empty owners", restore_unconditional_empty_owner_guard),
+        ("winner observation accepts incoherent domain ownership", corrupt_winner_owner_coherence),
+        ("winner observation requires the stale reserved revision", require_reserved_revision_for_winner_observation),
+        ("normal unavailable uses a free-string consumer", insert_normal_unavailable_domain_flow),
+        ("normal resolution CAS accepts unavailable proof", allow_normal_without_safe_stop),
+        ("normal unavailable enters the external final branch", add_normal_unavailable_branch),
+        ("live ExternalOperation routes to close_run", route_live_external_to_close_run),
+        ("hard limit routes to cancel_pause", route_hard_limit_to_cancel_pause),
+        ("interrupt closure permits a second close_run", allow_second_close_after_interrupt),
     ]
     for label, mutate in mutations:
         _assert_protocol_mutation_rejected(protocol, label, mutate)
