@@ -1162,3 +1162,11 @@ Related Documents:
 - Add 178 direct order mutations derived from actual protocol graphs: adjacent internal swaps with dependencies changed together, phase bypass, removal and unreachability. All six linear variants must remain covered. Use the same rejection assertion as the existing mutation suite; no layout or graph seal may satisfy these semantic cases.
 - Existing protocol/catalog bytes, digests, versions, 131 requirements and review status are unchanged. No runtime, completed tickets or historical records were modified.
 - Validation: all 178 order mutations pass with structure/freeze checks unavailable; disabling the order rule makes the suite fail. All 40 coordinated adjacent inversions are independently rejected by the full semantic validator, including the 16 previously accepted cases. Existing 101 semantic, 3 structural and 6 JSON/catalog checks, 28 failure paths, strict JSON, 391 links, temporary bytecode compilation and diff checks passed. Full pytest: 324 passed, one missing sibling golden-reference failure; excluding that external-data case: 324 passed, 1 deselected.
+
+## 2026-09-10: User-approved Phase A Design Freeze
+
+- 用户最终确认`f4f0eaa`设计，将A02C01、A04–A07从`review`提升为`ready`；仅修改票据YAML lifecycle状态，正文保持批准版本原样。
+- 本次Git冻结提交同时保存票据、protocol与catalog。两份JSON字节不变，原有protocol `status: review`保留为批准快照内容；执行资格由票据YAML和本次冻结决定确定。
+- Protocol SHA-256：`7447087f73caae2668a8e71e12fc40e426ebefee5864e3499a3f9cbd1a9322b8`；catalog SHA-256：`ed39a0b35feb3372e7647436ee588699c16b7c05555a03c791f69760626a9726`。
+- 后续按A02C01 → A04 → A05 → A06 → A07执行，结果写入独立completion records；本次不标记completed、不实现Phase B runtime。
+- 静态协议验证与文档检查通过；此前缺少sibling golden数据的测试仍待环境补齐后复跑，不计为通过。

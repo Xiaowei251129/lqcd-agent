@@ -4,10 +4,10 @@
 
 - **更新时间**：2026-08-27
 - **当前分支**：`codex/phase-11-agent-harness-upgrade`
-- **当前阶段**：Phase A控制合同澄清；A01–A03及A03C01已完成，A02C01与A04–A07交叉审查修订稿处于`review`
-- **活动 ticket**：A02C01、A04–A07 `review`；G01、A01–A03及A03C01 `completed`
+- **当前阶段**：Phase A控制合同澄清；A01–A03及A03C01已完成，A02C01与A04–A07已获用户最终确认并冻结为`ready`
+- **活动 ticket**：A02C01、A04–A07 `ready`；G01、A01–A03及A03C01 `completed`
 - **稳定基线**：[`v0.2-demo`](milestones/V0_2_DEMO_BASELINE.md)
-- **本轮范围**：修订A02C01、A04–A07 review合同、requirement catalog和本状态摘要，闭合operation phase、恢复分类、ExternalOperation bootstrap、terminal publication与schema compatibility；不执行ticket或runtime，修订稿等待最终交叉核验
+- **本轮范围**：按用户最终确认将`f4f0eaa`的A02C01与A04–A07提升为`ready`并创建冻结提交；票据正文、protocol与catalog exact bytes不变，尚未执行设计票据或Phase B runtime。
 
 ## 当前稳定实现
 
@@ -122,20 +122,15 @@ A03C01当前证据为registry suite `106 passed`、focused registry/identity/sta
 
 ## 下一项工作
 
-G01治理和A03C01 execution-head修复已经完成并形成独立本地基线提交，原A02/A03 ticket及pre-governance legacy corrective history保持冻结。[A02C01 Bootstrap](tickets/phase-a-control-contracts/A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md)、[A04 Pause/Resume](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)、[A05 Code Agent](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)、[A06 Budget/Stop](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)与[A07 Phase B Acceptance](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)已吸收交叉审查和Codex源码对照决定，并通过本轮静态/回归核验，当前均保持`review`。下一步是用户确认最终正文/catalog；确认后按依赖顺序冻结为`ready`，执行前创建包含frozen tickets、corrections、catalog及状态元数据的Git commit。
+用户已最终确认`f4f0eaa`设计，A02C01、A04–A07全部为`ready`。本次冻结提交同时保存五张票据、Control Protocol与requirement catalog；仅票据YAML状态变更，正文和两份JSON保持批准版本的exact bytes。JSON内原有`status: review`作为批准快照的一部分保留，票据执行资格由YAML与本次用户冻结决定确定。
 
-建议顺序：
-
-1. 用户确认A02C01、A04–A07最终正文和A07 requirement catalog；
-2. 按A02C01 → A04 → A05 → A06 → A07依赖顺序提升为`ready`，并在每次执行前保存frozen Git snapshot；
-3. 分别执行并建立独立completion record，不把结果回写冻结正文；
-4. Phase A完成后先起草B00 Acceptance Foundation，再按依赖起草B01–B05 implementation tickets；Phase C从C00 backend capability gate开始。
+下一步按A02C01 → A04 → A05 → A06 → A07依赖顺序分别执行，建立独立completion records并同步源事实文档，完成后才标记`completed`。Phase A完成后起草B00 Acceptance Foundation，再按依赖起草B01–B05；本次未执行这些工作。
 
 ## Blockers
 
-当前无runtime blocker。文档治理上的阻塞是A02C01与A04–A07仍为`review`，在最终确认和frozen commit前不能执行。
+本次设计冻结无已确认阻断项。此前完整pytest的唯一外部检查仍为缺少sibling golden reference files，数据可用后须复跑对应测试；不将其记录为通过。
 
-治理上的主动限制是：A02/A03只实现identity与artifact control plane，不实现A02C01 schema `0.4` bootstrap、A04 resume API、A05 Code Agent、A06 budgets或A01的新product runtime edges。A02C01与A04–A07当前仅为`review`合同稿；它们在冻结为`ready`前均不可执行。
+A02/A03当前只实现identity与artifact control plane；五张ready设计票据不代表schema `0.4` bootstrap、resume、Code Agent、budgets或新的product runtime edges已经实现。
 
 ## 入口
 

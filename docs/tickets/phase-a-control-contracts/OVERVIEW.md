@@ -35,7 +35,7 @@
 
 执行结果与后续纠偏历史分别记录在[`../completions/`](../completions/README.md)和[`../corrections/`](../corrections/README.md)；completed ticket正文不再承担累积日志功能。
 
-## Review Tickets
+## Ready Tickets
 
 - [`A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md`](A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md)
 - [`A04_PAUSE_RESUME_SEMANTICS.md`](A04_PAUSE_RESUME_SEMANTICS.md)
@@ -45,7 +45,7 @@
 
 A01已完成逻辑transition contract。A02已完成formal execution identity；A03已完成immutable Attempt artifact namespace、typed current index、managed projections、Human Response snapshots及四层invalidation harness；A03C01已补齐execution global-head与Transition target-shape完整性。四层fallback仍是harness-only，不是产品edges。
 
-Review票据定义尚未实现的控制合同；依赖以各票据YAML为准。A02C01与A04–A07在独立交叉审核和用户最终确认前保持`review`，不能执行。
+用户已最终确认`f4f0eaa`设计，A02C01与A04–A07已提升为`ready`，正文从此冻结；依赖以各票据YAML为准，执行顺序为A02C01 → A04 → A05 → A06 → A07。设计冻结不代表Phase B runtime已实现。
 
 ## 合同与验收入口
 
