@@ -78,7 +78,7 @@ A02C01与A04–A07从`review`提升为`ready`前必须运行tracked design valid
 python scripts/validate_phase_a_control_protocol.py
 ```
 
-该检查strict读取[`CONTROL_PROTOCOL_0_4.json`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json) machine schema 0.4和[`PHASE_B_REQUIREMENT_CATALOG.json`](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json) catalog 0.4.0，验证ControlOperation graph终结、multi-successor guard互斥/穷尽、tagged evidence与incoming edge匹配、十一种variant overlay、单一transaction domain、normal/cancel/interrupt CAS交错、winner-observation组合owner状态、normal safe-stop preclassification、唯一stop route、typed terminal consumer、Pause aborted/interrupted/quarantined finality、Run lifecycle循环、pre-start DAG、field binding、129个ticket/catalog stable IDs及protocol SHA。它是design-time lint，不表示Phase B runtime、fault fixture或acceptance matrix已经实现；B00仍须把同一合同转为collectable tests和normalized traces。
+该检查strict读取[`CONTROL_PROTOCOL_0_4.json`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json) machine schema 0.4和[`PHASE_B_REQUIREMENT_CATALOG.json`](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json) catalog 0.4.0，验证ControlOperation graph终结、multi-successor guard互斥/穷尽、tagged evidence与incoming edge匹配、十二种variant overlay、单一transaction domain、normal/cancel/interrupt CAS交错、winner-observation组合owner状态、request-owned normal safe-stop candidate classification、每个trigger class/context的唯一stop route、cancel branch到resolution tuple/phase闭包、START/Replay/Fork/ordinary Transition的commit-gated capability、exact terminal lifecycle、reservation到ExternalOperation tuple及source proof到request Run/lineage的绑定、Replay source-policy确定性分类、stable paused/terminal fork、Pause aborted/interrupted/quarantined finality、Run lifecycle循环、independent graph seal、variant phase dominance、pre-start DAG、field binding、131个ticket/catalog stable IDs及protocol SHA。本次还补齐normal-result stop的原子Pause/Run handoff、ExternalOperation pre-start与Attempt执行授权分离、不可变authorization下的独立execution lease，以及Cancel unavailable保守结算；本轮补齐recoverable timeout原Attempt失败消费与advance持有的fresh Analysis准备，以及消费后的活动绑定释放、RecoveryDecision目标授权和严格JSON/对象结构校验；最新修复由原resume owner完成post-claim完整性失败的消费者停止、结算与failed/unavailable收尾，不依赖Code artifact；104项protocol negative mutations及6项JSON/catalog负向检查验证这些边界。它是design-time lint，不表示Phase B runtime、fault fixture或acceptance matrix已经实现；B00仍须把同一合同转为collectable tests和normalized traces。
 
 ### A02 Execution Identity 验收
 
@@ -232,3 +232,7 @@ RUN_LIVE_LLM_TESTS=1 pytest -q
 - [Milestone Baseline](milestones/V0_2_DEMO_BASELINE.md)
 - [Evals and Observability](EVALS_AND_OBSERVABILITY.md)
 - [Security and Data Policy](SECURITY_AND_DATA_POLICY.md)
+
+Phase A验证器将structure、semantics和freeze分别检查；104项协议变异中101项直接调用指定语义规则，3项验证结构，另保留6项JSON/catalog检查。每条规则先接受合法协议；结构摘要和graph摘要不能代替语义变异通过。内置28条消费失败路径覆盖stop/authority总函数。文档仅自动检查stable IDs、引用和显式枚举，不锁定自然语言措辞；文义一致性仍须人工review。
+
+Publication顺序另有178项直接语义变异，覆盖六条线性控制路径的相邻逆序（同步修改dependency）、绕过、缺失与不可达阶段。独立安全顺序必须包含每个必需publication阶段，特别是running lifecycle先于checkpoint、ownership先于claim、claim先于consume以及eligibility先于terminal lifecycle；验收不能仅更新冻结摘要来放行顺序变化。

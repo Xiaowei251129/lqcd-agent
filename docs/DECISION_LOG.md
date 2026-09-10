@@ -1064,3 +1064,101 @@ Related Documents:
 - [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)
 - [A07 Phase B Harness Acceptance](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)
 - [Phase B Requirement Catalog](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)
+
+## 2026-09-03 — Close A01–A07 cross-contract linearization gaps
+
+- Add `advance_run/not_applicable` as the single ControlOperation for every ordinary post-Attempt Transition outside START bootstrap and Human Response resume. It freezes admission, route prerequisites, target identity, invalidation, canonical Transition bytes, expected heads and terminal revision before publication; only a verified Attempt target receives an invocation capability.
+- Keep normal final proof candidates on the normal finalization request. The shared ExternalOperation stores only the winning resolution and final evidence; an unavailable normal candidate creates or reuses the integrity interrupt contender without first becoming normal owner.
+- Model resource reservation state and replay/fork source state as field-disjoint tagged unions. Dispatch-before-reservation interruption uses a proven absence value, while replay and fork consume disjoint source proofs and freeze child policy before any child bytes. Fork accepts only stable paused or terminal source heads.
+- Resolve recoverable, halted, failed and unavailable interrupt outcomes inside the same winning interrupt operation after stop, usage, settlement and integrity evidence. Late overage, tamper or policy violation upgrades a safe stop to failed closure without a second terminal operation.
+- Select explicit Pause cancellation by trigger before inspecting ExternalOperation context, so an opened cancelable Pause remains cancellable when no ExternalOperation exists. System stops continue through the unique context-specific interrupt route.
+- Prepare START and ordinary-Transition invocation capabilities as inactive envelopes and activate them only when the same producer operation result commits. Bind interrupt, cancel and direct terminal outcomes to exact Run lifecycle dispositions.
+- Require every noninitial ControlOperation phase to declare a producer that dominates it on every success path. An independent graph/dependency seal and 38 negative mutations reject coupled ordering edits and contract weakening.
+- Keep protocol `0.4`, catalog `0.4.0`, and A02C01/A04–A07 in `review` because these artifacts remain pre-freeze. The catalog now contains 131 requirements and the protocol contains nine operation types with twelve variants.
+- Bind this review snapshot to Control Protocol SHA-256 `55109ce7dc63abf0bd5d790282e561e0a7ca53e1d394a09c45b90c00c185d0e9` and requirement catalog SHA-256 `2182a1bef548d6eb2f2590266ca931878177be6a760b5d56ed391b078ab71c57`.
+
+## 2026-09-03 — Close follow-up cross-contract relation gaps
+
+- Replace Cancel's conflicting branch and terminal-resolution inputs with one shared tuple domain. Each tuple now declares its own reachable resolution phase: owner-bearing safe or typed-null paths use terminal eligibility, unavailable uses the closure tombstone, and preexisting winners use read-only winner observation.
+- Model stop selection as finite trigger classes with required ExternalOperation contexts. Hard-limit, policy and terminal-operator stops route to interrupt while an ExternalOperation is live and to `close_run` when no unresolved ExternalOperation exists.
+- Extend commit-gated initial Planner capability production to Replay and Fork child bootstrap. Both operations freeze capability inputs, prepare the envelope after the child checkpoint and activate it only with their exact committed result revision.
+- Bind both source snapshot variants to the requested source Run and lineage digest. Replay additionally freezes a trusted source-policy classification proof derived from authoritative presence or absence, canonical policy identity and the runtime-supported policy set.
+- Bind every interrupt resource snapshot to the same ExternalOperation identity, phase revision and lease epoch frozen in the resolution tuple. Present snapshots also bind the reservation identity and digest to that ExternalOperation.
+- Add relational validation and negative mutations for Cancel tuple/phase reachability, trigger-class route totality, child capability producers, source identity and policy classification, and resource-to-ExternalOperation correlation. Keep protocol `0.4`, catalog `0.4.0`, 131 requirements and all review statuses unchanged.
+- Bind the updated review snapshot to Control Protocol SHA-256 `acdd90277d8006c3323c58427244817f6fa9d6104d770eafb7b52f9b54c7e883` and requirement catalog SHA-256 `a0bc4afe236aabb7cd84c4e6aaab47aa3734b4339c1484afc6fc0954d9390654`.
+
+Related Documents:
+
+- [Control Protocol 0.4](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)
+- [Protocol Validator](../scripts/validate_phase_a_control_protocol.py)
+- [A02C01 Bootstrap Order](tickets/phase-a-control-contracts/A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md)
+- [A04 Pause and Resume Semantics](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)
+- [A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)
+- [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)
+- [A07 Phase B Harness Acceptance](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)
+- [Phase B Requirement Catalog](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)
+
+## 2026-09-10 — Close normal-result handoff and invocation lease gaps
+
+- Keep nine operation types and twelve variants. Extend close_run to atomically own an opened Pause and Run after normal safe finalization, settle the original reservation, abandon the scheduled target, interrupt the Pause and persist detachment evidence without rewriting the ExternalOperation resolution.
+- Separate ExternalOperation pre-start authority from Attempt execution authorization. Scope the inbound Code Agent authorization to external preparation; only resume authorizes result consumption and verification.
+- Keep committed authorization immutable and use a separate fenced invocation lease. Allow replacement only before started intent or effects; never reopen a producer tombstone, replay uncertain effects, or reset the budget through renewal.
+- Settle Cancel unavailable conservatively before quarantine and closure. Share reservation identity and owner fencing across resume, cancel, interrupt and close; preserve observed overage.
+- Keep A02C01 and A04–A07 in review. Add relation checks and sixteen negative mutations; independent review remains required before freezing.
+
+- Updated review SHA-256: protocol `49abad0298d19f17f5a79ff8fd754e21deb324488a4810960e67804151d4646b`; catalog `b4a59a59f723a7a31fabc199fc051a78c90690e11ce9ce32b38e43ffeb8e84dc`.
+- Validation: protocol/catalog and 63 negative mutations passed; 41 Markdown files / 391 relative links, temporary-bytecode compile and diff checks passed. Full pytest: 324 passed, one missing sibling golden-data failure; excluding that case: 324 passed, one deselected. Independent cross-review and the external golden-data rerun remain pending.
+
+## 2026-09-10 — Complete timeout consumption and fresh Analysis preparation
+
+- Supersede the earlier resume-only result-consumption restriction for trusted recoverable timeout. The same interrupt winner completes the original scheduled Code Agent Attempt through started, failed artifact registration, failed lifecycle and a final checkpoint before committing its result. A subsequent advance_run owns the Coordinator Transition.
+- Freeze host_timeout failed result bytes from complete trusted safe-stop and usage/integrity evidence. Define its exact bundle member set and typed absence for missing Backend receipt/seal/audit; do not fabricate Backend output or run verification, dispatch or settlement again. Normal Backend delivery keeps its full evidence checks.
+- Consolidate fresh Analysis preparation into advance_run. Reservation freezes exact spec/manifest bytes, target/Transition, base/change/effective-tree/runtime bindings; target_preparation_committed materializes and verifies the workspace before capability preparation. Other targets use explicit N/A, END issues no capability, and recovery only materializes the same frozen prefix under current authority.
+- Remove the delivery-only interrupt handoff and unowned Analysis preparation path. Keep 9 operation types, 12 variants, 131 requirements, protocol 0.4/catalog 0.4.0 and review lifecycle unchanged. No Phase B runtime or completed tickets are changed.
+- Add thirteen negative mutations, bringing the suite to 76. Independently enumerate the affected guarded paths and exercise existing A02 lifecycle functions: a scheduled source cannot transition; its started/failed completion can transition to Coordinator. Phase B fixtures must still validate real artifact and workspace effects at each failpoint.
+- Review snapshot: protocol SHA-256 `67a6704692f3c9c351ed84f1324455b53b99043ad32bac475d89c49acdc99fe6`; catalog SHA-256 `13a78f9330409793a36bc55703062c03dc4e677ab96ed60038e79c92ebc1416a`.
+
+## 2026-09-10 — Release consumed External bindings and constrain recovery scope
+
+- Fix the review's one P1 and two P2 findings within Phase A. Add one shared external_consumption_released phase to normal resume and recoverable interrupt, after Code Attempt/artifact completion and before final checkpoint/outbound Transition. An immutable tagged proof binds safe final evidence, the original settlement, consumed Pause, terminal Attempt/artifact heads and consumption owner/epoch to an exact active-binding CAS.
+- Keep ExternalOperation terminal history, resolution and original Pause identity unchanged. Create the active-binding projection with the original one-time Pause binding; release that projection only. Later close admission consumes the proof, and later ExternalOperations cannot reuse it. Restrict the second-close prohibition to Run terminal owners; a recoverable External resolution owner does not itself own Run closure.
+- Reject RecoveryDecision continue for code_agent and legacy_codex_handoff before Pause claim. Other target kinds keep their original preparation requirements and attempt-execution scope. Explicit abandon-and-halt remains available, without automatic action on rejection. This replaces the ambiguous generic-target permission rather than introducing another Backend entry point.
+- Reject nonstandard and non-finite JSON numbers, duplicate keys, and unknown/missing object fields or changed scalar types. Freeze recursive protocol/catalog object-layout digests alongside the graph seal, while retaining semantic ownership and producer/consumer checks. Keep 9 operation types, 12 variants, 131 requirements and review status; no Phase B runtime or completed ticket changes.
+- Validation includes 89 protocol mutations and 6 JSON/catalog rejection checks. Independent probes also call semantic checks without relying on graph/layout seals, covering both release paths, bypass rejection, target-scope escalation and strict parsing. Full pytest: 324 passed; the only failure is the missing sibling golden reference data. The rerun excluding that external-data case passed with 324 passed and 1 deselected; tests and runtime were not modified.
+- Review snapshot: protocol SHA-256 `b54d1b11181f46f9e1238ccdec3d1e92e762efcfca6c2a93f4afad97f23ad6b6`; catalog SHA-256 `92a184d3ffd93a1b81050ebefab912a270c76247f6505f4e1b750e209732f487`.
+
+## 2026-09-10 — Close post-claim external consumption integrity failures
+
+- Resolve the P1 where normal result consumption could neither register a Code artifact nor release its active binding for close admission. Keep cleanup inside the original resume_run/continue_execution owner; do not create close_run or another External interrupt and do not rewrite normal final evidence.
+- Add guarded failure entries at all seven post-claim/pre-release boundaries. Commit the normal verdict together with its successor phase revision; a failure intent can win only against the current source revision. The failure ownership transaction reserves Run closure, increments closure revision, revokes invocation authority and freezes the exact snapshot and consumer stop intent.
+- Stop and verify consumers/verifiers independently of the already terminal Backend. Safe consumer stop plus appendable Run authority produces a failed Run through the existing terminal eligibility/lifecycle/checkpoint phases. Any unavailable stop proof or authority produces a same-owner unavailable tombstone with conservative resource evidence and no fabricated Run lifecycle.
+- Use trusted artifact-registration prohibition or an existing audit-only snapshot for failure disposition. Preserve consumed Pause and terminal Attempt records; allow claimed Pause interruption only under the same claim and Run owner. Reuse settled aggregate identity and settle outstanding consumer resources exactly once. Failure binding release does not masquerade as normal artifact-backed release.
+- Consolidate the former linear-only resume expectation into the guarded graph validator and share existing terminal publication phases. Keep 9 operation types, 12 variants, 131 requirements, protocol 0.4/catalog 0.4.0 and review statuses. Runtime, completed tickets and historical completion records remain unchanged.
+- Validation: 100 protocol mutations, 6 JSON/catalog rejections, and independent semantic probes for 28 failure-entry/stop/authority paths without relying on graph/layout seals. Strict JSON, 391 relative links across 41 tracked Markdown files, temporary-directory bytecode compilation and diff whitespace checks passed. Full pytest: 324 passed and one missing sibling golden-reference failure. Excluding that external-data case: 324 passed, 1 deselected; no test changes or fallback.
+- Review snapshot: protocol SHA-256 `0398a709e4f99b17a3b15dce2b13ca3d0743589978d9b3d5c5ab8b0151a1293d`; catalog SHA-256 `0ead1e478270d09aaed6c570188a119fa72ec95d4e70d2ccc27db1f8d4f213fb`.
+
+
+## 2026-09-10 — Unify invalid-response repause budget decisions
+
+- Keep the existing `allow | human_gate | halt` BudgetDecision enum. Repause is the proposed action, not a separate decision value. Sufficient capacity authorizes `publish_pause`; insufficient capacity authorizes `close_run`.
+- Freeze both cases and their exact proposal/capacity/head bindings in `budget_decision_contract`; validate producer/consumer agreement and A04/A06 prose. Preserve consumed Pause finality and allocate the next Pause only at `pause_prepared_recorded`.
+- Review-only correction; no runtime or completed-ticket changes. Protocol mutations: 104; JSON/catalog negative checks: 6.
+- Review snapshot: protocol SHA-256 `7447087f73caae2668a8e71e12fc40e426ebefee5864e3499a3f9cbd1a9322b8`; catalog SHA-256 `ed39a0b35feb3372e7647436ee588699c16b7c05555a03c791f69760626a9726`.
+- Validation: protocol validator (104 protocol mutations and 6 JSON/catalog checks), both capacity outcomes, four direct semantic mutations without layout seals, and rejection of the original prose regression passed. Strict JSON, 391 relative links, Python compilation to a temporary directory and `git diff --check` passed. Full pytest: 324 passed, one failure caused by missing sibling golden-reference files; excluding that external-data case: 324 passed, 1 deselected.
+
+
+## 2026-09-10 — Separate semantic validation from freeze checks
+
+- Keep the closed-layout and graph freeze seals in normal validation, but separate them from semantic rules. Each negative mutation now names its validator and includes a positive control; 101 semantic cases cannot pass through a seal mismatch, and 3 structural cases remain explicit.
+- Replace the duplicate complete linear phase/edge/dependency tables with independent publication milestones checked for dominance. Relate consumption-failure metadata to its graph and replace the copied classification table with the stop/authority total function and 28 reachable publication paths. Preserve independent ownership, fencing, evidence and disposition safety expectations.
+- Remove fixed Chinese fragments, line-level language heuristics and English catalog-summary keyword gates. Keep stable IDs, references and explicit budget-decision enum checks; prose meaning remains a review responsibility.
+- Protocol/catalog bytes, digests, versions, requirement count and review lifecycle are unchanged. No Phase B runtime, completed tickets or existing historical records changed.
+- Validation: 101 direct semantic mutations, 3 structural mutations and 6 JSON/catalog checks passed. With the freeze checker disabled, semantic cases still pass independently; disabling the stop-proof checker makes its designated mutation fail. Equivalent prose passes while an undeclared decision enum is rejected. Bootstrap bypass is independently rejected by the milestone rule and freeze seal. The 28 failure paths, strict JSON, 391 relative links, temporary bytecode compilation and diff checks passed. Full pytest: 324 passed, one missing sibling golden-reference failure; excluding that case: 324 passed, 1 deselected. Validator size decreased by 91 lines.
+
+
+## 2026-09-10 — Restore complete publication-order semantic coverage
+
+- The milestone simplification omitted required lifecycle, claim and eligibility boundaries. Restore one independent safety-phase sequence per linear operation, sharing the child-bootstrap sequence for Replay/Fork, without duplicating edge/dependency tables. Require matching endpoints, present/reachable milestones and producer dominance.
+- Add 178 direct order mutations derived from actual protocol graphs: adjacent internal swaps with dependencies changed together, phase bypass, removal and unreachability. All six linear variants must remain covered. Use the same rejection assertion as the existing mutation suite; no layout or graph seal may satisfy these semantic cases.
+- Existing protocol/catalog bytes, digests, versions, 131 requirements and review status are unchanged. No runtime, completed tickets or historical records were modified.
+- Validation: all 178 order mutations pass with structure/freeze checks unavailable; disabling the order rule makes the suite fail. All 40 coordinated adjacent inversions are independently rejected by the full semantic validator, including the 16 previously accepted cases. Existing 101 semantic, 3 structural and 6 JSON/catalog checks, 28 failure paths, strict JSON, 391 links, temporary bytecode compilation and diff checks passed. Full pytest: 324 passed, one missing sibling golden-reference failure; excluding that external-data case: 324 passed, 1 deselected.

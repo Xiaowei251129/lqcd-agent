@@ -45,7 +45,7 @@ Ready ticket 不能静默覆盖 `AGENTS.md`、安全策略或当前 public contr
 
 Phase Overview 不是执行 prompt。只有经过用户确认并标记为 `status: ready` 的具体 ticket 才能执行；`ready`后ticket正文冻结，执行结果和后续纠偏不得回写原计划。
 
-当前Phase A状态是A01–A03及A03C01 `completed`，A02C01与A04–A07 `review`。A03的fallback invalidation harness不表示A01目标回退线路、durable resume、graph-managed Code Agent或budget manager已经完成。2026-08-26至27日交叉审查及源码对照结论已进入review稿、companion requirement catalog和tracked [`Control Protocol 0.4`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)。当前machine schema 0.4冻结十一种ControlOperation type/variant组合、guarded branches、tagged evidence unions、单一`coordinator_sqlite`事务域、normal/cancel/interrupt CAS仲裁、只读winner observation、normal safe-stop preclassification、唯一stop route、独立External interrupt resolution、Pause aborted/interrupted/quarantined finality及single-owner Run closure；标准库design validator检查phase/guard/terminal tuple、组合owner状态、CAS交错、route、authority/evidence/dependency和catalog闭包。独立交叉审核、用户最终确认、提升为`ready`并建立frozen-ticket commit前仍不可执行。
+当前Phase A中A01–A03及A03C01为`completed`，A02C01与A04–A07为`review`；设计稿不代表Phase B runtime已实现。阶段范围、依赖和退出条件见[Phase A Overview](tickets/phase-a-control-contracts/OVERVIEW.md)。[Control Protocol 0.4](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)与[需求目录](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)提供机读合同及stable IDs；验证入口见[Verification Guide](VERIFICATION_GUIDE.md)，当前验证结果见[Repo Current State](REPO_CURRENT_STATE.md)，修改理由与历史见[Decision Log](DECISION_LOG.md)。独立交叉审核和用户最终确认后，才可提升为`ready`并按ticket流程执行。
 
 ## Milestones
 

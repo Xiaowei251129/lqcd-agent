@@ -92,7 +92,7 @@ hidden expected behavior 不得进入 Agent input、provider prompt 或 final-re
 4. Phase D 对 physics/RAG 能力做有来源、可比较、支持 abstention 的评估；
 5. Phase E 形成 integrated benchmark 与下一 milestone。
 
-具体 Phase B acceptance 当前由`review`状态的 [A07](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)、tracked [`Control Protocol 0.4`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json) machine schema 0.4和catalog version 0.4.0共同冻结。B00必须消费其中的transaction domain、resolution CAS、guarded branches、tagged evidence unions、winner-observation组合状态、normal safe-stop preclassification、unique stop route、interrupt disposition、terminal tuple与variant overlay及其exact digests，而不是从自然语言或实现反向定义验收范围。现在不能把尚未提升为`ready`的transition coverage、trajectory score或cost threshold写成当前runtime要求。
+具体 Phase B acceptance 当前由`review`状态的 [A07](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)、tracked [`Control Protocol 0.4`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json) machine schema 0.4和catalog version 0.4.0共同冻结。B00必须消费其中的transaction domain、resolution CAS、guarded branches、tagged evidence unions、winner-observation组合状态、request-owned normal safe-stop candidate classification、完整trigger-class/context stop route、interrupt disposition、interrupt late-integrity outcome、Cancel branch-to-resolution tuple/phase闭包、START/Replay/Fork/ordinary Transition的commit-gated capability、exact terminal lifecycle、reservation到ExternalOperation tuple及source proof到request Run/lineage的绑定、Replay source-policy classifier、stable fork、variant overlay与phase dominance及其exact digests，而不是从自然语言或实现反向定义验收范围。现在不能把尚未提升为`ready`的transition coverage、trajectory score或cost threshold写成当前runtime要求。
 
 ## Raw-data-backed Evals 的前置条件
 

@@ -45,4 +45,10 @@
 
 A01已完成逻辑transition contract。A02已完成formal execution identity；A03已完成immutable Attempt artifact namespace、typed current index、managed projections、Human Response snapshots及四层invalidation harness；A03C01已补齐execution global-head与Transition target-shape完整性。四层fallback仍是harness-only，不是产品edges。
 
-2026-08-26至27日交叉审查先后闭合schema `0.4` bootstrap、Transition/invalidation、Pause双阶段发布、Run lifecycle、durable coordinator、single-owner closure与External resolution CAS。最新修订把system interrupt从`cancel_pause`中拆为internal `resolve_external_interrupt/recoverable_timeout | controlled_halt | integrity_failure`，让safe timeout恢复到Coordinator、terminal stop关闭Run、unavailable proof统一形成Pause N/A/quarantine与Run unavailable closure；并进一步把preexisting cancel/interrupt结果改为可达的只读winner observation、禁止`normal + unavailable`、冻结上下文/trigger唯一stop route。十一种ControlOperation组合均有reservation overlay；所有multi-successor phase使用互斥穷尽guard，typed-null与External proof使用tagged evidence union。tracked [`CONTROL_PROTOCOL_0_4.json`](CONTROL_PROTOCOL_0_4.json) machine schema 0.4是上述phase、guard、terminal tuple、组合owner状态、CAS、stop route、authority、evidence、outcome和construction DAG的单一机器枚举，并由[`scripts/validate_phase_a_control_protocol.py`](../../../scripts/validate_phase_a_control_protocol.py)在冻结前验证。A02C01与A04–A07保持`review`；独立交叉审核和用户最终确认前不得提升为`ready`或执行。
+Review票据定义尚未实现的控制合同；依赖以各票据YAML为准。A02C01与A04–A07在独立交叉审核和用户最终确认前保持`review`，不能执行。
+
+## 合同与验收入口
+
+- 各所属票据保存规则、设计理由和stable requirement IDs；[A07](A07_PHASE_B_HARNESS_ACCEPTANCE.md)定义验收方法、跨合同断言及故障注入边界。
+- [Control Protocol 0.4](CONTROL_PROTOCOL_0_4.json)保存唯一机读协议，[需求目录](PHASE_B_REQUIREMENT_CATALOG.json)关联requirement IDs与所属票据。
+- [Verification Guide](../../VERIFICATION_GUIDE.md)提供验证入口，[Repo Current State](../../REPO_CURRENT_STATE.md)记录当前结果，[Decision Log](../../DECISION_LOG.md)保留设计变化及理由。
