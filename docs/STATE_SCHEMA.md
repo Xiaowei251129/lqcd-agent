@@ -2,7 +2,7 @@
 
 ## 当前合同
 
-`AnalysisState` 是当前公开 graph-state contract。节点只能读取和写入已记录字段。下面的 schema 与当前 runtime 对齐；A02 完成 execution identity，A03 完成 bounded artifact-current control fields。A04已经冻结后继Pause/Resume state contract，A05已经冻结后继Code Agent bounded projection，但两者都尚未把字段加入当前runtime。
+`AnalysisState` 是当前公开 graph-state contract。节点只能读取和写入已记录字段。下面的 schema 与当前 runtime 对齐；A02 完成 execution identity，A03 完成 bounded artifact-current control fields。A04已经冻结后继Pause/Resume state contract，A05已经冻结后继Code Agent bounded projection，A06已经冻结后继budget bounded projection，但这些目标字段都尚未加入当前runtime。
 
 schema 变化必须由独立 implementation ticket 批准，并同步 runtime、tests、artifact contracts 和相关 Decision Log。A02 execution identity 与 A03 artifact-current schema 已落地并通过验收；reducer、具体恢复字段和 budgets 不属于当前正式 schema。
 
@@ -218,12 +218,30 @@ Mutable workspace path、patch bytes、tool transcript、完整verification logs
 
 上述字段属于Phase B execution schema `0.4`实现目标，不是当前schema `0.2`字段。A05没有修改`AnalysisState`、graph、checkpoint backend或legacy re-entry行为。
 
+## A06 已确认的 Budget 目标 State Boundary（尚未实现）
+
+[A06](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)把budget authority放在immutable policy与append-only execution ledger，而不是graph state。Phase B execution schema `0.4`在现有`execution_history.jsonl`增加`record_type: budget`，Run-local `budget_event_id/index`连续且唯一；允许的event固定为`policy_initialized`、`resource_reserved`、`resource_settled`、`failure_observed`、`grant_issued`、`grant_consumed`和`decision_recorded`。Cycle、Attempt、Transition与automatic-route用量继续从其A02权威记录重放，不建立第二份mutable counter history。
+
+Bounded state只保存可从validated policy与ledger确定性派生的projection，至少包括：
+
+- policy version、profile ID、reference与digest；
+- latest budget event/grant counters；
+- 每个hard dimension及automatic route scope的used/remaining；
+- active failure fingerprint、Run-local occurrence与causal evidence digests；
+- nullable active grant identity、scope与consumption state；
+- latest `BudgetDecision` summary、exhausted dimensions与typed stop reason。
+
+初始化、恢复、读取、route admission与artifact registration前必须重放authority，并要求projection exact-equal。完整reservation、settlement、fingerprint和grant history不能复制进state或Agent prompt；缺失或篡改已populated projection不能由initialize静默修复。Resource reservation在side effect前写入，crash后未结算项按maximum charge；Code Agent pre-start Backend interval可计入target Attempt与Run active dimensions，但不把scheduled Attempt提前改为`started`。
+
+每个Run还绑定immutable `budget_policy.json`的version/profile/reference/digest及Pause deadline派生输入。Resume必须exact-match同一schema `0.4` policy/runtime；Replay/Fork创建新child并从0计数，不继承reservation、failure occurrence、grant、deadline、counter、current pointer、Human authorization或accepted state。以上均是目标schema，不改变当前`AnalysisState.status`、`retry_count/max_retry`、graph topology或schema `0.2` ledger。
+
 ## 第二阶段待实现 schema 议题
 
 以下内容仍未成为当前 `AnalysisState` 合同：
 
 - A04已确认的`run_status`、Pause、ControlOperation和compatibility projections；
 - A05已确认的canonical Code Agent bounded fields及其与ExternalOperation、workspace和code bundle的交叉验证；
+- A06已确认的budget policy binding、budget ledger events、trusted usage与bounded projection；
 - 正式 parallel reducer、per-branch namespace 或 merge semantics。
 
 在相应 implementation tickets 完成前，任何实现或其他文档都不能假设这些字段已经存在。

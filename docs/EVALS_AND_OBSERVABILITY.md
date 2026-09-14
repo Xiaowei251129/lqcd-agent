@@ -82,6 +82,19 @@ hidden expected behavior 不得进入 Agent input、provider prompt 或 final-re
 
 这些指标描述 `v0.2-demo` 当前能力，不等于第二阶段最终 trajectory metric。
 
+## A06 已确认的 Budget/Stop Observability 目标（尚未实现）
+
+A06要求Phase B normalized trace与acceptance matrix能够从权威policy和ledger重建，而不是相信Agent summary或mutable state。每个Run至少可观察：
+
+- policy version/profile/reference/digest，以及每个hard dimension和automatic route的used、remaining与projected-after；
+- `BudgetDecision allow | human_gate | halt`、reason、exact proposed action、validated heads、failure fingerprint occurrence和nullable grant；
+- resource reservation/settlement identity、maximum/actual vector、timeout、Attempt/Run active-time归属，以及unsettled crash的conservative charge；
+- Code Agent唯一aggregate envelope与ExternalOperation/task/workspace/Pause binding，确保dispatch/lookup/fetch期间budget和execution heads零漂移；
+- grant issued/consumed、exact Human Response snapshot/actor/scope/target及duplicate或mismatch拒绝；
+- Pause opened/deadline/claim边界、terminal reserve余额、typed stop trigger、safe-stop proof、settlement disposition、Pause quarantine与terminal closure outcome。
+
+Token和normalized cost只作audit metric；provider未报告时必须显示`unknown`，不能计作0或影响hard-gate通过率。Stop telemetry必须区分`halted`、已证明且可发布的`failed`、`recovery_required`、`terminal_closure: unavailable`和非terminal`materialization_pending`，不得只报告“任务失败”。这些是A07/Phase B的目标证据字段；当前trace仍只有普通`llm_calls/`和schema `0.2` execution records。
+
 ## 第二阶段 Harness 方向
 
 第二阶段按以下层次扩展，但本轮不提前批准具体 metric 或实现：
@@ -92,7 +105,7 @@ hidden expected behavior 不得进入 Agent input、provider prompt 或 final-re
 4. Phase D 对 physics/RAG 能力做有来源、可比较、支持 abstention 的评估；
 5. Phase E 形成 integrated benchmark 与下一 milestone。
 
-具体 Phase B acceptance 当前由`review`状态的 [A07](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)、tracked [`Control Protocol 0.4`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json) machine schema 0.4和catalog version 0.4.0共同冻结。B00必须消费其中的transaction domain、resolution CAS、guarded branches、tagged evidence unions、winner-observation组合状态、request-owned normal safe-stop candidate classification、完整trigger-class/context stop route、interrupt disposition、interrupt late-integrity outcome、Cancel branch-to-resolution tuple/phase闭包、START/Replay/Fork/ordinary Transition的commit-gated capability、exact terminal lifecycle、reservation到ExternalOperation tuple及source proof到request Run/lineage的绑定、Replay source-policy classifier、stable fork、variant overlay与phase dominance及其exact digests，而不是从自然语言或实现反向定义验收范围。现在不能把尚未提升为`ready`的transition coverage、trajectory score或cost threshold写成当前runtime要求。
+具体 Phase B acceptance 当前由`ready`状态的 [A07](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)、tracked [`Control Protocol 0.4`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json) machine schema 0.4和catalog version 0.4.0共同冻结。B00必须消费其中的transaction domain、resolution CAS、guarded branches、tagged evidence unions、winner-observation组合状态、request-owned normal safe-stop candidate classification、完整trigger-class/context stop route、interrupt disposition、interrupt late-integrity outcome、Cancel branch-to-resolution tuple/phase闭包、START/Replay/Fork/ordinary Transition的commit-gated capability、exact terminal lifecycle、reservation到ExternalOperation tuple及source proof到request Run/lineage的绑定、Replay source-policy classifier、stable fork、variant overlay与phase dominance及其exact digests，而不是从自然语言或实现反向定义验收范围。A06已经冻结具体policy、accounting和stop metrics，但这些仍是目标合同，不能写成当前runtime要求。
 
 ## Raw-data-backed Evals 的前置条件
 

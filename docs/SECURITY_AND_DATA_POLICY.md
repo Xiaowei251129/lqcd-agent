@@ -50,6 +50,17 @@
 - `success` bundle只授权Run-local fresh Analysis execution，不授权修改control repository、patch promotion、commit、merge、push、PR、deployment、科学接受或accepted memory。执行中需要扩权时返回`needs_human`，新授权只能绑定新的Attempt/task；
 - Phase B只使用同合同的deterministic Fake。Python Codex SDK或其他真实backend必须先通过独立C00对restart-safe lookup、完整audit、exact cancellation/containment、workspace/credential隔离、immutable result和fail-closed crash的全部门禁；不得因候选provider能力不足降低本政策。
 
+## A06 Budget 与 Stop 安全政策（目标合同，尚未实现）
+
+- `budget_policy.json`在Run正式创建前由可信Host从固定allowlist选择并create-new发布；Agent、provider、tool、Backend、route payload、Human自由文本和resume payload都不能改写profile、policy、counter、remaining或terminal reserve；
+- admission必须先验证execution/artifact/checkpoint heads、risk/security/data/accepted-result规则，再重放policy、usage、reservation和grant。Budget充足不能降低风险下限，也不能把policy/security/data或non-retryable scientific failure变成automatic retry；
+- LLM/tool/verification与Code Backend aggregate在外部副作用前reservation，crash未结算按maximum charge且不退款、不redispatch。Backend只能消费exact envelope；reported usage、thread/job/session identity和自由文本都不是结算或扩容authority；
+- failure fingerprint必须由稳定typed facts及material evidence digest生成，排除执行identity、时间、物理路径、summary和原始日志。新Attempt/workspace/job不能规避同一Run内第二次exact fingerprint升级；
+- Human grant只能由validated `approve_budget_window` response派生，绑定exact actor、Pause/snapshot、route、fingerprint occurrence与target，且只增加一次对应route机会；不能突破Cycles、Work/Control Attempts、Transitions或resource global ceilings，也不能恢复terminal reserve；
+- 每次普通admission后仍须保留5个Control Attempts和6个Transitions的完整terminal tail。Reserve只能由typed `stop_sequence_id`收尾链消费，不能返回Work Attempt或为无容量的invalid-response repause开新Pause；
+- Pause deadline使用trusted Host clock。过期resume、clock回退或overflow必须无mutation fail closed；不得通过background timer自动cancel、halt、replay或fork；
+- 只有完整证明termination、write-lease revocation、bounded drain与post-stop stability，才允许`halted`或已证明`failed` closure。任一证明维度缺失必须隔离为`recovery_required`/`terminal_closure: unavailable`，不得用maximum charge、可append ledger或bounded projection伪造安全停止或Run lifecycle。
+
 ## Command Policy
 
 Analysis Engineer 只能通过 `src/lqcd_agent/tools/command_runner.py` 运行受限命令：
@@ -101,9 +112,7 @@ runner 必须阻止 shell control operators、非 exact-allowlisted commands，�
 
 ## 第二阶段目标政策状态
 
-[A04 Pause/Resume](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)与[A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)已完成目标政策同步，但尚未实现。以下设计ticket仍为`ready`，不改变当前runtime政策：
-
-- [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)
+[A04 Pause/Resume](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)、[A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)与[A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)已完成目标政策同步，但尚未实现。A07仍为`ready`且只冻结Phase B harness acceptance；它不会改变当前runtime政策。当前runtime仍没有schema `0.4` coordinator、Pause/Resume、Code Agent或budget enforcement。
 
 ## 相关文档
 

@@ -4,7 +4,7 @@
 
 本文记录当前 runtime 已经实现并由测试覆盖的 artifact contracts。下面保留英文 schema identifiers、field names、status values 和文件名，解释以这些精确合同为准。
 
-A02 已完成 Run/Cycle/Attempt/Transition/Human execution ledger，A03 已完成 per-attempt domain-artifact namespace、artifact history/current index、supersession/invalidation 和 fixed-path compatibility projection。A04已冻结后继Pause/Run lifecycle、checkpoint evidence与child lineage目标合同，A05已冻结后继Code Agent task/result、workspace evidence、code bundle、trusted verification与fresh Analysis handoff合同；两者均未改变当前artifact schema或runtime。Physics RAG evidence bundle仍未获批，只能在后续独立ticket中定义。
+A02 已完成 Run/Cycle/Attempt/Transition/Human execution ledger，A03 已完成 per-attempt domain-artifact namespace、artifact history/current index、supersession/invalidation 和 fixed-path compatibility projection。A04已冻结后继Pause/Run lifecycle、checkpoint evidence与child lineage目标合同，A05已冻结后继Code Agent task/result、workspace evidence、code bundle、trusted verification与fresh Analysis handoff合同，A06已冻结后继budget policy、budget events、resource envelope与fingerprint/grant evidence合同；这些目标合同均未改变当前artifact schema或runtime。Physics RAG evidence bundle仍未获批，只能在后续独立ticket中定义。
 
 ## Execution Identity History
 
@@ -112,7 +112,7 @@ prepared event引用append前execution/artifact heads、typed reason/input/autho
 
 Replay/Fork child在任何child bytes前冻结field-disjoint `SourceSnapshotProof/replay_root | fork_head`、exact source Run identity、lineage digest、target policy与initial Planner capability inputs。Replay只复制validated immutable root-input snapshot；Fork只引用coordinator CAS接受的latest stable paused/terminal source head上的eligible immutable evidence。Child获得自己的Run/Cycle/Attempt/Transition、ledger、registry、checkpoint与current pointers；source bytes、accepted artifact bytes和protection history保持不变，Human authorization、active Pause与accepted status均不继承。
 
-外部结果Pause还必须引用A05已定义的ExternalOperation core、one-time Pause binding和final evidence，以及A06将具体化的resource reservation/settlement；这些control records不改变A03 domain artifact slots。只有消费、Attempt terminal artifact、settlement与active binding release形成exact closure后，checkpoint和后续Transition才能发布。
+外部结果Pause还必须引用A05已定义的ExternalOperation core、one-time Pause binding和final evidence，以及A06已确认的resource reservation/settlement；这些control records不改变A03 domain artifact slots。只有消费、Attempt terminal artifact、settlement与active binding release形成exact closure后，checkpoint和后续Transition才能发布。
 
 ## A05 已确认的 Code Agent Artifact Contract（尚未实现）
 
@@ -143,6 +143,22 @@ Trusted verifier读取task中typed `VerificationSpec`，在exact base加validate
 `success` bundle注册并成为current后，Host为新scheduled Analysis Attempt冻结独立`AnalysisExecutionSpec 0.1`，绑定source Code Agent Attempt、current plan/code artifact及member digests、base、patch、expected effective tree、runtime policy和fresh Analysis workspace identity。Spec是目标Attempt的control/audit input，不是Code bundle member或current artifact。Analysis必须从exact base加verified change重新materialize worktree并在新subprocess中执行，不能复制mutable coding workspace、读取当前control repository或复用provider/tool session。
 
 Artifact pointer status必须exact等于structured result，dependencies至少包含当时current plan及适用的protected Human Response snapshot。A03 invalidation清除bounded current pointer和projection，但保留immutable task、ExternalOperation/workspace evidence、bundle及historical diagnostic bytes；physical workspace仍按Host lifecycle隔离、释放，不能成为长期source of truth。A05不批准把bundle写回control repository，也不批准commit、merge、push、PR、deployment、scientific acceptance或accepted-result promotion。
+
+## A06 已确认的 Budget Control Artifact Contract（尚未实现）
+
+[A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)为每个Phase B schema `0.4` Run冻结：
+
+```text
+<run_root>/budget_policy.json
+```
+
+`budget_policy.json`是project-owned immutable control artifact，使用独立`BudgetPolicy 0.1` schema。它不属于A03七个current slots，也不接受Agent、tool、Backend、Human payload或compatibility projection覆盖。Canonical digest排除自描述digest字段；Run identity、runtime fingerprint、Pause、bounded state和A05 `CodeAgentTask`必须保存exact version/profile/reference/digest。A05的`budget_envelope_ref/digest`指向允许该Attempt的exact `BudgetDecision` event，不复制mutable remaining counters。
+
+所有policy、reservation、settlement、failure、grant和decision evidence追加到同一Run的`execution_history.jsonl`，不新增可漂移的`budget_history.jsonl`。Execution schema `0.4`的`record_type: budget`使用连续`budget_event_NNNNNN`；grant另有连续`budget_grant_NNNNNN` identity，但创建与消费仍由budget records承载。Records必须绑定policy digest、validated execution/artifact heads、trusted timestamp及event-specific operation/Attempt/Transition/Pause/Human snapshot evidence。
+
+每个project-owned LLM/tool/verification side effect在调用前冻结stable resource operation、maximum charge、timeout、input/config/policy digests与remaining-before，并exactly once结算。每个scheduled Code Agent Attempt只允许一个`code_backend_operation` aggregate，绑定producer operation、task、semantic `code_task_context_digest`、backend/runtime与unmaterialized workspace manifest；它不得预占Pause identity。Pause随后单向绑定exact reservation，Backend receipt/audit/seal/result只提供可信settlement evidence，不能成为第二套counter或refund authority。
+
+`FailureFingerprint 0.1`保存稳定typed cause与`causal_context_digest`，排除Run/Attempt/workspace/job/session identity、timestamp、物理路径、自由文本和原始日志；完整task/manifest/spec digests保留provenance，但重复判定使用排除execution identity的semantic context digests。`BudgetGrant 0.1`绑定validated Human Response snapshot、exact route/fingerprint occurrence/target、actor scope及single-use consumption Transition。A03 current invalidation和accepted-result protection不因budget evidence而放宽；这些control artifacts也不注册为domain result。
 
 ## 当前通用规则
 

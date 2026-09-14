@@ -166,6 +166,20 @@ Code Agent不得读取完整Run root或当前control repository作为可变works
 
 Phase B `FakeCodingBackend`和任何未来真实backend必须经过相同port、ingress validator、trusted verifier、artifact registry和fresh Analysis materialization。Python Codex SDK仅是C00 capability gate后的条件性首选候选；provider thread/session不能成为第二套Run、Pause或resume authority。
 
+## A06 已确认的 Budget Authority 边界（尚未实现）
+
+可信control plane是唯一budget authority：它选择allowlisted profile、验证policy/ledger/heads、重放用量、构造failure fingerprint、持久化`BudgetDecision`、签发/消费typed grant，并把安全停止交给A04唯一Run closure owner。可信Host只负责在side effect前执行reservation envelope、度量与结算resource usage、维护trusted clock及实施watchdog/containment；它不能自行放宽policy或另建retry authority。
+
+各角色的目标边界固定为：
+
+- 工作Agent只能返回typed outcome、稳定诊断事实和evidence reference；不能读取完整budget history，不能直接写counter/fingerprint/grant/decision，也不能因剩余额度自行选择回退；
+- Decision Coordinator可以提出exact proposed action，但只有control plane admission后的`allow`才能分配target并commit Transition；`human_gate`或`halt`结果不能被Coordinator改写；
+- `CodingBackend`只消费一个Host冻结的`code_backend_operation` aggregate envelope；内部thread/job/session、LLM和tool usage不能建立独立budget、refund、retry或stop authority；
+- Human只能通过validated `approve_budget_window`为exact route、fingerprint occurrence和target签发single-use `additional_opportunities = 1`；自由文本或数值不能扩容，grant不能突破global ceilings或恢复terminal reserve；
+- Human Gate负责验证response与授权scope，不直接运行工作Agent、修改policy或accepted memory；Memory and Report只能在既有route与risk/accepted-result规则下收尾，不能把budget halt解释为科学成功。
+
+任何Agent/provider/route payload、Human自由文本或bounded state与权威policy/ledger不一致都必须fail closed。Budget永远不能降低risk、security、data或accepted-result保护下限；第二次exact failure fingerprint及首次high/critical、歧义、policy/security/data或non-retryable scientific failure都必须升级而非自动fallback。
+
 ## 能力增强原则
 
 未来 RAG、physics corpus、tool use 或更强 provider 可以增强判断，但不能改变上述 ownership boundary。知识增强必须记录来源、版本与引用，并通过 capability evaluation 证明收益；它不能直接扩大 Agent 的写权限或科学裁决权。

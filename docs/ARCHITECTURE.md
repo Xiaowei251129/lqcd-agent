@@ -117,7 +117,7 @@ Memory and Report -> END
 
 四个回退目标分别表示：重新审查相同 analysis、在相同 plan/code 下重新分析、修复实现、重新规划方法。候选目标冲突或无法唯一归因时不得默认选择最深回退，必须进入 Human Gate。
 
-这里的 `Code Agent` 是 A05 已确认的 graph-managed目标接口，不是把当前 Codex Handoff 直接改名。A02 已确认 Run/Cycle/Attempt identity，A03 已实现 artifact invalidation；A04已确认PAUSE/resume控制合同，A05已确认Code Agent wire contract，具体预算仍由A06定义。在这些合同对应的 Phase B harness 完成前，目标闭环不得接入 runtime。
+这里的 `Code Agent` 是 A05 已确认的 graph-managed目标接口，不是把当前 Codex Handoff 直接改名。A02 已确认 Run/Cycle/Attempt identity，A03 已实现 artifact invalidation；A04已确认PAUSE/resume控制合同，A05已确认Code Agent wire contract，A06已确认具体budget/fingerprint/stop合同。在这些合同对应的 Phase B harness 完成前，目标闭环不得接入 runtime。
 
 ## A02 当前 Execution Identity
 
@@ -195,6 +195,18 @@ Backend delivery先作为不可信入口由Host验证task、Attempt、base、wor
 Analysis不加载mutable coding workspace，也不执行当前control repository。Host为新的scheduled Analysis Attempt冻结`AnalysisExecutionSpec 0.1`，从相同immutable base和verified change materialize新的worktree，以新subprocess执行。该交接与patch promotion分离；A05不批准写回control repository、commit、merge、push、PR或deployment。
 
 Phase B只使用遵守相同端口、validator、verifier、registry和fresh Analysis路径的`FakeCodingBackend`。Python Codex SDK只是Phase C候选；独立C00必须先用pinned build证明restart-safe lookup、完整tool audit、exact process-tree cancellation、workspace/credential containment、immutable evidence与fail-closed crash行为，才能由C01选择真实backend。当前legacy handoff、runtime graph、dependencies和provider配置均未改变。
+
+## A06 已确认的 Budget 与 Stop 控制架构（尚未实现）
+
+[A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)冻结可信控制层的`BudgetPolicy 0.1`、`BudgetDecision 0.1`、`FailureFingerprint 0.1`和single-use `BudgetGrant 0.1`。每个schema `0.4` Run在正式creation前选择allowlisted immutable policy；`balanced_v1`是保守默认，`phase_b_test`只供deterministic harness。Agent、router、provider、Backend和Human自由文本均不能选择profile、修改policy/counter、退款或决定retry/stop。
+
+所有Cycle、Attempt、Transition和automatic-route用量从`execution_history.jsonl`的权威记录重放；LLM/tool/verification及每个Code Agent Attempt唯一的`code_backend_operation` aggregate必须在副作用前reservation并exactly-once settlement，未结算crash按maximum charge且不自动重试或退款。完整budget history不进入graph state或prompt；state只保存与validated policy/ledger exact-equal的bounded projection。Token和cost usage仅供审计，缺失时保留`unknown`，不作为第一版hard gate。
+
+Admission固定在target allocation、A03 invalidation、Transition commit和任何副作用之前产生并持久化exact decision。Failure fingerprint排除Run/Attempt/workspace/job等执行identity和自由文本，只对base、policy、runtime、verified change、material inputs与稳定诊断敏感；同一Run内第二次exact fingerprint不能自动fallback。Human只能通过validated `approve_budget_window`为exact route/fingerprint/target增加一次机会，不能突破Cycle、Work/Control Attempt、Transition或资源全局上限。
+
+每个Run从绝对上限中保留5个Control Attempts和6个Transitions，只用于typed `stop_sequence_id`安全收尾链；普通路线不能消费。Pause deadline由trusted Host clock派生，过期resume不产生任何mutation。资源停止只有在termination、write-lease revocation、bounded drain与post-stop stability均证明后才能形成受控`halted`或已证明的`failed` closure；证明缺失必须隔离为`recovery_required`/`terminal_closure: unavailable`，不得伪造Run lifecycle。完整route、resolution与Pause/Run owner仍以Control Protocol `0.4`为唯一机器权威，A06不建立第二套状态机。
+
+以上是Phase B schema `0.4`实现约束，不是当前架构能力。当前runtime仍使用schema `0.2`、`retry_count/max_retry`和普通LLM trace，没有budget policy artifact、budget ledger、resource reservation、semantic failure fingerprint、grant、trusted clock或terminal reserve执行器。
 
 ## Command 边界
 

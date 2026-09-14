@@ -121,6 +121,28 @@ python scripts/validate_phase_a_control_protocol.py
 
 A05明确不运行runtime、benchmark或live-provider测试；其完成证明Code Agent目标合同及文档闭合，不证明subgraph、backend、workspace、resume、containment或fresh Analysis runtime已经实现。
 
+### A06 Budget 与 Stop 设计合同验收
+
+A06是文档限定design ticket。执行时运行：
+
+```bash
+git diff --check
+python scripts/validate_phase_a_control_protocol.py
+```
+
+并静态核对：
+
+- A06在`ready`后只有YAML lifecycle metadata改变，冻结正文SHA-256保持一致；A01–A05/A02C01/A03C01保持`completed`，A07正文、protocol与catalog exact bytes不变；
+- Architecture、Agent Roles、State Schema、Artifact Contracts和Security Policy一致记录trusted control plane为唯一budget authority，`BudgetPolicy/Decision/FailureFingerprint/BudgetGrant 0.1`、schema `0.4` budget events与bounded projection尚未进入当前schema `0.2` runtime；
+- `balanced_v1`与harness-only `phase_b_test`是唯一profiles；Cycle/Attempt/Transition/automatic route从authoritative records计数，LLM/tool/verification及Code Backend aggregate在side effect前reservation，crash按maximum且不退款/redispatch；
+- semantic context fingerprint排除execution identity，自同一Run第二次exact occurrence起禁止automatic fallback；typed Human grant只为exact route/fingerprint/target增加一次机会且不能突破global ceilings或terminal reserve；
+- 每个Run保留5 Control Attempts/6 Transitions的terminal tail，invalid response只有保留3 Control/4 Transitions时才可repause；Pause deadline过期resume零mutation，stop proof不完整固定为quarantine及`recovery_required`/`terminal_closure: unavailable`；
+- A06的21个required IDs与catalog scenario set一致；A07/Phase B承担fake clock、fault injection、normalized trace和runtime acceptance，不把design validator当成budget manager实现测试；
+- Docs Index、Phase Overview、Current State、Decision Log与completion index一致记录A06完成、A07 ready，并明确A06没有修改runtime、graph、checkpoint、tests、configs、providers、data、accepted artifacts或历史Run；
+- Allowed Files、Do Not Touch、Markdown relative links、ticket metadata、删除/重命名和stale-documentation审计通过。
+
+A06明确不运行runtime、benchmark或live-provider测试；其完成证明预算、重复失败与停止目标合同闭合，不证明budget ledger、resource enforcement、trusted clock、grant或stop runtime已经存在。
+
 ### A02 Execution Identity 验收
 
 A02 的 targeted suite 必须同时覆盖 primitive、真实 compiled graph、demo Human continuation、legacy handoff compatibility 和最小 fallback identity harness：
