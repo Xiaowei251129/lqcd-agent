@@ -2,12 +2,12 @@
 
 ## 状态摘要
 
-- **更新时间**：2026-08-27
-- **当前分支**：`codex/phase-11-agent-harness-upgrade`
+- **更新时间**：2026-09-14
+- **当前分支**：`codex/phase-11-agent-harness-upgrade`（已快进包含`xgao`的Phase A设计冻结提交`d0f108a`）
 - **当前阶段**：Phase A控制合同澄清；A01–A03及A03C01已完成，A02C01与A04–A07已获用户最终确认并冻结为`ready`
 - **活动 ticket**：A02C01、A04–A07 `ready`；G01、A01–A03及A03C01 `completed`
 - **稳定基线**：[`v0.2-demo`](milestones/V0_2_DEMO_BASELINE.md)
-- **本轮范围**：按用户最终确认将`f4f0eaa`的A02C01与A04–A07提升为`ready`并创建冻结提交；票据正文、protocol与catalog exact bytes不变，尚未执行设计票据或Phase B runtime。
+- **本轮范围**：已将`xgao`分支的`f4f0eaa`设计与`d0f108a`冻结提交快进合入当前开发分支；A02C01与A04–A07为`ready`，票据正文、protocol与catalog exact bytes不变，尚未执行这些票据或Phase B runtime。
 
 ## 当前稳定实现
 
@@ -81,7 +81,7 @@ A03 implementation 已完成：
 
 A03没有实现PAUSE/resume、partial-commit recovery、Fake/real Code Agent、budgets、failure fingerprint或A01新产品edges；这些工作仍分别由A04、A05、A06与A07/Phase B承接。
 
-当前target-contract review状态：
+当前已冻结target-contract状态：
 
 - A02C01以仓库支持的`corrective-implementation`类型新增`ControlOperation 0.1`和schema `0.4+` bootstrap纠正合同：`<output_root>/.lqcd/control_operations.sqlite`在任何Run-root bytes前事务性占用幂等key、operation和target Run locator；policy和bootstrap admission先于initial Cycle/Planner Attempt/START Transition，完整heads/checkpoint验证先于Planner副作用；schema `0.2`历史正文和runtime不变；
 - A02/A03独立clarification统一复合Transition publication为Human Request（如有）→scheduled target allocation→A03 invalidation→committed Transition append→target start，已完成ticket正文不回写；
@@ -89,8 +89,8 @@ A03没有实现PAUSE/resume、partial-commit recovery、Fake/real Code Agent、b
 - A05把Python Codex SDK保留为C00 capability gate后的条件性候选，Phase B仍只使用Fake；ExternalOperation以单一`coordinator_sqlite`中的normal/cancel/interrupt CAS仲裁，normal safe-stop candidate只存在于contender request，unavailable candidate不写公共状态而转入integrity interrupt；dispatch前interrupt使用与present字段互斥的typed reservation absence，resource snapshot绑定exact ExternalOperation identity/phase/revision/epoch与reservation，合法resolution统一收敛到唯一final evidence；
 - A06直接依赖A02C01，并统一bootstrap、admission、grant与invalid-response reserve顺序；预计算exact且无副作用的publication prefix保持`in_progress/materialization_pending`，缺少预授权或副作用结果不确定才终止为`recovery_required`；完整ExternalOperation `safe_stop` proof才允许halted/failed closure，任一停止证明维度缺失时必须Pause quarantine和`terminal_closure: unavailable`；stop route先冻结trigger class，每个class声明完整required External context并恰好选择一个operation，只有显式Pause取消使用cancel intent；
 - A07维护catalog version `0.4.0`的tracked `PHASE_B_REQUIREMENT_CATALOG.json`，为九个owner的131项required合同分配stable IDs；A04为21、A07为15。未来matrix必须与catalog required ID集合set-equal并绑定exact catalog SHA-256；failpoints覆盖advance、child capability、terminal total function、source Run/lineage与Replay policy分类、resource-to-ExternalOperation binding、stable fork、phase dominance、resolution interleaving、late integrity、trigger-class route totality与single-owner closure；
-- Phase A review的tracked [`CONTROL_PROTOCOL_0_4.json`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json) machine schema `0.4`冻结九类、十二种ControlOperation组合、ExternalOperation、Pause/Run lifecycle、branch guards、tagged evidence unions、transaction domain/CAS、trigger-class stop route、variant phase dependencies、pre-start DAG和field binding；[`scripts/validate_phase_a_control_protocol.py`](../scripts/validate_phase_a_control_protocol.py)执行strict independent graph seal、dominance、guard/terminal tuple join、union cross-binding、capability producer closure、overlay、owner、interleaving、route totality、catalog与prose闭包检查，不属于runtime或Phase B实现；
-- 上述内容仍是`review` target contract，不表示当前runtime已具有schema `0.4`、durable resume、Code Agent、budget manager或Phase B product graph。
+- Phase A已冻结的tracked [`CONTROL_PROTOCOL_0_4.json`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json) machine schema `0.4`冻结九类、十二种ControlOperation组合、ExternalOperation、Pause/Run lifecycle、branch guards、tagged evidence unions、transaction domain/CAS、trigger-class stop route、variant phase dependencies、pre-start DAG和field binding；[`scripts/validate_phase_a_control_protocol.py`](../scripts/validate_phase_a_control_protocol.py)执行strict independent graph seal、dominance、guard/terminal tuple join、union cross-binding、capability producer closure、overlay、owner、interleaving、route totality、catalog与prose闭包检查，不属于runtime或Phase B实现；
+- 上述内容是已批准并冻结的target contract，A02C01与A04–A07 ticket状态为`ready`；`CONTROL_PROTOCOL_0_4.json`中的`status: review`作为批准快照内容保持不变。这不表示当前runtime已具有schema `0.4`、durable resume、Code Agent、budget manager或Phase B product graph。
 
 第二阶段文档迁移此前已通过 scope check、Markdown link check、ticket metadata、tag、`git diff --check` 与完整 `pytest -q` 验收。
 
@@ -116,7 +116,7 @@ A03C01当前证据为registry suite `106 passed`、focused registry/identity/sta
 
 2026-09-10新增P2修复：无效Human Response重新暂停统一使用`BudgetDecision allow | halt`，具体动作由机器`budget_decision_contract`绑定为`publish_pause | close_run`；删除未声明的独立decision值，补齐跨文档枚举检查与4项负向变异。A02C01与A04–A07仍为`review`，未实现Phase B runtime。本次验证：104项协议负向变异与6项JSON/catalog检查通过；完整pytest为324 passed、1项sibling golden文件缺失失败，排除该环境依赖用例后324 passed、1 deselected。
 
-2026-09-10当前review核验结果：最新P1“normal结果领取后无法注册Code artifact而无合法收尾”已在Phase A修复。原resume operation从7个post-claim/pre-release边界通过guarded failure branch原子取得Run terminal owner、撤销invocation并冻结消费者stop intent；原External normal final不变。消费者/verifier safe-stop且Run authority可append时复用terminal eligibility/lifecycle/checkpoint关闭为failed，否则同owner unavailable tombstone隔离，不伪造Run lifecycle或Code artifact。失败处置保留consumed Pause与已terminal Attempt，claimed Pause只在同claim/Run owner下interrupted，原aggregate settlement不重复计费。Continue verdict与successor phase revision原子提交，failure intent不能改写已提交边。删除原resume只能走normal release的假设，复用已有操作与terminal phases，不增加operation或requirement。Design validator通过9类/12变体、131项requirements、104项protocol mutations和6项JSON/catalog负向检查；独立语义probe通过28条failure-entry/stop/authority模型路径并绕过摘要检查非法变异。Strict JSON/duplicate keys、41个Markdown文件的391个relative links、临时目录bytecode编译及git diff --check通过。完整pytest为324 passed、1 failed，唯一失败为缺少sibling golden reference files；排除该用例后324 passed、1 deselected，未增加fallback。A02C01与A04–A07保持review，已完成票据、历史完成记录、runtime和测试均未修改。剩余人工验收为独立交叉审查及sibling golden数据可用后的对应测试。Protocol SHA-256：`0398a709e4f99b17a3b15dce2b13ca3d0743589978d9b3d5c5ab8b0151a1293d`；Catalog SHA-256：`0ead1e478270d09aaed6c570188a119fa72ec95d4e70d2ccc27db1f8d4f213fb`。
+2026-09-10最终冻结核验结果：P1“normal结果领取后无法注册Code artifact而无合法收尾”已在Phase A修复。原resume operation从7个post-claim/pre-release边界通过guarded failure branch原子取得Run terminal owner、撤销invocation并冻结消费者stop intent；原External normal final不变。消费者/verifier safe-stop且Run authority可append时复用terminal eligibility/lifecycle/checkpoint关闭为failed，否则同owner unavailable tombstone隔离，不伪造Run lifecycle或Code artifact。失败处置保留consumed Pause与已terminal Attempt，claimed Pause只在同claim/Run owner下interrupted，原aggregate settlement不重复计费。Continue verdict与successor phase revision原子提交，failure intent不能改写已提交边。后续P2修复又将无效Human Response重新暂停统一到`BudgetDecision allow | halt`及`publish_pause | close_run`动作绑定。最终Design validator通过9类/12变体、131项requirements、101项语义变异、3项结构变异、178项publication-order变异和6项JSON/catalog负向检查；独立语义probe通过28条failure-entry/stop/authority模型路径。Strict JSON/duplicate keys、41个Markdown文件的391个relative links、临时目录bytecode编译及git diff --check通过。冻结时完整pytest为324 passed、1 failed，唯一失败为缺少sibling golden reference files；排除该用例后324 passed、1 deselected，未增加fallback。A02C01与A04–A07已冻结为`ready`，已完成票据、历史完成记录、runtime和测试均未修改。Protocol SHA-256：`7447087f73caae2668a8e71e12fc40e426ebefee5864e3499a3f9cbd1a9322b8`；Catalog SHA-256：`ed39a0b35feb3372e7647436ee588699c16b7c05555a03c791f69760626a9726`。
 
 2026-08-22起，`ready` ticket正文冻结；completion和maintenance/corrective历史分别进入`docs/tickets/completions/`与`docs/tickets/corrections/`。A01/A02不追溯改写；A03已把初次completion和六轮pre-governance corrective history从原ticket拆出。A03详细implementation ticket执行前没有独立commit，仓库明确保留这一provenance限制，不声称可以恢复不存在的committed中间版本。
 
