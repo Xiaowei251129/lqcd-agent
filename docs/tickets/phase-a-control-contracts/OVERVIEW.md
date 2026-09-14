@@ -32,12 +32,12 @@
 ## Completed Corrective Tickets
 
 - [`A03C01_EXECUTION_HEAD_INTEGRITY.md`](A03C01_EXECUTION_HEAD_INTEGRITY.md)：在不修改原A03 ticket的前提下，已绑定registry与execution ledger全局head及Transition target shape。
+- [`A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md`](A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md)：已完成schema `0.4+` bootstrap后继合同、版本边界与Phase B实现约束的治理同步；没有修改schema `0.2` runtime。
 
 执行结果与后续纠偏历史分别记录在[`../completions/`](../completions/README.md)和[`../corrections/`](../corrections/README.md)；completed ticket正文不再承担累积日志功能。
 
 ## Ready Tickets
 
-- [`A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md`](A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md)
 - [`A04_PAUSE_RESUME_SEMANTICS.md`](A04_PAUSE_RESUME_SEMANTICS.md)
 - [`A05_CODE_AGENT_CONTRACT.md`](A05_CODE_AGENT_CONTRACT.md)
 - [`A06_BUDGETS_AND_STOP_CONDITIONS.md`](A06_BUDGETS_AND_STOP_CONDITIONS.md)
@@ -45,7 +45,7 @@
 
 A01已完成逻辑transition contract。A02已完成formal execution identity；A03已完成immutable Attempt artifact namespace、typed current index、managed projections、Human Response snapshots及四层invalidation harness；A03C01已补齐execution global-head与Transition target-shape完整性。四层fallback仍是harness-only，不是产品edges。
 
-用户已最终确认`f4f0eaa`设计，A02C01与A04–A07已提升为`ready`，正文从此冻结；依赖以各票据YAML为准，执行顺序为A02C01 → A04 → A05 → A06 → A07。设计冻结不代表Phase B runtime已实现。
+用户已最终确认`f4f0eaa`设计；A02C01已按冻结合同执行并标记`completed`，A04–A07保持`ready`。依赖以各票据YAML为准，下一执行顺序为A04 → A05 → A06 → A07。A02C01完成只表示目标合同、治理文档和completion evidence已闭合，不代表schema `0.4`或Phase B runtime已实现。
 
 ## 合同与验收入口
 

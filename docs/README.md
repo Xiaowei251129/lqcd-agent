@@ -33,7 +33,7 @@ Ready ticket 不能静默覆盖 `AGENTS.md`、安全策略或当前 public contr
 - [`REPO_CURRENT_STATE.md`](REPO_CURRENT_STATE.md)：第二阶段实时状态；
 - [`DECISION_LOG.md`](DECISION_LOG.md)：已确认设计决定。
 
-核心文档只描述当前已确认合同与实际runtime boundary。A02已完成Run/Cycle/Attempt/Transition/Human identity，A03已完成per-attempt artifact namespace、typed current index、compatibility projection和transition-time invalidation；四层fallback仍只是control harness evidence。A02C01与A04–A07 `ready` tickets中的schema `0.4` bootstrap、resume、Code Agent、budget/fingerprint和Phase B harness设计，以及未来RAG设计，不能提前写成当前runtime合同。A02/A03冻结正文中的commit-order歧义使用独立correction records澄清，不回写历史ticket。
+核心文档只描述当前已确认合同与实际runtime boundary。A02已完成Run/Cycle/Attempt/Transition/Human identity，A03已完成per-attempt artifact namespace、typed current index、compatibility projection和transition-time invalidation；四层fallback仍只是control harness evidence。A02C01已完成schema `0.4` bootstrap后继合同的治理同步，但没有修改当前schema `0.2` runtime；A04–A07 `ready` tickets中的resume、Code Agent、budget/fingerprint和Phase B harness设计，以及未来RAG设计，不能提前写成当前runtime合同。A02/A03冻结正文中的commit-order歧义使用独立correction records澄清，不回写历史ticket。
 
 ## 第二阶段方向与 Tickets
 
@@ -45,7 +45,7 @@ Ready ticket 不能静默覆盖 `AGENTS.md`、安全策略或当前 public contr
 
 Phase Overview 不是执行 prompt。只有经过用户确认并标记为 `status: ready` 的具体 ticket 才能执行；`ready`后ticket正文冻结，执行结果和后续纠偏不得回写原计划。
 
-当前Phase A中A01–A03及A03C01为`completed`，A02C01与A04–A07为`ready`；设计稿不代表Phase B runtime已实现。阶段范围、依赖和退出条件见[Phase A Overview](tickets/phase-a-control-contracts/OVERVIEW.md)。[Control Protocol 0.4](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)与[需求目录](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)提供机读合同及stable IDs；验证入口见[Verification Guide](VERIFICATION_GUIDE.md)，当前验证结果见[Repo Current State](REPO_CURRENT_STATE.md)，修改理由与历史见[Decision Log](DECISION_LOG.md)。用户已最终确认`f4f0eaa`设计；五张票据正文已冻结，后续按依赖顺序执行并建立独立completion records。
+当前Phase A中A01–A03、A02C01及A03C01为`completed`，A04–A07为`ready`；设计合同完成不代表Phase B runtime已实现。阶段范围、依赖和退出条件见[Phase A Overview](tickets/phase-a-control-contracts/OVERVIEW.md)。[Control Protocol 0.4](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)与[需求目录](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)提供机读合同及stable IDs；验证入口见[Verification Guide](VERIFICATION_GUIDE.md)，当前验证结果见[Repo Current State](REPO_CURRENT_STATE.md)，修改理由与历史见[Decision Log](DECISION_LOG.md)。用户已最终确认`f4f0eaa`设计；A02C01已建立独立completion record，A04–A07继续按依赖顺序执行。
 
 ## Milestones
 

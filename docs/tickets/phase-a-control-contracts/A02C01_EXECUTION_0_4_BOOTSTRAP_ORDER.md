@@ -1,7 +1,7 @@
 ---
 ticket_id: A02C01
 phase: phase-a-control-contracts
-status: ready
+status: completed
 type: corrective-implementation
 depends_on: [A02, A03, A03C01]
 ---

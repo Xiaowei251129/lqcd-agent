@@ -1170,3 +1170,11 @@ Related Documents:
 - Protocol SHA-256：`7447087f73caae2668a8e71e12fc40e426ebefee5864e3499a3f9cbd1a9322b8`；catalog SHA-256：`ed39a0b35feb3372e7647436ee588699c16b7c05555a03c791f69760626a9726`。
 - 后续按A02C01 → A04 → A05 → A06 → A07执行，结果写入独立completion records；本次不标记completed、不实现Phase B runtime。
 - 静态协议验证与文档检查通过；此前缺少sibling golden数据的测试仍待环境补齐后复跑，不计为通过。
+
+## 2026-09-14: Complete A02C01 Contract Execution
+
+- Execute A02C01 within its frozen documentation-only scope and mark it completed after verification. This closes the schema `0.4+` bootstrap corrective contract as Phase A governance and downstream implementation input; it does not implement the coordinator, bootstrap runtime, graph, checkpoint, budget ledger, or tests.
+- Preserve the A02 schema `0.2` runtime and historical four-record bootstrap contract. Preserve the frozen A02/A03/A03C01 ticket bodies, A04–A07 bodies, Control Protocol `0.4`, requirement catalog `0.4.0`, and their approved digests.
+- Record execution facts in `docs/tickets/completions/A02C01_COMPLETION.md`, update the completion index and Phase A lifecycle documents, and make A04 the next executable ticket. Runtime and fault-injection implementation remains assigned to Phase B B00–B02.
+- No architecture, schema, public contract, provider, security policy, dependency, runtime, test, evaluation, data, artifact, milestone, tag, or historical Run is changed by this execution.
+- Verification passed: the tracked protocol validator confirmed 131 requirements, 101 semantic mutations, 3 structural mutations, 178 publication-order mutations and 6 JSON/catalog checks; the full deterministic suite passed 325 tests; 41 Markdown files contained 400 valid relative links; scope, frozen hashes and `git diff --check` passed.
