@@ -112,7 +112,7 @@ runner 必须阻止 shell control operators、非 exact-allowlisted commands，�
 
 ## 第二阶段目标政策状态
 
-[A04 Pause/Resume](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)、[A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)与[A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)已完成目标政策同步，但尚未实现。A07仍为`ready`且只冻结Phase B harness acceptance；它不会改变当前runtime政策。当前runtime仍没有schema `0.4` coordinator、Pause/Resume、Code Agent或budget enforcement。
+[A04 Pause/Resume](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)、[A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)、[A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)与[A07 Harness Acceptance](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)已完成目标政策/验收合同同步，但尚未实现。A07 completion不会改变当前runtime政策。当前runtime仍没有schema `0.4` coordinator、Pause/Resume、Code Agent、budget enforcement或Phase B acceptance harness。
 
 ## 相关文档
 
