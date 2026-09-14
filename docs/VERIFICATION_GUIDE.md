@@ -143,6 +143,46 @@ python scripts/validate_phase_a_control_protocol.py
 
 A06明确不运行runtime、benchmark或live-provider测试；其完成证明预算、重复失败与停止目标合同闭合，不证明budget ledger、resource enforcement、trusted clock、grant或stop runtime已经存在。
 
+### A07 Phase B Harness Acceptance 设计合同验收
+
+A07是Phase A最后一张文档限定design ticket。执行时运行：
+
+```bash
+git diff --check
+python scripts/validate_phase_a_control_protocol.py
+```
+
+并静态核对：
+
+- A07在`ready`后只有YAML lifecycle metadata改变，冻结正文SHA-256保持一致；A01–A06/A02C01/A03C01保持`completed`且正文未修改，protocol与catalog exact bytes不变；
+- catalog owner集合exact等于A01、A02、A02C01、A03、A03C01、A04、A05、A06、A07，共131项required requirements；A07的15个`A07-META-*` IDs与catalog scenario set一致；
+- Evals/Observability记录required control acceptance、compatibility regression与capability evaluation分离，六层模型、exact normalized trace、双client/process concurrency、deterministic fault injection与matrix zero-gap gate完整；
+- Phase A Overview标记completed；Phase B Overview记录B00–B05的固定职责和依赖、阶段entry/exit gate，并明确当前仍为planned且没有ready implementation ticket；
+- B00–B05 ticket文件、`tests/phase_b/acceptance_matrix.json`、runtime、tests或fixtures均未创建，本次不把design validator当作Phase B scenario pass；
+- Docs Index、Current State、Decision Log与completion index一致记录A07及Phase A完成，下一步只是起草和确认B00；
+- Allowed Files、Do Not Touch、Markdown relative links、ticket metadata、删除/重命名和A07范围内现行状态文档审计通过。
+
+A07明确不运行pytest、benchmark或live-provider测试；其完成证明“Phase B怎样验收”已经冻结，不证明任何Layer 0–5 scenario、matrix或runtime已实现。
+
+### Phase B 目标验证入口（B00后生效）
+
+B00必须建立稳定的strict matrix validator入口并把exact命令补入本节；在该入口和matrix尚不存在时，不得伪造可执行命令或zero-gap结果。B01–B04每张implementation ticket必须用construction模式验证自身owned requirement subset、运行matrix列出的exact focused pytest nodeids并报告remaining IDs；B02/B03还必须分别运行真实新Python process重开durable store、双client/process owner竞争及全部owned fault boundaries，不能用同一对象、process-local lock、真实sleep或概率性kill race替代。
+
+B05 final mode除B00定义的matrix/trace验证命令外，至少运行以下已有通用入口：
+
+```bash
+pytest --collect-only -q tests/phase_b
+pytest -q tests/phase_b
+pytest -q
+python -m compileall -q src tests evaluation/synthetic_benchmarks/run_synthetic_benchmarks.py
+python evaluation/synthetic_benchmarks/run_synthetic_benchmarks.py \
+  --provider mock \
+  --case-set full \
+  --output-dir /private/tmp/lqcd-agent-phase-b-mock
+```
+
+还必须执行使用全新`/private/tmp/lqcd-agent-phase-b-*` root的project-interface CLI smoke，并从bytes核对ledger/state/checkpoint/artifact/budget/Pause/child/accepted invariants。Matrix validator final report必须证明131项required IDs与required scenarios set-equal、全部nodeids可collect且passing、无skip/xfail/deselect/live-only/unknown/uncovered，并记录matrix/protocol/catalog digests、各层scenario totals及legacy compatibility的独立结果。
+
 ### A02 Execution Identity 验收
 
 A02 的 targeted suite 必须同时覆盖 primitive、真实 compiled graph、demo Human continuation、legacy handoff compatibility 和最小 fallback identity harness：

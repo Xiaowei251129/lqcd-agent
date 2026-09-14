@@ -95,17 +95,27 @@ A06要求Phase B normalized trace与acceptance matrix能够从权威policy和led
 
 Token和normalized cost只作audit metric；provider未报告时必须显示`unknown`，不能计作0或影响hard-gate通过率。Stop telemetry必须区分`halted`、已证明且可发布的`failed`、`recovery_required`、`terminal_closure: unavailable`和非terminal`materialization_pending`，不得只报告“任务失败”。这些是A07/Phase B的目标证据字段；当前trace仍只有普通`llm_calls/`和schema `0.2` execution records。
 
+## A07 已确认的 Phase B Acceptance 模型（尚未实现）
+
+A07把评估证据分成required control acceptance、compatibility regression和capability evaluation。只有第一类决定Phase B是否完成：它必须network-free、deterministic、使用production selector/validator/ledger/registry/Pause/budget/CodeAgentSubgraph入口，并对exact normalized semantic trace和typed invariants断言。Legacy、live provider、benchmark score、人工演示或单一happy path必须单独报告，不能填补required coverage。
+
+六层模型覆盖schema/replay/invariants，node/subgraph/backend/trusted boundary，route/guard/Transition，trajectory/Cycle/termination，durable recovery/concurrency/fault injection，以及project interface/CLI smoke。Normalized trace纳入control与domain identity/lifecycle、route/guard、artifact current/invalidation/protection、budget/grant、Pause/Run、ExternalOperation/workspace/backend、fresh Analysis和每步bounded heads；只排除timestamp duration、临时物理路径、process ID及opaque provider/checkpoint字面值，同时仍单独验证其顺序、containment、binding和唯一性。
+
+Phase B matrix必须绑定tracked protocol/catalog exact digests，并以九个owner的131项required IDs为唯一required set。Construction模式只能报告当前implementation ticket已覆盖的owned subset与remaining IDs；B05 final模式必须set-equal并生成zero-gap report。Required nodeid不可skip、xfail、deselect、live-only或uncollectable，route/trajectory/recovery/interface场景必须具有exact expected trace。Process restart必须真正重启Python并重新打开durable store；Pause claim、terminal owner、grant和idempotency竞争必须使用两个独立client/process，fault outcome只能是exact same-operation continuation或冻结的typed fail-closed分类。
+
+当前尚无matrix、Phase B tests或B00–B05 ticket。A07完成只冻结验收权威和拆票顺序，不把design validator的通过计作runtime acceptance。
+
 ## 第二阶段 Harness 方向
 
 第二阶段按以下层次扩展，但本轮不提前批准具体 metric 或实现：
 
-1. Phase A 明确 transition、attempt、invalidation、resume、Code Agent 和 budget contracts；
+1. Phase A 已明确 transition、attempt、invalidation、resume、Code Agent、budget 和 harness acceptance contracts；
 2. Phase B 用 deterministic fake nodes 做 transition/trajectory、cycle、checkpoint 与 termination tests；
 3. Phase C 验证真实 Code Agent 的 scope、tests、budget 和回环；
 4. Phase D 对 physics/RAG 能力做有来源、可比较、支持 abstention 的评估；
 5. Phase E 形成 integrated benchmark 与下一 milestone。
 
-具体 Phase B acceptance 当前由`ready`状态的 [A07](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)、tracked [`Control Protocol 0.4`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json) machine schema 0.4和catalog version 0.4.0共同冻结。B00必须消费其中的transaction domain、resolution CAS、guarded branches、tagged evidence unions、winner-observation组合状态、request-owned normal safe-stop candidate classification、完整trigger-class/context stop route、interrupt disposition、interrupt late-integrity outcome、Cancel branch-to-resolution tuple/phase闭包、START/Replay/Fork/ordinary Transition的commit-gated capability、exact terminal lifecycle、reservation到ExternalOperation tuple及source proof到request Run/lineage的绑定、Replay source-policy classifier、stable fork、variant overlay与phase dominance及其exact digests，而不是从自然语言或实现反向定义验收范围。A06已经冻结具体policy、accounting和stop metrics，但这些仍是目标合同，不能写成当前runtime要求。
+具体 Phase B acceptance 已由`completed`的 [A07](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)、tracked [`Control Protocol 0.4`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json) machine schema 0.4和catalog version 0.4.0共同冻结。B00必须消费其中的transaction domain、resolution CAS、guarded branches、tagged evidence unions、winner-observation组合状态、request-owned normal safe-stop candidate classification、完整trigger-class/context stop route、interrupt disposition、interrupt late-integrity outcome、Cancel branch-to-resolution tuple/phase闭包、START/Replay/Fork/ordinary Transition的commit-gated capability、exact terminal lifecycle、reservation到ExternalOperation tuple及source proof到request Run/lineage的绑定、Replay source-policy classifier、stable fork、variant overlay与phase dominance及其exact digests，而不是从自然语言或实现反向定义验收范围。A06已经冻结具体policy、accounting和stop metrics，但这些仍是目标合同，不能写成当前runtime要求。
 
 ## Raw-data-backed Evals 的前置条件
 

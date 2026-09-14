@@ -1,0 +1,9 @@
+# A07 Completion Record
+
+- Ticket：[A07 Phase B Harness Acceptance](../phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)
+- Status：2026-09-14 completed。
+- Changed：仅更新A07 YAML lifecycle metadata；把已冻结的三类evidence、六层deterministic acceptance、normalized exact trajectory、真实process restart、双client concurrency、fault-boundary、Control Protocol/requirement catalog绑定、machine-readable acceptance matrix、construction/final zero-gap模式、B00–B05职责划分和Phase B exit gate同步到Docs Index、Phase A/Phase B Overview、Evals/Observability、Verification Guide、Repo Current State与Decision Log；新增本completion record并更新completion index。没有修改runtime、graph、checkpoint backend、tests、dependencies、configs、evaluation、provider、数据、accepted artifacts、历史Run、A01–A06/A02C01/A03C01正文、Control Protocol或requirement catalog，也没有创建B00–B05 ticket或acceptance matrix。
+- Verified：`python scripts/validate_phase_a_control_protocol.py`通过，确认protocol SHA-256 `7447087f73caae2668a8e71e12fc40e426ebefee5864e3499a3f9cbd1a9322b8`、catalog SHA-256 `ed39a0b35feb3372e7647436ee588699c16b7c05555a03c791f69760626a9726`、131项requirements、101项语义变异、3项结构变异、178项publication-order变异和6项JSON/catalog检查；catalog中的15项A07 required IDs与ticket scenario set一致；46个现行Markdown文件的418个relative links为0 broken；`git diff --check`、ticket metadata、依赖、Allowed Files/Do Not Touch、删除/重命名、B00–B05缺失和A07范围内现行状态文档审计通过。A07冻结正文SHA-256保持`c687b4b7617bc9e553deec298175fcb11d87a6063d6ea70aeb30bf4291104972`，执行前完整文件SHA-256为`7c52b346c00953bc3179a922664cc226724169089b4a91b48e594579b05f03b4`；A01–A06/A02C01/A03C01正文与protocol/catalog exact hashes保持执行基线不变。按ticket要求未运行pytest、runtime、benchmark或live-provider测试；最近一次完整runtime回归仍是A02C01执行时的`325 passed`，本记录不把该历史结果冒充A07或Phase B验收。
+- Commit：本次执行变更与本记录一并提交；exact commit由包含本记录的Git历史标识。
+- Deviations：无。
+- Follow-ups：下一步仅起草B00 Acceptance Foundation，经review和批准为ready后执行；随后依序起草并执行B01–B05。当前Phase B保持planned，schema `0.2` runtime尚无A07定义的acceptance matrix、六层harness或zero-gap证据。

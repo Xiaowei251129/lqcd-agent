@@ -33,7 +33,7 @@ Ready ticket 不能静默覆盖 `AGENTS.md`、安全策略或当前 public contr
 - [`REPO_CURRENT_STATE.md`](REPO_CURRENT_STATE.md)：第二阶段实时状态；
 - [`DECISION_LOG.md`](DECISION_LOG.md)：已确认设计决定。
 
-核心文档同时区分当前runtime与已确认的目标合同。A02已完成Run/Cycle/Attempt/Transition/Human identity，A03已完成per-attempt artifact namespace、typed current index、compatibility projection和transition-time invalidation；四层fallback仍只是control harness evidence。A02C01已完成schema `0.4` bootstrap后继合同的治理同步，A04已完成Pause/Resume/Replay/Fork目标合同同步，A05已完成graph-managed Code Agent、replaceable backend、isolated workspace、trusted verification与fresh Analysis handoff目标合同同步，A06已完成immutable budget policy、admission/reservation、failure fingerprint、single-use grant、Pause deadline与fail-closed stop目标合同同步；这些完成项都没有把相应目标能力接入当前schema `0.2` runtime。A07 `ready` ticket中的Phase B harness设计以及未来RAG设计，也不能提前写成当前runtime能力。A02/A03冻结正文中的commit-order歧义使用独立correction records澄清，不回写历史ticket。
+核心文档同时区分当前runtime与已确认的目标合同。A02已完成Run/Cycle/Attempt/Transition/Human identity，A03已完成per-attempt artifact namespace、typed current index、compatibility projection和transition-time invalidation；四层fallback仍只是control harness evidence。A02C01已完成schema `0.4` bootstrap后继合同的治理同步，A04已完成Pause/Resume/Replay/Fork目标合同同步，A05已完成graph-managed Code Agent、replaceable backend、isolated workspace、trusted verification与fresh Analysis handoff目标合同同步，A06已完成immutable budget policy、admission/reservation、failure fingerprint、single-use grant、Pause deadline与fail-closed stop目标合同同步，A07已完成六层deterministic acceptance、exact trajectory、fault/concurrency、machine matrix与zero-gap exit目标合同同步；这些完成项都没有把相应目标能力接入当前schema `0.2` runtime。未来RAG设计也不能提前写成当前runtime能力。A02/A03冻结正文中的commit-order歧义使用独立correction records澄清，不回写历史ticket。
 
 ## 第二阶段方向与 Tickets
 
@@ -45,7 +45,7 @@ Ready ticket 不能静默覆盖 `AGENTS.md`、安全策略或当前 public contr
 
 Phase Overview 不是执行 prompt。只有经过用户确认并标记为 `status: ready` 的具体 ticket 才能执行；`ready`后ticket正文冻结，执行结果和后续纠偏不得回写原计划。
 
-当前Phase A中A01–A06、A02C01及A03C01为`completed`，A07为`ready`；设计合同完成不代表Phase B runtime已实现。阶段范围、依赖和退出条件见[Phase A Overview](tickets/phase-a-control-contracts/OVERVIEW.md)。[Control Protocol 0.4](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)与[需求目录](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)提供机读合同及stable IDs；验证入口见[Verification Guide](VERIFICATION_GUIDE.md)，当前验证结果见[Repo Current State](REPO_CURRENT_STATE.md)，修改理由与历史见[Decision Log](DECISION_LOG.md)。用户已最终确认`f4f0eaa`设计；A02C01、A04、A05与A06均已建立独立completion record，下一张可执行ticket是A07。
+Phase A的A01–A07、A02C01及A03C01现均为`completed`；设计合同完成不代表Phase B runtime已实现。阶段闭合状态见[Phase A Overview](tickets/phase-a-control-contracts/OVERVIEW.md)，下一阶段拆分与进入条件见[Phase B Overview](tickets/phase-b-graph-harness/OVERVIEW.md)。[Control Protocol 0.4](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)与[需求目录](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)提供机读合同及stable IDs；验证入口见[Verification Guide](VERIFICATION_GUIDE.md)，当前验证结果见[Repo Current State](REPO_CURRENT_STATE.md)，修改理由与历史见[Decision Log](DECISION_LOG.md)。A07已建立独立completion record；当前没有可直接执行的Phase B ticket，下一步是按冻结拆分起草并确认B00 Acceptance Foundation。
 
 ## Milestones
 

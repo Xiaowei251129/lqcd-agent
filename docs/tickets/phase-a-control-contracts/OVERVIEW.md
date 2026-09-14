@@ -2,7 +2,7 @@
 
 ## Status
 
-`in_progress`
+`completed`
 
 ## 目标
 
@@ -31,6 +31,7 @@
 - [`A04_PAUSE_RESUME_SEMANTICS.md`](A04_PAUSE_RESUME_SEMANTICS.md)：已冻结Pause/Resume/Replay/Fork、Run lifecycle、single-use claim、terminal ownership与compatibility目标合同；没有修改当前runtime。
 - [`A05_CODE_AGENT_CONTRACT.md`](A05_CODE_AGENT_CONTRACT.md)：已冻结graph-managed `CodeAgentSubgraph`、replaceable `CodingBackend`、isolated workspace、trusted verification、canonical bundle与fresh Analysis handoff目标合同；没有实现Code Agent runtime。
 - [`A06_BUDGETS_AND_STOP_CONDITIONS.md`](A06_BUDGETS_AND_STOP_CONDITIONS.md)：已冻结immutable policy、admission/reservation、failure fingerprint、single-use grant、Pause deadline、terminal reserve与fail-closed stop目标合同；没有实现budget runtime。
+- [`A07_PHASE_B_HARNESS_ACCEPTANCE.md`](A07_PHASE_B_HARNESS_ACCEPTANCE.md)：已冻结六层deterministic acceptance、machine-readable matrix/catalog、exact trajectory、fault/concurrency、B00–B05拆分与zero-gap exit gate；没有创建或执行Phase B tickets。
 
 ## Completed Corrective Tickets
 
@@ -41,11 +42,11 @@
 
 ## Ready Tickets
 
-- [`A07_PHASE_B_HARNESS_ACCEPTANCE.md`](A07_PHASE_B_HARNESS_ACCEPTANCE.md)
+无。Phase A已闭合；Phase B尚无经过确认的`ready` implementation ticket。
 
 A01已完成逻辑transition contract。A02已完成formal execution identity；A03已完成immutable Attempt artifact namespace、typed current index、managed projections、Human Response snapshots及四层invalidation harness；A03C01已补齐execution global-head与Transition target-shape完整性。四层fallback仍是harness-only，不是产品edges。
 
-用户已最终确认`f4f0eaa`设计；A02C01、A04、A05与A06已按冻结合同执行并标记`completed`，A07保持`ready`。依赖以各票据YAML为准，下一张可执行ticket为A07。A02C01/A04/A05/A06完成只表示目标合同、治理文档和completion evidence已闭合，不代表schema `0.4`、durable resume、Code Agent、budget manager或Phase B runtime已实现。
+用户已最终确认`f4f0eaa`设计；A01–A07及A02C01/A03C01已按冻结合同闭合，Phase A退出条件满足。A02C01/A04–A07完成只表示目标合同、治理文档和completion evidence已闭合，不代表schema `0.4`、durable resume、Code Agent、budget manager、acceptance matrix或Phase B product graph已实现。下一步按A07冻结的依赖顺序起草B00–B05，第一张应为B00 Acceptance Foundation；每张票仍须独立经过`draft → review → ready`后才能执行。
 
 ## 合同与验收入口
 
