@@ -37,6 +37,19 @@
 - `cancel_pause`只能处置latest opened cancelable Pause并与normal/cancel/interrupt共享single-winner CAS。stop proof不完整时隔离为`terminal_closure: unavailable`，不得伪造安全停止、Run failure或accepted artifact；
 - Replay/Fork必须创建新Run并保持source与accepted evidence不可变；不得继承Human authorization、active Pause、accepted status或source写权限。Schema `0.2` source只能在root inputs完整验证后replay，不能fork或原地恢复。
 
+## A05 Code Agent 安全政策（目标合同，尚未实现）
+
+- 每个canonical `code_agent` Attempt使用新的Host-owned isolated workspace和immutable full-commit base；dirty control worktree、另一Attempt workspace、mutable provider session或旧result不能成为base；
+- Host在任何workspace bytes前持久化`producer_operation_id`、managed workspace identity和external lease epoch，在immutable task/manifest/A06 reservation/core闭合且A04 public paused checkpoint完成后才可dispatch；crash、receipt缺失或backend `unknown`只能lookup原operation，不能redispatch；
+- task的read/write/forbidden paths必须是normalized repository-relative POSIX paths。Forbidden规则优先；absolute、empty、`..`、normalization collision、symlink/hardlink/submodule/mount escape、Git metadata、device/socket及未授权binary/mode变化均拒绝；
+- `.git`、control repository、Run output、raw data、accepted results、checkpoint/control records、Human responses、secrets和credential files永远不可写。Raw numeric data与accepted payload默认不进入context；扩展数据权限必须另开安全设计ticket；
+- workspace、backend tool与trusted verification process默认断网，Agent/task不能打开network。Provider transport只可由sandbox外trusted Host按现有provider policy配置，credential不得挂载进workspace或写入task/artifact；
+- backend工具使用Host allowlisted typed argv、cwd、environment keys与timeout，不执行task自由shell。Host wrapper生成连续、redacted、可验证的tool audit，Agent自报命令或tests不是authority；
+- backend只能通过`dispatch | lookup | fetch_result | cancel`端口处理exact Host-owned operation，无权修改graph、ledger、registry、Pause、budget、authorization或route。Trusted Host必须对immutable delivery执行identity/digest/path/scope/policy检查，并在fresh workspace独立验证；
+- 真实local backend必须由`ContainmentProvider`执行write fencing、lease revocation、graceful terminate、bounded grace、containment-level kill-all、bounded output drain、`verify_empty`与post-stop stability。仅process group不足以声明strict descendant containment；任一证明维度false/unknown时隔离workspace并返回`recovery_required/terminal_closure: unavailable`；
+- `success` bundle只授权Run-local fresh Analysis execution，不授权修改control repository、patch promotion、commit、merge、push、PR、deployment、科学接受或accepted memory。执行中需要扩权时返回`needs_human`，新授权只能绑定新的Attempt/task；
+- Phase B只使用同合同的deterministic Fake。Python Codex SDK或其他真实backend必须先通过独立C00对restart-safe lookup、完整audit、exact cancellation/containment、workspace/credential隔离、immutable result和fail-closed crash的全部门禁；不得因候选provider能力不足降低本政策。
+
 ## Command Policy
 
 Analysis Engineer 只能通过 `src/lqcd_agent/tools/command_runner.py` 运行受限命令：
@@ -88,9 +101,8 @@ runner 必须阻止 shell control operators、非 exact-allowlisted commands，�
 
 ## 第二阶段目标政策状态
 
-[A04 Pause/Resume](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)已完成目标政策同步，但尚未实现。以下设计ticket仍为`ready`，不改变当前runtime政策：
+[A04 Pause/Resume](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)与[A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)已完成目标政策同步，但尚未实现。以下设计ticket仍为`ready`，不改变当前runtime政策：
 
-- [A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)
 - [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)
 
 ## 相关文档

@@ -117,7 +117,7 @@ Memory and Report -> END
 
 四个回退目标分别表示：重新审查相同 analysis、在相同 plan/code 下重新分析、修复实现、重新规划方法。候选目标冲突或无法唯一归因时不得默认选择最深回退，必须进入 Human Gate。
 
-这里的 `Code Agent` 是 A05 将定义的 graph-managed 接口，不是把当前 Codex Handoff 直接改名。A02 已确认 Run/Cycle/Attempt identity，A03 已实现 artifact invalidation；A04已确认PAUSE/resume控制合同，Code Agent wire contract和具体预算仍分别由A05、A06定义。在这些合同和 Phase B harness 完成前，目标闭环不得接入 runtime。
+这里的 `Code Agent` 是 A05 已确认的 graph-managed目标接口，不是把当前 Codex Handoff 直接改名。A02 已确认 Run/Cycle/Attempt identity，A03 已实现 artifact invalidation；A04已确认PAUSE/resume控制合同，A05已确认Code Agent wire contract，具体预算仍由A06定义。在这些合同对应的 Phase B harness 完成前，目标闭环不得接入 runtime。
 
 ## A02 当前 Execution Identity
 
@@ -132,7 +132,7 @@ Memory and Report -> END
 
 re-review、analysis rerun、code fix 和 replan 目前只在最小 deterministic StateGraph integration harness 中经过真实 selection/commit/target-consumption protocol；这只能证明 identity protocol，不代表产品 graph 已开放四层回退。特别是 harness 中的 `code_agent` 只是 protocol sink，不是 Fake/real Code Agent。
 
-legacy incomplete-Run re-entry 会校验 formal Run immutable fields，并从 ledger 恢复 counters，但这只是 compatibility audit continuity，不是 checkpoint resume。Run-owned `checkpoint_thread_id` 与 canonical output root 未改变；A04已冻结PAUSE/resume与replay/fork目标API，A05定义Fake/real graph-managed Code Agent，A06决定budgets/failure fingerprint，A07/Phase B才负责A01完整产品线路和禁止路线harness。
+legacy incomplete-Run re-entry 会校验 formal Run immutable fields，并从 ledger 恢复 counters，但这只是 compatibility audit continuity，不是 checkpoint resume。Run-owned `checkpoint_thread_id` 与 canonical output root 未改变；A04已冻结PAUSE/resume与replay/fork目标API，A05已冻结Fake/real graph-managed Code Agent的共同合同，A06决定budgets/failure fingerprint，A07/Phase B才负责A01完整产品线路和禁止路线harness。
 
 ## A03 当前 Artifact Control Plane
 
@@ -170,6 +170,31 @@ Pause publication使用非对称两checkpoint边界：`pause_prepared`首次分�
 Replay只从source immutable root inputs创建新child并从`START`执行；Fork只对source latest validated stable paused/terminal head和`source_control_revision`完成CAS后选择eligible immutable evidence，同样创建全新Run/Cycle/Attempt/Transition identities并从`START`执行。两者都不复制source checkpoint/current pointers/Pause/Human authorization/accepted status，也不修改source artifacts。Schema `0.2` source只可验证后replay；Phase B `0.4`不原地resume或迁移schema `0.3`，只resume exact supported `0.4` fingerprint。
 
 以上是Phase B实现约束，不是当前架构能力：当前CLI、demo server、LangGraph checkpointer、`graph_state.json`和legacy Human decision re-entry均未改动，仍不能调用这些A04接口。
+
+## A05 已确认的 Code Agent 控制架构（尚未实现）
+
+[A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)冻结一个稳定的`CodeAgentSubgraph`边界和可替换的`CodingBackend`语义端口。Parent LangGraph只看见一个canonical `code_agent` Attempt及其structured outcome；subgraph负责task、workspace identity、A06 reservation、A04 Pause/Resume、trusted verification、artifact registration和route outcome，外部backend只执行受限编码工具循环，无权修改graph state、ledger、registry、budget或route。
+
+目标调用关系为：
+
+```text
+Parent LangGraph
+└── CodeAgentSubgraph
+    ├── prepare_external_operation   trusted pre-start control
+    ├── wait_external_result         A04 external_result Pause
+    │   └── trusted Host -> CodingBackend outside replayable graph
+    └── consume_code_agent_result    the only code_agent Attempt work stage
+```
+
+Inbound Transition先分配尚未started的`code_agent` Attempt。可信Host随后按Control Protocol `0.4`先持久化Host-owned`producer_operation_id`与workspace identity，再冻结`CodeAgentTask`、未物化的`WorkspaceManifest`、A06 reservation及immutable ExternalOperation core；physical workspace只在current external lease epoch下物化。Run发布完整public paused checkpoint后，Host才可调用`dispatch`。`lookup`只能查询原operation，`fetch_result`只返回immutable result reference，`cancel`只能停止exact operation；Host重启、receipt缺失或backend `unknown`都不能触发第二次dispatch。
+
+Normal、cancel和interrupt通过与A04 ControlOperation同一`coordinator_sqlite`事务域内的single-owner CAS仲裁，并统一收敛到机器协议规定的唯一final evidence。真实local backend还必须由Host-owned containment完成write-lease revocation、完整descendant process停止、bounded output drain、`verify_empty`与post-stop stability；证明不完整时只能`recovery_required`并隔离，不能伪造failed Run或canonical bundle。
+
+Backend delivery先作为不可信入口由Host验证task、Attempt、base、workspace、receipt、seal、member digests、scope、policy和authorization。随后trusted verifier在exact base加validated change的fresh workspace执行typed required specs。通过Host归属与schema验证的canonical outcome可按其status注册content-addressed `code` bundle；只有`success + usable=true`且全部A01/A06 guards通过，才可由新的`advance_run`提交到Analysis，其他合法status全部进入Decision Coordinator。Malformed或越权ingress不注册bundle，也不形成产品Transition。
+
+Analysis不加载mutable coding workspace，也不执行当前control repository。Host为新的scheduled Analysis Attempt冻结`AnalysisExecutionSpec 0.1`，从相同immutable base和verified change materialize新的worktree，以新subprocess执行。该交接与patch promotion分离；A05不批准写回control repository、commit、merge、push、PR或deployment。
+
+Phase B只使用遵守相同端口、validator、verifier、registry和fresh Analysis路径的`FakeCodingBackend`。Python Codex SDK只是Phase C候选；独立C00必须先用pinned build证明restart-safe lookup、完整tool audit、exact process-tree cancellation、workspace/credential containment、immutable evidence与fail-closed crash行为，才能由C01选择真实backend。当前legacy handoff、runtime graph、dependencies和provider配置均未改变。
 
 ## Command 边界
 

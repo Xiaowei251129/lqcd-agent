@@ -99,6 +99,28 @@ python scripts/validate_phase_a_control_protocol.py
 
 A04明确不运行runtime、benchmark或live-provider测试；其完成证明合同同步和静态一致性，不证明Pause/Resume API已可执行。
 
+### A05 Code Agent 设计合同验收
+
+A05是文档限定design ticket。执行时运行：
+
+```bash
+git diff --check
+python scripts/validate_phase_a_control_protocol.py
+```
+
+并静态核对：
+
+- A05在`ready`后只有YAML lifecycle metadata改变，冻结正文SHA-256保持一致；A01–A04/A02C01/A03C01保持`completed`，A06/A07正文、protocol与catalog exact bytes不变；
+- Architecture和Agent Roles一致冻结`CodeAgentSubgraph`控制层与replaceable `CodingBackend`执行层，且current `legacy_codex_handoff`没有被重命名、迁移或当作canonical Code Agent；
+- State Schema与Artifact Contracts记录schema `0.1` task/external-result/result、workspace manifest/seal、canonical bundle、bounded projection、trusted verification和`AnalysisExecutionSpec`，同时明确它们尚未进入当前schema `0.2` runtime；
+- Security Policy保留Attempt-isolated immutable base、normalized path/tool/network policy、no-secrets/no-control-repo writes、single-operation dispatch、strict containment、fresh verification、Human authorization与no-promotion边界；
+- A04 `external_result` Pause、A06 reservation/settlement与ExternalOperation single-winner/final-evidence合同没有出现第二套resume、budget、route或terminal authority；
+- Phase B Fake和未来real backend使用同一port/validator/verifier/registry/fresh Analysis path；Python Codex SDK只保留为独立C00全部required capabilities通过后的条件性候选；
+- A05的29个required IDs继续存在于catalog，A07/Phase B承担deterministic scenarios与runtime acceptance，不把design validator当成实现测试；
+- Allowed Files、Do Not Touch、Markdown relative links、ticket metadata和删除/重命名审计通过，且`src/`、`tests/`、`evaluation/`、`configs/`、`raw_data/`、`outputs/`及accepted artifacts没有A05产生的diff。
+
+A05明确不运行runtime、benchmark或live-provider测试；其完成证明Code Agent目标合同及文档闭合，不证明subgraph、backend、workspace、resume、containment或fresh Analysis runtime已经实现。
+
 ### A02 Execution Identity 验收
 
 A02 的 targeted suite 必须同时覆盖 primitive、真实 compiled graph、demo Human continuation、legacy handoff compatibility 和最小 fallback identity harness：

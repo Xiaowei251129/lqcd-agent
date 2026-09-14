@@ -4,10 +4,10 @@
 
 - **更新时间**：2026-09-14
 - **当前分支**：`codex/phase-11-agent-harness-upgrade`（已快进包含`xgao`的Phase A设计冻结提交`d0f108a`）
-- **当前阶段**：Phase A控制合同澄清；A01–A04、A02C01及A03C01已完成，A05–A07保持`ready`
-- **活动 ticket**：A05–A07 `ready`；G01、A01–A04、A02C01及A03C01 `completed`
+- **当前阶段**：Phase A控制合同澄清；A01–A05、A02C01及A03C01已完成，A06–A07保持`ready`
+- **活动 ticket**：A06–A07 `ready`；G01、A01–A05、A02C01及A03C01 `completed`
 - **稳定基线**：[`v0.2-demo`](milestones/V0_2_DEMO_BASELINE.md)
-- **本轮范围**：按冻结合同完成A04文档限定执行，把Pause/Resume/Replay/Fork目标合同同步到核心文档并建立独立completion record；A05–A07保持`ready`，A01–A03/A02C01/A03C01正文、protocol与catalog exact bytes及当前runtime不变。
+- **本轮范围**：按冻结合同完成A05文档限定执行，把graph-managed Code Agent、replaceable backend、isolated workspace、trusted verification、canonical bundle与fresh Analysis handoff目标合同同步到核心文档并建立独立completion record；A06–A07保持`ready`，A01–A04/A02C01/A03C01正文、protocol与catalog exact bytes及当前runtime不变。
 
 ## 当前稳定实现
 
@@ -42,7 +42,7 @@ A01 已确认：
 - Coordinator 的四层回退目标是 Reviewer、Analysis、Code 和 Planner；
 - Human Gate 统一处理 clarification、approval 和 external action，进出只连接 Coordinator；
 - 完整 event log 不直接进入 Agent prompt；Agent 使用 scoped context 和相关 attempt history；
-- target route contract 尚未接入 runtime；identity 已由 A02 确认，invalidation 已由 A03 实现，A04已确认resume目标合同，Code Agent和budget仍由A05、A06定义。
+- target route contract 尚未接入 runtime；identity 已由 A02 确认，invalidation 已由 A03 实现，A04已确认resume目标合同，A05已确认Code Agent目标合同，budget仍由A06定义。
 
 A02 corrective implementation 已完成实现与整体验收：
 
@@ -79,18 +79,18 @@ A03 implementation 已完成：
 - current runtime、legacy handoff continuation、Demo Human decision与synthetic benchmark兼容；benchmark历史分析证据只从validated artifact history读取；
 - 四层fallback经过真实StateGraph commit/target-consumption invalidation harness，但仍不是A01产品路线。
 
-A03没有实现PAUSE/resume、partial-commit recovery、Fake/real Code Agent、budgets、failure fingerprint或A01新产品edges。A04现已完成相关目标合同同步，但实际Pause/Resume与recovery runtime仍由Phase B承担；其余工作分别由A05、A06与A07/Phase B承接。
+A03没有实现PAUSE/resume、partial-commit recovery、Fake/real Code Agent、budgets、failure fingerprint或A01新产品edges。A04与A05现已完成相应目标合同同步，但实际Pause/Resume、recovery、Code Agent与fresh Analysis runtime仍由Phase B承担；budgets/fingerprint和完整harness分别由A06与A07/Phase B承接。
 
 当前已冻结target-contract状态：
 
 - A02C01以仓库支持的`corrective-implementation`类型新增`ControlOperation 0.1`和schema `0.4+` bootstrap纠正合同：`<output_root>/.lqcd/control_operations.sqlite`在任何Run-root bytes前事务性占用幂等key、operation和target Run locator；policy和bootstrap admission先于initial Cycle/Planner Attempt/START Transition，完整heads/checkpoint验证先于Planner副作用；schema `0.2`历史正文和runtime不变；
 - A02/A03独立clarification统一复合Transition publication为Human Request（如有）→scheduled target allocation→A03 invalidation→committed Transition append→target start，已完成ticket正文不回写；
 - A04已完成目标合同同步：新增权威`run_status = initializing | running | paused | completed | failed | halted`与append-only lifecycle；三类typed Pause使用prepared/opened两checkpoint publication和single-use claim；十二种ControlOperation组合包含统一`advance_run`，使START与Human Response resume之外的每个普通Transition在预算、target allocation、A03 invalidation、Transition、head verification和commit-gated capability之间具有durable owner；每Run只有一个terminal closure owner，显式cancel和external interrupt复用同一CAS域并在原operation闭合；Replay/Fork通过A02C01 child saga创建隔离identity且不继承Pause、Human authorization或accepted status；
-- A05把Python Codex SDK保留为C00 capability gate后的条件性候选，Phase B仍只使用Fake；ExternalOperation以单一`coordinator_sqlite`中的normal/cancel/interrupt CAS仲裁，normal safe-stop candidate只存在于contender request，unavailable candidate不写公共状态而转入integrity interrupt；dispatch前interrupt使用与present字段互斥的typed reservation absence，resource snapshot绑定exact ExternalOperation identity/phase/revision/epoch与reservation，合法resolution统一收敛到唯一final evidence；
+- A05已完成目标合同同步：Parent graph只看见canonical `code_agent` Attempt与稳定`CodeAgentSubgraph`；subgraph通过replaceable `CodingBackend dispatch/lookup/fetch_result/cancel`端口协调图外执行，Phase B只使用同合同Fake，Python Codex SDK保留为C00 capability gate后的条件性候选。每Attempt使用immutable-base isolated workspace、manifest/seal、typed path/tool/network policy与Host-owned containment；external result经过A04 Pause、A06 settlement、ingress validation及fresh trusted verification后才注册schema `0.1` content-addressed code bundle。只有`success + usable`可通过`AnalysisExecutionSpec`进入新worktree/subprocess，其他合法status进入Coordinator，invalid ingress不产生产品Transition，patch promotion与control-repo/Git mutation均未批准。ExternalOperation以单一`coordinator_sqlite`中的normal/cancel/interrupt CAS仲裁，所有合法resolution统一收敛到唯一final evidence，stop proof不足时隔离并返回unavailable；
 - A06直接依赖A02C01，并统一bootstrap、admission、grant与invalid-response reserve顺序；预计算exact且无副作用的publication prefix保持`in_progress/materialization_pending`，缺少预授权或副作用结果不确定才终止为`recovery_required`；完整ExternalOperation `safe_stop` proof才允许halted/failed closure，任一停止证明维度缺失时必须Pause quarantine和`terminal_closure: unavailable`；stop route先冻结trigger class，每个class声明完整required External context并恰好选择一个operation，只有显式Pause取消使用cancel intent；
 - A07维护catalog version `0.4.0`的tracked `PHASE_B_REQUIREMENT_CATALOG.json`，为九个owner的131项required合同分配stable IDs；A04为21、A07为15。未来matrix必须与catalog required ID集合set-equal并绑定exact catalog SHA-256；failpoints覆盖advance、child capability、terminal total function、source Run/lineage与Replay policy分类、resource-to-ExternalOperation binding、stable fork、phase dominance、resolution interleaving、late integrity、trigger-class route totality与single-owner closure；
 - Phase A已冻结的tracked [`CONTROL_PROTOCOL_0_4.json`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json) machine schema `0.4`冻结九类、十二种ControlOperation组合、ExternalOperation、Pause/Run lifecycle、branch guards、tagged evidence unions、transaction domain/CAS、trigger-class stop route、variant phase dependencies、pre-start DAG和field binding；[`scripts/validate_phase_a_control_protocol.py`](../scripts/validate_phase_a_control_protocol.py)执行strict independent graph seal、dominance、guard/terminal tuple join、union cross-binding、capability producer closure、overlay、owner、interleaving、route totality、catalog与prose闭包检查，不属于runtime或Phase B实现；
-- 上述内容是已批准并冻结的target contract；A02C01与A04已完成治理同步，A05–A07 ticket状态为`ready`。`CONTROL_PROTOCOL_0_4.json`中的`status: review`作为批准快照内容保持不变。这不表示当前runtime已具有schema `0.4`、durable resume、Code Agent、budget manager或Phase B product graph。
+- 上述内容是已批准并冻结的target contract；A02C01、A04与A05已完成治理同步，A06–A07 ticket状态为`ready`。`CONTROL_PROTOCOL_0_4.json`中的`status: review`作为批准快照内容保持不变。这不表示当前runtime已具有schema `0.4`、durable resume、Code Agent、budget manager或Phase B product graph。
 
 第二阶段文档迁移此前已通过 scope check、Markdown link check、ticket metadata、tag、`git diff --check` 与完整 `pytest -q` 验收。
 
@@ -122,19 +122,21 @@ A03C01当前证据为registry suite `106 passed`、focused registry/identity/sta
 
 2026-09-14 A04执行把已冻结的Pause/Resume/Replay/Fork、Run lifecycle、single-use claim、terminal closure ownership、runtime compatibility与child isolation目标合同同步到核心文档，没有修改schema `0.2` runtime、graph、checkpoint backend或tests。Protocol validator通过相同131项requirements、101项语义变异、3项结构变异、178项publication-order变异与6项JSON/catalog检查；43个现行Markdown文件的402个relative links为0 broken，scope、冻结哈希、ticket metadata与`git diff --check`通过。按A04合同不运行runtime、benchmark或live-provider测试；A05成为下一张可执行ticket。
 
+2026-09-14 A05执行把已冻结的Code Agent subgraph/backend boundary、ExternalOperation、isolated workspace、task/result taxonomy、trusted verification、canonical bundle与fresh Analysis handoff目标合同同步到核心文档，没有修改schema `0.2` runtime、legacy handoff、graph、dependencies、provider配置或tests。Protocol、catalog、29项A05 required scenarios、Markdown links、scope、冻结哈希、ticket metadata与`git diff --check`均按A05静态验收；按合同不运行runtime、benchmark或live-provider测试。A06成为下一张可执行ticket。
+
 2026-08-22起，`ready` ticket正文冻结；completion和maintenance/corrective历史分别进入`docs/tickets/completions/`与`docs/tickets/corrections/`。A01/A02不追溯改写；A03已把初次completion和六轮pre-governance corrective history从原ticket拆出。A03详细implementation ticket执行前没有独立commit，仓库明确保留这一provenance限制，不声称可以恢复不存在的committed中间版本。
 
 ## 下一项工作
 
-用户已最终确认`f4f0eaa`设计。A02C01与A04已按各自文档限定范围执行并标记`completed`；冻结正文、Control Protocol、requirement catalog、当前runtime和tests没有改变。A05–A07保持`ready`，JSON内原有`status: review`作为批准快照的一部分保留，票据执行资格由YAML与用户冻结决定确定。
+用户已最终确认`f4f0eaa`设计。A02C01、A04与A05已按各自文档限定范围执行并标记`completed`；冻结正文、Control Protocol、requirement catalog、当前runtime和tests没有改变。A06–A07保持`ready`，JSON内原有`status: review`作为批准快照的一部分保留，票据执行资格由YAML与用户冻结决定确定。
 
-下一步按A05 → A06 → A07依赖顺序分别执行，建立独立completion records并同步源事实文档，完成后才标记`completed`。Phase A完成后起草B00 Acceptance Foundation，再按依赖起草B01–B05；本次未执行这些工作。
+下一步按A06 → A07依赖顺序分别执行，建立独立completion records并同步源事实文档，完成后才标记`completed`。Phase A完成后起草B00 Acceptance Foundation，再按依赖起草B01–B05；本次未执行这些工作。
 
 ## Blockers
 
-当前A04执行无已确认阻断项。A04按冻结合同只运行静态协议、文档和scope检查，不运行runtime、benchmark或live-provider测试；最近一次完整runtime回归仍是A02C01执行时的325项通过。
+当前A05执行无已确认阻断项。A05按冻结合同只运行静态协议、文档和scope检查，不运行runtime、benchmark或live-provider测试；最近一次完整runtime回归仍是A02C01执行时的325项通过。
 
-A02/A03当前只实现identity与artifact control plane；A02C01/A04已完成的目标合同和A05–A07三张ready设计票据不代表schema `0.4` bootstrap、resume、Code Agent、budgets或新的product runtime edges已经实现。
+A02/A03当前只实现identity与artifact control plane；A02C01/A04/A05已完成的目标合同和A06–A07两张ready设计票据不代表schema `0.4` bootstrap、resume、Code Agent、budgets或新的product runtime edges已经实现。
 
 ## 入口
 

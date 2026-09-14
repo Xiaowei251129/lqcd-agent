@@ -4,7 +4,7 @@
 
 本文记录当前 runtime 已经实现并由测试覆盖的 artifact contracts。下面保留英文 schema identifiers、field names、status values 和文件名，解释以这些精确合同为准。
 
-A02 已完成 Run/Cycle/Attempt/Transition/Human execution ledger，A03 已完成 per-attempt domain-artifact namespace、artifact history/current index、supersession/invalidation 和 fixed-path compatibility projection。A04已冻结后继Pause/Run lifecycle、checkpoint evidence与child lineage目标合同，但尚未改变当前artifact schema。Code Agent patch/evidence bundle 与 physics RAG evidence bundle仍未获批，只能在 [A05](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md) 及后续独立 ticket 中定义。
+A02 已完成 Run/Cycle/Attempt/Transition/Human execution ledger，A03 已完成 per-attempt domain-artifact namespace、artifact history/current index、supersession/invalidation 和 fixed-path compatibility projection。A04已冻结后继Pause/Run lifecycle、checkpoint evidence与child lineage目标合同，A05已冻结后继Code Agent task/result、workspace evidence、code bundle、trusted verification与fresh Analysis handoff合同；两者均未改变当前artifact schema或runtime。Physics RAG evidence bundle仍未获批，只能在后续独立ticket中定义。
 
 ## Execution Identity History
 
@@ -112,7 +112,37 @@ prepared event引用append前execution/artifact heads、typed reason/input/autho
 
 Replay/Fork child在任何child bytes前冻结field-disjoint `SourceSnapshotProof/replay_root | fork_head`、exact source Run identity、lineage digest、target policy与initial Planner capability inputs。Replay只复制validated immutable root-input snapshot；Fork只引用coordinator CAS接受的latest stable paused/terminal source head上的eligible immutable evidence。Child获得自己的Run/Cycle/Attempt/Transition、ledger、registry、checkpoint与current pointers；source bytes、accepted artifact bytes和protection history保持不变，Human authorization、active Pause与accepted status均不继承。
 
-外部结果Pause还必须引用A05/A06将定义的ExternalOperation core、one-time Pause binding、resource reservation/settlement和final evidence；这些control records不改变A03 domain artifact slots。只有消费、Attempt terminal artifact、settlement与active binding release形成exact closure后，checkpoint和后续Transition才能发布。
+外部结果Pause还必须引用A05已定义的ExternalOperation core、one-time Pause binding和final evidence，以及A06将具体化的resource reservation/settlement；这些control records不改变A03 domain artifact slots。只有消费、Attempt terminal artifact、settlement与active binding release形成exact closure后，checkpoint和后续Transition才能发布。
+
+## A05 已确认的 Code Agent Artifact Contract（尚未实现）
+
+[A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)冻结独立schema `0.1`的`CodeAgentTask`、`CodeAgentExternalResult`、`CodeAgentResult`、`BackendDispatchReceipt`、`WorkspaceManifest`、`WorkspaceSeal`、change manifest与verification results。它们不兼容解释当前`coder_task_packet.yaml`、`code_change_summary.md`或`tests_status.json`。
+
+Task使用`task_id = <attempt_id>:code_task`，绑定exact Run/Case/Cycle/Attempt/Transition、origin、current evidence heads、immutable full Git base revision/tree、normalized read/write/forbidden paths、typed tool/network/filesystem policy、ordered verification specs、A06 budget reference、nullable single-use Human authorization及Host-owned`producer_operation_id`。Task与manifest在Run control/audit namespace中create-new保存，尚不是A03 current `code` artifact。
+
+每个Attempt使用独立`workspace_id`。`WorkspaceManifest 0.1`在physical workspace之前冻结base、backend/runtime、managed-root identity与policy digests；`WorkspaceSeal 0.1`在backend停止且write lease关闭后冻结final tree、change manifest、tool audit和terminal backend evidence。Workspace lifecycle为`prepared -> leased -> running -> sealed -> verified -> released`，由Host append-only记录。Mutable workspace、provider response或thread summary都不是可消费artifact；missing/reused/tampered workspace、foreign lease、base drift或seal后变化均fail closed。
+
+每个完成trusted validation的canonical `code_agent` Attempt注册一个A03 `code` slot bundle，`artifact_id = <attempt_id>:code`，canonical root位于`attempts/<attempt_id>/`。常规`result_origin = backend_delivery`成员固定为：
+
+- `code_agent_task.json`
+- `code_agent_result.json`
+- `backend_dispatch_receipt.json`
+- `workspace_manifest.json`
+- `workspace_seal.json`
+- `change_manifest.json`
+- `verification_results.json`
+- `tool_audit.jsonl`
+- non-empty change时存在的`changes.patch`
+
+`result_origin = host_timeout`只用于Control Protocol指定的recoverable safe timeout：它包含task、failed result、workspace manifest、`interrupt_evidence.json`、empty change manifest及逐spec `not_run/operation_timeout` results，并按dispatch phase引用真实receipt或typed absence；不得伪造seal、tool audit或patch。Unavailable stop proof、integrity failure或不完整backend bytes不能包装为`host_timeout` bundle。
+
+`CodeAgentResult.status`只允许`success | no_change | failed | needs_input | needs_human | budget_exhausted | policy_blocked`，不定义`partial_success`。`success`要求non-empty manifest、present patch、完整scope/policy/authorization checks及所有required trusted verification passed，并且`usable=true`；`no_change`要求empty manifest、absent patch与base/final tree exact-equal；其余合法status均`usable=false`。实际越权content属于invalid ingress，不注册canonical artifact；schema-valid、Attempt-attributable且经Host验证的`failed/result_invalid`才可形成canonical failed bundle。
+
+Trusted verifier读取task中typed `VerificationSpec`，在exact base加validated change的fresh workspace运行。每个required spec恰有一个`passed | failed | blocked | timeout | not_run`结果，并记录typed command identity、bounded output digest及produced-file evidence；missing、duplicate、skipped、blocked、timeout或non-passing required result均不能产生usable success。Backend/Agent自报tests和exploratory tool audit不能替代trusted verification。
+
+`success` bundle注册并成为current后，Host为新scheduled Analysis Attempt冻结独立`AnalysisExecutionSpec 0.1`，绑定source Code Agent Attempt、current plan/code artifact及member digests、base、patch、expected effective tree、runtime policy和fresh Analysis workspace identity。Spec是目标Attempt的control/audit input，不是Code bundle member或current artifact。Analysis必须从exact base加verified change重新materialize worktree并在新subprocess中执行，不能复制mutable coding workspace、读取当前control repository或复用provider/tool session。
+
+Artifact pointer status必须exact等于structured result，dependencies至少包含当时current plan及适用的protected Human Response snapshot。A03 invalidation清除bounded current pointer和projection，但保留immutable task、ExternalOperation/workspace evidence、bundle及historical diagnostic bytes；physical workspace仍按Host lifecycle隔离、释放，不能成为长期source of truth。A05不批准把bundle写回control repository，也不批准commit、merge、push、PR、deployment、scientific acceptance或accepted-result promotion。
 
 ## 当前通用规则
 

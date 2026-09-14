@@ -40,7 +40,7 @@ Agent 可以支持规划、执行受限分析、检查、报告与风险分类�
 - 修改 raw data、accepted results、secrets 或 task packet scope 外文件；
 - 决定 physics acceptance。
 
-第二阶段计划把该角色演进为图内 Code Agent。A01 已确认它在目标逻辑图中的前进和回退位置，但不批准新权限、输入输出、tool allowlist、budget、retry 或 stop semantics。正式接口与安全边界由 [A05](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md) 定义；在该 ticket 完成前，本节当前合同继续有效。
+A01 已确认未来graph-managed Code Agent在目标逻辑图中的前进和回退位置，[A05](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)已确认其目标接口与安全边界。该目标不是当前Codex Handoff的改名或权限扩张；在Phase B实现并验收前，本节legacy合同继续有效。
 
 ## Analysis Engineer Agent
 
@@ -150,6 +150,21 @@ Human Gate 在目标合同中是统一的人类交互边界：
 - human response 必须 single-use；继续循环时每次只授权一个新的有限 execution window。
 
 工作 Agent 的多次 attempt 记录属于 append-only execution history，不是 Agent 可自主写入的长期记忆。Coordinator 可以使用 bounded global execution summary；其他 Agent 只能读取与当前目标相关的 scoped history。跨 Run 经验只有经过测试或人类确认后才能进入 curated knowledge/few-shot。
+
+## A05 已确认的 Code Agent 目标职责边界（尚未实现）
+
+Parent LangGraph只与`CodeAgentSubgraph`交换canonical `code_agent` Attempt和structured outcome，不持有具体编码工具循环。各层职责固定为：
+
+- trusted control plane从current plan、Coordinator remediation、inbound Transition与可选single-use Human authorization派生不可变`CodeAgentTask`，并拥有identity、A06 budget reference、A04 Pause/Resume和route preparation；
+- trusted Host拥有`producer_operation_id`、ExternalOperation lease/watchdog、workspace mapping、dispatch receipt、delivery snapshot与containment，且只能通过`dispatch | lookup | fetch_result | cancel`语义端口操作exact backend operation；
+- `CodingBackend`只在Attempt-isolated workspace内执行task授权的工具循环，不能写graph/control/Run/accepted/raw/secret/Git-history边界，不能创建Pause、Attempt、budget、authorization、artifact或Transition；
+- trusted verifier独立重建exact base加change的fresh workspace，执行typed required verification、scope/policy scan和digest检查；Agent或backend自报tests不能替代该证据；
+- `consume_code_agent_result`是唯一领取并启动scheduled `code_agent` Attempt的work stage，必须位于external-result Pause claim、A06 settlement、running lifecycle和resume checkpoint之后；pre-start stages不是Agent Attempt；
+- Decision Coordinator继续拥有所有graph-level fallback authority。只有validated `success + usable=true`可以候选进入fresh Analysis；`no_change | failed | needs_input | needs_human | budget_exhausted | policy_blocked`全部返回Coordinator，invalid ingress停留在产品graph之外。
+
+Code Agent不得读取完整Run root或当前control repository作为可变workspace，不得扩大自己的paths、tools、network、budget或authorization，也不得把engineering verification解释为科学接受、patch promotion或accepted memory。发现需要扩权时只能返回`needs_human`；批准后必须创建新的Attempt和task，不能追溯授权旧change。
+
+Phase B `FakeCodingBackend`和任何未来真实backend必须经过相同port、ingress validator、trusted verifier、artifact registry和fresh Analysis materialization。Python Codex SDK仅是C00 capability gate后的条件性首选候选；provider thread/session不能成为第二套Run、Pause或resume authority。
 
 ## 能力增强原则
 

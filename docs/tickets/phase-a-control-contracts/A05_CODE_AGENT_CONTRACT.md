@@ -1,7 +1,7 @@
 ---
 ticket_id: A05
 phase: phase-a-control-contracts
-status: ready
+status: completed
 type: design
 depends_on: [A01, A02, A03, A03C01, A04]
 ---

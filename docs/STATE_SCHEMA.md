@@ -2,7 +2,7 @@
 
 ## 当前合同
 
-`AnalysisState` 是当前公开 graph-state contract。节点只能读取和写入已记录字段。下面的 schema 与当前 runtime 对齐；A02 完成 execution identity，A03 完成 bounded artifact-current control fields。A04已经冻结后继Pause/Resume state contract，但尚未把字段加入当前runtime。
+`AnalysisState` 是当前公开 graph-state contract。节点只能读取和写入已记录字段。下面的 schema 与当前 runtime 对齐；A02 完成 execution identity，A03 完成 bounded artifact-current control fields。A04已经冻结后继Pause/Resume state contract，A05已经冻结后继Code Agent bounded projection，但两者都尚未把字段加入当前runtime。
 
 schema 变化必须由独立 implementation ticket 批准，并同步 runtime、tests、artifact contracts 和相关 Decision Log。A02 execution identity 与 A03 artifact-current schema 已落地并通过验收；reducer、具体恢复字段和 budgets 不属于当前正式 schema。
 
@@ -197,11 +197,33 @@ Attempt 由 graph control plane 在目标节点副作用之前分配。canonical
 
 每个Pause还冻结runtime compatibility fingerprint，至少覆盖control/app build、graph topology、state/artifact schema、LangGraph/checkpointer/serializer实现及版本。Schema `0.2`不resume/fork；显式支持`0.3`的原runtime可恢复自己创建的exact Pause，但Phase B `0.4`只原地resume exact supported `0.4`，对validated `0.3` source只允许replay/fork为新child。缺失或mismatch一律fail closed，不做state reinterpretation或原地迁移。
 
+## A05 已确认的 Code Agent 目标 State Boundary（尚未实现）
+
+[A05](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)为Phase B canonical Code Agent冻结以下bounded nullable projection：
+
+```text
+code_agent_task_path
+code_agent_result_path
+code_change_manifest_path
+code_verification_results_path
+code_agent_status
+code_agent_usable
+```
+
+这些字段只在A03 `code` bundle完成注册后设置，并必须与current pointer、canonical member paths及validated `CodeAgentResult` exact-match。`code_agent_status`只允许`success | no_change | failed | needs_input | needs_human | budget_exhausted | policy_blocked`，`code_agent_usable`只有满足non-empty scoped change、全部required trusted verification及其他route guards的`success`才可为true。Code invalidation必须与A03 current pointer一起原子清空全部canonical字段。
+
+Legacy `code_change_summary_path`和`tests_status_path`保持独立。Future code-slot state path对`legacy_codex_handoff`与`code_agent`使用同一个完整nullable key集合：legacy producer只填legacy paths，canonical producer只填上述新paths和scalars，另一组必须显式为null；没有current code pointer时两组都为空。两类producer不能从字段组合或artifact内容互相解释。
+
+Mutable workspace path、patch bytes、tool transcript、完整verification logs、backend/provider session和ExternalOperation authority不得进入bounded graph state。State/checkpoint至多保存受限identity/reference projection；`producer_operation_id`、phase/revision/lease、Pause binding、workspace lifecycle、receipt/seal/delivery与final evidence继续由project-owned coordinator及immutable control/audit records拥有，不能由Agent、resume payload或model output改写。
+
+上述字段属于Phase B execution schema `0.4`实现目标，不是当前schema `0.2`字段。A05没有修改`AnalysisState`、graph、checkpoint backend或legacy re-entry行为。
+
 ## 第二阶段待实现 schema 议题
 
 以下内容仍未成为当前 `AnalysisState` 合同：
 
 - A04已确认的`run_status`、Pause、ControlOperation和compatibility projections；
+- A05已确认的canonical Code Agent bounded fields及其与ExternalOperation、workspace和code bundle的交叉验证；
 - 正式 parallel reducer、per-branch namespace 或 merge semantics。
 
 在相应 implementation tickets 完成前，任何实现或其他文档都不能假设这些字段已经存在。

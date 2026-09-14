@@ -29,6 +29,7 @@
 - [`A02_RUN_CYCLE_ATTEMPT_MODEL.md`](A02_RUN_CYCLE_ATTEMPT_MODEL.md)
 - [`A03_ARTIFACT_INVALIDATION.md`](A03_ARTIFACT_INVALIDATION.md)
 - [`A04_PAUSE_RESUME_SEMANTICS.md`](A04_PAUSE_RESUME_SEMANTICS.md)：已冻结Pause/Resume/Replay/Fork、Run lifecycle、single-use claim、terminal ownership与compatibility目标合同；没有修改当前runtime。
+- [`A05_CODE_AGENT_CONTRACT.md`](A05_CODE_AGENT_CONTRACT.md)：已冻结graph-managed `CodeAgentSubgraph`、replaceable `CodingBackend`、isolated workspace、trusted verification、canonical bundle与fresh Analysis handoff目标合同；没有实现Code Agent runtime。
 
 ## Completed Corrective Tickets
 
@@ -39,13 +40,12 @@
 
 ## Ready Tickets
 
-- [`A05_CODE_AGENT_CONTRACT.md`](A05_CODE_AGENT_CONTRACT.md)
 - [`A06_BUDGETS_AND_STOP_CONDITIONS.md`](A06_BUDGETS_AND_STOP_CONDITIONS.md)
 - [`A07_PHASE_B_HARNESS_ACCEPTANCE.md`](A07_PHASE_B_HARNESS_ACCEPTANCE.md)
 
 A01已完成逻辑transition contract。A02已完成formal execution identity；A03已完成immutable Attempt artifact namespace、typed current index、managed projections、Human Response snapshots及四层invalidation harness；A03C01已补齐execution global-head与Transition target-shape完整性。四层fallback仍是harness-only，不是产品edges。
 
-用户已最终确认`f4f0eaa`设计；A02C01与A04已按冻结合同执行并标记`completed`，A05–A07保持`ready`。依赖以各票据YAML为准，下一执行顺序为A05 → A06 → A07。A02C01/A04完成只表示目标合同、治理文档和completion evidence已闭合，不代表schema `0.4`、durable resume或Phase B runtime已实现。
+用户已最终确认`f4f0eaa`设计；A02C01、A04与A05已按冻结合同执行并标记`completed`，A06–A07保持`ready`。依赖以各票据YAML为准，下一执行顺序为A06 → A07。A02C01/A04/A05完成只表示目标合同、治理文档和completion evidence已闭合，不代表schema `0.4`、durable resume、Code Agent或Phase B runtime已实现。
 
 ## 合同与验收入口
 
