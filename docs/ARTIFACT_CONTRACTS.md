@@ -4,7 +4,7 @@
 
 本文记录当前 runtime 已经实现并由测试覆盖的 artifact contracts。下面保留英文 schema identifiers、field names、status values 和文件名，解释以这些精确合同为准。
 
-A02 已完成 Run/Cycle/Attempt/Transition/Human execution ledger，A03 已完成 per-attempt domain-artifact namespace、artifact history/current index、supersession/invalidation 和 fixed-path compatibility projection。Code Agent patch/evidence bundle 与 physics RAG evidence bundle仍未获批，只能在 [A05](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md) 及后续独立 ticket 中定义。
+A02 已完成 Run/Cycle/Attempt/Transition/Human execution ledger，A03 已完成 per-attempt domain-artifact namespace、artifact history/current index、supersession/invalidation 和 fixed-path compatibility projection。A04已冻结后继Pause/Run lifecycle、checkpoint evidence与child lineage目标合同，但尚未改变当前artifact schema。Code Agent patch/evidence bundle 与 physics RAG evidence bundle仍未获批，只能在 [A05](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md) 及后续独立 ticket 中定义。
 
 ## Execution Identity History
 
@@ -90,7 +90,29 @@ Invalidation 清除 index/state current 和 owned projection，但不删除 cano
 
 v0.2 run-root fixed paths保持为 current compatibility copies，包括 plan/code/analysis/review/decision/approval/terminal paths和 `llm_calls/`。copy publication 对单文件使用同目录临时文件与 `os.replace()`；目录按成员受控 materialize，不使用 symlink。publication在复制任何bytes前必须preflight全部member；另一个current artifact已经拥有的projection会使整个注册失败，history、index和既有projection保持不变。只有 index 中记录正确current artifact owner 的 projection 可以替换/清除；没有 A03 index 的 legacy tree拒绝接管。外部 handoff result files与 Human decision file仍是明确 ingress，消费后 canonical evidence由 registry保留；这两类ingress只豁免projection digest比较，不豁免路径、存在性和owner验证。
 
-Human Response payload写入 `<run_root>/human_responses/<human_response_id>/payload.json`，artifact ID必须为 `<human_response_id>:payload`，唯一member必须是同一identity下的`payload.json`，并使用 `protected_kind: human_response`；protected event的Run/Case/Cycle/Request/Response、canonical path和digest必须与唯一`submitted` Human Response ledger record exact-equal，且每个submitted ledger identity必须反向对应exactly one Human Response protection。每个Human Response ledger identity必须形成合法有序的`submitted → validated|invalid → consumed?`生命周期，跨事件的Run、Case、Request、Response、index、payload path与digest不可变化；bounded state声明的active Human Response必须存在于ledger，并与其最新lifecycle状态、decision、route、validator、consumer和authorized target exact-equal。accepted terminal bundle继续使用 `<attempt_id>:terminal`，但只有当它是当时current、slot为`terminal`且pointer status为`accepted`时，才能追加唯一`protected_kind: accepted_result`事件；每个registered accepted terminal也必须反向对应exactly one protection，未知protected kind、非terminal/non-accepted、缺失或重复protection均fail closed。为保持正常原子写入顺序，invalidation、Human Response snapshot和accepted protection API只对正在写入的唯一target/response/producing Attempt开放一次受限preflight例外；恢复、读取和state保存不接受该例外。`memory_update.json`冻结 source artifact IDs/member digests和 Human Response identity。A03不提供跨进程 partial-commit recovery或 replay，相关语义属于 A04。
+Human Response payload写入 `<run_root>/human_responses/<human_response_id>/payload.json`，artifact ID必须为 `<human_response_id>:payload`，唯一member必须是同一identity下的`payload.json`，并使用 `protected_kind: human_response`；protected event的Run/Case/Cycle/Request/Response、canonical path和digest必须与唯一`submitted` Human Response ledger record exact-equal，且每个submitted ledger identity必须反向对应exactly one Human Response protection。每个Human Response ledger identity必须形成合法有序的`submitted → validated|invalid → consumed?`生命周期，跨事件的Run、Case、Request、Response、index、payload path与digest不可变化；bounded state声明的active Human Response必须存在于ledger，并与其最新lifecycle状态、decision、route、validator、consumer和authorized target exact-equal。accepted terminal bundle继续使用 `<attempt_id>:terminal`，但只有当它是当时current、slot为`terminal`且pointer status为`accepted`时，才能追加唯一`protected_kind: accepted_result`事件；每个registered accepted terminal也必须反向对应exactly one protection，未知protected kind、非terminal/non-accepted、缺失或重复protection均fail closed。为保持正常原子写入顺序，invalidation、Human Response snapshot和accepted protection API只对正在写入的唯一target/response/producing Attempt开放一次受限preflight例外；恢复、读取和state保存不接受该例外。`memory_update.json`冻结 source artifact IDs/member digests和 Human Response identity。A03不提供跨进程 partial-commit recovery或 replay；A04已冻结这些后继语义，但尚未实现。
+
+## A04 已确认的 Pause 与 Child-Run Evidence Contract（尚未实现）
+
+A04目标execution schema `0.3`在A02 ledger上增加append-only `run_lifecycle`以及`pause_prepared | pause_opened | pause_claimed | pause_consumed | pause_cancelled | pause_aborted | pause_interrupted | pause_quarantined` records。每条record携带自身event identity、sequence与canonical digest，resulting execution head由record bytes派生；payload不得嵌入自己的未来digest/head。bounded `run_status`和Pause fields只是这些records的projection。
+
+Pause publication evidence固定形成非对称closure：
+
+```text
+pause_prepared resulting head
+-> prepared checkpoint
+-> run_lifecycle(running -> paused)
+-> pause_opened resulting head
+-> public paused checkpoint
+```
+
+prepared event引用append前execution/artifact heads、typed reason/input/authorization contract、requesting/nullable target Attempt、canonical state digest和runtime fingerprint；prepared checkpoint引用prepared resulting head；opened再绑定prepared checkpoint及lifecycle pre-head；public checkpoint最终引用opened resulting head。Checkpoint、bounded state、execution/artifact heads或Pause/Run lifecycle任一不一致均不可resume，且不得通过读取或state patch补写history。
+
+所有public mutation与internal publication由`<output_root>/.lqcd/control_operations.sqlite`中的ControlOperation journal先取得owner；operation records、checkpoint manifests、Pause events与result closure都绑定exact `operation_id + lease_epoch + phase_revision`。同key同request只重放原result，同key不同digest或竞争owner冲突；只有已预计算、head-exact且无副作用的缺失suffix可由原operation materialize。`recovery_required`、integrity failure和`terminal_closure: unavailable`是控制证据，不得伪造domain artifact、accepted result或Run lifecycle。
+
+Replay/Fork child在任何child bytes前冻结field-disjoint `SourceSnapshotProof/replay_root | fork_head`、exact source Run identity、lineage digest、target policy与initial Planner capability inputs。Replay只复制validated immutable root-input snapshot；Fork只引用coordinator CAS接受的latest stable paused/terminal source head上的eligible immutable evidence。Child获得自己的Run/Cycle/Attempt/Transition、ledger、registry、checkpoint与current pointers；source bytes、accepted artifact bytes和protection history保持不变，Human authorization、active Pause与accepted status均不继承。
+
+外部结果Pause还必须引用A05/A06将定义的ExternalOperation core、one-time Pause binding、resource reservation/settlement和final evidence；这些control records不改变A03 domain artifact slots。只有消费、Attempt terminal artifact、settlement与active binding release形成exact closure后，checkpoint和后续Transition才能发布。
 
 ## 当前通用规则
 
@@ -515,8 +537,8 @@ route/target, validation Attempt, consuming Gate Attempt, authorized target
 Attempt, and satisfied request are recorded in `execution_history.jsonl`.
 Duplicate submission or consumption is rejected and must not change counters,
 append ledger records, create a new target Attempt, or rewrite memory/report
-artifacts. Network-delivery idempotency keys and replay semantics remain an A04
-responsibility.
+artifacts. Network-delivery idempotency keys and replay semantics are frozen by
+A04 as a target contract but are not implemented by the current demo API.
 
 The current demo still follows the Phase 7 compatibility topology:
 `request_code_change` transitions directly to legacy Codex Handoff,
@@ -525,8 +547,8 @@ approve/reject reporting decisions transition directly to Memory Report, and
 than executing Analysis Engineer. The graph still declares an Analysis Engineer
 compatibility target for the Gate, but the current selector does not execute that
 target for `approve_rerun`. None of this is the A01 target contract, where a
-valid Human response must return to Decision Coordinator. A04 owns durable
-PAUSE/resume and A07/Phase B owns the product-route migration.
+valid Human response must return to Decision Coordinator. A04 has frozen durable
+PAUSE/resume semantics, while A07/Phase B owns their runtime and product-route migration.
 
 ## Final Report and Memory Update
 

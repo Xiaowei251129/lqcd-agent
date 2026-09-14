@@ -117,7 +117,7 @@ Memory and Report -> END
 
 四个回退目标分别表示：重新审查相同 analysis、在相同 plan/code 下重新分析、修复实现、重新规划方法。候选目标冲突或无法唯一归因时不得默认选择最深回退，必须进入 Human Gate。
 
-这里的 `Code Agent` 是 A05 将定义的 graph-managed 接口，不是把当前 Codex Handoff 直接改名。A02 已确认 Run/Cycle/Attempt identity，A03 已实现 artifact invalidation；PAUSE/resume、Code Agent wire contract 和具体预算仍分别由 A04–A06 定义。在这些合同和 Phase B harness 完成前，目标闭环不得接入 runtime。
+这里的 `Code Agent` 是 A05 将定义的 graph-managed 接口，不是把当前 Codex Handoff 直接改名。A02 已确认 Run/Cycle/Attempt identity，A03 已实现 artifact invalidation；A04已确认PAUSE/resume控制合同，Code Agent wire contract和具体预算仍分别由A05、A06定义。在这些合同和 Phase B harness 完成前，目标闭环不得接入 runtime。
 
 ## A02 当前 Execution Identity
 
@@ -132,7 +132,7 @@ Memory and Report -> END
 
 re-review、analysis rerun、code fix 和 replan 目前只在最小 deterministic StateGraph integration harness 中经过真实 selection/commit/target-consumption protocol；这只能证明 identity protocol，不代表产品 graph 已开放四层回退。特别是 harness 中的 `code_agent` 只是 protocol sink，不是 Fake/real Code Agent。
 
-legacy incomplete-Run re-entry 会校验 formal Run immutable fields，并从 ledger 恢复 counters，但这只是 compatibility audit continuity，不是 checkpoint resume。Run-owned `checkpoint_thread_id` 与 canonical output root 未改变；A04 决定 PAUSE/resume 与 replay/fork API，A05 定义 Fake/real graph-managed Code Agent，A06 决定 budgets/failure fingerprint，A07/Phase B 才负责 A01 完整产品线路和禁止路线 harness。
+legacy incomplete-Run re-entry 会校验 formal Run immutable fields，并从 ledger 恢复 counters，但这只是 compatibility audit continuity，不是 checkpoint resume。Run-owned `checkpoint_thread_id` 与 canonical output root 未改变；A04已冻结PAUSE/resume与replay/fork目标API，A05定义Fake/real graph-managed Code Agent，A06决定budgets/failure fingerprint，A07/Phase B才负责A01完整产品线路和禁止路线harness。
 
 ## A03 当前 Artifact Control Plane
 
@@ -140,7 +140,7 @@ legacy incomplete-Run re-entry 会校验 formal Run immutable fields，并从 le
 
 Transition commit 在目标 Attempt 分配后、目标节点副作用前按 target layer 清除 current pointer：re-review 清除 review 及下游，analysis rerun 清除 analysis 及下游，code fix 清除 code 及下游，replan 清除全部 slots。Decision、Human Gate 与 Memory Report 使用相同的 target-layer规则。清除只修改 current index、bounded state 和 managed projection，不删除 canonical bytes 或 history。
 
-run-root 的 v0.2 fixed paths 现在是 registry-managed copy projections，不是 canonical history。只有带有效 A03 index 且记录 owner 的 projection 才能替换或清除；unmanaged legacy trees 不迁移、不覆盖。Human Response payload 以 `<run_root>/human_responses/<human_response_id>/payload.json` 保存，accepted terminal bundle追加保护事件。A03 没有实现 crash recovery、并发提交或 replay，这些仍属于 A04。
+run-root 的 v0.2 fixed paths 现在是 registry-managed copy projections，不是 canonical history。只有带有效 A03 index 且记录 owner 的 projection 才能替换或清除；unmanaged legacy trees 不迁移、不覆盖。Human Response payload 以 `<run_root>/human_responses/<human_response_id>/payload.json` 保存，accepted terminal bundle追加保护事件。A03 没有实现 crash recovery、并发提交或 replay；A04已确认相关目标合同，runtime仍由Phase B实现。
 
 ## Checkpoint 与上下文边界
 
@@ -155,7 +155,21 @@ Checkpointing 与 LLM context 是两个不同问题：
 
 A01 进一步确认：完整 `event_log`、route trace 和 checkpoint state 只用于 runtime、审计和 UI，不直接注入 Agent prompt。目标工作 Agent 只读取 scoped current context、typed remediation packet、直接父 attempt 和与当前问题相关的 bounded attempt history；Decision Coordinator 读取 bounded global execution summary。跨 Run 经验必须经过测试或人类确认后才能进入 curated knowledge，Agent 不能从单次经历直接改写长期规则或 routing policy。
 
-当前 checkpoint persistence 不应被误称为完整 pause/resume。正式恢复语义由 [A04](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md) 讨论。
+当前 checkpoint persistence 不应被误称为完整 pause/resume。正式恢复的目标语义已由 [A04](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md) 冻结，但尚未由Phase B实现。
+
+## A04 已确认的 Pause/Resume 控制架构（尚未实现）
+
+A04冻结项目自有的`start_run`、`resume_run`、`replay_run`、`fork_run`与`cancel_pause`外部合同；`advance_run`、`publish_pause`、`close_run`和`resolve_external_interrupt`仅供可信control plane内部调用。START bootstrap与Human Response resume之外的每个普通Transition都由`advance_run`持有，committed result之前不得激活target invocation capability。客户端不接收raw LangGraph checkpoint、thread ID、任意state patch或route override。所有mutation在写Run、Pause、checkpoint、child bytes或外部副作用前，必须先进入A02C01定义的单一project-owned SQLite coordinator，绑定canonical request digest、durable operation ownership、monotonic phase revision和`lease_epoch`。
+
+目标execution schema `0.3`引入append-only `run_lifecycle` authority及其受限`run_status = initializing | running | paused | completed | failed | halted` projection；现有`AnalysisState.status`继续表达领域结果，不决定Run是否terminal或可恢复。只有latest lifecycle为stable `paused`、latest active Pause为unclaimed `opened`、public paused checkpoint与execution/artifact heads exact闭合且Run没有terminal owner时，`resume_run`才可claim。`human_input`、`external_result`和`recovery_decision`三类Pause均single-use，固定经历`prepared -> opened -> claimed -> consumed`或显式取消/中断终态。
+
+Pause publication使用非对称两checkpoint边界：`pause_prepared`首次分配identity，prepared checkpoint引用其resulting head；随后提交`run_lifecycle(running -> paused)`和`pause_opened`，public paused checkpoint再引用opened resulting head。Resume必须先原子取得Pause owner，再完成reason-specific pre-start记录、`pause_consumed`、`run_lifecycle(paused -> running)`和running checkpoint，最后才允许target `started`或任何副作用。exact且预计算的无副作用suffix只由原operation materialize；缺少预授权或副作用结果不确定时terminal为`recovery_required`，实际head/digest矛盾进入integrity failure，二者都不得自动重跑Attempt。
+
+每个Run只有一个fenced terminal closure owner。普通END、non-Pause failure和没有unresolved ExternalOperation的独立stop使用`close_run`；`cancel_pause`、`resume_run(abandon_and_halt)`和terminal external interrupt在原operation内嵌terminal tail，不能再创建第二个close。显式取消只处置latest opened cancelable Pause：existing scheduled target在完整处置中变为`abandoned`，null target保持null，partial cancel不能启动target或自动repair。authority不能安全验证或append时只报告`terminal_closure: unavailable`并隔离，不伪造`run_status: failed`。显式取消、normal/cancel/interrupt仲裁及ExternalOperation stopping都复用Control Protocol `0.4`的单一CAS域和唯一winner。
+
+Replay只从source immutable root inputs创建新child并从`START`执行；Fork只对source latest validated stable paused/terminal head和`source_control_revision`完成CAS后选择eligible immutable evidence，同样创建全新Run/Cycle/Attempt/Transition identities并从`START`执行。两者都不复制source checkpoint/current pointers/Pause/Human authorization/accepted status，也不修改source artifacts。Schema `0.2` source只可验证后replay；Phase B `0.4`不原地resume或迁移schema `0.3`，只resume exact supported `0.4` fingerprint。
+
+以上是Phase B实现约束，不是当前架构能力：当前CLI、demo server、LangGraph checkpointer、`graph_state.json`和legacy Human decision re-entry均未改动，仍不能调用这些A04接口。
 
 ## Command 边界
 
@@ -165,7 +179,7 @@ A01 进一步确认：完整 `event_log`、route trace 和 checkpoint state 只�
 
 实际 Run root 是 `<output_root>/<case_id>/<run_id>/`；canonical graph-managed domain artifacts 位于其 `attempts/<attempt_id>/` 子目录，run-root fixed paths 仅是 current compatibility projections。仓库内 `outputs/` 是被忽略的实际运行目录，不是 reference-output 目录。curated evaluation baseline 位于 `evaluation/reference_outputs/`，expected behavior 位于 `evaluation/expected_behavior/`。
 
-没有 `--run-id` 时 CLI 生成 timestamp run id；显式 run id 指向已有完成/决策 artifacts 时，CLI 拒绝复用目录。resume 和 force overwrite 仍未获批准。
+没有 `--run-id` 时 CLI 生成 timestamp run id；显式 run id 指向已有完成/决策 artifacts 时，CLI 拒绝复用目录。A04 resume目标合同已获批准但当前CLI尚未实现；force overwrite仍未获批准。
 
 ## Provider 边界
 

@@ -2,7 +2,7 @@
 
 ## 当前合同
 
-`AnalysisState` 是当前公开 graph-state contract。节点只能读取和写入已记录字段。下面的 schema 与当前 runtime 对齐；A02 完成 execution identity，A03 完成 bounded artifact-current control fields。
+`AnalysisState` 是当前公开 graph-state contract。节点只能读取和写入已记录字段。下面的 schema 与当前 runtime 对齐；A02 完成 execution identity，A03 完成 bounded artifact-current control fields。A04已经冻结后继Pause/Resume state contract，但尚未把字段加入当前runtime。
 
 schema 变化必须由独立 implementation ticket 批准，并同步 runtime、tests、artifact contracts 和相关 Decision Log。A02 execution identity 与 A03 artifact-current schema 已落地并通过验收；reducer、具体恢复字段和 budgets 不属于当前正式 schema。
 
@@ -175,18 +175,36 @@ Unit/smoke tests 使用 `MemorySaver`。两种 backend 使用相同的 `checkpoi
 
 State 保存 current Cycle/Attempt pointers、Run-local allocation counters、parent lineage、current artifact pointers、execution ledger path 和 Run-owned checkpoint metadata。完整 Attempt history append-only 保存，不能作为不断增长的 state-to-prompt context。
 
-Attempt 由 graph control plane 在目标节点副作用之前分配。canonical Attempt kinds 当前固定为 `method_planner`、`legacy_codex_handoff`、`code_agent`、`analysis_engineer`、`scientific_reviewer`、`decision_coordinator`、`human_gate` 和 `memory_report`；其中 `code_agent` 只为 A05/Phase B 预留，当前产品 graph 没有该节点。legacy external Codex runner 仍保留原有重新进入主图的行为；重新初始化未完成 Run 时会从已有 ledger 恢复 counters，避免复用 identity。它不是未来 graph-managed Code Agent，也不是 A04 将定义的通用 checkpoint resume API。
+Attempt 由 graph control plane 在目标节点副作用之前分配。canonical Attempt kinds 当前固定为 `method_planner`、`legacy_codex_handoff`、`code_agent`、`analysis_engineer`、`scientific_reviewer`、`decision_coordinator`、`human_gate` 和 `memory_report`；其中 `code_agent` 只为 A05/Phase B 预留，当前产品 graph 没有该节点。legacy external Codex runner 仍保留原有重新进入主图的行为；重新初始化未完成 Run 时会从已有 ledger 恢复 counters，避免复用 identity。它不是未来 graph-managed Code Agent，也不满足A04已确认的通用checkpoint resume合同。
 
 当前 product routes 已使用 transition-time allocation 与 target-layer artifact invalidation。re-review、analysis rerun、code fix 和 replan 只在最小 deterministic StateGraph harness 中验证 identity/invalidation protocol；它们尚未因此成为当前产品路线。A01 的完整线路改造与 forbidden-route coverage 仍由 A07/Phase B 承接。
 
-## 第二阶段已确认与待决 schema 议题
+## A04 已确认的目标 State Boundary（尚未实现）
 
-以下内容仍未成为 `AnalysisState` 合同：
+[A04](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)冻结execution schema `0.3`的Pause/Run语义，供Phase B schema `0.4`实现复用。这里的版本是目标合同版本，不改变上方当前`AnalysisState`或runtime schema `0.2`。
 
-- [A04](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)：pause/resume 与 checkpoint compatibility；
+权威状态与投影严格分离：
+
+- append-only `run_lifecycle`记录是Run状态authority，`run_status = initializing | running | paused | completed | failed | halted`只是受限projection；`completed | failed | halted`均terminal且不可逆；
+- 现有`status`保留为domain/workflow compatibility字段；正常`memory_report -> END`即使领域状态为`pending`，control `run_status`也必须为`completed`；
+- Pause ledger status固定为`prepared | opened | claimed | consumed | cancelled | aborted | interrupted | quarantined`，event固定为相应`pause_*`类型；只有latest exact `opened`且unclaimed、public paused checkpoint完整的Pause可resume；
+- bounded state未来只保存`run_status`、pause counter、nullable pending/active Pause identity/reason/status/requesting-target scope，以及nullable active ControlOperation ID/status/phase/revision/epoch；这些字段不能替代coordinator、execution ledger或artifact heads；
+- ControlOperation的`operation_status`、Run terminal closure、Run lifecycle、Pause lifecycle和domain `status`互相正交；`operation_status: failed`不能推导`run_status: failed`。
+
+`human_input`与不继续existing target的`recovery_decision`在opened时使用explicit null target；Human validator只在成功claim后、任何target副作用前分配一次。`external_result`必须绑定already-scheduled且未started的exact target、pre-existing reservation和ExternalOperation core digest。Resume继续分支固定经过claim、reason-specific pre-start、`pause_consumed`、`paused -> running` lifecycle及running checkpoint，随后才允许target start。`recovery_decision`只接受`continue_existing_target | abandon_and_halt`；null target只能halt，Code Agent/legacy handoff target不能continue，且该输入不能伪装成replay/fork。`abandon_and_halt`分支原子取得Pause和Run terminal ownership，不进入running。
+
+无效Human Response不会重新打开或复用旧Pause：旧Pause保持consumed，validator Attempt先结束。A06容量决策为`allow`时，从新的running安全边界按`pause_prepared -> prepared checkpoint -> running-to-paused lifecycle -> pause_opened -> public paused checkpoint`发布新identity；决策为`halt`时不创建新Pause，而由`close_run`从running发布terminal closure。
+
+每个Pause还冻结runtime compatibility fingerprint，至少覆盖control/app build、graph topology、state/artifact schema、LangGraph/checkpointer/serializer实现及版本。Schema `0.2`不resume/fork；显式支持`0.3`的原runtime可恢复自己创建的exact Pause，但Phase B `0.4`只原地resume exact supported `0.4`，对validated `0.3` source只允许replay/fork为新child。缺失或mismatch一律fail closed，不做state reinterpretation或原地迁移。
+
+## 第二阶段待实现 schema 议题
+
+以下内容仍未成为当前 `AnalysisState` 合同：
+
+- A04已确认的`run_status`、Pause、ControlOperation和compatibility projections；
 - 正式 parallel reducer、per-branch namespace 或 merge semantics。
 
-在相应 design 与 implementation tickets 完成前，任何实现或其他文档都不能假设这些字段已经存在。
+在相应 implementation tickets 完成前，任何实现或其他文档都不能假设这些字段已经存在。
 
 ## Related Documents
 

@@ -70,15 +70,34 @@ pytest tests/test_approval_packet.py tests/test_memory.py tests/test_report.py -
 pytest tests/test_llm_config.py tests/test_llm_mock_provider.py -q
 ```
 
-### Phase A Control Protocol Pre-freeze 验证
+### Phase A Control Protocol 静态验证
 
-A02C01与A04–A07从`review`提升为`ready`前必须运行tracked design validator：
+A02C01与A04–A07从`review`提升为`ready`前及各design/corrective ticket执行时必须运行tracked design validator：
 
 ```bash
 python scripts/validate_phase_a_control_protocol.py
 ```
 
-该检查strict读取[`CONTROL_PROTOCOL_0_4.json`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json) machine schema 0.4和[`PHASE_B_REQUIREMENT_CATALOG.json`](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json) catalog 0.4.0，验证ControlOperation graph终结、multi-successor guard互斥/穷尽、tagged evidence与incoming edge匹配、十二种variant overlay、单一transaction domain、normal/cancel/interrupt CAS交错、winner-observation组合owner状态、request-owned normal safe-stop candidate classification、每个trigger class/context的唯一stop route、cancel branch到resolution tuple/phase闭包、START/Replay/Fork/ordinary Transition的commit-gated capability、exact terminal lifecycle、reservation到ExternalOperation tuple及source proof到request Run/lineage的绑定、Replay source-policy确定性分类、stable paused/terminal fork、Pause aborted/interrupted/quarantined finality、Run lifecycle循环、independent graph seal、variant phase dominance、pre-start DAG、field binding、131个ticket/catalog stable IDs及protocol SHA。本次还补齐normal-result stop的原子Pause/Run handoff、ExternalOperation pre-start与Attempt执行授权分离、不可变authorization下的独立execution lease，以及Cancel unavailable保守结算；本轮补齐recoverable timeout原Attempt失败消费与advance持有的fresh Analysis准备，以及消费后的活动绑定释放、RecoveryDecision目标授权和严格JSON/对象结构校验；最新修复由原resume owner完成post-claim完整性失败的消费者停止、结算与failed/unavailable收尾，不依赖Code artifact；104项protocol negative mutations及6项JSON/catalog负向检查验证这些边界。它是design-time lint，不表示Phase B runtime、fault fixture或acceptance matrix已经实现；B00仍须把同一合同转为collectable tests和normalized traces。
+该检查strict读取[`CONTROL_PROTOCOL_0_4.json`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json) machine schema 0.4和[`PHASE_B_REQUIREMENT_CATALOG.json`](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json) catalog 0.4.0，验证ControlOperation graph终结、multi-successor guard互斥/穷尽、tagged evidence与incoming edge匹配、十二种variant overlay、单一transaction domain、normal/cancel/interrupt CAS交错、winner-observation组合owner状态、request-owned normal safe-stop candidate classification、每个trigger class/context的唯一stop route、cancel branch到resolution tuple/phase闭包、START/Replay/Fork/ordinary Transition的commit-gated capability、exact terminal lifecycle、reservation到ExternalOperation tuple及source proof到request Run/lineage的绑定、Replay source-policy确定性分类、stable paused/terminal fork、Pause aborted/interrupted/quarantined finality、Run lifecycle循环、independent graph seal、variant phase dominance、pre-start DAG、field binding、131个ticket/catalog stable IDs及protocol SHA。本次还补齐normal-result stop的原子Pause/Run handoff、ExternalOperation pre-start与Attempt执行授权分离、不可变authorization下的独立execution lease，以及Cancel unavailable保守结算；本轮补齐recoverable timeout原Attempt失败消费与advance持有的fresh Analysis准备，以及消费后的活动绑定释放、RecoveryDecision目标授权和严格JSON/对象结构校验；最新修复由原resume owner完成post-claim完整性失败的消费者停止、结算与failed/unavailable收尾，不依赖Code artifact；101项semantic、3项structural、178项publication-order mutations及6项JSON/catalog负向检查验证这些边界。它是design-time lint，不表示Phase B runtime、fault fixture或acceptance matrix已经实现；B00仍须把同一合同转为collectable tests和normalized traces。
+
+### A04 Pause/Resume 设计合同验收
+
+A04是文档限定design ticket。执行时运行：
+
+```bash
+git diff --check
+python scripts/validate_phase_a_control_protocol.py
+```
+
+并静态核对：
+
+- A04在`ready`后只有YAML lifecycle metadata改变，冻结正文与执行前hash一致；A01–A03/A03C01保持`completed`，A05–A07正文、protocol与catalog bytes不变；
+- Architecture、State Schema、Artifact Contracts和Security Policy一致区分已确认的A04目标合同与当前schema `0.2` runtime；
+- 只有stable exact paused/opened/public-checkpoint closure可以resume，三类typed Pause、single-use claim、terminal owner、cancel/interrupt、compatibility及Replay/Fork isolation均保留；
+- A04的21个required IDs继续存在于catalog，A07/Phase B承担fault-injection和runtime acceptance，不把design validator当成实现测试；
+- Allowed Files、Do Not Touch、Markdown relative links、ticket metadata和删除/重命名审计通过，且`src/`、`tests/`、`evaluation/`、`configs/`、`raw_data/`、`outputs/`及accepted artifacts没有A04产生的diff。
+
+A04明确不运行runtime、benchmark或live-provider测试；其完成证明合同同步和静态一致性，不证明Pause/Resume API已可执行。
 
 ### A02 Execution Identity 验收
 

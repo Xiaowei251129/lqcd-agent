@@ -8,7 +8,7 @@
 
 确认第二阶段的控制层合同，包括允许路线、执行身份、artifact 失效、pause/resume、Code Agent 接口、循环预算和 Phase B harness 验收条件；当已执行内容与已确认合同不一致时，使用独立 implementation ticket 先完成纠偏和验证。
 
-本阶段主要产生经过确认的设计与核心文档更新，并在合同要求时执行边界明确的 corrective implementation。A02 已接入 execution identity，A03 已接入 artifact namespace/invalidation；这不授权提前实现 A04–A07。
+本阶段主要产生经过确认的设计与核心文档更新，并在合同要求时执行边界明确的 corrective implementation。A02 已接入 execution identity，A03 已接入 artifact namespace/invalidation；完成A04等设计ticket不授权提前接入其目标runtime。
 
 ## 进入条件
 
@@ -28,6 +28,7 @@
 - [`A01_TRANSITION_MATRIX.md`](A01_TRANSITION_MATRIX.md)
 - [`A02_RUN_CYCLE_ATTEMPT_MODEL.md`](A02_RUN_CYCLE_ATTEMPT_MODEL.md)
 - [`A03_ARTIFACT_INVALIDATION.md`](A03_ARTIFACT_INVALIDATION.md)
+- [`A04_PAUSE_RESUME_SEMANTICS.md`](A04_PAUSE_RESUME_SEMANTICS.md)：已冻结Pause/Resume/Replay/Fork、Run lifecycle、single-use claim、terminal ownership与compatibility目标合同；没有修改当前runtime。
 
 ## Completed Corrective Tickets
 
@@ -38,14 +39,13 @@
 
 ## Ready Tickets
 
-- [`A04_PAUSE_RESUME_SEMANTICS.md`](A04_PAUSE_RESUME_SEMANTICS.md)
 - [`A05_CODE_AGENT_CONTRACT.md`](A05_CODE_AGENT_CONTRACT.md)
 - [`A06_BUDGETS_AND_STOP_CONDITIONS.md`](A06_BUDGETS_AND_STOP_CONDITIONS.md)
 - [`A07_PHASE_B_HARNESS_ACCEPTANCE.md`](A07_PHASE_B_HARNESS_ACCEPTANCE.md)
 
 A01已完成逻辑transition contract。A02已完成formal execution identity；A03已完成immutable Attempt artifact namespace、typed current index、managed projections、Human Response snapshots及四层invalidation harness；A03C01已补齐execution global-head与Transition target-shape完整性。四层fallback仍是harness-only，不是产品edges。
 
-用户已最终确认`f4f0eaa`设计；A02C01已按冻结合同执行并标记`completed`，A04–A07保持`ready`。依赖以各票据YAML为准，下一执行顺序为A04 → A05 → A06 → A07。A02C01完成只表示目标合同、治理文档和completion evidence已闭合，不代表schema `0.4`或Phase B runtime已实现。
+用户已最终确认`f4f0eaa`设计；A02C01与A04已按冻结合同执行并标记`completed`，A05–A07保持`ready`。依赖以各票据YAML为准，下一执行顺序为A05 → A06 → A07。A02C01/A04完成只表示目标合同、治理文档和completion evidence已闭合，不代表schema `0.4`、durable resume或Phase B runtime已实现。
 
 ## 合同与验收入口
 

@@ -26,7 +26,16 @@
 - expected behavior 属于 `evaluation/expected_behavior/`；
 - canonical domain artifacts 写入并严格绑定`attempts/<attempt_id>/`且不得覆盖；只有registry-owned current projection可以替换或清除，跨owner collision必须在复制前失败；external ingress只豁免内容digest比较，路径、存在性和owner仍必须验证；
 - unmanaged legacy outputs 不自动迁移、不覆盖、不删除；
-- resume、force overwrite 和 crash recovery 尚未形成正式合同，必须等待 A04。
+- A04已确认resume/replay/fork/cancel与crash分类的目标合同，但当前runtime仍未实现这些接口；force overwrite继续禁止。
+
+## A04 控制操作安全政策（目标合同，尚未实现）
+
+- `start_run`、`resume_run`、`replay_run`、`fork_run`与`cancel_pause`只接受可信Host构造的`ActorContext`和allowlisted scope；Agent、graph node、model output或payload不能自签actor、路径、thread或checkpoint authority；
+- 所有mutation必须在任何Run/Pause/child/checkpoint bytes或外部副作用前，由单一project-owned coordinator持久化canonical request digest、idempotency key、operation owner、phase revision与current `lease_epoch`；进程内lock或LangGraph metadata不能替代该authority；
+- 外部接口不得暴露raw checkpoint ID，不接受arbitrary state patch、route override、force overwrite、provider/security policy override或调用方选择的output root；
+- 只有latest exact opened/unclaimed Pause、stable `run_status: paused`、public paused checkpoint与matching runtime fingerprint可以resume。错误actor/scope/Run/Pause、stale owner、digest/fingerprint mismatch、unsupported schema或不确定副作用均fail closed，不自动rerun；
+- `cancel_pause`只能处置latest opened cancelable Pause并与normal/cancel/interrupt共享single-winner CAS。stop proof不完整时隔离为`terminal_closure: unavailable`，不得伪造安全停止、Run failure或accepted artifact；
+- Replay/Fork必须创建新Run并保持source与accepted evidence不可变；不得继承Human authorization、active Pause、accepted status或source写权限。Schema `0.2` source只能在root inputs完整验证后replay，不能fork或原地恢复。
 
 ## Command Policy
 
@@ -77,11 +86,10 @@ runner 必须阻止 shell control operators、非 exact-allowlisted commands，�
 - 没有有效 decision 时可以写 pending audit artifacts，但 `accepted_result` 必须保持 false；
 - ticket 不得把 Human Gate 变成形式上的自动批准步骤。
 
-## 第二阶段相关待决事项
+## 第二阶段目标政策状态
 
-以下内容仍是 draft，不改变当前政策：
+[A04 Pause/Resume](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)已完成目标政策同步，但尚未实现。以下设计ticket仍为`ready`，不改变当前runtime政策：
 
-- [A04 Pause/Resume](tickets/phase-a-control-contracts/A04_PAUSE_RESUME_SEMANTICS.md)
 - [A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)
 - [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)
 
