@@ -2,12 +2,12 @@
 
 ## 状态摘要
 
-- **更新时间**：2026-09-14
+- **更新时间**：2026-09-15
 - **当前分支**：`codex/phase-11-agent-harness-upgrade`（已快进包含`xgao`的Phase A设计冻结提交`d0f108a`）
-- **当前阶段**：Phase A控制合同澄清已完成；Phase B图与Harness可靠性为`planned`
-- **活动 ticket**：无`ready` ticket；G01、A01–A07、A02C01及A03C01均为`completed`
+- **当前阶段**：Phase A控制合同澄清已完成；Phase B图与Harness可靠性为`planned`，B00–B05均已起草
+- **活动 ticket**：B00已批准为`ready`；B01–B05仍为`draft`；G01、A01–A07、A02C01及A03C01均为`completed`
 - **稳定基线**：[`v0.2-demo`](milestones/V0_2_DEMO_BASELINE.md)
-- **本轮范围**：按冻结合同完成A07文档限定执行，把required/compatibility/capability证据分类、六层deterministic acceptance、exact trajectory、fault/concurrency、machine matrix、B00–B05拆分与zero-gap exit gate同步到验收/阶段文档并建立独立completion record；A01–A06/A02C01/A03C01正文、protocol/catalog exact bytes及当前runtime/tests不变，没有创建Phase B ticket。
+- **本轮范围**：修订B00–B05草稿的一致性：B00统一closed report、final执行与会话证据协议，补充分阶段runtime义务、B02 bootstrap admission交接、0.3合法fork及maintenance Allowed Files；保留15/11/30/28/47 ownership与依赖。B00经用户批准为`ready`并在实现前提交冻结基线；B01–B05保持`draft`，本提交不创建matrix/tests/runtime，不修改Phase A frozen contracts、protocol/catalog或现有实现。
 
 ## 当前稳定实现
 
@@ -134,13 +134,13 @@ A03C01当前证据为registry suite `106 passed`、focused registry/identity/sta
 
 用户已最终确认`f4f0eaa`设计。A01–A07及A02C01/A03C01已按各自文档范围执行并标记`completed`；冻结正文、Control Protocol、requirement catalog、当前runtime和tests没有改变。JSON内原有`status: review`作为批准快照的一部分保留。
 
-下一步按A07冻结的顺序起草B00 Acceptance Foundation，明确Allowed Files、owned requirement IDs和focused verification，并单独经过`draft → review → ready`确认。之后才能依赖顺序起草/执行B01–B05；当前没有可直接执行的Phase B ticket。
+下一步执行已批准的B00，依据[Phase B Overview](tickets/phase-b-graph-harness/OVERVIEW.md)建立closed report、独立final obligations、统一final检查与证据绑定；B01–B05留待逐票打磨。草稿中的`requirements_zero_gap`须包含runtime证明，`phase_b_complete`还须全部exit checks；construction的全局passed为null，B04 131项映射齐全不等于完成。B00已获明确批准，执行严格从B00开始，不授权后续票执行。
 
 ## Blockers
 
-当前A07执行无已确认阻断项。A07按冻结合同只运行静态协议、文档和scope检查，不运行pytest、benchmark或live-provider测试；最近一次完整runtime回归仍是A02C01执行时的325项通过。
+B00已批准为`ready`，B01–B05仍为`draft`；实现尚未开始，因此没有运行generator、matrix、pytest evidence、trace、failpoint、coordinator、Code Agent、product graph或final gate。B00 ready review已核对ownership、依赖、冻结摘要与验收范围；后续票仍须独立review。当前没有已知的B00执行阻断项。
 
-A02/A03当前只实现identity与artifact control plane；Phase A全部目标合同完成不代表schema `0.4` bootstrap、resume、Code Agent、budgets、acceptance matrix或新的product runtime edges已经实现。Phase B目录当前只有Overview，B00–B05仍待起草和确认。
+A02/A03当前只实现identity与artifact control plane；Phase A全部目标合同完成不代表schema `0.4` bootstrap、resume、Code Agent、budgets、acceptance matrix或新的product runtime edges已经实现。Phase B目录当前包含Overview、B00 ready ticket和B01–B05 drafts；matrix、tests及Phase B runtime仍不存在。
 
 ## 入口
 

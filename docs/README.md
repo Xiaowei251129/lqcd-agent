@@ -45,7 +45,7 @@ Ready ticket 不能静默覆盖 `AGENTS.md`、安全策略或当前 public contr
 
 Phase Overview 不是执行 prompt。只有经过用户确认并标记为 `status: ready` 的具体 ticket 才能执行；`ready`后ticket正文冻结，执行结果和后续纠偏不得回写原计划。
 
-Phase A的A01–A07、A02C01及A03C01现均为`completed`；设计合同完成不代表Phase B runtime已实现。阶段闭合状态见[Phase A Overview](tickets/phase-a-control-contracts/OVERVIEW.md)，下一阶段拆分与进入条件见[Phase B Overview](tickets/phase-b-graph-harness/OVERVIEW.md)。[Control Protocol 0.4](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)与[需求目录](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)提供机读合同及stable IDs；验证入口见[Verification Guide](VERIFICATION_GUIDE.md)，当前验证结果见[Repo Current State](REPO_CURRENT_STATE.md)，修改理由与历史见[Decision Log](DECISION_LOG.md)。A07已建立独立completion record；当前没有可直接执行的Phase B ticket，下一步是按冻结拆分起草并确认B00 Acceptance Foundation。
+Phase A的A01–A07、A02C01及A03C01现均为`completed`；设计合同完成不代表Phase B runtime已实现。阶段闭合状态见[Phase A Overview](tickets/phase-a-control-contracts/OVERVIEW.md)，下一阶段拆分、B00–B05 draft与进入条件见[Phase B Overview](tickets/phase-b-graph-harness/OVERVIEW.md)。[Control Protocol 0.4](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)与[需求目录](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)提供机读合同及stable IDs；验证入口见[Verification Guide](VERIFICATION_GUIDE.md)，当前验证结果见[Repo Current State](REPO_CURRENT_STATE.md)，修改理由与历史见[Decision Log](DECISION_LOG.md)。B00已由用户批准为`ready`；B01–B05仍为`draft`。本轮规划统一B00 closed report与final驱动、分阶段runtime证据、bootstrap admission交接、schema兼容及maintenance路径。`requirements_zero_gap`与`phase_b_complete`分开判定，131项映射齐全不代表完成；B00验收基础合同现已冻结，后续票仍须逐票确认。下一步只执行B00；当前尚未创建matrix、tests或Phase B runtime。
 
 ## Milestones
 

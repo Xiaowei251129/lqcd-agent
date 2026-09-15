@@ -164,24 +164,19 @@ python scripts/validate_phase_a_control_protocol.py
 
 A07明确不运行pytest、benchmark或live-provider测试；其完成证明“Phase B怎样验收”已经冻结，不证明任何Layer 0–5 scenario、matrix或runtime已实现。
 
-### Phase B 目标验证入口（B00后生效）
+### Phase B 目标验证入口（草稿方案，尚未实现）
 
-B00必须建立稳定的strict matrix validator入口并把exact命令补入本节；在该入口和matrix尚不存在时，不得伪造可执行命令或zero-gap结果。B01–B04每张implementation ticket必须用construction模式验证自身owned requirement subset、运行matrix列出的exact focused pytest nodeids并报告remaining IDs；B02/B03还必须分别运行真实新Python process重开durable store、双client/process owner竞争及全部owned fault boundaries，不能用同一对象、process-local lock、真实sleep或概率性kill race替代。
+B00已批准为`ready`，B01–B05仍为draft。以下协议以[B00冻结票据](tickets/phase-b-graph-harness/B00_ACCEPTANCE_FOUNDATION.md)及[B05草稿](tickets/phase-b-graph-harness/B05_ACCEPTANCE_INTEGRATION_AND_END_TO_END_HARNESS.md)为准，尚无可执行的Phase B validator或matrix；不能把拟定命令或design validator通过写成runtime验收。
 
-B05 final mode除B00定义的matrix/trace验证命令外，至少运行以下已有通用入口：
+Construction只运行当前owned slice的`validation_stage=construction`证据，报告局部`construction.required/covered/passed`及全局映射`requirements.covered/remaining`，未重验的`requirements.passed/passed_ids=null`，两个完成标志为false。B00–B03 final负向探针分别核对映射、runtime和exit缺口；B04映射131/0后仍须运行final探针，缺实际证据必须失败。
 
-```bash
-pytest --collect-only -q tests/phase_b
-pytest -q tests/phase_b
-pytest -q
-python -m compileall -q src tests evaluation/synthetic_benchmarks/run_synthetic_benchmarks.py
-python evaluation/synthetic_benchmarks/run_synthetic_benchmarks.py \
-  --provider mock \
-  --case-set full \
-  --output-dir /private/tmp/lqcd-agent-phase-b-mock
-```
+拟采用final统一驱动：final命令创建会话，启动Layer 0–5、跨系统fault/concurrency、Phase B suite、完整pytest、compileall、synthetic tests、full mock benchmark、legacy regression、CLI smoke和文档/scope检查，最后核验证据并生成`PhaseBAcceptanceReport 0.1`。每个检查必须有本次token、实际工作树输入及合同/验收文件摘要绑定，不能先成功final再补smoke或benchmark。具体命令在B00实现后补入本节；B05草稿已列出统一入口。
 
-还必须执行使用全新`/private/tmp/lqcd-agent-phase-b-*` root的project-interface CLI smoke，并从bytes核对ledger/state/checkpoint/artifact/budget/Pause/child/accepted invariants。Matrix validator final report必须证明131项required IDs与required scenarios set-equal、全部nodeids可collect且passing、无skip/xfail/deselect/live-only/unknown/uncovered，并记录matrix/protocol/catalog digests、各层scenario totals及legacy compatibility的独立结果。
+Final必须重新验证两个stage的所有required scenarios及独立runtime obligations：registry每项实际hook、触发记录、适用outcome、passing nodeid和exact trace齐全；META-006/015不能仅凭静态inventory通过，META-015还须覆盖publication、fresh Analysis、consumption release及7×4 post-claim路径。B02/B03 restart与concurrency仍须真实新Python process/独立client，不用同对象、进程内lock、真实sleep或概率kill替代。
+
+后续必测反例包括：131项映射齐全却缺CLI/benchmark/legacy证据；hook未触发或post-claim case缺失；旧token、不同工作树或合同摘要；benchmark退出0但case/checklist失败；0.2 fork与0.3原地resume拒绝（合格0.3 fork可创建0.4 child）；bootstrap绕过可信admission/注入allow；maintenance路径不在Allowed Files内。任何必需检查缺失、失败或证据无效，final均非零。
+
+只有131项全部适用证据有效通过才能`requirements_zero_gap=true`；还需全部exit checks通过才可`phase_b_complete=true`。规范化报告不含临时路径/token；完整原始session证据、各层totals、fresh smoke roots、legacy与mock明细保留在可核验artifacts/completion record中。
 
 ### A02 Execution Identity 验收
 

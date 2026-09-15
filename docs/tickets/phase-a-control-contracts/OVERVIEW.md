@@ -46,7 +46,7 @@
 
 A01已完成逻辑transition contract。A02已完成formal execution identity；A03已完成immutable Attempt artifact namespace、typed current index、managed projections、Human Response snapshots及四层invalidation harness；A03C01已补齐execution global-head与Transition target-shape完整性。四层fallback仍是harness-only，不是产品edges。
 
-用户已最终确认`f4f0eaa`设计；A01–A07及A02C01/A03C01已按冻结合同闭合，Phase A退出条件满足。A02C01/A04–A07完成只表示目标合同、治理文档和completion evidence已闭合，不代表schema `0.4`、durable resume、Code Agent、budget manager、acceptance matrix或Phase B product graph已实现。下一步按A07冻结的依赖顺序起草B00–B05，第一张应为B00 Acceptance Foundation；每张票仍须独立经过`draft → review → ready`后才能执行。
+用户已最终确认`f4f0eaa`设计；A01–A07及A02C01/A03C01已按冻结合同闭合，Phase A退出条件满足。A02C01/A04–A07完成只表示目标合同、治理文档和completion evidence已闭合，不代表schema `0.4`、durable resume、Code Agent、budget manager、acceptance matrix或Phase B product graph已实现。B00–B05现已在Phase B目录起草；各票当前状态以其front matter与Phase B Overview为准，仍须独立批准并按冻结依赖顺序执行。
 
 ## 合同与验收入口
 

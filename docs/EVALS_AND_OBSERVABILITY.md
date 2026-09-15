@@ -97,13 +97,15 @@ Token和normalized cost只作audit metric；provider未报告时必须显示`unk
 
 ## A07 已确认的 Phase B Acceptance 模型（尚未实现）
 
-A07把评估证据分成required control acceptance、compatibility regression和capability evaluation。只有第一类决定Phase B是否完成：它必须network-free、deterministic、使用production selector/validator/ledger/registry/Pause/budget/CodeAgentSubgraph入口，并对exact normalized semantic trace和typed invariants断言。Legacy、live provider、benchmark score、人工演示或单一happy path必须单独报告，不能填补required coverage。
+A07把评估证据分成required control acceptance、compatibility regression和capability evaluation。只有第一类计入required control coverage：它必须network-free、deterministic、使用production selector/validator/ledger/registry/Pause/budget/CodeAgentSubgraph入口，并对exact normalized semantic trace和typed invariants断言。Legacy、live provider、benchmark score、人工演示或单一happy path必须单独报告，不能填补required coverage。
 
 六层模型覆盖schema/replay/invariants，node/subgraph/backend/trusted boundary，route/guard/Transition，trajectory/Cycle/termination，durable recovery/concurrency/fault injection，以及project interface/CLI smoke。Normalized trace纳入control与domain identity/lifecycle、route/guard、artifact current/invalidation/protection、budget/grant、Pause/Run、ExternalOperation/workspace/backend、fresh Analysis和每步bounded heads；只排除timestamp duration、临时物理路径、process ID及opaque provider/checkpoint字面值，同时仍单独验证其顺序、containment、binding和唯一性。
 
-Phase B matrix必须绑定tracked protocol/catalog exact digests，并以九个owner的131项required IDs为唯一required set。Construction模式只能报告当前implementation ticket已覆盖的owned subset与remaining IDs；B05 final模式必须set-equal并生成zero-gap report。Required nodeid不可skip、xfail、deselect、live-only或uncollectable，route/trajectory/recovery/interface场景必须具有exact expected trace。Process restart必须真正重启Python并重新打开durable store；Pause claim、terminal owner、grant和idempotency竞争必须使用两个独立client/process，fault outcome只能是exact same-operation continuation或冻结的typed fail-closed分类。
+Phase B matrix必须绑定tracked protocol/catalog exact digests，并以九个owner的131项required IDs为唯一required set。B00已批准合同定义`PhaseBAcceptanceReport 0.1`：construction只报告当前slice/stage通过数及全局映射缺口，全局`requirements.passed/passed_ids=null`且两个完成标志为false；final同时验证construction/final scenarios与独立runtime obligations，全部适用证据通过才有`requirements_zero_gap=true`，所有exit checks也有效通过才有`phase_b_complete=true`。Required nodeid不可skip、xfail、deselect、live-only或uncollectable，route/trajectory/recovery/interface场景必须具有exact expected trace。Process restart必须真正重启Python并重新打开durable store；Pause claim、terminal owner、grant和idempotency竞争必须使用两个独立client/process，fault outcome只能是exact same-operation continuation或冻结的typed fail-closed分类。
 
-当前尚无matrix、Phase B tests或B00–B05 ticket。A07完成只冻结验收权威和拆票顺序，不把design validator的通过计作runtime acceptance。
+草稿final由同一次调用创建session并驱动Layer 0–5、cross-system fault/concurrency、Phase B suite、full pytest、compileall、synthetic tests、full mock benchmark、legacy regression、CLI smoke及文档/scope检查。证据绑定本次token、实际工作树输入和protocol/catalog/matrix/registry等摘要；旧证据、未触发hook、缺META-015 publication/fresh Analysis/consumption release或28条post-claim case均不能通过。Benchmark退出0但某case/checklist失败仍为exit失败；compatibility/capability不能填补required control数量，但规定的legacy/mock检查是独立必需退出条件。闭合字段与完整义务以[B00草稿](tickets/phase-b-graph-harness/B00_ACCEPTANCE_FOUNDATION.md)为准，尚未实现。
+
+当前尚无matrix或Phase B tests；B00已批准为`ready`，B01–B05保持`draft`。A07完成只冻结验收权威和拆票顺序，draft tickets也不把design validator的通过计作runtime acceptance。
 
 ## 第二阶段 Harness 方向
 
