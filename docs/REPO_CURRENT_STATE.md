@@ -2,12 +2,12 @@
 
 ## 状态摘要
 
-- **更新时间**：2026-09-15
+- **更新时间**：2026-09-16
 - **当前分支**：`codex/phase-11-agent-harness-upgrade`（已快进包含`xgao`的Phase A设计冻结提交`d0f108a`）
-- **当前阶段**：Phase A控制合同澄清已完成；Phase B图与Harness可靠性为`planned`，B00–B05均已起草
-- **活动 ticket**：B00已批准为`ready`；B01–B05仍为`draft`；G01、A01–A07、A02C01及A03C01均为`completed`
+- **当前阶段**：Phase A控制合同澄清已完成；Phase B图与Harness可靠性为`in_progress`；B00验收基础已实现，B01已批准为ready，B02–B05仍为draft
+- **活动 ticket**：B00为`completed`，完成证据见[B00 Completion](tickets/completions/B00_COMPLETION.md)；B01为`ready`，用户已批准提交冻结后执行；B02–B05仍为`draft`；G01、A01–A07、A02C01及A03C01均为`completed`
 - **稳定基线**：[`v0.2-demo`](milestones/V0_2_DEMO_BASELINE.md)
-- **本轮范围**：修订B00–B05草稿的一致性：B00统一closed report、final执行与会话证据协议，补充分阶段runtime义务、B02 bootstrap admission交接、0.3合法fork及maintenance Allowed Files；保留15/11/30/28/47 ownership与依赖。B00经用户批准为`ready`并在实现前提交冻结基线；B01–B05保持`draft`，本提交不创建matrix/tests/runtime，不修改Phase A frozen contracts、protocol/catalog或现有实现。
+- **本轮范围**：用户于2026-09-16批准B01为ready，要求先将B00交付及maintenance、B01冻结快照提交一次，再执行B01纯control foundation；不push。B01尚未开始实现，当前product runtime仍为schema `0.2`。
 
 ## 当前稳定实现
 
@@ -88,9 +88,9 @@ A03没有实现PAUSE/resume、partial-commit recovery、Fake/real Code Agent、b
 - A04已完成目标合同同步：新增权威`run_status = initializing | running | paused | completed | failed | halted`与append-only lifecycle；三类typed Pause使用prepared/opened两checkpoint publication和single-use claim；十二种ControlOperation组合包含统一`advance_run`，使START与Human Response resume之外的每个普通Transition在预算、target allocation、A03 invalidation、Transition、head verification和commit-gated capability之间具有durable owner；每Run只有一个terminal closure owner，显式cancel和external interrupt复用同一CAS域并在原operation闭合；Replay/Fork通过A02C01 child saga创建隔离identity且不继承Pause、Human authorization或accepted status；
 - A05已完成目标合同同步：Parent graph只看见canonical `code_agent` Attempt与稳定`CodeAgentSubgraph`；subgraph通过replaceable `CodingBackend dispatch/lookup/fetch_result/cancel`端口协调图外执行，Phase B只使用同合同Fake，Python Codex SDK保留为C00 capability gate后的条件性候选。每Attempt使用immutable-base isolated workspace、manifest/seal、typed path/tool/network policy与Host-owned containment；external result经过A04 Pause、A06 settlement、ingress validation及fresh trusted verification后才注册schema `0.1` content-addressed code bundle。只有`success + usable`可通过`AnalysisExecutionSpec`进入新worktree/subprocess，其他合法status进入Coordinator，invalid ingress不产生产品Transition，patch promotion与control-repo/Git mutation均未批准。ExternalOperation以单一`coordinator_sqlite`中的normal/cancel/interrupt CAS仲裁，所有合法resolution统一收敛到唯一final evidence，stop proof不足时隔离并返回unavailable；
 - A06已完成目标合同同步：Run在正式creation前冻结allowlisted immutable `BudgetPolicy 0.1`，admission在target allocation/invalidation/Transition/side effect之前持久化`BudgetDecision 0.1`；Cycle/Attempt/Transition从权威records计数，resource side effect先reservation且crash按maximum；`FailureFingerprint 0.1`排除execution identity，同一Run第二次exact occurrence禁止automatic fallback；Human `BudgetGrant 0.1`只为exact route/fingerprint/target增加一次机会且不突破global ceilings；每Run保留5 Control/6 Transition收尾额度，Pause deadline过期resume零mutation；完整ExternalOperation `safe_stop` proof才允许halted/failed closure，任一停止证明维度缺失时必须Pause quarantine和`terminal_closure: unavailable`；
-- A07已完成目标合同同步：required control acceptance与compatibility/capability evidence分离；Layer 0–5覆盖schema、trusted node/backend、route/guard、exact trajectory、durable recovery/concurrency/fault injection和project interface；future `PhaseBAcceptanceMatrix 0.1`必须绑定protocol/catalog exact digest、把九个owner的131项required IDs与required scenarios set-equal，并拒绝unknown/stale/uncollectable/skip/xfail/deselect/live-only缺口。B00–B05职责与依赖、legacy/parallel边界和Phase B exit gate已冻结；
+- A07已完成目标合同同步：required control acceptance与compatibility/capability evidence分离；Layer 0–5覆盖schema、trusted node/backend、route/guard、exact trajectory、durable recovery/concurrency/fault injection和project interface；`PhaseBAcceptanceMatrix 0.1`已由B00建立，必须绑定protocol/catalog exact digest、把九个owner的131项required IDs与required scenarios set-equal，并拒绝unknown/stale/uncollectable/skip/xfail/deselect/live-only缺口。B00–B05职责与依赖、legacy/parallel边界和Phase B exit gate已冻结；
 - Phase A已冻结的tracked [`CONTROL_PROTOCOL_0_4.json`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json) machine schema `0.4`冻结九类、十二种ControlOperation组合、ExternalOperation、Pause/Run lifecycle、branch guards、tagged evidence unions、transaction domain/CAS、trigger-class stop route、variant phase dependencies、pre-start DAG和field binding；[`scripts/validate_phase_a_control_protocol.py`](../scripts/validate_phase_a_control_protocol.py)执行strict independent graph seal、dominance、guard/terminal tuple join、union cross-binding、capability producer closure、overlay、owner、interleaving、route totality、catalog与prose闭包检查，不属于runtime或Phase B实现；
-- 上述内容是已批准并冻结的target contract；A01–A07及A02C01/A03C01均已完成，Phase A退出条件满足。`CONTROL_PROTOCOL_0_4.json`中的`status: review`作为批准快照内容保持不变。这不表示当前runtime已具有schema `0.4`、durable resume、Code Agent、budget manager、acceptance matrix或Phase B product graph。
+- 上述内容是已批准并冻结的target contract；A01–A07及A02C01/A03C01均已完成，Phase A退出条件满足。`CONTROL_PROTOCOL_0_4.json`中的`status: review`作为批准快照内容保持不变。这不表示当前runtime已具有schema `0.4`、durable resume、Code Agent、budget manager或Phase B product graph；acceptance matrix现仅含B00 construction证据。
 
 第二阶段文档迁移此前已通过 scope check、Markdown link check、ticket metadata、tag、`git diff --check` 与完整 `pytest -q` 验收。
 
@@ -132,15 +132,17 @@ A03C01当前证据为registry suite `106 passed`、focused registry/identity/sta
 
 ## 下一项工作
 
-用户已最终确认`f4f0eaa`设计。A01–A07及A02C01/A03C01已按各自文档范围执行并标记`completed`；冻结正文、Control Protocol、requirement catalog、当前runtime和tests没有改变。JSON内原有`status: review`作为批准快照的一部分保留。
+用户已最终确认`f4f0eaa`设计。A01–A07及A02C01/A03C01已按各自文档范围执行并标记`completed`；Phase A执行没有改变冻结正文、Control Protocol、requirement catalog或当时的runtime/tests。JSON内原有`status: review`作为批准快照的一部分保留。
 
-下一步执行已批准的B00，依据[Phase B Overview](tickets/phase-b-graph-harness/OVERVIEW.md)建立closed report、独立final obligations、统一final检查与证据绑定；B01–B05留待逐票打磨。草稿中的`requirements_zero_gap`须包含runtime证明，`phase_b_complete`还须全部exit checks；construction的全局passed为null，B04 131项映射齐全不等于完成。B00已获明确批准，执行严格从B00开始，不授权后续票执行。
+B00已建立closed report、独立final obligations、统一final driver与证据绑定：construction为15/15，全局覆盖15/131、remaining=116、passed=null。真实final按预期失败，runtime/exit gaps独立报告；`requirements_zero_gap=false`、`phase_b_complete=false`。初次完成时验收为80项Phase B tests通过、full suite 405 passed（执行前325 passed），Phase A validator、generator、compileall、links、scope与diff检查通过。下一步依据[Phase B Overview](tickets/phase-b-graph-harness/OVERVIEW.md)逐票审阅B01–B05；未授权执行后续票。
+
+2026-09-15 [B00 ownership排序维护](tickets/corrections/B00_MAINTENANCE.md)修复合法B01 slice因两种排序要求冲突而被拒绝的问题；新增15项跨slice正/负向回归，只在隔离副本测试，真实matrix仍仅有B00。最新Phase B suite为95 passed、full suite为420 passed；fresh construction保持15/15，真实final仅报告116 coverage、2286 runtime与15 exit预期缺口。B01草稿同步明确机读与prose-only静态定义来源、trusted clock/只读校验边界及construction-only证明范围；不修改registry/final obligations/seals，不用纯probe替代durable runtime证据。B01仍为`draft`，未执行；本轮没有commit/push或runtime/API/schema变化。
 
 ## Blockers
 
-B00已批准为`ready`，B01–B05仍为`draft`；实现尚未开始，因此没有运行generator、matrix、pytest evidence、trace、failpoint、coordinator、Code Agent、product graph或final gate。B00 ready review已核对ownership、依赖、冻结摘要与验收范围；后续票仍须独立review。当前没有已知的B00执行阻断项。
+B00的generator、strict matrix、fresh pytest evidence、trace codec、registry inventory与final driver已实现。META-006/015 construction只证明静态清单、语义与验证能力，2286条runtime cases仍缺production证据；15项exit adapters待B05接入。B01已于2026-09-16获用户批准为ready；B02–B05仍为draft。
 
-A02/A03当前只实现identity与artifact control plane；Phase A全部目标合同完成不代表schema `0.4` bootstrap、resume、Code Agent、budgets、acceptance matrix或新的product runtime edges已经实现。Phase B目录当前包含Overview、B00 ready ticket和B01–B05 drafts；matrix、tests及Phase B runtime仍不存在。
+A02/A03当前只实现identity与artifact control plane；Phase A全部目标合同完成不代表schema `0.4` bootstrap、resume、Code Agent、budgets或新的product runtime edges已经实现。Phase B目录现有B00 matrix、tests与验收基础，但当前execution schema仍为`0.2`，没有Phase B durable/runtime功能。
 
 ## 入口
 

@@ -164,19 +164,44 @@ python scripts/validate_phase_a_control_protocol.py
 
 A07明确不运行pytest、benchmark或live-provider测试；其完成证明“Phase B怎样验收”已经冻结，不证明任何Layer 0–5 scenario、matrix或runtime已实现。
 
-### Phase B 目标验证入口（草稿方案，尚未实现）
+### Phase B Acceptance Foundation（B00）
 
-B00已批准为`ready`，B01–B05仍为draft。以下协议以[B00冻结票据](tickets/phase-b-graph-harness/B00_ACCEPTANCE_FOUNDATION.md)及[B05草稿](tickets/phase-b-graph-harness/B05_ACCEPTANCE_INTEGRATION_AND_END_TO_END_HARNESS.md)为准，尚无可执行的Phase B validator或matrix；不能把拟定命令或design validator通过写成runtime验收。
+B00提供可执行的[generator](../scripts/generate_phase_b_protocol.py)、[acceptance CLI](../scripts/validate_phase_b_acceptance.py)、[matrix](../tests/phase_b/acceptance_matrix.json)、[registry](../tests/phase_b/failpoint_registry.json)及[独立final obligations](../tests/phase_b/final_obligations.json)。协议以[B00冻结票据](tickets/phase-b-graph-harness/B00_ACCEPTANCE_FOUNDATION.md)为准；当前只有B00 construction证据，不是Phase B runtime完成证明。
 
-Construction只运行当前owned slice的`validation_stage=construction`证据，报告局部`construction.required/covered/passed`及全局映射`requirements.covered/remaining`，未重验的`requirements.passed/passed_ids=null`，两个完成标志为false。B00–B03 final负向探针分别核对映射、runtime和exit缺口；B04映射131/0后仍须运行final探针，缺实际证据必须失败。
+```bash
+B00_EVIDENCE_DIR="$(mktemp -d /private/tmp/lqcd-agent-b00-XXXXXX)"
+python scripts/validate_phase_a_control_protocol.py
+python scripts/generate_phase_b_protocol.py --check
+RUN_LIVE_LLM_TESTS=0 pytest --collect-only -q tests/phase_b
+RUN_LIVE_LLM_TESTS=0 pytest -q tests/phase_b
+python scripts/validate_phase_b_acceptance.py \
+  --mode construction --ticket B00 \
+  --evidence-dir "$B00_EVIDENCE_DIR/construction" \
+  --report "$B00_EVIDENCE_DIR/construction-report.json"
+! python scripts/validate_phase_b_acceptance.py \
+  --mode final \
+  --evidence-dir "$B00_EVIDENCE_DIR/final" \
+  --report "$B00_EVIDENCE_DIR/final-negative-report.json"
+RUN_LIVE_LLM_TESTS=0 pytest -q
+python -m compileall -q src tests scripts/generate_phase_b_protocol.py scripts/validate_phase_b_acceptance.py
+git diff --check
+```
 
-拟采用final统一驱动：final命令创建会话，启动Layer 0–5、跨系统fault/concurrency、Phase B suite、完整pytest、compileall、synthetic tests、full mock benchmark、legacy regression、CLI smoke和文档/scope检查，最后核验证据并生成`PhaseBAcceptanceReport 0.1`。每个检查必须有本次token、实际工作树输入及合同/验收文件摘要绑定，不能先成功final再补smoke或benchmark。具体命令在B00实现后补入本节；B05草稿已列出统一入口。
+Evidence子目录与report文件必须不存在，并位于仓库外；不能复用旧目录。CLI自行生成token、冻结实际source/tests/scripts/configs/synthetic inputs/docs/manifests的path/type/mode/bytes摘要，启动禁用live opt-in的fresh pytest subprocess，最后复核输入未变化。不要在验收期间修改仓库。公开CLI没有test runner、旧evidence或任意shell命令注入选项。
 
-Final必须重新验证两个stage的所有required scenarios及独立runtime obligations：registry每项实际hook、触发记录、适用outcome、passing nodeid和exact trace齐全；META-006/015不能仅凭静态inventory通过，META-015还须覆盖publication、fresh Analysis、consumption release及7×4 post-claim路径。B02/B03 restart与concurrency仍须真实新Python process/独立client，不用同对象、进程内lock、真实sleep或概率kill替代。
+Construction当前owned/covered/passed必须exact为15项A07 meta IDs，global covered=15、remaining=116、passed/passed_ids=null。两个完成标志为false，runtime状态not_run、passed_case_ids=null，2286条case显式missing；15项exit checks均not_run。META-006/015静态通过不代表production hooks已实现。
 
-后续必测反例包括：131项映射齐全却缺CLI/benchmark/legacy证据；hook未触发或post-claim case缺失；旧token、不同工作树或合同摘要；benchmark退出0但case/checklist失败；0.2 fork与0.3原地resume拒绝（合格0.3 fork可创建0.4 child）；bootstrap绕过可信admission/注入allow；maintenance路径不在Allowed Files内。任何必需检查缺失、失败或证据无效，final均非零。
+真实final先验证全部输入、独立清单、required node collection与适配器selection；当前预期非零，只有三类缺口：116项coverage_gap、2286项runtime_evidence_gap、15项exit_evidence_gap。不能仅凭非零就通过负向验收；任何parser、collection、invalid evidence或internal error都须另行处理。当前preflight不会执行B05完整退出流程。
 
-只有131项全部适用证据有效通过才能`requirements_zero_gap=true`；还需全部exit checks通过才可`phase_b_complete=true`。规范化报告不含临时路径/token；完整原始session证据、各层totals、fresh smoke roots、legacy与mock明细保留在可核验artifacts/completion record中。
+Final具备前置条件后重新执行两个stage的required scenarios，并分派Layer 0–5、cross-system fault/concurrency、Phase B/full/synthetic/legacy suites、compileall、full mock benchmark、CLI smoke和documentation/scope。实际适配器由B05接入`tests/phase_b/harness/exit_checks.py:production_adapters`，不得改变固定check IDs、schema、stage或完成逻辑。每层selection由matrix派生，cross-system由独立case binding派生，suite selection必须等于fresh全目录collection；B05不能用passing子集替代full suite。
+
+Pytest writer分别记录collection/deselection、setup/call/teardown、skip/xfail/XPASS、逐scenario typed result/invariants/trace、production hook触发与恢复后的case result。Future hooks通过注入的test observer登记真实production调用位置，不让runtime读取test fixture。Final逐项联结本次node pass、hook source、触发、outcome与exact trace；inventory、源码函数名或自报passing均不足以通过。
+
+Exit envelope只引用本次evidence目录内的raw bytes SHA-256。Report使用排除token与allowlisted trace ephemeral字段后的semantic evidence digest，不透传raw token-bearing文件摘要；保留identity/head/authority/digest语义。Benchmark必须覆盖`full.json`全部case和全部13项checklist，退出0或顶层passed=true不够；CLI smoke必须证明ledger/state/checkpoint/artifact/budget/Pause/child/accepted invariants。文档适配器还须记录semantic review依据，关键词扫描不能替代合同审阅。
+
+B00已用隔离synthetic adapters永久测试final完整成功、缺exit/hook/post-claim case、stale token/worktree/contract、内部异常及benchmark虚假成功；隔离fixture不能生成project completion。Schema compatibility和bootstrap admission的production反例仍分别由B02/B03/B04实现，B00未新增其runtime。
+
+只有131项所有适用scenarios及runtime obligations均通过才可`requirements_zero_gap=true`；还需全部exit checks通过且errors为空才可`phase_b_complete=true`。当前二者均为false。后续票仍须独立review并获用户批准。
 
 ### A02 Execution Identity 验收
 

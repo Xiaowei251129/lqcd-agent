@@ -17,3 +17,7 @@
 已完成的独立corrective ticket：
 
 - [`A03C01 Execution Head Integrity`](../phase-a-control-contracts/A03C01_EXECUTION_HEAD_INTEGRITY.md)
+
+本轮新增maintenance：
+
+- [`B00 Shared-node Slice Isolation`](B00_MAINTENANCE.md)

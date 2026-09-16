@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/meta_014.json",
+  "entrypoint": "tests/phase_b/test_acceptance_foundation.py:test_meta_014",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "composite_owners",
+    "unique_stop_route"
+  ]
+}

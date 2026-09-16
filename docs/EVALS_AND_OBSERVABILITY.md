@@ -95,7 +95,7 @@ A06要求Phase B normalized trace与acceptance matrix能够从权威policy和led
 
 Token和normalized cost只作audit metric；provider未报告时必须显示`unknown`，不能计作0或影响hard-gate通过率。Stop telemetry必须区分`halted`、已证明且可发布的`failed`、`recovery_required`、`terminal_closure: unavailable`和非terminal`materialization_pending`，不得只报告“任务失败”。这些是A07/Phase B的目标证据字段；当前trace仍只有普通`llm_calls/`和schema `0.2` execution records。
 
-## A07 已确认的 Phase B Acceptance 模型（尚未实现）
+## Phase B Acceptance Foundation 与待实现的 Runtime Evidence
 
 A07把评估证据分成required control acceptance、compatibility regression和capability evaluation。只有第一类计入required control coverage：它必须network-free、deterministic、使用production selector/validator/ledger/registry/Pause/budget/CodeAgentSubgraph入口，并对exact normalized semantic trace和typed invariants断言。Legacy、live provider、benchmark score、人工演示或单一happy path必须单独报告，不能填补required coverage。
 
@@ -103,9 +103,9 @@ A07把评估证据分成required control acceptance、compatibility regression�
 
 Phase B matrix必须绑定tracked protocol/catalog exact digests，并以九个owner的131项required IDs为唯一required set。B00已批准合同定义`PhaseBAcceptanceReport 0.1`：construction只报告当前slice/stage通过数及全局映射缺口，全局`requirements.passed/passed_ids=null`且两个完成标志为false；final同时验证construction/final scenarios与独立runtime obligations，全部适用证据通过才有`requirements_zero_gap=true`，所有exit checks也有效通过才有`phase_b_complete=true`。Required nodeid不可skip、xfail、deselect、live-only或uncollectable，route/trajectory/recovery/interface场景必须具有exact expected trace。Process restart必须真正重启Python并重新打开durable store；Pause claim、terminal owner、grant和idempotency竞争必须使用两个独立client/process，fault outcome只能是exact same-operation continuation或冻结的typed fail-closed分类。
 
-草稿final由同一次调用创建session并驱动Layer 0–5、cross-system fault/concurrency、Phase B suite、full pytest、compileall、synthetic tests、full mock benchmark、legacy regression、CLI smoke及文档/scope检查。证据绑定本次token、实际工作树输入和protocol/catalog/matrix/registry等摘要；旧证据、未触发hook、缺META-015 publication/fresh Analysis/consumption release或28条post-claim case均不能通过。Benchmark退出0但某case/checklist失败仍为exit失败；compatibility/capability不能填补required control数量，但规定的legacy/mock检查是独立必需退出条件。闭合字段与完整义务以[B00草稿](tickets/phase-b-graph-harness/B00_ACCEPTANCE_FOUNDATION.md)为准，尚未实现。
+B00 final driver由同一次调用创建session并驱动Layer 0–5、cross-system fault/concurrency、Phase B suite、full pytest、compileall、synthetic tests、full mock benchmark、legacy regression、CLI smoke及文档/scope检查。证据绑定本次token、实际工作树输入和protocol/catalog/matrix/registry等摘要；旧证据、未触发hook、缺META-015 publication/fresh Analysis/consumption release或28条post-claim case均不能通过。Benchmark退出0但某case/checklist失败仍为exit失败；compatibility/capability不能填补required control数量，但规定的legacy/mock检查是独立必需退出条件。闭合字段与完整义务以[B00冻结合同](tickets/phase-b-graph-harness/B00_ACCEPTANCE_FOUNDATION.md)为准；执行机制已实现并通过隔离适配器验证，B05仍须接入真实exit adapters。
 
-当前尚无matrix或Phase B tests；B00已批准为`ready`，B01–B05保持`draft`。A07完成只冻结验收权威和拆票顺序，draft tickets也不把design validator的通过计作runtime acceptance。
+当前B00 matrix的15项construction证据可执行，global covered=15、remaining=116、passed=null，两个完成标志均为false。324项registry inventory与2286条final cases独立封存；其中28条post-claim case不因matrix遗漏而消失。Production hooks保持null，runtime cases和15项exit checks均未获项目级final验收。B01已获用户批准为ready但尚未实现；B02–B05仍为draft。
 
 ## 第二阶段 Harness 方向
 
@@ -117,7 +117,7 @@ Phase B matrix必须绑定tracked protocol/catalog exact digests，并以九个o
 4. Phase D 对 physics/RAG 能力做有来源、可比较、支持 abstention 的评估；
 5. Phase E 形成 integrated benchmark 与下一 milestone。
 
-具体 Phase B acceptance 已由`completed`的 [A07](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)、tracked [`Control Protocol 0.4`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json) machine schema 0.4和catalog version 0.4.0共同冻结。B00必须消费其中的transaction domain、resolution CAS、guarded branches、tagged evidence unions、winner-observation组合状态、request-owned normal safe-stop candidate classification、完整trigger-class/context stop route、interrupt disposition、interrupt late-integrity outcome、Cancel branch-to-resolution tuple/phase闭包、START/Replay/Fork/ordinary Transition的commit-gated capability、exact terminal lifecycle、reservation到ExternalOperation tuple及source proof到request Run/lineage的绑定、Replay source-policy classifier、stable fork、variant overlay与phase dominance及其exact digests，而不是从自然语言或实现反向定义验收范围。A06已经冻结具体policy、accounting和stop metrics，但这些仍是目标合同，不能写成当前runtime要求。
+具体 Phase B acceptance 已由`completed`的 [A07](tickets/phase-a-control-contracts/A07_PHASE_B_HARNESS_ACCEPTANCE.md)、tracked [`Control Protocol 0.4`](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json) machine schema 0.4和catalog version 0.4.0共同冻结。B00静态meta tests已消费其中的transaction domain、resolution CAS、guarded branches、tagged evidence unions、winner-observation组合状态、request-owned normal safe-stop candidate classification、完整trigger-class/context stop route、interrupt disposition、interrupt late-integrity outcome、Cancel branch-to-resolution tuple/phase闭包、START/Replay/Fork/ordinary Transition的commit-gated capability、exact terminal lifecycle、reservation到ExternalOperation tuple及source proof到request Run/lineage的绑定、Replay source-policy classifier、stable fork、variant overlay与phase dominance及其exact digests，而不是从自然语言或实现反向定义验收范围。A06已经冻结具体policy、accounting和stop metrics，但这些仍是目标合同，不能写成当前runtime要求。
 
 ## Raw-data-backed Evals 的前置条件
 

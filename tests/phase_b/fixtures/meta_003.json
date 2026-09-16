@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/meta_003.json",
+  "entrypoint": "tests/phase_b/test_acceptance_foundation.py:test_meta_003",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "coverage_set_equality",
+    "owned_slice_only"
+  ]
+}

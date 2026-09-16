@@ -196,6 +196,16 @@ Analysis不加载mutable coding workspace，也不执行当前control repository
 
 Phase B只使用遵守相同端口、validator、verifier、registry和fresh Analysis路径的`FakeCodingBackend`。Python Codex SDK只是Phase C候选；独立C00必须先用pinned build证明restart-safe lookup、完整tool audit、exact process-tree cancellation、workspace/credential containment、immutable evidence与fail-closed crash行为，才能由C01选择真实backend。当前legacy handoff、runtime graph、dependencies和provider配置均未改变。
 
+## B00 Acceptance Foundation（已实现，非 Runtime Authority）
+
+`src/lqcd_agent/control/_generated_protocol.py`由tracked generator消费冻结protocol/catalog exact bytes生成，递归使用只读mapping和tuple；`control/protocol.py`只提供纯lookup。Import和lookup不读取docs、fixtures、环境、clock或provider。当前graph没有接入该模块，不改变现有schema `0.2`。
+
+`tests/phase_b/`持有strict matrix、normalized trace、pytest evidence writer、typed failpoint registry与独立final obligations。B00只映射15项construction requirements；324项inventory和2286条final cases（含7×4 post-claim paths）不等于已实现production hooks。Registry binding可由后续票追加，但inventory/case清单由独立seal保护。
+
+`scripts/validate_phase_b_acceptance.py`拥有fresh session、实际工作树摘要、pytest subprocess和最终closed report。Construction只验当前slice；final同时验两个stage、实际hook/trace及15项必需退出检查。B05在既定typed adapter入口接入真实检查，不能从CLI注入runner或旧结果。测试用隔离runner不属于project验收。
+
+这套foundation不创建Run、SQLite coordinator、Pause、budget、Backend、workspace或产品Transition。`requirements_zero_gap`与`phase_b_complete`仍为false；实现和验收事实见[B00 Completion](tickets/completions/B00_COMPLETION.md)。
+
 ## A06 已确认的 Budget 与 Stop 控制架构（尚未实现）
 
 [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)冻结可信控制层的`BudgetPolicy 0.1`、`BudgetDecision 0.1`、`FailureFingerprint 0.1`和single-use `BudgetGrant 0.1`。每个schema `0.4` Run在正式creation前选择allowlisted immutable policy；`balanced_v1`是保守默认，`phase_b_test`只供deterministic harness。Agent、router、provider、Backend和Human自由文本均不能选择profile、修改policy/counter、退款或决定retry/stop。

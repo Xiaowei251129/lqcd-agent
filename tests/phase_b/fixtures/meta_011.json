@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/meta_011.json",
+  "entrypoint": "tests/phase_b/test_acceptance_foundation.py:test_meta_011",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "single_transaction_domain",
+    "unique_cas_winner"
+  ]
+}

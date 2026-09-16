@@ -2,7 +2,7 @@
 
 ## Status
 
-`planned`
+`in_progress`
 
 ## 目标
 
@@ -29,7 +29,7 @@ Tracked requirement catalog version为`0.4.0`，包含A01、A02、A02C01、A03�
 
 B00创建test-owned `tests/phase_b/acceptance_matrix.json`，使用`PhaseBAcceptanceMatrix 0.1`并绑定上述protocol/catalog version与digest。每个required scenario必须引用catalog中的stable required ID、固定layer、deterministic fixture、project-owned entrypoint、typed expected result/invariants、适用的exact normalized trace及至少一个可collect且passing的pytest node ID。
 
-以下为[B00草稿](B00_ACCEPTANCE_FOUNDATION.md)拟统一的验收协议，尚未成为ready执行合同：每个scenario使用`validation_stage=construction | final`，保持原requirement owner；construction仅确认当前slice的construction证据，累计`requirements.covered/remaining`仅表示映射覆盖与缺口，未重验的全局`requirements.passed/passed_ids=null`，两个完成标志均为false。
+以下为[B00冻结合同](B00_ACCEPTANCE_FOUNDATION.md)已实现的验收协议：每个scenario使用`validation_stage=construction | final`，保持原requirement owner；construction仅确认当前slice的construction证据，累计`requirements.covered/remaining`仅表示映射覆盖与缺口，未重验的全局`requirements.passed/passed_ids=null`，两个完成标志均为false。
 
 Final须同时验证两个stage的全部required scenarios及独立于matrix的final obligations。每个registry entry必须有实际production hook、触发证据、适用outcome、passing nodeid和exact trace；META-006/015不能仅凭inventory或静态检查完成，META-015还须覆盖publication、fresh Analysis、consumption release及7×4 post-claim paths。Unknown、non-required、duplicate、stale、uncollectable、skip、xfail、deselect、live-only或缺失trace/invariant均失败。
 
@@ -55,12 +55,12 @@ A07执行时只冻结以下拆分；其后起草的六张票见下方Draft Ticke
 - transition、identity、invalidation、resume、budget 和 harness acceptance 已进入核心文档；
 - 实现者不需要自行补充控制层设计决定。
 
-这些阶段级进入条件已由A07 completion满足，但Phase B仍为`planned`：B00已由用户批准为`ready`；B01–B05保持`draft`，尚不可执行。Execution仍严格按依赖顺序从B00开始；后续draft的存在不表示前置条件已满足。
+这些阶段级进入条件已由A07 completion满足。B00在`f654f44`冻结后执行，验收基础已实现；用户于2026-09-16明确批准B01为`ready`，提交冻结后执行。B02–B05保持`draft`，尚不可执行。
 
-## Draft Tickets
+## Implementation Tickets
 
-- [`B00_ACCEPTANCE_FOUNDATION.md`](B00_ACCEPTANCE_FOUNDATION.md)：已批准为`ready`，执行范围为protocol generated projection、strict matrix validator、pytest evidence、normalized trace codec和failpoint registry。
-- [`B01_EXECUTION_0_4_CONTROL_FOUNDATION.md`](B01_EXECUTION_0_4_CONTROL_FOUNDATION.md)：拟建立Execution `0.4` records、budget/lifecycle foundation、trusted clock、bounded projection与cross-head integrity；当前只供review，不可执行。
+- [`B00_ACCEPTANCE_FOUNDATION.md`](B00_ACCEPTANCE_FOUNDATION.md)：`completed`，验收基础已实现；执行记录见[B00 Completion](../completions/B00_COMPLETION.md)，只证明construction证据，不证明runtime已通过。
+- [`B01_EXECUTION_0_4_CONTROL_FOUNDATION.md`](B01_EXECUTION_0_4_CONTROL_FOUNDATION.md)：已批准为`ready`，建立Execution `0.4` records、budget/lifecycle foundation、trusted clock、bounded projection与cross-head integrity；不授权后续durable/product实现。
 - [`B02_DURABLE_CONTROL_OPERATIONS.md`](B02_DURABLE_CONTROL_OPERATIONS.md)：拟实现single SQLite coordinator、ControlOperation、Pause/Resume/Replay/Fork/Cancel、terminal ownership与restart recovery；当前只供review，不可执行。
 - [`B03_GRAPH_MANAGED_FAKE_CODE_AGENT.md`](B03_GRAPH_MANAGED_FAKE_CODE_AGENT.md)：拟实现CodeAgentSubgraph、Fake Backend、ExternalOperation、trusted verification、Code Bundle与fresh Analysis；当前只供review，不可执行。
 - [`B04_TARGET_PRODUCT_TOPOLOGY_AND_BUDGETED_LOOPS.md`](B04_TARGET_PRODUCT_TOPOLOGY_AND_BUDGETED_LOOPS.md)：拟接入A01产品图、四层fallback、Human return、A03 invalidation与A06 admission/grant/stop；当前只供review，不可执行。
@@ -70,11 +70,11 @@ Draft proposed ownership固定为：B00 15项、B01 11项、B02 30项、B03 28�
 
 草稿还统一了兼容与治理边界：0.2验证来源后仅replay；0.3禁止原地resume/migration，但合格来源可replay/fork为0.4 child；0.4遵守冻结fingerprint/source proof/资格。B01提供policy/record/clock校验基础，B02可信入口在bootstrap前核验initial Cycle、Planner Attempt、START Transition及terminal reserve并持久化decision，caller/Agent/test不能注入allow；B04负责后续产品admission。每票Allowed Files包含本票maintenance记录及corrections index追加，已有历史不可改写；缺失前置功能或合同/架构/验收边界变化仍须corrective ticket。
 
-当前B00为唯一`ready` Phase B ticket；尚无matrix、Phase B tests或runtime实现。
+当前已有B00 matrix、Phase B meta tests、324项typed registry inventory和2286条独立final cases（含28条post-claim组合），production hooks均未绑定。Construction为15/15；全局映射15/131、remaining=116，global passed为null。真实final因映射/runtime/15项exit adapters缺口而失败；没有Phase B product runtime。
 
 ## 退出门槛
 
-草稿采用final统一驱动：同一次调用必须执行并核验Layer 0–5、cross-system fault/concurrency、Phase B suite、完整pytest、compileall、synthetic tests、full mock benchmark、legacy regression、CLI smoke及文档/scope检查。任一缺失、失败或证据无效均非零；benchmark退出0但任一case/checklist失败也不通过。只有`requirements_zero_gap=true`且全部退出证据有效时才可`phase_b_complete=true`，不能先生成成功报告再补smoke/benchmark。
+B00已建立final统一驱动机制，实际退出适配器仍由B05接入：同一次调用必须执行并核验Layer 0–5、cross-system fault/concurrency、Phase B suite、完整pytest、compileall、synthetic tests、full mock benchmark、legacy regression、CLI smoke及文档/scope检查。任一缺失、失败或证据无效均非零；benchmark退出0但任一case/checklist失败也不通过。只有`requirements_zero_gap=true`且全部退出证据有效时才可`phase_b_complete=true`，不能先生成成功报告再补smoke/benchmark。
 
 B04的131 covered/0 remaining仅表示映射齐全；允许调用final作负向探针，缺runtime或exit evidence必须机器失败。Completion record仍须列出每层命令、摘要与totals、full suite、mock benchmark、smoke root及deferred capabilities。
 
@@ -82,4 +82,4 @@ B04的131 covered/0 remaining仅表示映射齐全；允许调用final作负向�
 
 ## 退出方向
 
-完成后进入Phase C，先执行C00 capability gate，再把Fake Code Agent替换为通过门禁的隔离真实实现。当前下一步执行已批准为`ready`的B00；B01–B05仍须独立review，不因B00批准而获得执行授权。
+完成后进入Phase C，先执行C00 capability gate，再把Fake Code Agent替换为通过门禁的隔离真实实现。当前下一步执行用户已批准的B01；B02–B05仍须独立review与用户批准，不因前置票完成而获得执行授权。

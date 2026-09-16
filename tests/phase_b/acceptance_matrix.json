@@ -1,0 +1,408 @@
+{
+  "schema_version": "0.1",
+  "phase": "phase-b-graph-harness",
+  "requirement_catalog_version": "0.4.0",
+  "requirement_catalog_sha256": "ed39a0b35feb3372e7647436ee588699c16b7c05555a03c791f69760626a9726",
+  "control_protocol_version": "0.4",
+  "control_protocol_sha256": "7447087f73caae2668a8e71e12fc40e426ebefee5864e3499a3f9cbd1a9322b8",
+  "implementation_slices": [
+    {
+      "ticket_id": "B00",
+      "owned_requirement_ids": [
+        "A07-META-001",
+        "A07-META-002",
+        "A07-META-003",
+        "A07-META-004",
+        "A07-META-005",
+        "A07-META-006",
+        "A07-META-007",
+        "A07-META-008",
+        "A07-META-009",
+        "A07-META-010",
+        "A07-META-011",
+        "A07-META-012",
+        "A07-META-013",
+        "A07-META-014",
+        "A07-META-015"
+      ]
+    }
+  ],
+  "scenarios": [
+    {
+      "scenario_id": "B00-META-001",
+      "contract_refs": [
+        "A07-META-001"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/meta_001.json",
+      "entrypoint": "tests/phase_b/test_acceptance_foundation.py:test_meta_001",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "closed_objects",
+        "strict_json"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_acceptance_foundation.py::test_meta_001"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B00",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B00-META-002",
+      "contract_refs": [
+        "A07-META-002"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/meta_002.json",
+      "entrypoint": "tests/phase_b/test_acceptance_foundation.py:test_meta_002",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "exact_catalog_digest",
+        "nine_owners",
+        "required_131"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_acceptance_foundation.py::test_meta_002"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B00",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B00-META-003",
+      "contract_refs": [
+        "A07-META-003"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/meta_003.json",
+      "entrypoint": "tests/phase_b/test_acceptance_foundation.py:test_meta_003",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "coverage_set_equality",
+        "owned_slice_only"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_acceptance_foundation.py::test_meta_003"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B00",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B00-META-004",
+      "contract_refs": [
+        "A07-META-004"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/meta_004.json",
+      "entrypoint": "tests/phase_b/test_acceptance_foundation.py:test_meta_004",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "fresh_pytest_evidence",
+        "no_skips_or_xfails"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_acceptance_foundation.py::test_meta_004"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B00",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B00-META-005",
+      "contract_refs": [
+        "A07-META-005"
+      ],
+      "layer": "interface",
+      "fixture_id": "tests/phase_b/fixtures/meta_005.json",
+      "entrypoint": "tests/phase_b/test_acceptance_foundation.py:test_meta_005",
+      "expected_trace_fixture": "tests/phase_b/expected_traces/meta_codec.json",
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "exact_trace",
+        "semantic_identity_preserved"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_acceptance_foundation.py::test_meta_005"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B00",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B00-META-006",
+      "contract_refs": [
+        "A07-META-006"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/meta_006.json",
+      "entrypoint": "tests/phase_b/test_acceptance_foundation.py:test_meta_006",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "independent_inventory",
+        "runtime_not_claimed"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_acceptance_foundation.py::test_meta_006"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B00",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B00-META-007",
+      "contract_refs": [
+        "A07-META-007"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/meta_007.json",
+      "entrypoint": "tests/phase_b/test_acceptance_foundation.py:test_meta_007",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "evidence_classes_separate"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_acceptance_foundation.py::test_meta_007"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B00",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B00-META-008",
+      "contract_refs": [
+        "A07-META-008"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/meta_008.json",
+      "entrypoint": "tests/phase_b/test_acceptance_foundation.py:test_meta_008",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "final_requires_runtime_and_exit",
+        "sequential_slices"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_acceptance_foundation.py::test_meta_008"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B00",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B00-META-009",
+      "contract_refs": [
+        "A07-META-009"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/meta_009.json",
+      "entrypoint": "tests/phase_b/test_acceptance_foundation.py:test_meta_009",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "exhaustive_graphs",
+        "unique_terminal_evidence"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_acceptance_foundation.py::test_meta_009"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B00",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B00-META-010",
+      "contract_refs": [
+        "A07-META-010"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/meta_010.json",
+      "entrypoint": "tests/phase_b/test_acceptance_foundation.py:test_meta_010",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "immutable_projection",
+        "single_contract_authority"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_acceptance_foundation.py::test_meta_010"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B00",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B00-META-011",
+      "contract_refs": [
+        "A07-META-011"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/meta_011.json",
+      "entrypoint": "tests/phase_b/test_acceptance_foundation.py:test_meta_011",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "single_transaction_domain",
+        "unique_cas_winner"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_acceptance_foundation.py::test_meta_011"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B00",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B00-META-012",
+      "contract_refs": [
+        "A07-META-012"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/meta_012.json",
+      "entrypoint": "tests/phase_b/test_acceptance_foundation.py:test_meta_012",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "exact_reservation_overlays",
+        "twelve_variants"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_acceptance_foundation.py::test_meta_012"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B00",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B00-META-013",
+      "contract_refs": [
+        "A07-META-013"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/meta_013.json",
+      "entrypoint": "tests/phase_b/test_acceptance_foundation.py:test_meta_013",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "disjoint_exhaustive_branches",
+        "tagged_unions"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_acceptance_foundation.py::test_meta_013"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B00",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B00-META-014",
+      "contract_refs": [
+        "A07-META-014"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/meta_014.json",
+      "entrypoint": "tests/phase_b/test_acceptance_foundation.py:test_meta_014",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "composite_owners",
+        "unique_stop_route"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_acceptance_foundation.py::test_meta_014"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B00",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B00-META-015",
+      "contract_refs": [
+        "A07-META-015"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/meta_015.json",
+      "entrypoint": "tests/phase_b/test_acceptance_foundation.py:test_meta_015",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "independent_semantic_mutations",
+        "post_claim_28",
+        "producer_dominance"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_acceptance_foundation.py::test_meta_015"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B00",
+      "validation_stage": "construction"
+    }
+  ]
+}
