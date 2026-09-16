@@ -2,9 +2,21 @@
 
 ## 当前合同
 
-`AnalysisState` 是当前公开 graph-state contract。节点只能读取和写入已记录字段。下面的 schema 与当前 runtime 对齐；A02 完成 execution identity，A03 完成 bounded artifact-current control fields。A04已经冻结后继Pause/Resume state contract，A05已经冻结后继Code Agent bounded projection，A06已经冻结后继budget bounded projection，但这些目标字段都尚未加入当前runtime。
+`AnalysisState` 是当前公开 graph-state contract。节点只能读取和写入已记录字段。下面的 schema 与当前默认runtime对齐；A02完成execution identity，A03完成bounded artifact-current control fields。B01另行实现显式0.4纯record/replay/projection基础，未向默认0.2 `AnalysisState`添加Pause、Code Agent或budget执行字段。
 
-schema 变化必须由独立 implementation ticket 批准，并同步 runtime、tests、artifact contracts 和相关 Decision Log。A02 execution identity 与 A03 artifact-current schema 已落地并通过验收；reducer、具体恢复字段和 budgets 不属于当前正式 schema。
+schema变化必须由独立implementation ticket批准，并同步runtime、tests、artifact contracts和相关Decision Log。A02/A03已落地；B01的独立0.4基础边界见下节，durable恢复及产品budget enforcement仍未实现。
+
+## B01 Execution 0.4 Foundation
+
+显式入口为`control.records.validate_record/parse_record`、`control.execution.replay/parse_ledger/append_record_bytes`。仅接受canonical UTF-8 JSON、精确字段集合和0.4版本；拒绝duplicate key、非有限数值、超过exact JSON integer边界的数值、wrong scalar、未知/缺失字段和非canonical编码。返回的validation snapshot保存immutable bytes；解码结果是detached copy。Builders只构造数据，不能持久化或取得执行权限。
+
+Record union覆盖A02 `run/cycle/attempt/transition/human_request/human_response`及A04/A06 `run_lifecycle/budget`。A02 identity/nesting格式不变；公共envelope使用连续`execution_event_NNNNNN`/`event_index`、`previous_execution_head`、append前`artifact_head/artifact_event_index`及typed `created_at`。Resulting execution head为该完整canonical record的SHA-256，包含previous head但不嵌入自身future digest。Run created使用`initializing`；Run lifecycle edges来自generated protocol。Budget events有独立连续`budget_event_NNNNNN`，但仍在同一execution ledger中。
+
+`ExecutionReplay`可验证未完成的纯publication前缀；这不是可恢复/可运行证明。Stable-root adapter另行要求完整A03反向closure、grant/Transition闭合与exact checkpoint manifest；它不能创建或补齐任何suffix。Pause records、coordinator proofs和capability activation仍由B02/B03接入，不把单独的合法Run lifecycle edge当作durable Pause或启动授权。
+
+Bounded projection只保留当前Run lifecycle、A02当前identity/counters、latest execution/artifact heads、A03 current pointers及convenience paths、policy identity、budget counters/used/remaining、active fingerprint/occurrence、nullable grant和latest decision/stop summary，不复制完整history。`checkpoint_manifest`绑定Run/thread、checkpoint identity/content digest、写入时exact execution/artifact pair及pre-checkpoint state digest；最后把manifest摘要作为`checkpoint_head`附到projection，避免hash自引用。Manifest参数是显式checkpointer evidence，实际checkpoint写入与durable真实性由B02所有者负责；B01不操作checkpoint backend。
+
+兼容边界不变：默认0.2由既有runtime处理，来源验证后仅可replay；0.3不原地resume/migrate，合格来源可replay/fork为0.4 child；0.4恢复仍需exact supported fingerprint及所有durable source proofs。B01不实现这些public入口，不从legacy state推断0.4 history，不迁移历史bytes。
 
 ## 当前字段
 
@@ -218,7 +230,7 @@ Mutable workspace path、patch bytes、tool transcript、完整verification logs
 
 上述字段属于Phase B execution schema `0.4`实现目标，不是当前schema `0.2`字段。A05没有修改`AnalysisState`、graph、checkpoint backend或legacy re-entry行为。
 
-## A06 已确认的 Budget 目标 State Boundary（尚未实现）
+## A06 已确认的 Budget 目标 State Boundary（B01纯投影已实现，产品接入待实现）
 
 [A06](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)把budget authority放在immutable policy与append-only execution ledger，而不是graph state。Phase B execution schema `0.4`在现有`execution_history.jsonl`增加`record_type: budget`，Run-local `budget_event_id/index`连续且唯一；允许的event固定为`policy_initialized`、`resource_reserved`、`resource_settled`、`failure_observed`、`grant_issued`、`grant_consumed`和`decision_recorded`。Cycle、Attempt、Transition与automatic-route用量继续从其A02权威记录重放，不建立第二份mutable counter history。
 
@@ -233,7 +245,7 @@ Bounded state只保存可从validated policy与ledger确定性派生的projectio
 
 初始化、恢复、读取、route admission与artifact registration前必须重放authority，并要求projection exact-equal。完整reservation、settlement、fingerprint和grant history不能复制进state或Agent prompt；缺失或篡改已populated projection不能由initialize静默修复。Resource reservation在side effect前写入，crash后未结算项按maximum charge；Code Agent pre-start Backend interval可计入target Attempt与Run active dimensions，但不把scheduled Attempt提前改为`started`。
 
-每个Run还绑定immutable `budget_policy.json`的version/profile/reference/digest及Pause deadline派生输入。Resume必须exact-match同一schema `0.4` policy/runtime；Replay/Fork创建新child并从0计数，不继承reservation、failure occurrence、grant、deadline、counter、current pointer、Human authorization或accepted state。以上均是目标schema，不改变当前`AnalysisState.status`、`retry_count/max_retry`、graph topology或schema `0.2` ledger。
+每个Run还绑定immutable `budget_policy.json`的version/profile/reference/digest及Pause deadline派生输入。Resume必须exact-match同一schema `0.4` policy/runtime；Replay/Fork创建新child并从0计数，不继承reservation、failure occurrence、grant、deadline、counter、current pointer、Human authorization或accepted state。完整durable流程仍是目标合同；B01的纯policy/record/replay/projection已实现，但不改变当前`AnalysisState.status`、`retry_count/max_retry`、graph topology或schema `0.2` ledger。
 
 ## 第二阶段待实现 schema 议题
 
@@ -244,7 +256,7 @@ Bounded state只保存可从validated policy与ledger确定性派生的projectio
 - A06已确认的budget policy binding、budget ledger events、trusted usage与bounded projection；
 - 正式 parallel reducer、per-branch namespace 或 merge semantics。
 
-在相应 implementation tickets 完成前，任何实现或其他文档都不能假设这些字段已经存在。
+在后续implementation tickets完成前，不能假设这些字段已经接入默认`AnalysisState`、public operations或产品图；B01独立纯0.4基础类型不构成该接入。
 
 ## Related Documents
 

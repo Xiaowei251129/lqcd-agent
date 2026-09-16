@@ -144,7 +144,15 @@ Trusted verifier读取task中typed `VerificationSpec`，在exact base加validate
 
 Artifact pointer status必须exact等于structured result，dependencies至少包含当时current plan及适用的protected Human Response snapshot。A03 invalidation清除bounded current pointer和projection，但保留immutable task、ExternalOperation/workspace evidence、bundle及historical diagnostic bytes；physical workspace仍按Host lifecycle隔离、释放，不能成为长期source of truth。A05不批准把bundle写回control repository，也不批准commit、merge、push、PR、deployment、scientific acceptance或accepted-result promotion。
 
-## A06 已确认的 Budget Control Artifact Contract（尚未实现）
+## B01 Read-only Cross-head Adapter
+
+显式0.4输入由`control.integrity.validate_run_root`读取`execution_history.jsonl`、`artifact_history.jsonl`、`artifact_index.json`和immutable `budget_policy.json`。它验证canonical bytes及policy binding，然后复用A03原有history/index、slot、dependency、current/projection owner、invalidation和protected snapshot校验；没有新增pending-publication例外。
+
+A03 domain artifact schema/七个slots保持0.1原语义。0.4 control envelope为artifact event增加`previous_artifact_head`与当时`execution_head`，index绑定latest `execution_head/artifact_head`。历史chain与execution记录中的artifact pre-head双向验证，stable checkpoint绑定exact pair。Adapter拒绝partial/conflicting publication、旧合法bounded head、跨Run、nullable omission以及通过重算摘要伪装的非法producer/target；返回typed `control_integrity_failure`，不写failed lifecycle或修复文件。该能力不声称能在没有外部immutable anchor时发现任意完整历史的协调重写，与A03C01边界一致。
+
+`artifact_binding`只生成待验证的immutable envelope；A03已有publication函数未被改造成0.4 writer。实际0.4持久化和publication ownership属于B02–B04。B01测试只在新建`/private/tmp/lqcd-agent-b01-*`目录构造证据，不修改existing Runs。
+
+## A06 已确认的 Budget Control Artifact Contract（B01基础已实现，durable接入待实现）
 
 [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)为每个Phase B schema `0.4` Run冻结：
 

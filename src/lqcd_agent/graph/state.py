@@ -1424,6 +1424,21 @@ _HUMAN_CONTROL_FIELDS = (
 )
 
 
+def validate_control_0_4_node_result(active: dict[str, Any], result: dict[str, Any]) -> None:
+    """Keep the separately validated 0.4 control projection out of Agent writes.
+
+    This pure adapter does not validate a Run root or grant execution authority.
+    Domain output remains separate; the legacy 0.2 node wrapper is unchanged.
+    """
+    from lqcd_agent.control.strict_json import canonical_bytes, require
+
+    require(active.get("schema_version") == result.get("schema_version") == "0.4",
+            "Unsupported control projection version")
+    for field in _CONTROL_PLANE_IDENTITY_FIELDS + _HUMAN_CONTROL_FIELDS:
+        require(active.get(field) == result.get(field), "Graph node modified control-plane identity")
+    require(canonical_bytes(active) == canonical_bytes(result), "Graph node modified control-plane projection")
+
+
 def _validate_node_identity_envelope(
     active: AnalysisState,
     result: AnalysisState,

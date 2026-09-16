@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b01_fingerprint.json",
+  "entrypoint": "src/lqcd_agent/control/budget.py:fingerprint",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "incidental_identity_ignored",
+    "material_context_changes_digest",
+    "occurrence_continuous"
+  ]
+}

@@ -166,7 +166,7 @@ A07明确不运行pytest、benchmark或live-provider测试；其完成证明“P
 
 ### Phase B Acceptance Foundation（B00）
 
-B00提供可执行的[generator](../scripts/generate_phase_b_protocol.py)、[acceptance CLI](../scripts/validate_phase_b_acceptance.py)、[matrix](../tests/phase_b/acceptance_matrix.json)、[registry](../tests/phase_b/failpoint_registry.json)及[独立final obligations](../tests/phase_b/final_obligations.json)。协议以[B00冻结票据](tickets/phase-b-graph-harness/B00_ACCEPTANCE_FOUNDATION.md)为准；当前只有B00 construction证据，不是Phase B runtime完成证明。
+B00提供可执行的[generator](../scripts/generate_phase_b_protocol.py)、[acceptance CLI](../scripts/validate_phase_b_acceptance.py)、[matrix](../tests/phase_b/acceptance_matrix.json)、[registry](../tests/phase_b/failpoint_registry.json)及[独立final obligations](../tests/phase_b/final_obligations.json)。协议以[B00冻结票据](tickets/phase-b-graph-harness/B00_ACCEPTANCE_FOUNDATION.md)为准；当前包含B00/B01 construction证据，不是Phase B runtime完成证明。
 
 ```bash
 B00_EVIDENCE_DIR="$(mktemp -d /private/tmp/lqcd-agent-b00-XXXXXX)"
@@ -189,9 +189,9 @@ git diff --check
 
 Evidence子目录与report文件必须不存在，并位于仓库外；不能复用旧目录。CLI自行生成token、冻结实际source/tests/scripts/configs/synthetic inputs/docs/manifests的path/type/mode/bytes摘要，启动禁用live opt-in的fresh pytest subprocess，最后复核输入未变化。不要在验收期间修改仓库。公开CLI没有test runner、旧evidence或任意shell命令注入选项。
 
-Construction当前owned/covered/passed必须exact为15项A07 meta IDs，global covered=15、remaining=116、passed/passed_ids=null。两个完成标志为false，runtime状态not_run、passed_case_ids=null，2286条case显式missing；15项exit checks均not_run。META-006/015静态通过不代表production hooks已实现。
+选择B00的construction时，owned/covered/passed仍须exact为15项A07 meta IDs；B01接入后global covered=26、remaining=105、passed/passed_ids=null。两个完成标志为false，runtime状态not_run、passed_case_ids=null，2286条case显式missing；15项exit checks均not_run。META-006/015静态通过不代表production hooks已实现。
 
-真实final先验证全部输入、独立清单、required node collection与适配器selection；当前预期非零，只有三类缺口：116项coverage_gap、2286项runtime_evidence_gap、15项exit_evidence_gap。不能仅凭非零就通过负向验收；任何parser、collection、invalid evidence或internal error都须另行处理。当前preflight不会执行B05完整退出流程。
+真实final先验证全部输入、独立清单、required node collection与适配器selection；当前预期非零，只有三类缺口：105项coverage_gap、2286项runtime_evidence_gap、15项exit_evidence_gap。不能仅凭非零就通过负向验收；任何parser、collection、invalid evidence或internal error都须另行处理。当前preflight不会执行B05完整退出流程。
 
 Final具备前置条件后重新执行两个stage的required scenarios，并分派Layer 0–5、cross-system fault/concurrency、Phase B/full/synthetic/legacy suites、compileall、full mock benchmark、CLI smoke和documentation/scope。实际适配器由B05接入`tests/phase_b/harness/exit_checks.py:production_adapters`，不得改变固定check IDs、schema、stage或完成逻辑。每层selection由matrix派生，cross-system由独立case binding派生，suite selection必须等于fresh全目录collection；B05不能用passing子集替代full suite。
 
@@ -202,6 +202,28 @@ Exit envelope只引用本次evidence目录内的raw bytes SHA-256。Report使用
 B00已用隔离synthetic adapters永久测试final完整成功、缺exit/hook/post-claim case、stale token/worktree/contract、内部异常及benchmark虚假成功；隔离fixture不能生成project completion。Schema compatibility和bootstrap admission的production反例仍分别由B02/B03/B04实现，B00未新增其runtime。
 
 只有131项所有适用scenarios及runtime obligations均通过才可`requirements_zero_gap=true`；还需全部exit checks通过且errors为空才可`phase_b_complete=true`。当前二者均为false。后续票仍须独立review并获用户批准。
+
+### B01 Pure Execution Foundation
+
+```bash
+B01_EVIDENCE_DIR="$(mktemp -d /private/tmp/lqcd-agent-b01-XXXXXX)"
+python scripts/validate_phase_a_control_protocol.py
+python scripts/generate_phase_b_protocol.py --check
+RUN_LIVE_LLM_TESTS=0 pytest --collect-only -q tests/phase_b
+RUN_LIVE_LLM_TESTS=0 pytest -q tests/phase_b/test_execution_0_4_foundation.py
+python scripts/validate_phase_b_acceptance.py --mode construction --ticket B01 \
+  --evidence-dir "$B01_EVIDENCE_DIR/construction" --report "$B01_EVIDENCE_DIR/construction-report.json"
+! python scripts/validate_phase_b_acceptance.py --mode final \
+  --evidence-dir "$B01_EVIDENCE_DIR/final" --report "$B01_EVIDENCE_DIR/final-negative-report.json"
+RUN_LIVE_LLM_TESTS=0 pytest -q tests/test_execution_identity.py tests/test_artifact_registry.py tests/test_state_schema.py
+RUN_LIVE_LLM_TESTS=0 pytest -q
+python -m compileall -q src tests scripts/generate_phase_b_protocol.py scripts/validate_phase_b_acceptance.py
+git diff --check
+```
+
+B01 construction的owned/covered/passed exact为11项，global为26 covered/105 remaining/passed null。Final按上节逐类验证缺口，不把非零退出本身当作通过。Frozen protocol/catalog/generated module、registry/final obligations/seals及B00正文必须byte-equal；ownership保持15/11/30/28/47。
+
+Foundation tests验证strict/canonical records、每条record推进head、A02 lifecycle/identity、Agent-output guard、immutable policy、unknown usage、fake clock、semantic fingerprint、reservation/grant事实与cross-head/projection拒绝路径。协调篡改负例重算所有外层摘要后仍须由语义校验拒绝；真实A03注册证据也经过0.4只读适配器。旧0.2 tests不改写。该suite不证明durable publication、Pause/Backend/claim、resource enforcement或B05 exit。
 
 ### A02 Execution Identity 验收
 

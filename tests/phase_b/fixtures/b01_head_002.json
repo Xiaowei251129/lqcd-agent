@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b01_head_002.json",
+  "entrypoint": "src/lqcd_agent/control/integrity.py:validate_run_root",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "exact_cross_heads",
+    "nullable_fields_required",
+    "read_only_validation"
+  ]
+}

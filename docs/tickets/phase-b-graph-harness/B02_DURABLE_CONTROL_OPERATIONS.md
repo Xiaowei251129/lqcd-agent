@@ -1,7 +1,7 @@
 ---
 ticket_id: B02
 phase: phase-b-graph-harness
-status: draft
+status: ready
 type: implementation
 depends_on: [B00, B01]
 ---
@@ -53,7 +53,8 @@ B02把这套协议实现为可重启、可竞争、可fail closed的项目入口
 
 - B00和B01必须为`completed`；B01 construction report必须exact显示11 owned passed、累计26 covered和105 remaining。
 - Protocol/catalog versions与exact SHA-256保持B01所列值；B02不得从A04 prose重建operation phase graph。
-- B01的record/clock/projection/integrity APIs、B00 failpoint IDs和generated protocol是实现输入；若实际API无法表达frozen protocol，停止并创建corrective ticket，不在B02新增隐式variant。
+- B01的record/clock/projection/integrity APIs、B00 failpoint IDs和generated protocol是实现输入；允许在职责匹配的现有record、execution replay、projection和integrity模块中补齐冻结合同已规定且归属B02的Pause/control支持。这是本票正常实现，不因B01尚未提供这些B02能力而判定缺失前置功能。
+- Generated protocol仅消费，不修改或重复定义；不改变已有合同语义，不新增隐式variant或第二套authority。真正缺失B00/B01应交付的前置能力，或需改变冻结合同、扩大批准范围时，按Stop Conditions停止并创建、批准corrective ticket；合同保持的局部bug仍按本票maintenance规则处理。
 - 执行前记录full-suite、B00/B01 focused suites和B01 final expected-failure基线。
 
 ## Scope
@@ -148,14 +149,14 @@ tests/phase_b/
   expected_traces/
 ```
 
-只在现有B01模块职责明确适合时扩展该模块；不得复制generated phase graph或另建per-subsystem coordinator。
+只在现有B01模块职责明确适合时扩展record、execution replay、projection和integrity，以补齐冻结合同已规定且归属B02的Pause/control支持；其余schema/clock基础继续复用，不改变已有合同语义。Generated protocol仅消费，不修改或重复定义phase graph，不另建per-subsystem coordinator或第二套authority。
 
 ## Allowed Files
 
 - `docs/tickets/corrections/B02_MAINTENANCE.md`：仅在发生本票范围内的contract-preserving局部修复时新增；同票后续条目只追加，不改写已记录事实；
 - `docs/tickets/corrections/README.md`：仅追加本票maintenance链接，不改写已有索引项；
 - `docs/tickets/phase-b-graph-harness/B02_DURABLE_CONTROL_OPERATIONS.md`：进入`ready`后只允许更新YAML lifecycle metadata；
-- B00/B01已建立的`src/lqcd_agent/control/`文件：仅限复用schema、record、clock、projection、integrity和generated protocol接口；
+- B00/B01已建立的`src/lqcd_agent/control/`文件：复用schema、record、clock、projection、integrity和generated protocol接口；允许在职责匹配的record、execution replay、projection和integrity模块中补齐冻结合同已规定且归属B02的Pause/control支持，不改变已有合同语义、不新增隐式variant或第二套authority；generated protocol仅消费，不修改`_generated_protocol.py`或重复定义其内容；
 - `src/lqcd_agent/control/coordinator.py`；
 - `src/lqcd_agent/control/operations.py`；
 - `src/lqcd_agent/control/leases.py`；
@@ -219,7 +220,10 @@ tests/phase_b/
 
 ### 3. Transition, Pause and Resume
 
-- Every ordinary noninitial Transition由`advance_run`拥有，按target scheduled allocation → exact invalidation → Transition commit → optional target preparation → committed result → capability activation执行；target side effect前不允许started。
+- START bootstrap和Human Response resume之外的每个普通Transition由`advance_run`拥有。Attempt-target分支严格消费generated protocol，在reservation、budget decision及route prerequisites完成后，按target scheduled allocation → exact invalidation → Transition commit → heads verification → `target_preparation_committed` → inactive `invocation_capability_prepared` → same-operation committed-result activation执行。`target_preparation_committed`不可跳过，不适用时提交typed `not_applicable`。
+- Ordinary target必须先持有已激活authorization并领取独立、有效的invocation lease，再CAS持久化started intent、append A02 `started`，最后才允许target副作用；未激活capability、无有效lease或stale epoch不得启动Attempt。Intent之后崩溃不得自动接管重跑target；exact deterministic publication suffix仍只按冻结合同由原control owner物化。
+- `advance_run`的Code Agent target只授予`external_prestart_only`，不领取Attempt lease、不写`started`。正常结果恢复由`resume_run/continue_execution`在claim、settlement及running checkpoint后按冻结的`invocation_authorized`边界授予`attempt_execution`；pre-start权限不得兑换Attempt执行权限。B03仍负责真实ExternalOperation/backend行为，既有timeout/interrupt合同不变。
+- START与Human Response继续使用各自冻结的bootstrap/resume路径；END使用typed-null target分支，不分配target Attempt、不生成invocation capability，`advance_run`提交后才由`close_run`消费terminal Transition。
 - Human input使用null target Pause；claim后由A02 external control Transition恰好分配一个Human Gate validator Attempt，随后按frozen consumed/running checkpoint/start order执行。该external transition不计A01 product edge。
 - Pause publication严格形成`pause_prepared -> prepared checkpoint -> running-to-paused lifecycle -> pause_opened -> public paused checkpoint`非对称closure；prepared/opened/claimed/consumed/cancelled/aborted/interrupted/quarantined shapes均closed且head-exact。
 - `resume_run`只接受stable exact paused+opened+public checkpoint+runtime/policy fingerprint；reason-specific actor/scope/Run/Pause/payload/deadline mismatch无mutation失败。
@@ -267,6 +271,8 @@ tests/phase_b/
 - Coordinator先于任何Run bytes或external effect取得authority，且与checkpoint物理/语义分离；
 - 十二variant、allowed edges、branch guards、effective overlays、owner acquisition、terminal outcomes和tombstones与generated protocol exact一致；
 - same-key replay、different-payload conflict、lease takeover/stale owner、capability expiry与double-consume均确定性通过；
+- Ordinary target副作用前必须已完成有效authorization/lease、started intent与A02 `started`；未激活capability、无有效lease或stale epoch均拒绝启动，intent后崩溃不自动接管重跑；Code Agent pre-start不能兑换Attempt执行权限；
+- Attempt-target分支的`target_preparation_committed`始终执行，不适用时使用typed `not_applicable`；START/Human Response特殊路径及END无capability分支保持冻结语义；
 - 三种Pause reason、continue/abandon、cancel、close、interrupt generic branches及Replay/Fork在fresh process restart后exact once；
 - 两个process竞争Pause/Run/source/operation owner恰有一个winner，没有half ownership或duplicate terminal lifecycle；
 - Existing schema `0.2` runtime与A02/A03 behavior不变，未实现的B03/B04能力没有被B02 evidence声称；
@@ -302,6 +308,10 @@ git diff --check
 
 - fresh-process restart fixtures；
 - two-process same-key/different-payload、Pause claim、terminal owner、source revision和capability lease races；
+- invocation启动负向测试：未激活capability、缺失/过期lease及stale epoch均不能写started intent、A02 `started`或执行target副作用；ordinary target正向exact trace必须为有效authorization/lease → CAS started intent → A02 `started` → 副作用；
+- started intent后、A02 `started`后及副作用结果不确定时的fresh-process crash测试：不得自动重新领取started invocation或接管重跑target；仅允许冻结合同规定的原control owner确定性publication materialization；
+- Code Agent pre-start授权负向测试：`external_prestart_only`不能领取Attempt lease、写`started`或启动结果verification/domain artifact publication；正常结果恢复的`attempt_execution`只能在claim、settlement及running checkpoint后的冻结授权边界取得，generic adapter只证明B02 control half；
+- target preparation分支测试：适用时验证preparation proof，不适用时提交typed `not_applicable`并保留`target_preparation_committed`；跳过该phase或提前兑换capability均拒绝，END仍不生成capability；
 - SQLite FULL/file+directory sync fault suite及partial JSONL rejection；
 - B02 construction owned/covered/passed exact set、累计56项coverage和75项ordered remaining；
 - all B02 failpoint registry bindings与每个expected outcome class；
@@ -315,7 +325,7 @@ Final negative report必须分别列出exact 75项`requirements.remaining`、`ru
 
 ## Stop Conditions
 
-既有合同及Allowed Files内的局部bug允许修复，但必须使用本票maintenance路径留痕；缺失前置功能、需要扩大范围或改变架构/schema/public contract/验收边界时停止，先创建并批准corrective ticket，不用maintenance授权新功能。
+既有合同及Allowed Files内的局部bug允许修复，但必须使用本票maintenance路径留痕。按Entry Conditions与Allowed Files补齐冻结合同已规定、归属B02的Pause/control record、execution replay、projection和integrity支持属于本票正常实现，不因B01尚未提供这些能力而触发缺失前置功能，也不以maintenance授权这些新功能。真正缺失B00/B01应交付的前置能力、需要扩大批准范围或改变冻结架构/schema/public contract/验收边界时停止，先创建并批准corrective ticket。
 
 - B00/B01未完成或其exact contract/evidence不满足入口；
 - 需要改变Control Protocol phase/edge/owner/overlay/branch/outcome、A02C01 bootstrap、A04 Pause/terminal或A06 compatibility semantics；
@@ -343,7 +353,9 @@ Final negative report必须分别列出exact 75项`requirements.remaining`、`ru
 
 ## Review Gate Before `ready`
 
-- 确认本票maintenance路径和corrections index追加在Allowed Files内，已有历史不可改写；缺失前置功能或任何架构/schema/public contract/Allowed Files/验收边界变化必须停止并经corrective ticket批准；
+- 确认本票maintenance路径和corrections index追加在Allowed Files内，已有历史不可改写；真正缺失B00/B01应交付的前置能力或需要改变冻结架构/schema/public contract/Allowed Files/验收边界时，必须停止并经corrective ticket批准；
+- 确认B02已获准在职责匹配的既有record、execution replay、projection和integrity模块补齐冻结合同规定的本票Pause/control支持，不将这些预期交接误判为缺失前置功能；generated protocol仅消费，已有合同语义不变，无隐式variant或第二套authority；
+- 确认ordinary target的authorization/lease → started intent → A02 `started` → 副作用顺序、intent后禁止自动接管重跑、Code Agent pre-start权限隔离，以及不可跳过的preparation/typed N/A与END无capability分支均进入验收；
 - 确认B02 exact owned set为30项、累计56项、remaining 75项；
 - 确认A04跨Code语义只由generic typed adapter证明control half，B03仍负责真实ExternalOperation/backend evidence；
 - 确认public/internal接口、single SQLite domain、lease/capability、terminal ownership和migration边界均无第二套authority；

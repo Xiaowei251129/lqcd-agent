@@ -25,6 +25,22 @@
         "A07-META-014",
         "A07-META-015"
       ]
+    },
+    {
+      "ticket_id": "B01",
+      "owned_requirement_ids": [
+        "A02-AUTHORITY-001",
+        "A02-IDENTITY-001",
+        "A02-LIFECYCLE-001",
+        "A03C01-HEAD-001",
+        "A03C01-HEAD-002",
+        "A03C01-PUBLISH-001",
+        "A03C01-TAMPER-001",
+        "A06-BUDGET-006",
+        "A06-BUDGET-009",
+        "A06-BUDGET-013",
+        "A06-BUDGET-015"
+      ]
     }
   ],
   "scenarios": [
@@ -402,6 +418,287 @@
       "required": true,
       "evidence_class": "required_control_acceptance",
       "implementation_ticket_id": "B00",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B01-AUTHORITY",
+      "contract_refs": [
+        "A02-AUTHORITY-001"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/b01_authority.json",
+      "entrypoint": "src/lqcd_agent/graph/state.py:validate_control_0_4_node_result",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "agent_identity_rejected",
+        "no_durable_mutation"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_execution_0_4_foundation.py::test_authority"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B01",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B01-BUDGET-INTEGRITY",
+      "contract_refs": [
+        "A06-BUDGET-013"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/b01_budget_integrity.json",
+      "entrypoint": "src/lqcd_agent/control/integrity.py:validate_run_root",
+      "expected_trace_fixture": "tests/phase_b/expected_traces/b01_budget_integrity.json",
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "immutable_policy",
+        "tamper_typed_integrity",
+        "validator_no_terminal_write"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_execution_0_4_foundation.py::test_budget_tamper"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B01",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B01-CLOCK",
+      "contract_refs": [
+        "A06-BUDGET-006"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/b01_clock.json",
+      "entrypoint": "src/lqcd_agent/control/clock.py:measure",
+      "expected_trace_fixture": "tests/phase_b/expected_traces/b01_clock.json",
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "backend_until_result_and_seal",
+        "paused_wait_excluded",
+        "trusted_clock_fail_closed"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_execution_0_4_foundation.py::test_clock"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B01",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B01-FINGERPRINT",
+      "contract_refs": [
+        "A06-BUDGET-009"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/b01_fingerprint.json",
+      "entrypoint": "src/lqcd_agent/control/budget.py:fingerprint",
+      "expected_trace_fixture": "tests/phase_b/expected_traces/b01_fingerprint.json",
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "incidental_identity_ignored",
+        "material_context_changes_digest",
+        "occurrence_continuous"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_execution_0_4_foundation.py::test_fingerprint"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B01",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B01-HEAD-001",
+      "contract_refs": [
+        "A03C01-HEAD-001"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/b01_head_001.json",
+      "entrypoint": "src/lqcd_agent/control/execution.py:append_record_bytes",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "all_events_advance_head",
+        "canonical_append_only"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_execution_0_4_foundation.py::test_global_head"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B01",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B01-HEAD-002",
+      "contract_refs": [
+        "A03C01-HEAD-002"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/b01_head_002.json",
+      "entrypoint": "src/lqcd_agent/control/integrity.py:validate_run_root",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "exact_cross_heads",
+        "nullable_fields_required",
+        "read_only_validation"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_execution_0_4_foundation.py::test_cross_heads"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B01",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B01-IDENTITY",
+      "contract_refs": [
+        "A02-IDENTITY-001"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/b01_identity.json",
+      "entrypoint": "src/lqcd_agent/control/records.py:validate_record",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "canonical_identity",
+        "closed_records",
+        "run_nesting"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_execution_0_4_foundation.py::test_identity"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B01",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B01-LIFECYCLE",
+      "contract_refs": [
+        "A02-LIFECYCLE-001"
+      ],
+      "layer": "trajectory",
+      "fixture_id": "tests/phase_b/fixtures/b01_lifecycle.json",
+      "entrypoint": "src/lqcd_agent/control/execution.py:replay",
+      "expected_trace_fixture": "tests/phase_b/expected_traces/b01_execution.json",
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "domain_control_orthogonal",
+        "exact_once_lifecycle",
+        "terminal_irreversible"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_execution_0_4_foundation.py::test_lifecycle"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B01",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B01-PUBLISH",
+      "contract_refs": [
+        "A03C01-PUBLISH-001"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/b01_publish.json",
+      "entrypoint": "src/lqcd_agent/control/integrity.py:validate_run_root",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "partial_closure_rejected",
+        "pre_resulting_heads_acyclic"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_execution_0_4_foundation.py::test_publication_prefix"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B01",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B01-TAMPER",
+      "contract_refs": [
+        "A03C01-TAMPER-001"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/b01_tamper.json",
+      "entrypoint": "src/lqcd_agent/control/integrity.py:validate_run_root",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "semantic_tamper_rejected",
+        "zero_repair"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_execution_0_4_foundation.py::test_coordinated_tamper"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B01",
+      "validation_stage": "construction"
+    },
+    {
+      "scenario_id": "B01-USAGE",
+      "contract_refs": [
+        "A06-BUDGET-015"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/b01_usage.json",
+      "entrypoint": "src/lqcd_agent/control/budget.py:validate_usage",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "audit_only_usage",
+        "unknown_not_zero_or_permission"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_execution_0_4_foundation.py::test_unknown_usage"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B01",
       "validation_stage": "construction"
     }
   ]

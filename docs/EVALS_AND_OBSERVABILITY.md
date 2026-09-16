@@ -82,7 +82,7 @@ hidden expected behavior 不得进入 Agent input、provider prompt 或 final-re
 
 这些指标描述 `v0.2-demo` 当前能力，不等于第二阶段最终 trajectory metric。
 
-## A06 已确认的 Budget/Stop Observability 目标（尚未实现）
+## A06 已确认的 Budget/Stop Observability 目标（durable接入待实现）
 
 A06要求Phase B normalized trace与acceptance matrix能够从权威policy和ledger重建，而不是相信Agent summary或mutable state。每个Run至少可观察：
 
@@ -93,7 +93,7 @@ A06要求Phase B normalized trace与acceptance matrix能够从权威policy和led
 - grant issued/consumed、exact Human Response snapshot/actor/scope/target及duplicate或mismatch拒绝；
 - Pause opened/deadline/claim边界、terminal reserve余额、typed stop trigger、safe-stop proof、settlement disposition、Pause quarantine与terminal closure outcome。
 
-Token和normalized cost只作audit metric；provider未报告时必须显示`unknown`，不能计作0或影响hard-gate通过率。Stop telemetry必须区分`halted`、已证明且可发布的`failed`、`recovery_required`、`terminal_closure: unavailable`和非terminal`materialization_pending`，不得只报告“任务失败”。这些是A07/Phase B的目标证据字段；当前trace仍只有普通`llm_calls/`和schema `0.2` execution records。
+Token和normalized cost只作audit metric；provider未报告时必须显示`unknown`，不能计作0或影响hard-gate通过率。Stop telemetry必须区分`halted`、已证明且可发布的`failed`、`recovery_required`、`terminal_closure: unavailable`和非terminal`materialization_pending`，不得只报告“任务失败”。B01已有pure construction traces覆盖execution order/heads、policy/fingerprint、clock归属和typed integrity rejection；默认产品trace仍是普通`llm_calls/`和schema `0.2` execution records，durable stop telemetry尚未接入。
 
 ## Phase B Acceptance Foundation 与待实现的 Runtime Evidence
 
@@ -105,7 +105,7 @@ Phase B matrix必须绑定tracked protocol/catalog exact digests，并以九个o
 
 B00 final driver由同一次调用创建session并驱动Layer 0–5、cross-system fault/concurrency、Phase B suite、full pytest、compileall、synthetic tests、full mock benchmark、legacy regression、CLI smoke及文档/scope检查。证据绑定本次token、实际工作树输入和protocol/catalog/matrix/registry等摘要；旧证据、未触发hook、缺META-015 publication/fresh Analysis/consumption release或28条post-claim case均不能通过。Benchmark退出0但某case/checklist失败仍为exit失败；compatibility/capability不能填补required control数量，但规定的legacy/mock检查是独立必需退出条件。闭合字段与完整义务以[B00冻结合同](tickets/phase-b-graph-harness/B00_ACCEPTANCE_FOUNDATION.md)为准；执行机制已实现并通过隔离适配器验证，B05仍须接入真实exit adapters。
 
-当前B00 matrix的15项construction证据可执行，global covered=15、remaining=116、passed=null，两个完成标志均为false。324项registry inventory与2286条final cases独立封存；其中28条post-claim case不因matrix遗漏而消失。Production hooks保持null，runtime cases和15项exit checks均未获项目级final验收。B01已获用户批准为ready但尚未实现；B02–B05仍为draft。
+当前matrix有B00的15项和B01的11项construction证据，global covered=26、remaining=105、passed=null，两个完成标志均为false。B01使用production serializer/replay/validator，新增25个foundation tests及4份exact traces；纯probe不证明durable runtime。324项registry inventory与2286条final cases独立封存；其中28条post-claim case不因matrix遗漏而消失。Production hooks保持null，runtime cases和15项exit checks均未获项目级final验收。B02–B05仍为draft。
 
 ## 第二阶段 Harness 方向
 

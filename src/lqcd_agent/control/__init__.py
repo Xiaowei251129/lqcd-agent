@@ -1,1 +1,1 @@
-"""Immutable protocol declarations; no durable control runtime is implemented here."""
+"""Immutable protocol and pure 0.4 foundations; no durable control operations."""

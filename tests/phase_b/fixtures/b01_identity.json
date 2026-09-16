@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b01_identity.json",
+  "entrypoint": "src/lqcd_agent/control/records.py:validate_record",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "canonical_identity",
+    "closed_records",
+    "run_nesting"
+  ]
+}

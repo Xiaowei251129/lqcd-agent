@@ -206,7 +206,17 @@ Phase B只使用遵守相同端口、validator、verifier、registry和fresh Ana
 
 这套foundation不创建Run、SQLite coordinator、Pause、budget、Backend、workspace或产品Transition。`requirements_zero_gap`与`phase_b_complete`仍为false；实现和验收事实见[B00 Completion](tickets/completions/B00_COMPLETION.md)。
 
-## A06 已确认的 Budget 与 Stop 控制架构（尚未实现）
+## B01 Pure Control Foundation（已实现，尚未接入产品图）
+
+`control/strict_json.py`提供closed/canonical JSON与immutable validation snapshots；`records.py`提供显式schema `0.4` record union；`execution.py`只在内存中校验append bytes、重放Run/Attempt/Human lifecycle与budget facts。A02 identity formatter/node mapping和A03 lifecycle/index validators继续复用，未新增平行execution或budget ledger。Machine-defined Run edges、policy profile allowlist及decision enum只消费generated protocol；prose-only定义的来源保存在module source locators并由测试核对。
+
+`budget.py`实现两种冻结policy、typed unknown usage及semantic fingerprint；`clock.py`提供Host/Fake clock port与纯interval分类。Policy construction不是profile-selection权限，record builder/replay不是admission，clock charge也不是Attempt started或resource settlement。可信bootstrap admission由B02实现，后续route/resource/grant/stop enforcement由B04实现，Code Agent的真实计时与外部证据由B03接入。
+
+`projections.py`派生bounded control snapshot和无自引用checkpoint manifest；`integrity.py`只读取显式Run root，调用现有A03 registry双向校验，再验证execution/artifact/index/checkpoint/projection的exact closure。不扫描历史outputs、不修复、不发布checkpoint或terminal lifecycle。`graph/state.py`仅增加显式0.4 Agent-output guard，原0.2 wrapper和默认graph保持不变。
+
+B01只增加11项construction probes、4份exact traces和foundation回归；不绑定durable hook，不减少2286条final runtime义务。生产Pause/ControlOperation、capability、Backend、graph route和B05退出适配器仍待实现。
+
+## A06 已确认的 Budget 与 Stop 控制架构（执行器尚未实现）
 
 [A06 Budgets and Stop Conditions](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)冻结可信控制层的`BudgetPolicy 0.1`、`BudgetDecision 0.1`、`FailureFingerprint 0.1`和single-use `BudgetGrant 0.1`。每个schema `0.4` Run在正式creation前选择allowlisted immutable policy；`balanced_v1`是保守默认，`phase_b_test`只供deterministic harness。Agent、router、provider、Backend和Human自由文本均不能选择profile、修改policy/counter、退款或决定retry/stop。
 
@@ -216,7 +226,7 @@ Admission固定在target allocation、A03 invalidation、Transition commit和任
 
 每个Run从绝对上限中保留5个Control Attempts和6个Transitions，只用于typed `stop_sequence_id`安全收尾链；普通路线不能消费。Pause deadline由trusted Host clock派生，过期resume不产生任何mutation。资源停止只有在termination、write-lease revocation、bounded drain与post-stop stability均证明后才能形成受控`halted`或已证明的`failed` closure；证明缺失必须隔离为`recovery_required`/`terminal_closure: unavailable`，不得伪造Run lifecycle。完整route、resolution与Pause/Run owner仍以Control Protocol `0.4`为唯一机器权威，A06不建立第二套状态机。
 
-以上是Phase B schema `0.4`实现约束，不是当前架构能力。当前runtime仍使用schema `0.2`、`retry_count/max_retry`和普通LLM trace，没有budget policy artifact、budget ledger、resource reservation、semantic failure fingerprint、grant、trusted clock或terminal reserve执行器。
+以上完整admission/side-effect/stop约束尚未接入产品runtime。B01已实现policy/record/replay/fingerprint/clock的纯基础层；当前默认runtime仍使用schema `0.2`、`retry_count/max_retry`和普通LLM trace，不写0.4 policy/budget records，也没有terminal reserve执行器。
 
 ## Command 边界
 

@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b01_lifecycle.json",
+  "entrypoint": "src/lqcd_agent/control/execution.py:replay",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "domain_control_orthogonal",
+    "exact_once_lifecycle",
+    "terminal_irreversible"
+  ]
+}

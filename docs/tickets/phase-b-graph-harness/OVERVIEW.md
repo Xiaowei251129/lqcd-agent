@@ -55,13 +55,13 @@ A07执行时只冻结以下拆分；其后起草的六张票见下方Draft Ticke
 - transition、identity、invalidation、resume、budget 和 harness acceptance 已进入核心文档；
 - 实现者不需要自行补充控制层设计决定。
 
-这些阶段级进入条件已由A07 completion满足。B00在`f654f44`冻结后执行，验收基础已实现；用户于2026-09-16明确批准B01为`ready`，提交冻结后执行。B02–B05保持`draft`，尚不可执行。
+这些阶段级进入条件已由A07 completion满足。B00在`f654f44`冻结后执行；B01于2026-09-16获用户批准，在`537d10c`冻结后执行完成纯control foundation。B02于2026-09-16获用户批准为`ready`，本次先提交B01交付及B02冻结快照，再执行B02；B03–B05保持`draft`，尚不可执行。
 
 ## Implementation Tickets
 
 - [`B00_ACCEPTANCE_FOUNDATION.md`](B00_ACCEPTANCE_FOUNDATION.md)：`completed`，验收基础已实现；执行记录见[B00 Completion](../completions/B00_COMPLETION.md)，只证明construction证据，不证明runtime已通过。
-- [`B01_EXECUTION_0_4_CONTROL_FOUNDATION.md`](B01_EXECUTION_0_4_CONTROL_FOUNDATION.md)：已批准为`ready`，建立Execution `0.4` records、budget/lifecycle foundation、trusted clock、bounded projection与cross-head integrity；不授权后续durable/product实现。
-- [`B02_DURABLE_CONTROL_OPERATIONS.md`](B02_DURABLE_CONTROL_OPERATIONS.md)：拟实现single SQLite coordinator、ControlOperation、Pause/Resume/Replay/Fork/Cancel、terminal ownership与restart recovery；当前只供review，不可执行。
+- [`B01_EXECUTION_0_4_CONTROL_FOUNDATION.md`](B01_EXECUTION_0_4_CONTROL_FOUNDATION.md)：`completed`，已实现纯Execution `0.4` records、budget/lifecycle replay、trusted clock、bounded projection与cross-head integrity；见[B01 Completion](../completions/B01_COMPLETION.md)。未接入默认产品图，不授权后续durable/product实现。
+- [`B02_DURABLE_CONTROL_OPERATIONS.md`](B02_DURABLE_CONTROL_OPERATIONS.md)：`ready`，已获用户批准；待按冻结合同实现single SQLite coordinator、ControlOperation、Pause/Resume/Replay/Fork/Cancel、terminal ownership与restart recovery，尚不表示runtime已实现。
 - [`B03_GRAPH_MANAGED_FAKE_CODE_AGENT.md`](B03_GRAPH_MANAGED_FAKE_CODE_AGENT.md)：拟实现CodeAgentSubgraph、Fake Backend、ExternalOperation、trusted verification、Code Bundle与fresh Analysis；当前只供review，不可执行。
 - [`B04_TARGET_PRODUCT_TOPOLOGY_AND_BUDGETED_LOOPS.md`](B04_TARGET_PRODUCT_TOPOLOGY_AND_BUDGETED_LOOPS.md)：拟接入A01产品图、四层fallback、Human return、A03 invalidation与A06 admission/grant/stop；当前只供review，不可执行。
 - [`B05_ACCEPTANCE_INTEGRATION_AND_END_TO_END_HARNESS.md`](B05_ACCEPTANCE_INTEGRATION_AND_END_TO_END_HARNESS.md)：拟完成cross-system faults/concurrency、CLI smoke、legacy/mock regression及final zero-gap exit；当前只供review，不可执行。
@@ -70,7 +70,7 @@ Draft proposed ownership固定为：B00 15项、B01 11项、B02 30项、B03 28�
 
 草稿还统一了兼容与治理边界：0.2验证来源后仅replay；0.3禁止原地resume/migration，但合格来源可replay/fork为0.4 child；0.4遵守冻结fingerprint/source proof/资格。B01提供policy/record/clock校验基础，B02可信入口在bootstrap前核验initial Cycle、Planner Attempt、START Transition及terminal reserve并持久化decision，caller/Agent/test不能注入allow；B04负责后续产品admission。每票Allowed Files包含本票maintenance记录及corrections index追加，已有历史不可改写；缺失前置功能或合同/架构/验收边界变化仍须corrective ticket。
 
-当前已有B00 matrix、Phase B meta tests、324项typed registry inventory和2286条独立final cases（含28条post-claim组合），production hooks均未绑定。Construction为15/15；全局映射15/131、remaining=116，global passed为null。真实final因映射/runtime/15项exit adapters缺口而失败；没有Phase B product runtime。
+当前matrix包含B00/B01两个slice，construction分别为15/15和11/11；全局映射26/131、remaining=105，global passed为null。324项typed registry inventory和2286条独立final cases（含28条post-claim组合）未改，production hooks均未绑定。真实final仅报告105项映射、2286项runtime与15项exit缺口；没有Phase B product runtime。
 
 ## 退出门槛
 
@@ -82,4 +82,4 @@ B04的131 covered/0 remaining仅表示映射齐全；允许调用final作负向�
 
 ## 退出方向
 
-完成后进入Phase C，先执行C00 capability gate，再把Fake Code Agent替换为通过门禁的隔离真实实现。当前下一步执行用户已批准的B01；B02–B05仍须独立review与用户批准，不因前置票完成而获得执行授权。
+完成后进入Phase C，先执行C00 capability gate，再把Fake Code Agent替换为通过门禁的隔离真实实现。当前下一步执行已获批准的B02；B03–B05仍须独立review与用户批准，不因前置票完成而获得执行授权。
