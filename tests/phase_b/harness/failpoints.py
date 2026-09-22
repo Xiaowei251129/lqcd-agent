@@ -46,7 +46,7 @@ def validate_runtime(evidence, registry, specs, scenarios, root):
                    if row["nodeid"] in scenario_index[sid]["pytest_nodeids"]]
         require(bool(matched), cid, "passing_nodeid", "invalid_evidence")
         for scenario in matched:
-            compare(row["trace"], read(path_in(root, scenario["expected_trace_fixture"])))
+            compare(row["trace"], read(path_in(root, scenario["expected_trace_fixture"])), binding=evidence)
         passed.add(cid)
     # A multi-scenario binding is conjunctive, not an alternative path wildcard.
     for cid in list(passed):

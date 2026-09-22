@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "control_protocol_sha256": "7447087f73caae2668a8e71e12fc40e426ebefee5864e3499a3f9cbd1a9322b8",
   "requirement_catalog_sha256": "ed39a0b35feb3372e7647436ee588699c16b7c05555a03c791f69760626a9726",
   "runtime_obligations": [
@@ -1113,14 +1113,8 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "child.source_revision_cas.after.committed_result_replay",
-        "child.source_revision_cas.after.integrity_conflict",
-        "child.source_revision_cas.after.materializable_publication_prefix",
-        "child.source_revision_cas.after.non_materializable_domain_gap",
-        "child.source_revision_cas.before.committed_result_replay",
-        "child.source_revision_cas.before.integrity_conflict",
-        "child.source_revision_cas.before.materializable_publication_prefix",
-        "child.source_revision_cas.before.non_materializable_domain_gap"
+        "child.source_revision_cas.after.reservation_rolled_back",
+        "child.source_revision_cas.before.reservation_rolled_back"
       ],
       "failpoint_ids": [
         "child.source_revision_cas"
@@ -1329,14 +1323,8 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.advance_run.not_applicable.operation_reserved.after.committed_result_replay",
-        "control.advance_run.not_applicable.operation_reserved.after.integrity_conflict",
-        "control.advance_run.not_applicable.operation_reserved.after.materializable_publication_prefix",
-        "control.advance_run.not_applicable.operation_reserved.after.non_materializable_domain_gap",
-        "control.advance_run.not_applicable.operation_reserved.before.committed_result_replay",
-        "control.advance_run.not_applicable.operation_reserved.before.integrity_conflict",
-        "control.advance_run.not_applicable.operation_reserved.before.materializable_publication_prefix",
-        "control.advance_run.not_applicable.operation_reserved.before.non_materializable_domain_gap"
+        "control.advance_run.not_applicable.operation_reserved.after.reservation_rolled_back",
+        "control.advance_run.not_applicable.operation_reserved.before.reservation_rolled_back"
       ],
       "failpoint_ids": [
         "control.advance_run.not_applicable.operation_reserved"
@@ -1575,12 +1563,12 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.cancel_pause.not_applicable.external_unavailable_verified.after.committed_result_replay",
         "control.cancel_pause.not_applicable.external_unavailable_verified.after.integrity_conflict",
         "control.cancel_pause.not_applicable.external_unavailable_verified.after.non_materializable_domain_gap",
-        "control.cancel_pause.not_applicable.external_unavailable_verified.before.committed_result_replay",
+        "control.cancel_pause.not_applicable.external_unavailable_verified.after.terminal_tombstone_replay",
         "control.cancel_pause.not_applicable.external_unavailable_verified.before.integrity_conflict",
-        "control.cancel_pause.not_applicable.external_unavailable_verified.before.non_materializable_domain_gap"
+        "control.cancel_pause.not_applicable.external_unavailable_verified.before.non_materializable_domain_gap",
+        "control.cancel_pause.not_applicable.external_unavailable_verified.before.terminal_tombstone_replay"
       ],
       "failpoint_ids": [
         "control.cancel_pause.not_applicable.external_unavailable_verified"
@@ -1594,14 +1582,8 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.cancel_pause.not_applicable.operation_reserved.after.committed_result_replay",
-        "control.cancel_pause.not_applicable.operation_reserved.after.integrity_conflict",
-        "control.cancel_pause.not_applicable.operation_reserved.after.materializable_publication_prefix",
-        "control.cancel_pause.not_applicable.operation_reserved.after.non_materializable_domain_gap",
-        "control.cancel_pause.not_applicable.operation_reserved.before.committed_result_replay",
-        "control.cancel_pause.not_applicable.operation_reserved.before.integrity_conflict",
-        "control.cancel_pause.not_applicable.operation_reserved.before.materializable_publication_prefix",
-        "control.cancel_pause.not_applicable.operation_reserved.before.non_materializable_domain_gap"
+        "control.cancel_pause.not_applicable.operation_reserved.after.reservation_rolled_back",
+        "control.cancel_pause.not_applicable.operation_reserved.before.reservation_rolled_back"
       ],
       "failpoint_ids": [
         "control.cancel_pause.not_applicable.operation_reserved"
@@ -1636,14 +1618,14 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.cancel_pause.not_applicable.pause_quarantined_recorded.after.committed_result_replay",
         "control.cancel_pause.not_applicable.pause_quarantined_recorded.after.integrity_conflict",
         "control.cancel_pause.not_applicable.pause_quarantined_recorded.after.materializable_publication_prefix",
         "control.cancel_pause.not_applicable.pause_quarantined_recorded.after.non_materializable_domain_gap",
-        "control.cancel_pause.not_applicable.pause_quarantined_recorded.before.committed_result_replay",
+        "control.cancel_pause.not_applicable.pause_quarantined_recorded.after.terminal_tombstone_replay",
         "control.cancel_pause.not_applicable.pause_quarantined_recorded.before.integrity_conflict",
         "control.cancel_pause.not_applicable.pause_quarantined_recorded.before.materializable_publication_prefix",
-        "control.cancel_pause.not_applicable.pause_quarantined_recorded.before.non_materializable_domain_gap"
+        "control.cancel_pause.not_applicable.pause_quarantined_recorded.before.non_materializable_domain_gap",
+        "control.cancel_pause.not_applicable.pause_quarantined_recorded.before.terminal_tombstone_replay"
       ],
       "failpoint_ids": [
         "control.cancel_pause.not_applicable.pause_quarantined_recorded"
@@ -1758,12 +1740,12 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.cancel_pause.not_applicable.terminal_closure_unavailable_recorded.after.committed_result_replay",
         "control.cancel_pause.not_applicable.terminal_closure_unavailable_recorded.after.integrity_conflict",
         "control.cancel_pause.not_applicable.terminal_closure_unavailable_recorded.after.non_materializable_domain_gap",
-        "control.cancel_pause.not_applicable.terminal_closure_unavailable_recorded.before.committed_result_replay",
+        "control.cancel_pause.not_applicable.terminal_closure_unavailable_recorded.after.terminal_tombstone_replay",
         "control.cancel_pause.not_applicable.terminal_closure_unavailable_recorded.before.integrity_conflict",
-        "control.cancel_pause.not_applicable.terminal_closure_unavailable_recorded.before.non_materializable_domain_gap"
+        "control.cancel_pause.not_applicable.terminal_closure_unavailable_recorded.before.non_materializable_domain_gap",
+        "control.cancel_pause.not_applicable.terminal_closure_unavailable_recorded.before.terminal_tombstone_replay"
       ],
       "failpoint_ids": [
         "control.cancel_pause.not_applicable.terminal_closure_unavailable_recorded"
@@ -1819,14 +1801,14 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.cancel_pause.not_applicable.unavailable_resource_disposition_committed.after.committed_result_replay",
         "control.cancel_pause.not_applicable.unavailable_resource_disposition_committed.after.integrity_conflict",
         "control.cancel_pause.not_applicable.unavailable_resource_disposition_committed.after.materializable_publication_prefix",
         "control.cancel_pause.not_applicable.unavailable_resource_disposition_committed.after.non_materializable_domain_gap",
-        "control.cancel_pause.not_applicable.unavailable_resource_disposition_committed.before.committed_result_replay",
+        "control.cancel_pause.not_applicable.unavailable_resource_disposition_committed.after.terminal_tombstone_replay",
         "control.cancel_pause.not_applicable.unavailable_resource_disposition_committed.before.integrity_conflict",
         "control.cancel_pause.not_applicable.unavailable_resource_disposition_committed.before.materializable_publication_prefix",
-        "control.cancel_pause.not_applicable.unavailable_resource_disposition_committed.before.non_materializable_domain_gap"
+        "control.cancel_pause.not_applicable.unavailable_resource_disposition_committed.before.non_materializable_domain_gap",
+        "control.cancel_pause.not_applicable.unavailable_resource_disposition_committed.before.terminal_tombstone_replay"
       ],
       "failpoint_ids": [
         "control.cancel_pause.not_applicable.unavailable_resource_disposition_committed"
@@ -1861,14 +1843,8 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.close_run.not_applicable.operation_reserved.after.committed_result_replay",
-        "control.close_run.not_applicable.operation_reserved.after.integrity_conflict",
-        "control.close_run.not_applicable.operation_reserved.after.materializable_publication_prefix",
-        "control.close_run.not_applicable.operation_reserved.after.non_materializable_domain_gap",
-        "control.close_run.not_applicable.operation_reserved.before.committed_result_replay",
-        "control.close_run.not_applicable.operation_reserved.before.integrity_conflict",
-        "control.close_run.not_applicable.operation_reserved.before.materializable_publication_prefix",
-        "control.close_run.not_applicable.operation_reserved.before.non_materializable_domain_gap"
+        "control.close_run.not_applicable.operation_reserved.after.reservation_rolled_back",
+        "control.close_run.not_applicable.operation_reserved.before.reservation_rolled_back"
       ],
       "failpoint_ids": [
         "control.close_run.not_applicable.operation_reserved"
@@ -2174,14 +2150,8 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.fork_run.not_applicable.operation_reserved.after.committed_result_replay",
-        "control.fork_run.not_applicable.operation_reserved.after.integrity_conflict",
-        "control.fork_run.not_applicable.operation_reserved.after.materializable_publication_prefix",
-        "control.fork_run.not_applicable.operation_reserved.after.non_materializable_domain_gap",
-        "control.fork_run.not_applicable.operation_reserved.before.committed_result_replay",
-        "control.fork_run.not_applicable.operation_reserved.before.integrity_conflict",
-        "control.fork_run.not_applicable.operation_reserved.before.materializable_publication_prefix",
-        "control.fork_run.not_applicable.operation_reserved.before.non_materializable_domain_gap"
+        "control.fork_run.not_applicable.operation_reserved.after.reservation_rolled_back",
+        "control.fork_run.not_applicable.operation_reserved.before.reservation_rolled_back"
       ],
       "failpoint_ids": [
         "control.fork_run.not_applicable.operation_reserved"
@@ -2235,14 +2205,8 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.publish_pause.not_applicable.operation_reserved.after.committed_result_replay",
-        "control.publish_pause.not_applicable.operation_reserved.after.integrity_conflict",
-        "control.publish_pause.not_applicable.operation_reserved.after.materializable_publication_prefix",
-        "control.publish_pause.not_applicable.operation_reserved.after.non_materializable_domain_gap",
-        "control.publish_pause.not_applicable.operation_reserved.before.committed_result_replay",
-        "control.publish_pause.not_applicable.operation_reserved.before.integrity_conflict",
-        "control.publish_pause.not_applicable.operation_reserved.before.materializable_publication_prefix",
-        "control.publish_pause.not_applicable.operation_reserved.before.non_materializable_domain_gap"
+        "control.publish_pause.not_applicable.operation_reserved.after.reservation_rolled_back",
+        "control.publish_pause.not_applicable.operation_reserved.before.reservation_rolled_back"
       ],
       "failpoint_ids": [
         "control.publish_pause.not_applicable.operation_reserved"
@@ -2569,14 +2533,8 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.replay_run.not_applicable.operation_reserved.after.committed_result_replay",
-        "control.replay_run.not_applicable.operation_reserved.after.integrity_conflict",
-        "control.replay_run.not_applicable.operation_reserved.after.materializable_publication_prefix",
-        "control.replay_run.not_applicable.operation_reserved.after.non_materializable_domain_gap",
-        "control.replay_run.not_applicable.operation_reserved.before.committed_result_replay",
-        "control.replay_run.not_applicable.operation_reserved.before.integrity_conflict",
-        "control.replay_run.not_applicable.operation_reserved.before.materializable_publication_prefix",
-        "control.replay_run.not_applicable.operation_reserved.before.non_materializable_domain_gap"
+        "control.replay_run.not_applicable.operation_reserved.after.reservation_rolled_back",
+        "control.replay_run.not_applicable.operation_reserved.before.reservation_rolled_back"
       ],
       "failpoint_ids": [
         "control.replay_run.not_applicable.operation_reserved"
@@ -2710,14 +2668,14 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.resolve_external_interrupt.controlled_halt.interrupt_unavailable_pause_disposition_committed.after.committed_result_replay",
         "control.resolve_external_interrupt.controlled_halt.interrupt_unavailable_pause_disposition_committed.after.integrity_conflict",
         "control.resolve_external_interrupt.controlled_halt.interrupt_unavailable_pause_disposition_committed.after.materializable_publication_prefix",
         "control.resolve_external_interrupt.controlled_halt.interrupt_unavailable_pause_disposition_committed.after.non_materializable_domain_gap",
-        "control.resolve_external_interrupt.controlled_halt.interrupt_unavailable_pause_disposition_committed.before.committed_result_replay",
+        "control.resolve_external_interrupt.controlled_halt.interrupt_unavailable_pause_disposition_committed.after.terminal_tombstone_replay",
         "control.resolve_external_interrupt.controlled_halt.interrupt_unavailable_pause_disposition_committed.before.integrity_conflict",
         "control.resolve_external_interrupt.controlled_halt.interrupt_unavailable_pause_disposition_committed.before.materializable_publication_prefix",
-        "control.resolve_external_interrupt.controlled_halt.interrupt_unavailable_pause_disposition_committed.before.non_materializable_domain_gap"
+        "control.resolve_external_interrupt.controlled_halt.interrupt_unavailable_pause_disposition_committed.before.non_materializable_domain_gap",
+        "control.resolve_external_interrupt.controlled_halt.interrupt_unavailable_pause_disposition_committed.before.terminal_tombstone_replay"
       ],
       "failpoint_ids": [
         "control.resolve_external_interrupt.controlled_halt.interrupt_unavailable_pause_disposition_committed"
@@ -2731,14 +2689,8 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.resolve_external_interrupt.controlled_halt.operation_reserved.after.committed_result_replay",
-        "control.resolve_external_interrupt.controlled_halt.operation_reserved.after.integrity_conflict",
-        "control.resolve_external_interrupt.controlled_halt.operation_reserved.after.materializable_publication_prefix",
-        "control.resolve_external_interrupt.controlled_halt.operation_reserved.after.non_materializable_domain_gap",
-        "control.resolve_external_interrupt.controlled_halt.operation_reserved.before.committed_result_replay",
-        "control.resolve_external_interrupt.controlled_halt.operation_reserved.before.integrity_conflict",
-        "control.resolve_external_interrupt.controlled_halt.operation_reserved.before.materializable_publication_prefix",
-        "control.resolve_external_interrupt.controlled_halt.operation_reserved.before.non_materializable_domain_gap"
+        "control.resolve_external_interrupt.controlled_halt.operation_reserved.after.reservation_rolled_back",
+        "control.resolve_external_interrupt.controlled_halt.operation_reserved.before.reservation_rolled_back"
       ],
       "failpoint_ids": [
         "control.resolve_external_interrupt.controlled_halt.operation_reserved"
@@ -2834,12 +2786,12 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.resolve_external_interrupt.controlled_halt.terminal_closure_unavailable_recorded.after.committed_result_replay",
         "control.resolve_external_interrupt.controlled_halt.terminal_closure_unavailable_recorded.after.integrity_conflict",
         "control.resolve_external_interrupt.controlled_halt.terminal_closure_unavailable_recorded.after.non_materializable_domain_gap",
-        "control.resolve_external_interrupt.controlled_halt.terminal_closure_unavailable_recorded.before.committed_result_replay",
+        "control.resolve_external_interrupt.controlled_halt.terminal_closure_unavailable_recorded.after.terminal_tombstone_replay",
         "control.resolve_external_interrupt.controlled_halt.terminal_closure_unavailable_recorded.before.integrity_conflict",
-        "control.resolve_external_interrupt.controlled_halt.terminal_closure_unavailable_recorded.before.non_materializable_domain_gap"
+        "control.resolve_external_interrupt.controlled_halt.terminal_closure_unavailable_recorded.before.non_materializable_domain_gap",
+        "control.resolve_external_interrupt.controlled_halt.terminal_closure_unavailable_recorded.before.terminal_tombstone_replay"
       ],
       "failpoint_ids": [
         "control.resolve_external_interrupt.controlled_halt.terminal_closure_unavailable_recorded"
@@ -2975,14 +2927,14 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.resolve_external_interrupt.integrity_failure.interrupt_unavailable_pause_disposition_committed.after.committed_result_replay",
         "control.resolve_external_interrupt.integrity_failure.interrupt_unavailable_pause_disposition_committed.after.integrity_conflict",
         "control.resolve_external_interrupt.integrity_failure.interrupt_unavailable_pause_disposition_committed.after.materializable_publication_prefix",
         "control.resolve_external_interrupt.integrity_failure.interrupt_unavailable_pause_disposition_committed.after.non_materializable_domain_gap",
-        "control.resolve_external_interrupt.integrity_failure.interrupt_unavailable_pause_disposition_committed.before.committed_result_replay",
+        "control.resolve_external_interrupt.integrity_failure.interrupt_unavailable_pause_disposition_committed.after.terminal_tombstone_replay",
         "control.resolve_external_interrupt.integrity_failure.interrupt_unavailable_pause_disposition_committed.before.integrity_conflict",
         "control.resolve_external_interrupt.integrity_failure.interrupt_unavailable_pause_disposition_committed.before.materializable_publication_prefix",
-        "control.resolve_external_interrupt.integrity_failure.interrupt_unavailable_pause_disposition_committed.before.non_materializable_domain_gap"
+        "control.resolve_external_interrupt.integrity_failure.interrupt_unavailable_pause_disposition_committed.before.non_materializable_domain_gap",
+        "control.resolve_external_interrupt.integrity_failure.interrupt_unavailable_pause_disposition_committed.before.terminal_tombstone_replay"
       ],
       "failpoint_ids": [
         "control.resolve_external_interrupt.integrity_failure.interrupt_unavailable_pause_disposition_committed"
@@ -2996,14 +2948,8 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.resolve_external_interrupt.integrity_failure.operation_reserved.after.committed_result_replay",
-        "control.resolve_external_interrupt.integrity_failure.operation_reserved.after.integrity_conflict",
-        "control.resolve_external_interrupt.integrity_failure.operation_reserved.after.materializable_publication_prefix",
-        "control.resolve_external_interrupt.integrity_failure.operation_reserved.after.non_materializable_domain_gap",
-        "control.resolve_external_interrupt.integrity_failure.operation_reserved.before.committed_result_replay",
-        "control.resolve_external_interrupt.integrity_failure.operation_reserved.before.integrity_conflict",
-        "control.resolve_external_interrupt.integrity_failure.operation_reserved.before.materializable_publication_prefix",
-        "control.resolve_external_interrupt.integrity_failure.operation_reserved.before.non_materializable_domain_gap"
+        "control.resolve_external_interrupt.integrity_failure.operation_reserved.after.reservation_rolled_back",
+        "control.resolve_external_interrupt.integrity_failure.operation_reserved.before.reservation_rolled_back"
       ],
       "failpoint_ids": [
         "control.resolve_external_interrupt.integrity_failure.operation_reserved"
@@ -3099,12 +3045,12 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.resolve_external_interrupt.integrity_failure.terminal_closure_unavailable_recorded.after.committed_result_replay",
         "control.resolve_external_interrupt.integrity_failure.terminal_closure_unavailable_recorded.after.integrity_conflict",
         "control.resolve_external_interrupt.integrity_failure.terminal_closure_unavailable_recorded.after.non_materializable_domain_gap",
-        "control.resolve_external_interrupt.integrity_failure.terminal_closure_unavailable_recorded.before.committed_result_replay",
+        "control.resolve_external_interrupt.integrity_failure.terminal_closure_unavailable_recorded.after.terminal_tombstone_replay",
         "control.resolve_external_interrupt.integrity_failure.terminal_closure_unavailable_recorded.before.integrity_conflict",
-        "control.resolve_external_interrupt.integrity_failure.terminal_closure_unavailable_recorded.before.non_materializable_domain_gap"
+        "control.resolve_external_interrupt.integrity_failure.terminal_closure_unavailable_recorded.before.non_materializable_domain_gap",
+        "control.resolve_external_interrupt.integrity_failure.terminal_closure_unavailable_recorded.before.terminal_tombstone_replay"
       ],
       "failpoint_ids": [
         "control.resolve_external_interrupt.integrity_failure.terminal_closure_unavailable_recorded"
@@ -3282,14 +3228,14 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.resolve_external_interrupt.recoverable_timeout.interrupt_unavailable_pause_disposition_committed.after.committed_result_replay",
         "control.resolve_external_interrupt.recoverable_timeout.interrupt_unavailable_pause_disposition_committed.after.integrity_conflict",
         "control.resolve_external_interrupt.recoverable_timeout.interrupt_unavailable_pause_disposition_committed.after.materializable_publication_prefix",
         "control.resolve_external_interrupt.recoverable_timeout.interrupt_unavailable_pause_disposition_committed.after.non_materializable_domain_gap",
-        "control.resolve_external_interrupt.recoverable_timeout.interrupt_unavailable_pause_disposition_committed.before.committed_result_replay",
+        "control.resolve_external_interrupt.recoverable_timeout.interrupt_unavailable_pause_disposition_committed.after.terminal_tombstone_replay",
         "control.resolve_external_interrupt.recoverable_timeout.interrupt_unavailable_pause_disposition_committed.before.integrity_conflict",
         "control.resolve_external_interrupt.recoverable_timeout.interrupt_unavailable_pause_disposition_committed.before.materializable_publication_prefix",
-        "control.resolve_external_interrupt.recoverable_timeout.interrupt_unavailable_pause_disposition_committed.before.non_materializable_domain_gap"
+        "control.resolve_external_interrupt.recoverable_timeout.interrupt_unavailable_pause_disposition_committed.before.non_materializable_domain_gap",
+        "control.resolve_external_interrupt.recoverable_timeout.interrupt_unavailable_pause_disposition_committed.before.terminal_tombstone_replay"
       ],
       "failpoint_ids": [
         "control.resolve_external_interrupt.recoverable_timeout.interrupt_unavailable_pause_disposition_committed"
@@ -3408,14 +3354,8 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.resolve_external_interrupt.recoverable_timeout.operation_reserved.after.committed_result_replay",
-        "control.resolve_external_interrupt.recoverable_timeout.operation_reserved.after.integrity_conflict",
-        "control.resolve_external_interrupt.recoverable_timeout.operation_reserved.after.materializable_publication_prefix",
-        "control.resolve_external_interrupt.recoverable_timeout.operation_reserved.after.non_materializable_domain_gap",
-        "control.resolve_external_interrupt.recoverable_timeout.operation_reserved.before.committed_result_replay",
-        "control.resolve_external_interrupt.recoverable_timeout.operation_reserved.before.integrity_conflict",
-        "control.resolve_external_interrupt.recoverable_timeout.operation_reserved.before.materializable_publication_prefix",
-        "control.resolve_external_interrupt.recoverable_timeout.operation_reserved.before.non_materializable_domain_gap"
+        "control.resolve_external_interrupt.recoverable_timeout.operation_reserved.after.reservation_rolled_back",
+        "control.resolve_external_interrupt.recoverable_timeout.operation_reserved.before.reservation_rolled_back"
       ],
       "failpoint_ids": [
         "control.resolve_external_interrupt.recoverable_timeout.operation_reserved"
@@ -3595,12 +3535,12 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.resolve_external_interrupt.recoverable_timeout.terminal_closure_unavailable_recorded.after.committed_result_replay",
         "control.resolve_external_interrupt.recoverable_timeout.terminal_closure_unavailable_recorded.after.integrity_conflict",
         "control.resolve_external_interrupt.recoverable_timeout.terminal_closure_unavailable_recorded.after.non_materializable_domain_gap",
-        "control.resolve_external_interrupt.recoverable_timeout.terminal_closure_unavailable_recorded.before.committed_result_replay",
+        "control.resolve_external_interrupt.recoverable_timeout.terminal_closure_unavailable_recorded.after.terminal_tombstone_replay",
         "control.resolve_external_interrupt.recoverable_timeout.terminal_closure_unavailable_recorded.before.integrity_conflict",
-        "control.resolve_external_interrupt.recoverable_timeout.terminal_closure_unavailable_recorded.before.non_materializable_domain_gap"
+        "control.resolve_external_interrupt.recoverable_timeout.terminal_closure_unavailable_recorded.before.non_materializable_domain_gap",
+        "control.resolve_external_interrupt.recoverable_timeout.terminal_closure_unavailable_recorded.before.terminal_tombstone_replay"
       ],
       "failpoint_ids": [
         "control.resolve_external_interrupt.recoverable_timeout.terminal_closure_unavailable_recorded"
@@ -3656,14 +3596,8 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.resume_run.abandon_and_halt.operation_reserved.after.committed_result_replay",
-        "control.resume_run.abandon_and_halt.operation_reserved.after.integrity_conflict",
-        "control.resume_run.abandon_and_halt.operation_reserved.after.materializable_publication_prefix",
-        "control.resume_run.abandon_and_halt.operation_reserved.after.non_materializable_domain_gap",
-        "control.resume_run.abandon_and_halt.operation_reserved.before.committed_result_replay",
-        "control.resume_run.abandon_and_halt.operation_reserved.before.integrity_conflict",
-        "control.resume_run.abandon_and_halt.operation_reserved.before.materializable_publication_prefix",
-        "control.resume_run.abandon_and_halt.operation_reserved.before.non_materializable_domain_gap"
+        "control.resume_run.abandon_and_halt.operation_reserved.after.reservation_rolled_back",
+        "control.resume_run.abandon_and_halt.operation_reserved.before.reservation_rolled_back"
       ],
       "failpoint_ids": [
         "control.resume_run.abandon_and_halt.operation_reserved"
@@ -3967,12 +3901,12 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.resume_run.continue_execution.consumption_failure_unavailable_recorded.after.committed_result_replay",
         "control.resume_run.continue_execution.consumption_failure_unavailable_recorded.after.integrity_conflict",
         "control.resume_run.continue_execution.consumption_failure_unavailable_recorded.after.non_materializable_domain_gap",
-        "control.resume_run.continue_execution.consumption_failure_unavailable_recorded.before.committed_result_replay",
+        "control.resume_run.continue_execution.consumption_failure_unavailable_recorded.after.terminal_tombstone_replay",
         "control.resume_run.continue_execution.consumption_failure_unavailable_recorded.before.integrity_conflict",
-        "control.resume_run.continue_execution.consumption_failure_unavailable_recorded.before.non_materializable_domain_gap"
+        "control.resume_run.continue_execution.consumption_failure_unavailable_recorded.before.non_materializable_domain_gap",
+        "control.resume_run.continue_execution.consumption_failure_unavailable_recorded.before.terminal_tombstone_replay"
       ],
       "failpoint_ids": [
         "control.resume_run.continue_execution.consumption_failure_unavailable_recorded"
@@ -4028,14 +3962,8 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.resume_run.continue_execution.operation_reserved.after.committed_result_replay",
-        "control.resume_run.continue_execution.operation_reserved.after.integrity_conflict",
-        "control.resume_run.continue_execution.operation_reserved.after.materializable_publication_prefix",
-        "control.resume_run.continue_execution.operation_reserved.after.non_materializable_domain_gap",
-        "control.resume_run.continue_execution.operation_reserved.before.committed_result_replay",
-        "control.resume_run.continue_execution.operation_reserved.before.integrity_conflict",
-        "control.resume_run.continue_execution.operation_reserved.before.materializable_publication_prefix",
-        "control.resume_run.continue_execution.operation_reserved.before.non_materializable_domain_gap"
+        "control.resume_run.continue_execution.operation_reserved.after.reservation_rolled_back",
+        "control.resume_run.continue_execution.operation_reserved.before.reservation_rolled_back"
       ],
       "failpoint_ids": [
         "control.resume_run.continue_execution.operation_reserved"
@@ -4362,14 +4290,8 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "control.start_run.not_applicable.operation_reserved.after.committed_result_replay",
-        "control.start_run.not_applicable.operation_reserved.after.integrity_conflict",
-        "control.start_run.not_applicable.operation_reserved.after.materializable_publication_prefix",
-        "control.start_run.not_applicable.operation_reserved.after.non_materializable_domain_gap",
-        "control.start_run.not_applicable.operation_reserved.before.committed_result_replay",
-        "control.start_run.not_applicable.operation_reserved.before.integrity_conflict",
-        "control.start_run.not_applicable.operation_reserved.before.materializable_publication_prefix",
-        "control.start_run.not_applicable.operation_reserved.before.non_materializable_domain_gap"
+        "control.start_run.not_applicable.operation_reserved.after.reservation_rolled_back",
+        "control.start_run.not_applicable.operation_reserved.before.reservation_rolled_back"
       ],
       "failpoint_ids": [
         "control.start_run.not_applicable.operation_reserved"

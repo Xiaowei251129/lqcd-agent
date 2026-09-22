@@ -26,9 +26,11 @@
 - expected behavior 属于 `evaluation/expected_behavior/`；
 - canonical domain artifacts 写入并严格绑定`attempts/<attempt_id>/`且不得覆盖；只有registry-owned current projection可以替换或清除，跨owner collision必须在复制前失败；external ingress只豁免内容digest比较，路径、存在性和owner仍必须验证；
 - unmanaged legacy outputs 不自动迁移、不覆盖、不删除；
-- A04已确认resume/replay/fork/cancel与crash分类的目标合同，但当前runtime仍未实现这些接口；force overwrite继续禁止。
+- A04已确认resume/replay/fork/cancel与crash分类的目标合同；默认runtime未接入这些接口，已完成的显式B02 control入口见下节，force overwrite继续禁止。
 
-## A04 控制操作安全政策（目标合同，尚未实现）
+## A04 控制操作安全政策（目标合同，尚未完整实现）
+
+B02当前已验证Host scope、单一coordinator ownership、实际失败边界epoch/revision隔离、invocation fencing及持久化failure closure。旧worker错误不能借同worker新epoch终结操作；消费失败保留原external final并撤销能力/隔离binding；无法证明停止和可追加authority时只形成unavailable。0.2/0.3 source和拒绝的Resume均保持全部来源文件不变，checkpoint验证只打开完整main/WAL/SHM私有副本。`ActorContext`由可信Host建立，不是对任意同进程调用者的认证沙箱。B03 Backend/containment和B04产品admission仍由后续票据交付；见[B02完成记录](tickets/completions/B02_COMPLETION.md)。以下政策保持原批准含义。
 
 - `start_run`、`resume_run`、`replay_run`、`fork_run`与`cancel_pause`只接受可信Host构造的`ActorContext`和allowlisted scope；Agent、graph node、model output或payload不能自签actor、路径、thread或checkpoint authority；
 - 所有mutation必须在任何Run/Pause/child/checkpoint bytes或外部副作用前，由单一project-owned coordinator持久化canonical request digest、idempotency key、operation owner、phase revision与current `lease_epoch`；进程内lock或LangGraph metadata不能替代该authority；
@@ -120,3 +122,9 @@ runner 必须阻止 shell control operators、非 exact-allowlisted commands，�
 - [Agent Roles and Boundaries](AGENT_ROLES_AND_BOUNDARIES.md)
 - [Artifact Contracts](ARTIFACT_CONTRACTS.md)
 - [Tickets](tickets/README.md)
+
+## B02C01 legacy reader边界（2026-09-18）
+
+已批准的legacy fingerprint缺失值只描述0.2 replay来源事实，不授予resume、fork、target执行或source写权限。读取旧config前先验证历史reference、Run身份、路径及原bytes摘要；当前reader仅接受project-owned `configs/cases/`、`evaluation/cases/`及该output root下既有Host生成位置`_generated_case_configs/`中的JSON或既有flat YAML格式。路径必须canonical、无symlink/隐藏组件，文件为唯一regular file；不跟随config中的raw-data或其他payload引用。其他位置或格式在reservation前拒绝，不根据公共request扩大读取范围。此限制沿用可信case输入用途，不授权raw numeric data、secret或provider访问。见[B02C01执行记录](tickets/completions/B02C01_COMPLETION.md)。
+
+2026-09-18 B02安全边界：normal external消费、timeout受限消费和准备端口均由coordinator/lease/terminal owner fencing约束；历史reader是可信Host端口，不接受公共caller给出的validated flag或自选文件根。原0.2/0.3来源保持只读，未使用真实Backend/provider、raw data、repository outputs或生产process kill。B02完整验收尚未完成；新的historical trace格式仅起草[B00C03](tickets/phase-b-graph-harness/B00C03_HISTORICAL_FORK_SOURCE_TRACES.md)，未改动既有验收检查。

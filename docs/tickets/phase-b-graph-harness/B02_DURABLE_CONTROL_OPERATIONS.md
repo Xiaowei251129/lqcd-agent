@@ -1,7 +1,7 @@
 ---
 ticket_id: B02
 phase: phase-b-graph-harness
-status: ready
+status: completed
 type: implementation
 depends_on: [B00, B01]
 ---

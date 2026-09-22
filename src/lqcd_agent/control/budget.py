@@ -248,7 +248,8 @@ def validate_budget_payload(event, value):
     else:
         require(value["schema_version"] == "0.1", "Unknown decision version")
         require(value["decision"] in PROTOCOL["budget_decision_contract"]["decision_values"], "Unknown decision")
-        require(value["proposed_action"] in ("route", "resource", "repause"), "Unknown proposal kind")
+        require(value["proposed_action"] in ("route", "resource", "repause", "bootstrap_initial_route"),
+                "Unknown proposal kind")
         require(value["target_kind"] is None or value["target_kind"] in WORK_KINDS + CONTROL_KINDS, "Unknown decision target")
         require(value["risk"] in ("low", "medium", "high", "critical", "unknown"), "Unknown risk")
         for key in ("proposal_id", "reason_code", "next_control_action"):

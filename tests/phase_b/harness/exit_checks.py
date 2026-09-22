@@ -64,9 +64,9 @@ def validate_adapter_targets(inputs, session, adapters):
 def normalized_pytest(value):
     # Raw file digests are deliberately not used as normalized evidence digests.
     result = {k: v for k, v in value.items() if k not in {"invocation_token"}}
-    result["observations"] = [dict(row, trace=normalize(row["trace"]) if row["trace"] is not None else None)
+    result["observations"] = [dict(row, trace=normalize(row["trace"], binding=value) if row["trace"] is not None else None)
                               for row in value["observations"]]
-    result["case_results"] = [dict(row, trace=normalize(row["trace"])) for row in value["case_results"]]
+    result["case_results"] = [dict(row, trace=normalize(row["trace"], binding=value)) for row in value["case_results"]]
     return result
 
 

@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b02_construction/A02C01-BOOTSTRAP-001.json",
+  "entrypoint": "src/lqcd_agent/control/interfaces.py:ControlPlane.start_run",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "A02C01-BOOTSTRAP-001",
+    "durable_control_evidence"
+  ]
+}

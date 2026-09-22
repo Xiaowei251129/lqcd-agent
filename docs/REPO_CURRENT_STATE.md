@@ -2,12 +2,12 @@
 
 ## 状态摘要
 
-- **更新时间**：2026-09-16
+- **更新时间**：2026-09-22
 - **当前分支**：`codex/phase-11-agent-harness-upgrade`（已快进包含`xgao`的Phase A设计冻结提交`d0f108a`）
-- **当前阶段**：Phase A控制合同澄清已完成；Phase B图与Harness可靠性为`in_progress`；B00验收基础与B01纯control foundation已完成，B02为ready，B03–B05仍为draft
-- **活动 ticket**：B00/B01为`completed`，证据见[B00 Completion](tickets/completions/B00_COMPLETION.md)及[B01 Completion](tickets/completions/B01_COMPLETION.md)；B02已获用户批准为`ready`，下一步执行B02；B03–B05仍为`draft`；G01、A01–A07、A02C01及A03C01均为`completed`
+- **当前阶段**：Phase A、B00/B01/B02、B00C01–B00C04及B02C01已completed；B03–B05仍draft。
+- **活动 ticket**：B00C04/B02已完成；B02 construction30/30、runtime1410/1410，coverage56/remaining75。B03–B05草案已完成本轮可执行性审查与修订；下一张B03仍须独立审定为ready。
 - **稳定基线**：[`v0.2-demo`](milestones/V0_2_DEMO_BASELINE.md)
-- **本轮范围**：用户于2026-09-16批准B02为ready；先提交此前B01交付及B02冻结快照，再执行B02。本次只在执行前commit一次，不push；当前默认product runtime仍为schema `0.2`，B02尚未实现。
+- **本轮范围**：复核C04/B02交付与2599项全量证据的输入一致性，新增114项定向回归；修订B03–B05草案的owner、失败分类、预留责任、golden同步及分批验收接线，见[审查记录](tickets/corrections/B00_B05_READINESS_REVIEW.md)。用户已授权验证通过后commit/push当前进度，未授权执行B03。
 
 ## 当前稳定实现
 
@@ -96,6 +96,10 @@ A03没有实现PAUSE/resume、partial-commit recovery、Fake/real Code Agent、b
 
 ## 当前验证状态
 
+B00/B01/B02 construction分别为 **15/15、11/11、30/30**，累计映射 **56/131、remaining75**。B02的 **205个boundary、1410个独立case** 全部具有同一冻结输入、同一fresh session的通过证据；完整suite **2599 passed**。全局final仍仅报告 **75 coverage / 798 runtime / 15 exit** 缺口，`requirements.passed=null`、`requirements_zero_gap=false`、`phase_b_complete=false`。详见[B02完成记录](tickets/completions/B02_COMPLETION.md)。完整运行之后仅更新文档和lifecycle，代码、测试、fixtures及验收输入不变；最终文档差异审计和fresh construction/final报告单独留存。
+
+### 历史验证记录
+
 稳定 milestone 的冻结验证结果为：
 
 - milestone 封版：`162 passed`；
@@ -132,6 +136,8 @@ A03C01当前证据为registry suite `106 passed`、focused registry/identity/sta
 
 ## 下一项工作
 
+B02范围内没有未关闭的已知阻塞。B03负责Backend和canonical Code Bundle，B04负责产品图与后续预算控制，B05负责全阶段退出验收；各票独立审定后执行。以下记录保留此前的进入条件和交付历史。
+
 用户已最终确认`f4f0eaa`设计。A01–A07及A02C01/A03C01已按各自文档范围执行并标记`completed`；Phase A执行没有改变冻结正文、Control Protocol、requirement catalog或当时的runtime/tests。JSON内原有`status: review`作为批准快照的一部分保留。
 
 B00初次完成时建立closed report、独立final obligations、统一final driver与证据绑定：construction为15/15，全局覆盖15/131、remaining=116、passed=null。真实final按预期失败，runtime/exit gaps独立报告；`requirements_zero_gap=false`、`phase_b_complete=false`。当时验收为80项Phase B tests通过、full suite 405 passed（执行前325 passed），Phase A validator、generator、compileall、links、scope与diff检查通过。当时下一步为依据[Phase B Overview](tickets/phase-b-graph-harness/OVERVIEW.md)逐票审阅B01–B05；后续批准与执行结果见下方日期记录。
@@ -140,11 +146,27 @@ B00初次完成时建立closed report、独立final obligations、统一final dr
 
 2026-09-16 B01在`537d10c`冻结后执行：新增strict/canonical 0.4 records、纯append/replay、BudgetPolicy/fingerprint/unknown usage、Host/Fake clock、bounded projection和复用A03的只读cross-head adapter；默认0.2 runtime不变。执行前基线420 passed，B00 fresh construction为15/15、final仅116/2286/15缺口；执行后foundation为25 passed，Phase B suite为120 passed，full suite为445 passed，A02/A03 focused为139 passed。B01 construction为11/11，累计映射26、remaining=105、global passed=null；final仅105 coverage、2286 runtime、15 exit缺口，两完成标志均为false。Phase A/generator、compileall、links、scope、冻结bytes与diff检查通过；详情见[B01 Completion](tickets/completions/B01_COMPLETION.md)。上一段2026-09-15结果保留为历史事实。
 
-## Blockers
+## 历史阻塞与解除记录
 
-B00的generator、strict matrix、fresh pytest evidence、trace codec、registry inventory与final driver已实现。META-006/015 construction只证明静态清单、语义与验证能力，2286条runtime cases仍缺production证据；15项exit adapters待B05接入。B01纯foundation已完成；B02已获批准为ready、尚未实现，B03–B05仍为draft。
+本轮已验证关闭B00C04前置缺口和B02运行缺陷；下列blocked/in_progress状态及旧计数属于各次审查时点。
 
-A02/A03 identity/artifact authority由B01复用，没有新增平行ledger或artifact index。B01不实现可信bootstrap admission、Pause/ControlOperation、capability activation、实际resource side effect或产品route；这些仍需B02–B04各自获批实现。当前默认execution schema仍为`0.2`；不能把纯record/replay通过解释为durable/runtime final通过。
+2026-09-16 B00C02完成：source-bound 46 passed、相关74 passed、Phase B 174 passed、完整suite 499 passed；fresh B00/B01仍15/15和11/11。两次fresh invocation的0.2 trace经真实exit验证生成相同semantic摘要；两类trace的stale token、错误摘要与source tamper均拒绝。B00C01/B00C02已completed，B02恢复ready。Final仍只含105 coverage、2286 runtime、15 exit缺口，两完成标志false；隔离exit回归不冒充项目B05 adapters或Phase B完成。
+
+2026-09-16 B02暂停时，新增6项coordinator基础测试和1项trace缺口诊断；Phase B为127 passed、full suite为452 passed、A02/A03/state regression为139 passed。该7项测试没有增加required coverage；真实matrix仍仅B00/B01，前述B01完成时445 passed保留为历史事实。实施范围与停止证据见[B02执行记录](tickets/completions/B02_COMPLETION.md)。
+
+2026-09-16 B02恢复执行后的本轮局部验证：bootstrap/storage **52 passed**，Phase B **220 passed**，完整suite **545 passed**，A02/A03/state **139 passed**。实际接通startup正常路径、独立checkpoint、invocation启动与独立进程恢复/竞争测试；Pause/child/terminal完整实现和30项验收仍未完成，B02为in_progress而非blocked/completed。Matrix未增加B02 slice，不能把这些unit/integration tests解释为新增required coverage。
+
+B00的generator、strict matrix、fresh pytest evidence、trace codec、registry inventory与final driver已实现。META-006/015 construction只证明静态清单、语义与验证能力，2286条runtime cases仍缺production证据；15项exit adapters待B05接入。B01纯foundation已完成；B02在`83681a7`冻结后执行，此前验收阻塞已解除、现为`in_progress`，B03–B05仍为draft。
+
+2026-09-17 B02继续执行：已修复invocation校验期间过期及bootstrap integrity closure两个缺陷，新增Recovery/Human Pause、普通resume、schema `0.4` child、generic advance/END/close、fenced ordinary artifacts和部分external cancel/interrupt控制分支。当前Phase B回归**453 passed**、禁用live provider的完整pytest **778 passed**、A02/A03/state回归**139 passed**；fresh B00/B01仍为15/15和11/11，final仅有105 coverage、2286 runtime和15 exit缺口，没有解析/证据错误。B02尚无30项construction或56 covered声明。
+
+旧schema兼容的待明确项：现有`0.2` Run创建记录没有历史runtime fingerprint，而A04 replay source proof要求source fingerprint；尚未批准其显式缺失表示，不能用当前build冒充source。已请求确认是否通过corrective ticket明确该表示；暂不实施新变体。其余normal external consumption、recoverable timeout、prepared interrupt、post-claim failure、Analysis preparation/grant和matrix/registry/traces仍属原票未完成工作，不归因于这一单独问题。详见[B02执行记录](tickets/completions/B02_COMPLETION.md)。默认legacy runtime及Phase A bytes未改，B02保持in_progress、未commit/push。
+
+2026-09-18完成[B02可执行性审查](tickets/corrections/B02_EXECUTABILITY_REVIEW.md)，形成待批准的[B02C01草案](tickets/phase-b-graph-harness/B02C01_LEGACY_SOURCE_FINGERPRINT.md)（`review`，未实施）。真实0.2创建器诊断确认输入摘要有效且历史fingerprint缺失，当前公共replay更早因旧JSON编码被0.4 reader拒绝；需同时落实reader与lineage校验。重新运行完整suite为778 passed；fresh B00/B01 construction仍15/15、11/11，B02因无slice返回invalid_input；final仍仅105 coverage、2286 runtime、15 exit缺口。B02归属的205个registry boundaries/1488个runtime cases尚无绑定。本次仅新增审查/草案并同步索引，不修改runtime或冻结正文，不宣称B02完成；证据目录为`/private/tmp/lqcd-agent-b02-audit-yztzribs/`。
+
+B02暂停时的最小复现表明：两个输入、identity与固定clock均相同、仅fresh physical root不同的0.4 foundation snapshots都通过production replay/cross-head校验，但`canonical_output_root`参与Run-created hash，导致execution/checkpoint heads不同；旧trace0.1删除显式`ephemeral.output_root`后，exact trace仍不相等。该历史诊断仍保留；B00C01新增来源绑定的0.2路径，B00C02补齐exit调用并通过完整复验，已解除B02该前置阻塞。不能用空head、通配符、运行时改写expected fixture或复用历史root绕过；诊断测试不进入matrix、不增加required coverage。
+
+A02/A03 identity/artifact authority由B01复用，没有新增平行ledger或artifact index。B01不实现可信bootstrap admission、Pause/ControlOperation、capability activation、实际resource side effect或产品route；这些由原已批准B02和后续仍待独立批准的B03/B04分别实现。当前默认execution schema仍为`0.2`；不能把纯record/replay通过解释为durable/runtime final通过。
 
 ## 入口
 
@@ -152,3 +174,35 @@ A02/A03 identity/artifact authority由B01复用，没有新增平行ledger或art
 - [下一阶段改进方向](NEXT_STAGE_IMPROVEMENT_DIRECTIONS.md)
 - [Phase A Overview](tickets/phase-a-control-contracts/OVERVIEW.md)
 - [Verification Guide](VERIFICATION_GUIDE.md)
+
+2026-09-18批准后：B02C01已单独冻结于`5e753d6`并进入in_progress；旧格式reader/source fingerprint及lineage绑定已实现、正在完成验证，详见[B02C01记录](tickets/completions/B02C01_COMPLETION.md)。这替代前述“尚未批准”现状，不改写审查历史，不把本次兼容修正当作B02完成。
+
+2026-09-18验证完成：B02C01已completed，真实0.2 source只读Replay及历史fingerprint缺失证明通过78项定向、833项全量测试；B00/B01 fresh construction仍15/15、11/11。原B02继续in_progress，coverage仍26/remaining105，不能将本次兼容修正当作整票完成。
+
+2026-09-18最新状态：B02C01 completed；B02恢复执行后补齐normal external消费、same-owner失败、prepared interrupt、normal-final close、recoverable timeout以及Analysis preparation控制端口。历史0.3 Replay/Fork reader同时验证真实revision/heads且读取完整checkpoint durability unit，来源不变；它依赖trusted原格式reader，不声称已有0.3生产creator。当前阻塞是B00 trace 0.2不能表示合法0.3 Fork到0.4 child的head引用，三类诊断已复现，[B00C03](tickets/phase-b-graph-harness/B00C03_HISTORICAL_FORK_SOURCE_TRACES.md)为review、尚未批准实施。B02为blocked，construction slice及205/1488 runtime bindings未完成，covered26/remaining105。默认产品runtime仍0.2；B03/B04未实施。
+
+2026-09-18本轮最终验证：完整pytest **1024 passed**，A02/A03 **139 passed**，Phase B **699项可收集**；fresh B00/B01仍15/15、11/11。Final仅105 coverage、2286 runtime、15 exit缺口。协议/catalog、generated bytes、冻结正文、links/diff/scope检查通过。B02继续blocked等待B00C03审批，三条historical trace拒绝诊断未计入coverage；证据目录`/private/tmp/lqcd-agent-b02-final-review-qxn1sask/`。
+
+2026-09-21：[B00C03](tickets/phase-b-graph-harness/B00C03_HISTORICAL_FORK_SOURCE_TRACES.md)已批准并完成。显式trace `0.3`验证原格式historical source、真实Fork reservation及0.4 child引用；旧0.1/0.2语义保持。源checkpoint完整main/WAL/SHM只读副本校验与逐文件不变测试通过。完整pytest **1063 passed**，Phase B **738项可收集**；fresh B00/B01仍15/15、11/11，mapped26/remaining105，final仅105/2286/15缺口。B02恢复原票执行，30项construction和205/1488 runtime bindings仍待完成；见[B00C03完成记录](tickets/completions/B00C03_COMPLETION.md)。这替代上述“B00C03待审批、B02因historical trace阻塞”的当前状态，不改写历史审查事实。
+
+2026-09-21 reservation边界审查：B00C03已completed，其历史证明阻塞已解除；B02随后修复快照丢失卡住和合法grant replan被拒绝，两组回归101/45 passed。真实进程在首次reservation事务COMMIT前退出会完整回滚、没有可恢复的原operation；冻结B00 case笛卡尔展开却要求该边界产生原operation的materialization/domain-gap状态。六项复现及不可变重放对照通过，详见[B02记录](tickets/completions/B02_COMPLETION.md#2026-09-21--reservation-fault-case-executability-audit)。B02现为blocked，待审[B00C04](tickets/phase-b-graph-harness/B00C04_RESERVATION_FAULT_CASE_SEMANTICS.md)，未实施该草案。当前mapped26/remaining105及原2286 runtime/15 exit缺口不变；此前“B02恢复执行”是发现此新缺口前的记录。
+
+2026-09-21本轮验证完成：完整pytest **1086 passed**，Phase B可收集 **761项**；fresh B00/B01 **15/15、11/11**，final仅 **105 coverage / 2286 runtime / 15 exit** 缺口。冻结摘要、生成字节、scope及链接检查通过。B02因[B00C04](tickets/phase-b-graph-harness/B00C04_RESERVATION_FAULT_CASE_SEMANTICS.md)待审仍blocked，详见[B02最终记录](tickets/completions/B02_COMPLETION.md#current-tree-final-verification-2026-09-21)。
+
+## 2026-09-21 B00C04 integrated correction
+
+B00C04已批准并in_progress，case0.2/trace0.4/进程证据实现进入验证。现行独立case2214，其中B02为1416；原2286/1488保留为历史验证事实。B02仍blocked，尚未修复本轮发现的lease失败分类、Pause完整性收尾、external claimed snapshot和Human后续失败，也无B02 slice。
+
+B00C04逐项审查补充：11个仅能到达unavailable的phase不可能产生committed result；其22个case改为严格terminal_tombstone_replay，保留真实recovery_required及原owner unavailable，不改runtime状态。旧→新表为1370 retained/118 replaced，现行2214/B02 1416不变。
+
+2026-09-21 B00C04完成：case0.2、trace0.4、直接production进程回执及严格分批验证落地；旧1488个B02 case为1370 retained/118 replaced，现行B02 **1416**、总数 **2214**，全部324 boundary及B03/B04集合不变。完整pytest **1118 passed**、新增定向 **32 passed**，fresh B00/B01 **15/15、11/11**，coverage26/remaining105。Global passed null、phase_b_complete false。B02验收前置阻塞已解除，接续原票处理已审定的runtime缺陷及完整验收；本修正票不代表B02完成。证据见[B00C04完成记录](tickets/completions/B00C04_COMPLETION.md)。
+
+2026-09-21 C04补充审查：Fork `child.source_revision_cas`在首次reservation提交前，两项独立进程反例均完整回滚。沿用原票已批准的全boundary审查范围补齐这一遗漏；C04重新in_progress，B02暂为blocked。旧1488个B02 case现为1362 retained/126 replaced，现行总数 **2208**、B02 **1410**，减少78均有提交前反例；324 boundary、B03/B04及28 post-claim保持。之前2214/1416及C04完成报告保留为当时验证事实。coverage仍26/105；尚无B02 slice。
+
+## 2026-09-21 — Integrated verification checkpoint
+
+B02与C04现均in_progress：C04独立语义/来源/进程修正已通过定向验证，等待本轮集成全量复验；B02按既有批准修复实际运行缺陷。1112个control phase独立case离线探测及25项修正复验通过，其余298个supplemental case也已全部离线通过（组合原探测及48项复验），这些不替代fresh验收。三个独立进程的normal/cancel/interrupt全部六种顺序通过；Resume准入8项及committed Human后续计划丢失2项通过。新增完整source-bound轨迹terminal/Human/timeout/Fork/Replay分别83/100/81/48/35事件，每条两次fresh roots exact相等，实际来源和旧golden审查保存在本轮证据目录。covered仍26、remaining105，尚无B02 slice或runtime binding，未commit/push。
+
+2026-09-21 C04集成补验完成：完整pytest1158 passed，fresh B00/B01 15/15、11/11；C04现completed，B02继续in_progress。现行独立case2208/B02 1410，covered26/remaining105，尚无B02 slice；此前blocked及补验in_progress为历史过程。详见[B00C04完成记录](tickets/completions/B00C04_COMPLETION.md)。
+
+2026-09-21 B02验收接线：C04已completed后，新增B02完整30项slice、5条完整来源轨迹及1410个独立runtime case绑定。初始reservation的两项C04进程反例作为并列必需final证据保留，没有移除旧正负检查；历史trace回归只隔离其B00/B01前置slice，完整matrix另行验证。现行映射56/131、remaining75；B02仍in_progress，正执行fresh验收，不能将接线或离线通过当作完成。全局final规则未改变，其他票据798个runtime binding及15项exit仍未交付。

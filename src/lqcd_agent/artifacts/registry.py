@@ -1751,6 +1751,61 @@ def _clear_projections(state: dict[str, Any], index: dict[str, Any], pointer: di
         managed.pop(relative, None)
 
 
+def preflight_control_registration(
+    state: dict[str, Any], *, slot: str, member_paths: Iterable[str | Path],
+    state_paths: dict[str, str | None], status: str, created_at: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Read-only A03 preflight for the fenced 0.4 publication adapter.
+
+    The caller owns the execution/artifact cross-head envelope, exact-byte
+    publication and checkpoint. Slot, namespace and dependency rules stay A03.
+    """
+    _assert_active_attempt(state)
+    if slot not in ARTIFACT_SLOTS or SLOT_BY_ATTEMPT_KIND.get(str(state.get("attempt_kind"))) != slot:
+        raise ValueError("Control registration does not match the producing Attempt slot.")
+    index, history = _validate_registry_head(state)
+    artifact_id = f"{state['attempt_id']}:{slot}"
+    if index["current"][slot] is not None or artifact_id in _registered_artifact_ids(history):
+        raise ValueError("Control registration would overwrite an allocated artifact.")
+    if set(state_paths) != set(STATE_FIELDS_BY_SLOT[slot]):
+        raise ValueError("Control registration has incomplete state paths.")
+    members = _member_records(state, member_paths)
+    dependencies = _dependency_ids(index, slot)
+    pointer = {"artifact_id": artifact_id, "slot": slot, "cycle_id": state["cycle_id"],
+               "attempt_id": state["attempt_id"], "attempt_kind": state["attempt_kind"], "status": status,
+               "dependencies": dependencies, "members": members, "state_paths": dict(state_paths)}
+    records = []
+
+    def event(name: str, reason: str, **fields: Any) -> dict[str, Any]:
+        position = int(index["revision"]) + len(records) + 1
+        row = {"schema_version": ARTIFACT_SCHEMA_VERSION, "event_id": _event_id(position),
+               "event_index": position, "event": name, "run_id": state["run_id"], "case_id": state["case_id"],
+               "cycle_id": state["cycle_id"], "attempt_id": state["attempt_id"], "transition_id": None,
+               "human_request_id": state.get("active_human_request_id"), "human_response_id": state.get("active_human_response_id"),
+               "slot": slot, "artifact_id": artifact_id, "reason_code": reason, "created_at": created_at, **fields}
+        records.append(row)
+        return row
+
+    registered = event("registered", "attempt_output_registered",
+                       canonical_root=attempt_output_dir(state).resolve().relative_to(_run_root(state)).as_posix(),
+                       members=members, dependencies=dependencies, status=status, pointer=deepcopy(pointer),
+                       node_name=state.get("attempt_node"))
+    _validate_registered_pointer(state, registered)
+    event("current_set", "attempt_output_current", dependencies=dependencies, status=status)
+    if slot == "terminal" and status == "accepted":
+        event("protected_snapshot_registered", "protected_accepted_result", protected_kind="accepted_result",
+              members=members, dependencies=dependencies)
+    index["current"][slot] = pointer
+    for member in members:
+        projection = member["projection_path"]
+        _projection_target(_run_root(state), projection)
+        if projection in index["managed_projections"]:
+            raise ValueError("Control registration conflicts with a managed projection.")
+        index["managed_projections"][projection] = artifact_id
+    index.update(revision=records[-1]["event_index"], last_event_id=records[-1]["event_id"])
+    return index, records
+
+
 def register_artifact_bundle(
     state: dict[str, Any],
     *,

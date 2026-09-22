@@ -1,0 +1,17 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b02_runtime/recovery.null_target_abandon_only.before.integrity_conflict.json",
+  "entrypoint": "src/lqcd_agent/control/coordinator.py:boundary",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "frozen_outcome_classification",
+    "no_automatic_stop",
+    "no_capability_or_dispatch",
+    "no_domain_mutation",
+    "original_target_preparation_and_authorization",
+    "publication_side:before"
+  ]
+}

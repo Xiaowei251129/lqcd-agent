@@ -85,7 +85,7 @@ def validate_matrix(matrix, catalog, root):
         trace = scenario["expected_trace_fixture"]
         require(trace is not None or scenario["layer"] in ("schema", "node"), sid, "expected_trace_fixture")
         if trace is not None:
-            normalize(read(path_in(root, trace)))
+            normalize(read(path_in(root, trace)), expected=True)
         if scenario["required"]:
             covered.update(refs)
     strings(scenario_ids, "matrix", "scenario_ids")

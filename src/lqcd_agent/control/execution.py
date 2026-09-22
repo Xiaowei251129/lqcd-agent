@@ -53,6 +53,10 @@ def _checked_replay(records):
                     "Record after terminal Run")
         if kind == "run":
             require(index == 1, "Duplicate Run creation")
+        elif kind == "lineage":
+            require(index == 2 and root["creation_reason"] == record["creation_reason"] and
+                    root["parent_run_id"] == record["source_snapshot_proof"]["source_run_identity"]["run_id"],
+                    "Child lineage order or parent mismatch")
         elif kind == "cycle":
             require(record["cycle_index"] == len(seen[kind]) + 1, "Cycle allocation gap or reuse")
             expected_parent = stable_cycle_id(record["cycle_index"] - 1) if seen[kind] else None
@@ -77,11 +81,21 @@ def _checked_replay(records):
         elif kind == "transition":
             require(record["transition_index"] == len(seen[kind]) + 1, "Transition allocation gap or reuse")
             source = record["source_attempt_id"]
-            require(source not in outbound, "Duplicate outbound Transition")
-            outbound.add(source)
+            external_response = source is None and record["source_node"] == "HUMAN_RESPONSE"
+            source_key = ("human_response", record["human_response_id"]) if external_response else source
+            require(source_key not in outbound, "Duplicate outbound Transition")
+            outbound.add(source_key)
             if source is None:
-                require(record["source_node"] == "START" and not seen[kind] and record["source_cycle_id"] is None,
-                        "Invalid START Transition")
+                if external_response:
+                    response = seen["human_response"].get(record["human_response_id"])
+                    require(response is not None and response[-1]["status"] == "submitted" and
+                            response[-1]["human_request_id"] == record["human_request_id"] and
+                            response[-1]["cycle_id"] == record["source_cycle_id"] and
+                            record["target_attempt_kind"] == "human_gate" and record["trigger_reason"] == "human_response",
+                            "Invalid Human Response control Transition")
+                else:
+                    require(record["source_node"] == "START" and not seen[kind] and record["source_cycle_id"] is None,
+                            "Invalid START Transition")
             else:
                 life = seen["attempt"].get(source)
                 require(life is not None and life[-1]["event"] == "finished", "Source Attempt is not finished")
@@ -179,6 +193,8 @@ def _checked_replay(records):
                   "parent_run_id": root["parent_run_id"], "run_status": run_status,
                   "execution_head": previous, "execution_event_index": len(records),
                   "checkpoint_thread_id": root["checkpoint_thread_id"], **_identity_projection(seen), "budget": budget}
+    from .pause import replay_pauses
+    projection.update(replay_pauses(records))
     return ExecutionReplay(tuple(canonical_bytes(record) for record in records), ValidatedValue.from_value(projection))
 
 
@@ -232,21 +248,30 @@ def _identity_projection(seen):
 
 
 def _budget_projection(records, seen):
+    child = records[0]["creation_reason"] != "root"
+    policy_position = 2 if child else 1
+    if child and len(records) > 1:
+        failed_before_lineage = (len(records) == 2 and records[1]["record_type"] == "run_lifecycle" and
+                                 records[1]["from_status"] == "initializing" and records[1]["to_status"] == "failed")
+        require(records[1]["record_type"] == "lineage" or failed_before_lineage, "Child lacks its immutable lineage")
+        if failed_before_lineage:
+            policy_position = 1
     events = [record for record in records if record["record_type"] == "budget"]
     if not events:
-        failed_before_policy_record = (len(records) == 2 and records[1]["record_type"] == "run_lifecycle" and
-                                       records[1]["from_status"] == "initializing" and records[1]["to_status"] == "failed")
-        require(len(records) == 1 or failed_before_policy_record, "Policy initialization must follow Run creation")
+        failed_before_policy_record = (len(records) == policy_position + 1 and records[-1]["record_type"] == "run_lifecycle" and
+                                       records[-1]["from_status"] == "initializing" and records[-1]["to_status"] == "failed")
+        require(len(records) <= policy_position or failed_before_policy_record, "Policy initialization must follow Run creation/child lineage")
         return None
-    require(records[1] is events[0] and events[0]["event"] == "policy_initialized", "Policy initialization order")
+    require(records[policy_position] is events[0] and events[0]["event"] == "policy_initialized", "Policy initialization order")
     policy = validate_policy(events[0]["payload"]["policy"]).value
     require(policy["policy_digest"] == records[0]["policy_digest"], "Run policy binding mismatch")
-    if len(records) > 2:
-        failed_before_admission = (records[2]["record_type"] == "run_lifecycle" and
-                                   records[2]["from_status"] == "initializing" and records[2]["to_status"] == "failed")
+    if len(records) > policy_position + 1:
+        admission = records[policy_position + 1]
+        failed_before_admission = (admission["record_type"] == "run_lifecycle" and
+                                   admission["from_status"] == "initializing" and admission["to_status"] == "failed")
         require(failed_before_admission or
-                (records[2]["record_type"] == "budget" and records[2]["event"] == "decision_recorded" and
-                 records[2]["payload"]["decision"] == "allow"), "Missing bootstrap admission record")
+                (admission["record_type"] == "budget" and admission["event"] == "decision_recorded" and
+                 admission["payload"]["decision"] == "allow"), "Missing bootstrap admission record")
     reservations, settlements, fingerprints, grants, consumed = {}, {}, {}, {}, set()
     latest_failure = None
     latest_decision = None
@@ -341,8 +366,21 @@ def _budget_projection(records, seen):
                     payload["transition_id"] == grant["transition_id"], "Grant consumption scope mismatch")
             target = seen["attempt"].get(payload["target_attempt_id"])
             if target:
+                allocation = target[0]
+                cycle_matches = allocation["cycle_id"] == grant["cycle_id"]
+                if grant["target_attempt_kind"] == "method_planner":
+                    cycle = seen["cycle"][allocation["cycle_id"]][0]
+                    creator = seen["attempt"].get(cycle["created_by_attempt_id"])
+                    # The approval belongs to the source Cycle; replan allocates
+                    # its one new child Cycle before scheduling the Planner.
+                    cycle_matches = (grant["route_dimension"] == "automatic_replan_per_run" and
+                        cycle["parent_cycle_id"] == grant["cycle_id"] and cycle["trigger_reason"] == "replan" and
+                        cycle["event_index"] > record["event_index"] and creator is not None and
+                        creator[-1]["cycle_id"] == grant["cycle_id"] and creator[-1]["attempt_kind"] == "decision_coordinator" and
+                        cycle["created_by_attempt_id"] == allocation["parent_attempt_id"])
                 require(target[0]["event_index"] > record["event_index"] and
-                        target[0]["attempt_kind"] == grant["target_attempt_kind"] and target[0]["cycle_id"] == grant["cycle_id"],
+                        allocation["attempt_kind"] == grant["target_attempt_kind"] and allocation["node_name"] == grant["target_node"] and
+                        allocation["inbound_transition_id"] == grant["transition_id"] and cycle_matches,
                         "Grant consumed after target allocation or for a changed target")
             consumed.add(identity)
         elif event == "decision_recorded":

@@ -6,6 +6,8 @@
 
 A02 已完成 Run/Cycle/Attempt/Transition/Human execution ledger，A03 已完成 per-attempt domain-artifact namespace、artifact history/current index、supersession/invalidation 和 fixed-path compatibility projection。A04已冻结后继Pause/Run lifecycle、checkpoint evidence与child lineage目标合同，A05已冻结后继Code Agent task/result、workspace evidence、code bundle、trusted verification与fresh Analysis handoff合同，A06已冻结后继budget policy、budget events、resource envelope与fingerprint/grant evidence合同；这些目标合同均未改变当前artifact schema或runtime。Physics RAG evidence bundle仍未获批，只能在后续独立ticket中定义。
 
+B02当前实现边界：独立0.4 control入口持久化Run-local immutable inputs、policy、Pause/checkpoint与child lineage，fenced invocation复用A03 bundle注册；normal/timeout消费和preparation经typed domain ports验证顺序，默认0.2及slot policy不变。完整来源轨迹包含artifact历史原文；trace0.4先证明external Pause `reservation_digest`指向同Run/Attempt/producer的真实`resource_reserved`记录，再做语义规范化，其他material摘要仍精确比较。B03 canonical Code schemas、Backend和workspace由后续票据实现。当前已验证范围见[B02完成记录](tickets/completions/B02_COMPLETION.md)。
+
 ## Execution Identity History
 
 [A02 Run/Cycle/Attempt Model](tickets/phase-a-control-contracts/A02_RUN_CYCLE_ATTEMPT_MODEL.md) 在每个 run root 写入：
@@ -624,3 +626,11 @@ accepted memory, while a valid `reject_or_hold` decision writes rejected memory.
 - [Agent Roles and Boundaries](AGENT_ROLES_AND_BOUNDARIES.md)
 - [State Schema](STATE_SCHEMA.md)
 - [Security and Data Policy](SECURITY_AND_DATA_POLICY.md)
+
+## B02C01：Legacy replay provenance（2026-09-18）
+
+合法0.2 replay在新child lineage中如实记录source fingerprint未记录：`{"availability":"not_recorded","reason":"legacy_schema_0_2"}`。该值只存在于source proof与相等的source lineage字段，不能用作target/Pause fingerprint。原始goal/config bytes先按历史Run-created摘要验证，child再保存canonical `root_goal={"goal": verified_user_goal}`与完整validated config object；不复制旧graph state、checkpoint、approval或accepted状态。Source bytes不回填、不重写。
+
+`pre_a06` proof结合受支持的closed Run-created、同Run旧schema records、policy文件不存在及无冲突versioned authority，并冻结source creation与ledger bytes摘要；不能仅凭policy文件缺失降级0.4。详见[B02C01](tickets/phase-b-graph-harness/B02C01_LEGACY_SOURCE_FINGERPRINT.md)和[验证记录](tickets/completions/B02C01_COMPLETION.md)。
+
+2026-09-18 B02进展：normal/timeout消费及Analysis准备通过typed external/domain ports验证控制顺序，synthetic artifacts/receipts不等同A05 canonical Bundle或真实workspace。Historical source Fork检查原selected pointer/member bytes并保持来源不可变；child lineage引用真实历史head。当前B00 trace 0.2不支持该0.3 head引用图，不能将runtime成功写成验收通过，详见[B00C03 review](tickets/phase-b-graph-harness/B00C03_HISTORICAL_FORK_SOURCE_TRACES.md)。

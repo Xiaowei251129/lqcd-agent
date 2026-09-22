@@ -13,6 +13,7 @@ from lqcd_agent.graph.state import (canonical_attempt_kind, stable_attempt_id, s
 from .budget import validate_budget_payload
 from .clock import Timestamp
 from .protocol import PROTOCOL
+from .pause import FIELDS as PAUSE_FIELDS, validate_pause_record
 from .strict_json import (ValidatedValue, closed, digest_value, loads,
                           number, require, text)
 
@@ -48,6 +49,9 @@ FIELDS = {
                        "status"),
     "run_lifecycle": ("from_status", "to_status", "reason_code", "operation_id", "attempt_id", "pause_id", "budget_event_id"),
     "budget": ("budget_event_id", "budget_event_index", "policy_version", "policy_digest", "payload"),
+    "pause": PAUSE_FIELDS,
+    "lineage": ("creation_reason", "parent_operation_id", "source_snapshot_proof", "lineage_snapshot_digest",
+                "source_runtime_fingerprint", "target_runtime_fingerprint"),
 }
 RESPONSE_EXTRA = {"submitted": ("submitted_payload_reference", "payload_snapshot"),
                   "validated": ("error",), "invalid": ("error",), "consumed": ()}
@@ -203,6 +207,23 @@ def validate_record(record):
         text(record["reason_code"])
         for key in ("operation_id", "attempt_id", "pause_id", "budget_event_id"):
             text(record[key], nullable=True)
+    elif kind == "pause":
+        validate_pause_record(record)
+    elif kind == "lineage":
+        from .pause import validate_fingerprint
+        from .children import validate_source_fingerprint, validate_source_proof
+        from .strict_json import digest
+        require(event == "lineage_initialized" and record["creation_reason"] in ("replay_of", "fork_of"),
+                "Invalid child lineage variant")
+        text(record["parent_operation_id"])
+        validate_source_proof(record["source_snapshot_proof"], record["creation_reason"])
+        require(digest(record["source_snapshot_proof"]) == record["lineage_snapshot_digest"], "Lineage digest mismatch")
+        proof = record["source_snapshot_proof"]
+        validate_source_fingerprint(record["source_runtime_fingerprint"], proof["source_schema"], record["creation_reason"])
+        if record["creation_reason"] == "replay_of":
+            require(record["source_runtime_fingerprint"] == proof["runtime_fingerprint"], "Lineage source fingerprint mismatch")
+        validate_fingerprint(record["target_runtime_fingerprint"])
+        require(record["target_runtime_fingerprint"]["execution_schema"] == "0.4", "Child target fingerprint schema mismatch")
     else:
         number(record["budget_event_index"], integer=True, minimum=1)
         require(record["budget_event_id"] == f"budget_event_{record['budget_event_index']:06d}", "Invalid budget event identity")

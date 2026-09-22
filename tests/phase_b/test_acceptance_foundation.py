@@ -74,7 +74,7 @@ def test_meta_003():
         with pytest.raises(Invalid):
             validate_matrix(bad, catalog, ROOT)
     from harness.pytest_evidence import validate_observations
-    selected = matrix()["scenarios"][0]
+    selected = next(s for s in matrix()["scenarios"] if s["scenario_id"] == "B00-META-001")
     other = dict(selected, scenario_id="isolated-other-slice")
     rows = [{"scenario_id": s["scenario_id"], "nodeid": s["pytest_nodeids"][0], "result": s["expected_result"],
              "invariants": s["required_invariants"], "trace": None} for s in (selected, other)]
@@ -142,7 +142,8 @@ def test_meta_007():
         with pytest.raises(Invalid):
             validate_matrix(bad, catalog, ROOT)
     optional = matrix()
-    optional["scenarios"][0].update(required=False, evidence_class="compatibility_regression")
+    next(s for s in optional["scenarios"] if s["scenario_id"] == "B00-META-001").update(
+        required=False, evidence_class="compatibility_regression")
     _, covered = validate_matrix(optional, catalog, ROOT)
     assert len(covered) == 14 and META_IDS[0] not in covered
     record(7)

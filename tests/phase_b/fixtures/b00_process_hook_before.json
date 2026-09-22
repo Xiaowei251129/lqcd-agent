@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b00_process_hook_before.json",
+  "entrypoint": "tests/phase_b/test_process_hook_evidence.py:test_process_hook_roundtrip",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "durable_child_trigger",
+    "fresh_session_binding",
+    "reservation_rollback_verified"
+  ]
+}

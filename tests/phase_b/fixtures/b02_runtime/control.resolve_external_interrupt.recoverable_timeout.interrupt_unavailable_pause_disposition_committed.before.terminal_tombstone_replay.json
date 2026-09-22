@@ -1,0 +1,17 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b02_runtime/control.resolve_external_interrupt.recoverable_timeout.interrupt_unavailable_pause_disposition_committed.before.terminal_tombstone_replay.json",
+  "entrypoint": "src/lqcd_agent/control/coordinator.py:boundary",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "authority_context:unavailable_only_successor_graph",
+    "frozen_outcome_classification",
+    "immutable_terminal_tombstone",
+    "no_fabricated_committed_result",
+    "no_target_reexecution",
+    "publication_side:before"
+  ]
+}

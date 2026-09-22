@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b02_construction/A02-CONSUME-001.json",
+  "entrypoint": "src/lqcd_agent/control/capabilities.py:InvocationLeases.invoke",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "A02-CONSUME-001",
+    "durable_control_evidence"
+  ]
+}

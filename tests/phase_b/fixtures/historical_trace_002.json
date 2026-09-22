@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/historical_trace_002.json",
+  "entrypoint": "tests/phase_b/test_historical_source_traces.py:test_historical_subprocess_and_runtime_comparison",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "fresh_subprocess",
+    "parent_proof_validation",
+    "runtime_comparison_path"
+  ]
+}

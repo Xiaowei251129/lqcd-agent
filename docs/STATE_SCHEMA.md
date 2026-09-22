@@ -4,7 +4,7 @@
 
 `AnalysisState` 是当前公开 graph-state contract。节点只能读取和写入已记录字段。下面的 schema 与当前默认runtime对齐；A02完成execution identity，A03完成bounded artifact-current control fields。B01另行实现显式0.4纯record/replay/projection基础，未向默认0.2 `AnalysisState`添加Pause、Code Agent或budget执行字段。
 
-schema变化必须由独立implementation ticket批准，并同步runtime、tests、artifact contracts和相关Decision Log。A02/A03已落地；B01的独立0.4基础边界见下节，durable恢复及产品budget enforcement仍未实现。
+schema变化必须由独立implementation ticket批准，并同步runtime、tests、artifact contracts和相关Decision Log。A02/A03及B01纯0.4基础、B02独立durable control已落地；默认0.2 AnalysisState和B03/B04产品接线边界保持。
 
 ## B01 Execution 0.4 Foundation
 
@@ -12,13 +12,15 @@ schema变化必须由独立implementation ticket批准，并同步runtime、test
 
 Record union覆盖A02 `run/cycle/attempt/transition/human_request/human_response`及A04/A06 `run_lifecycle/budget`。A02 identity/nesting格式不变；公共envelope使用连续`execution_event_NNNNNN`/`event_index`、`previous_execution_head`、append前`artifact_head/artifact_event_index`及typed `created_at`。Resulting execution head为该完整canonical record的SHA-256，包含previous head但不嵌入自身future digest。Run created使用`initializing`；Run lifecycle edges来自generated protocol。Budget events有独立连续`budget_event_NNNNNN`，但仍在同一execution ledger中。
 
-`ExecutionReplay`可验证未完成的纯publication前缀；这不是可恢复/可运行证明。Stable-root adapter另行要求完整A03反向closure、grant/Transition闭合与exact checkpoint manifest；它不能创建或补齐任何suffix。Pause records、coordinator proofs和capability activation仍由B02/B03接入，不把单独的合法Run lifecycle edge当作durable Pause或启动授权。
+`ExecutionReplay`可验证未完成的纯publication前缀；这不是可恢复/可运行证明。Stable-root adapter另行要求完整A03反向closure、grant/Transition闭合与exact checkpoint manifest；它不能创建或补齐任何suffix。B02已接入Pause records、coordinator proofs和capability activation；B03 domain执行仍由后续票据实现。单独的合法Run lifecycle edge不能充当durable Pause或启动授权。
 
 Bounded projection只保留当前Run lifecycle、A02当前identity/counters、latest execution/artifact heads、A03 current pointers及convenience paths、policy identity、budget counters/used/remaining、active fingerprint/occurrence、nullable grant和latest decision/stop summary，不复制完整history。`checkpoint_manifest`绑定Run/thread、checkpoint identity/content digest、写入时exact execution/artifact pair及pre-checkpoint state digest；最后把manifest摘要作为`checkpoint_head`附到projection，避免hash自引用。Manifest参数是显式checkpointer evidence，实际checkpoint写入与durable真实性由B02所有者负责；B01不操作checkpoint backend。
 
 兼容边界不变：默认0.2由既有runtime处理，来源验证后仅可replay；0.3不原地resume/migrate，合格来源可replay/fork为0.4 child；0.4恢复仍需exact supported fingerprint及所有durable source proofs。B01不实现这些public入口，不从legacy state推断0.4 history，不迁移历史bytes。
 
 ## 当前字段
+
+B02当前实现：显式`control`入口读取0.4 Pause、Human和child lineage records，由唯一coordinator维护operation revision、ownership及capability。Recovery/Human、normal external/timeout与失败收尾、0.2 Replay及合格0.3/0.4 child均通过完整B02验收；下面默认0.2 `AnalysisState`不变。内部错误上下文绑定实际operation/worker/epoch/revision，不新增公开状态。已持久化operation/result/error不可变；query顶层Run状态/closure是该Run实际唯一owner的当前投影，可随另一合法操作关闭Run变化，不能将其误当原operation重写。见[B02完成记录](tickets/completions/B02_COMPLETION.md)。
 
 ```python
 class AnalysisState(TypedDict):
@@ -264,3 +266,11 @@ Bounded state只保存可从validated policy与ledger确定性派生的projectio
 - [Artifact Contracts](ARTIFACT_CONTRACTS.md)
 - [Security and Data Policy](SECURITY_AND_DATA_POLICY.md)
 - [Phase A: Control Contracts](tickets/phase-a-control-contracts/OVERVIEW.md)
+
+## B02C01：Legacy source fingerprint（2026-09-18）
+
+已批准的B02C01为既有`SourceSnapshotProof/replay_root.runtime_fingerprint`补充唯一source-only值`{"availability":"not_recorded","reason":"legacy_schema_0_2"}`。它仅适用于真实schema `0.2`创建格式、root inputs完整验证的replay；与source identity/schema/inputs共同进入lineage digest，child的`source_runtime_fingerprint`必须与proof相等。`0.3/0.4`仍要求真实完整source fingerprint且execution schema匹配；target始终为当前`0.4`完整fingerprint。Pause/resume不接受该值，旧schema不能原地恢复，source build不必等于新child build。
+
+实现使用独立source validator，不改Pause fingerprint规则、Phase A协议外层字段或generated graph。运行验证及当前完成状态见[B02C01执行记录](tickets/completions/B02C01_COMPLETION.md)。
+
+2026-09-18 B02补充实现：normal external的claim/settlement/running checkpoint先于Code消费权限；消费完成/资源释放先于final checkpoint。消费失败沿原resume terminal owner收尾。Analysis preparation冲突在控制前缀可验证时关闭failed，否则unavailable，保留原scheduled target。0.3 historical source proof保存原fingerprint和真实revision/head，不赋予来源resume权限。这些control行为仍待B02完整矩阵验收；historical trace前置缺口见[B00C03 review](tickets/phase-b-graph-harness/B00C03_HISTORICAL_FORK_SOURCE_TRACES.md)。

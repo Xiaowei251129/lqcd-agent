@@ -49,6 +49,7 @@ B03先在真实B02 operation/Pause/lease入口上建立可替换Backend边界，
 - `docs/tickets/completions/B00_COMPLETION.md`
 - `docs/tickets/completions/B01_COMPLETION.md`
 - `docs/tickets/completions/B02_COMPLETION.md`
+- B00C01–B00C04、B02C01 corrective tickets及其completion records；现行依据见[B00–B05审查记录](../corrections/B00_B05_READINESS_REVIEW.md)
 - `src/lqcd_agent/coder/task_packet.py`
 - `src/lqcd_agent/coder/test_runner.py`
 - `src/lqcd_agent/tools/command_runner.py`
@@ -61,6 +62,7 @@ B03先在真实B02 operation/Pause/lease入口上建立可替换Backend边界，
 - Protocol/catalog exact versions/digests不变；B03必须复用B02 coordinator、Pause、lease/capability与terminal ownership，不得建立Backend-local transaction authority。
 - A05 `0.1` schemas、status taxonomy、workspace lifecycle、containment proof、bundle members和Analysis handoff是冻结合同，不允许根据Fake实现能力缩减。
 - 执行前记录B00–B02 focused、full pytest与B02 final expected-failure基线。
+- 验收继承已完成corrective的case语义`0.2`和source-bound trace `0.4`；旧trace版本语义不变，不能回退到B00原始case计数或放宽digest检查。B02的205 boundaries/1410 cases与当前全局独立集合必须由冻结规则重算并核对。
 
 ## Scope
 
@@ -78,7 +80,7 @@ B03先在真实B02 operation/Pause/lease入口上建立可替换Backend边界，
 
 - 不接入Planner/Coordinator product edge，不实现A01 route rows或四层fallback；
 - 不把B03 generic parent adapter计作`method_planner -> code_agent`、`decision_coordinator -> code_agent`、`code_agent -> analysis_engineer|decision_coordinator`的A01 coverage；
-- 不实现B04 route/resource admission、Human grant、global loop stop或accepted memory/report终态；
+- 不实现B04产品route选择、通用resource admission、Human grant、global loop stop或accepted memory/report终态；本票Code backend aggregate及trusted verification所需的A06 reservation/admission/settlement属于B03，不等待B04；
 - 不安装或调用Python Codex SDK、Codex CLI、Agents SDK SandboxAgent或其他真实backend；
 - 不使用network、真实provider、raw numeric data、accepted payload或current repository作为coding/analysis workspace；
 - 不commit/merge/push/PR/deploy或把verified patch promotion到control repository；
@@ -167,6 +169,7 @@ Runtime schemas和validators位于`src/`；scenario selection、fault injection�
 - B01/B02已有的`src/lqcd_agent/control/`文件：仅限ExternalOperation coordinator integration、resource binding、watchdog/settlement和typed target preparation adapter；
 - `src/lqcd_agent/artifacts/registry.py`：仅限A05 code bundle/member/dependency registration adapter，不改变A03 slot/invalidation policy；
 - `tests/phase_b/`：仅限B03 slice、Fake/backend/workspace/recovery fixtures、expected traces和failpoint bindings；不得削弱前置tests；
+- `tests/phase_b/expected_traces/`及其关联fixture：允许对本票production源码变动引起的真实runtime fingerprint及其派生head/reference做前置golden同步；须保存新旧差异及真实来源、在两个fresh根复核后审定固定。不得改route/outcome/owner/invariant，不得测试时按actual重写expected、固定伪造production fingerprint或扩大trace exclusion；超出这类派生变化按Stop Conditions处理；
 - `tests/phase_b/acceptance_matrix.json`及registry bindings：允许为本票实现对应的runtime义务追加`validation_stage=final`场景，引用本票或已存在前置slice的原owner（包括B00 meta IDs）；不改ownership、不预填后续slice、不修改B00冻结schemas/obligations/必需check清单；
 - `docs/tickets/phase-b-graph-harness/OVERVIEW.md`；
 - `docs/tickets/completions/B03_COMPLETION.md`；
@@ -209,6 +212,8 @@ Runtime schemas和validators位于`src/`；scenario selection、fault injection�
 ### 2. ExternalOperation and Pre-start Ordering
 
 - Pre-start严格形成producer operation/ExternalOperation stub → task → unmaterialized manifest → aggregate reservation → immutable core → physical workspace → B02 Pause publication；每步create-new、idempotent、head/digest exact。
+- B02提供同一coordinator中的resolution CAS、Pause publication/claim、consumer failure closure、lease/capability和typed preparation ports；B03负责真实producer分配、完整ExternalOperation row/schema、pre-start phase推进、Backend/stop evidence、Code consumption与Analysis preparation adapter。B02测试中手工构造的producer/reservation/domain proof仅证明control half，不能作为B03 canonical运行实现或验收证据。
+- Pre-start aggregate及consume后的verification调用使用B01冻结policy/replay与B02 ownership primitives，按A05/A06验证可信BudgetDecision、hard dimensions和actual usage。B03 generic parent adapter提供可信admission输入以验证这些primitive；不得接受caller自报allow或绕过限额。B04再把这些能力接入完整产品route与统一stop，不重复建立账本或producer authority。
 - Public paused checkpoint之前不得dispatch。Crash/receipt缺失/Backend unknown只lookup/fetch原operation，绝不redispatch。
 - Duplicate dispatch同payload返回同receipt，conflicting payload拒绝；lookup/fetch/query不创建工作、刷新预算、续租或改execution head。
 - Normal/cancel/interrupt共享exact External revision/epoch/empty-resolution CAS和唯一`external_final_evidence_committed`；normal只接受request-owned safe-stop candidate，unavailable先重分类为integrity interrupt。
@@ -244,6 +249,7 @@ Runtime schemas和validators位于`src/`；scenario selection、fault injection�
 - 每个Code Attempt恰有一个aggregate backend reservation，绑定producer operation、task semantic context、backend/runtime、unmaterialized manifest和后续Pause；第二aggregate、Backend counter或refund拒绝。
 - Lookup/fetch不改变budget；watchdog在maximum/timeout边界强制stop exact operation并产生complete/unavailable proof。
 - B00归属B03的全部failpoint必须接真实hook，覆盖pre-start、dispatch、receipt、completion、seal/result、delivery、claim、settlement、verification、bundle和Analysis preparation边界。
+- 全部owned独立case须在一个冻结输入、同一fresh Session中通过；使用C04 `run_pytest_batches`有界执行并复用现有observation/runtime验证器，核对完整selection、无重复/遗漏及同session/case/nodeid的production hook进程回执。Expected traces须预先审查固定；construction通过或global final的预期负结果均不能代替本票runtime验收。
 - Restart必须用new Python process重开coordinator；normal/cancel/interrupt和stale worker至少用two-process确定性interleaving验证。
 - Construction report使用B00的`PhaseBAcceptanceReport 0.1`：`construction.required/covered/passed=28`，`requirements.required=131`、`requirements.covered=84`、`requirements.remaining=47`、`requirements.passed/passed_ids=null`、`requirements_zero_gap=false`、`phase_b_complete=false`。累计covered只表示映射，不能从前置ticket历史结果推断本次全局passed。
 
@@ -265,6 +271,7 @@ Runtime schemas和validators位于`src/`；scenario selection、fault injection�
 - Success/no-change/所有valid non-success及invalid ingress分类exact，Backend自报pass不能绕过trusted verifier；
 - Multiple Code Attempts workspace/artifact隔离，legacy evidence不能被canonical path消费；
 - B03 construction owned/covered/passed exact为28项，累计映射covered 84项，remaining exact 47项；construction通过、final expected-fail、`phase_b_complete=false`；
+- 冻结规则生成的全部B03 owned runtime case具有本次passing evidence，B00–B02前置场景保持通过；所有case保留实际production hook、exact trace与outcome，不以静态绑定完整代替执行；
 - B00–B02 focused、A03 registry regression、legacy coder regression、完整pytest、compileall、links、metadata、scope、stale docs和diff checks通过；
 - 未修改product graph/default legacy CLI，未调用真实Backend/provider/network或修改control Git state。
 
@@ -295,6 +302,8 @@ git diff --check
 
 还必须独立记录：
 
+- 按`docs/VERIFICATION_GUIDE.md`的同session分批方式，从独立inventory生成B03 owned case/nodeid选择，运行并验证全部case，保存原始batch envelopes、merged evidence、exact case集合和输入摘要；不能直接复用B02的owner过滤条件或历史证据；
+- 原始source-bound轨迹及审定的fingerprint/head派生变更，确认不同fresh根标准化一致、其他材料摘要仍被校验；
 - two-process ExternalOperation resolution、stale epoch、duplicate/conflicting dispatch与restart lookup/fetch；
 - path/symlink/base/seal/scope/authorization/legacy-ingress negative matrix；
 - trusted verification status matrix和fresh Analysis workspace/subprocess proof；
@@ -338,6 +347,7 @@ Final negative report必须分别列出exact 47项`requirements.remaining`、`ru
 - 确认本票maintenance路径和corrections index追加在Allowed Files内，已有历史不可改写；缺失前置功能或任何架构/schema/public contract/Allowed Files/验收边界变化必须停止并经corrective ticket批准；
 - 确认B03 exact owned set为28项、累计84项、remaining 47项；
 - 确认四项A05 product-route IDs及A06统一stop IDs留给B04；
+- 确认B03自己实现producer/pre-start aggregate/verification accounting及typed adapters，B02 control-half fixtures不冒充领域实现；owned runtime必须实际通过，前置golden同步严格限于可证明派生变化；
 - 确认Fake与future real backend共享同一port/trust path，B03不声称真实containment能力；
 - 确认canonical/legacy、workspace/control repo、bundle/promotion和migration边界清楚；
 - 确认Allowed Files、Do Not Touch和verification没有未决placeholder。

@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b02_runtime/recovery.ordinary_target_preparation.after.materializable_publication_prefix.json",
+  "entrypoint": "src/lqcd_agent/control/coordinator.py:boundary",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "frozen_outcome_classification",
+    "original_target_preparation_and_authorization",
+    "publication_side:after"
+  ]
+}

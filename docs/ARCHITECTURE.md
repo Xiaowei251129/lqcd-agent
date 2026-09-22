@@ -228,6 +228,16 @@ Admission固定在target allocation、A03 invalidation、Transition commit和任
 
 以上完整admission/side-effect/stop约束尚未接入产品runtime。B01已实现policy/record/replay/fingerprint/clock的纯基础层；当前默认runtime仍使用schema `0.2`、`retry_count/max_retry`和普通LLM trace，不写0.4 policy/budget records，也没有terminal reserve执行器。
 
+## B02 durable control实现边界
+
+B02已完成独立`control.interfaces.ControlPlane`的start/resume/replay/fork/cancel与内部advance/publish_pause/close/interrupt接口。唯一project-owned SQLite coordinator持久化operation、幂等request/result、guarded phase、lease epoch、invocation capability、Pause claim及Run terminal owner；per-Run `SqliteSaver` checkpoint只保存可验证投影，不授予mutation authority。普通target的committed授权、独立invocation lease及started intent先于A02 started和副作用。
+
+已实现bootstrap admission、普通/END Transition、Recovery/Human、normal external消费、recoverable timeout、prepared-only interrupt、post-claim failure及0.2 Replay/合格0.3和0.4 child。失败处理携带实际失败边界的operation/worker/epoch/revision；重新取得租约后必须重新验证事实。日志或snapshot损坏形成持久化failure；原owner无法证明可追加前缀时closure为unavailable，原external final保持不变，禁止伪造Run lifecycle。Human后续操作终态持久化传递给父resume，不重复验证、重新暂停或结算。
+
+Durability preflight验证macOS writable local mount、file/directory sync、atomic replacement与SQLite单writer锁；未知平台fail closed。B02的1410个独立case验证真实子进程退出与恢复，不构成跨平台或通用power-loss保证。完整能力和验收见[B02完成记录](tickets/completions/B02_COMPLETION.md)。
+
+默认legacy CLI/产品graph仍为0.2。B02的typed external/domain/source/preparation ports只提供控制接入点；B03交付真实Backend、canonical Code Bundle和fresh Analysis，B04交付产品路线和后续admission/grant，B05交付全阶段验收。
+
 ## Command 边界
 
 运行时只允许 allowlisted mock、test、smoke 和 internal statistical benchmark commands。Golden Demo 使用 `mock:write_golden_example_matrix_elements`；Phase 10C generated cases 使用 exact-allowlisted `analysis:run_synthetic_benchmark:<scenario_path>`。每次执行必须在 manifest 中记录 command、working directory、return code、timeout、stdout/stderr summary 和 output paths。
@@ -253,3 +263,9 @@ Local console 可发现 YAML/JSON cases、预览分析路线、选择已配置 p
 - [Artifact Contracts](ARTIFACT_CONTRACTS.md)
 - [Security and Data Policy](SECURITY_AND_DATA_POLICY.md)
 - [Verification Guide](VERIFICATION_GUIDE.md)
+
+## B02C01 legacy source adapter（2026-09-18）
+
+B02的child入口按source schema分派只读reader，现新增真实0.2 root replay并复用原coordinator、bootstrap admission及child saga；不启用旧runtime或migration。旧JSON空白允许，duplicate keys及不合法值拒绝。`graph_state.json`仅提供经Run-created SHA绑定的`user_goal`，绝不恢复整份旧state。Historical fingerprint absence使用已批准的source-only closed值；source与target校验分离。0.3 reader及其fork CAS仍属原B02剩余实现，本补充不宣称它已完成。见[B02C01执行记录](tickets/completions/B02C01_COMPLETION.md)。
+
+2026-09-18 B02实现进展：独立control入口现有normal external消费/释放、同resume失败收尾、prepared Pause中断、normal-final系统关闭、timeout failed-delivery及fresh preparation的typed Host端口。历史0.3来源通过只读reader端口及同coordinator revision CAS创建0.4 child；checkpoint来源读取使用独立临时durability-unit副本，不改来源目录。真实Backend/workspace/产品图仍属B03/B04。B02目前因historical Fork的B00精确轨迹格式缺口blocked，未获完整验收；见[B02记录](tickets/completions/B02_COMPLETION.md)。

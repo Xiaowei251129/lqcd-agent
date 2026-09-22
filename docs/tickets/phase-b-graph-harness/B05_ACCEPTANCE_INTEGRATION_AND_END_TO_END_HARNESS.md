@@ -31,6 +31,7 @@ B05只负责把已经完成的实现作为一个系统验收。既有验收边�
 - `docs/tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json`
 - `docs/tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json`
 - B00–B04 tickets及其completion records
+- B00C01–B00C04、B02C01 corrective tickets及其completion records；现行依据见[B00–B05审查记录](../corrections/B00_B05_READINESS_REVIEW.md)
 - `docs/tickets/phase-b-graph-harness/OVERVIEW.md`
 - B00–B04实际新增/修改的runtime、scripts和`tests/phase_b/`文件
 - `evaluation/synthetic_benchmarks/run_synthetic_benchmarks.py`
@@ -45,6 +46,7 @@ B05只负责把已经完成的实现作为一个系统验收。既有验收边�
 - Protocol/catalog exact versions/digests与前置票一致；matrix/registry/final obligations/generated projection的tracked digest必须记录为B05 baseline。
 - 所有B00–B04 required nodeids在fresh collect中存在；任何missing/skip/xfail/deselect/live-only先视为entry failure，不由B05改写scenario为non-required。
 - 执行前记录cleanly attributable full-suite和full mock benchmark baseline；环境失败必须与implementation回归分开。
+- Baseline继承case语义`0.2`、trace `0.4`及旧版本各自冻结语义；全部runtime case从独立规则生成，不从matrix当前绑定倒推。B00–B04已有owned runtime通过是入口证据，B05仍须在本次final session重新验证。
 
 ## Scope
 
@@ -54,6 +56,7 @@ B05只负责把已经完成的实现作为一个系统验收。既有验收边�
 - 完成two-client/two-process跨域winner、stale lease、same-key replay、post-claim failure和consumption-release组合测试；
 - 建立stable explicit schema `0.4` CLI入口与新的`/private/tmp/lqcd-agent-phase-b-*` smoke；保留legacy compatibility入口；
 - 为B00已冻结的全部exit check接入检查适配器，由统一final session运行Layer 0–5、cross-system fault/concurrency、Phase B suite、full pytest、compileall、synthetic tests、full mock benchmark、legacy regression、CLI smoke和documentation/scope检查；
+- 将C04已验证的`run_pytest_batches`接入final dispatcher及需要分批的pytest exit adapters，避免完整runtime/full suite受单次300秒调用上限截断；保留同一session、冻结输入、完整selection及现有完成判定；
 - 独立统计legacy compatibility regression，确认canonical coverage未调用legacy；
 - 由final创建session、执行检查、验证本次证据后生成canonical report；任一必需检查缺失、失败或证据无效均非零退出；
 - 完成scope、link、metadata、stale docs、diff和deferred capability审计，建立Phase B completion record。
@@ -96,6 +99,8 @@ owned_requirement_ids = []
 - `scripts/validate_phase_b_acceptance.py`：允许接入B00已定义的检查适配器、命令调度及证据收集，并修复contract-preserving defects；不得改变已冻结schema、必需检查清单、证据规则或完成判定语义；
 - `scripts/run_phase_b_smoke.sh`；
 - `tests/phase_b/`：仅限cross-subsystem scenarios/traces/fault/concurrency/CLI tests、已定义exit checks的适配器、matrix/registry实际hook和case绑定及report fixtures；不得重分配ownership或削弱前置tests；
+- `tests/phase_b/harness/driver.py`及`exit_checks.py`：仅限将现有C04分批runner接入命令调度与exit adapter，保留preflight、原始selection、schema、session/摘要校验、observation/runtime验证和final完成规则；不得引入跨session拼接或历史证据替代；
+- `tests/phase_b/expected_traces/`及关联fixture：仅允许对本票production integration fix造成的真实runtime fingerprint与派生head/reference做审定同步，保存原始来源和逐项差异，两个fresh根复核后固定；不改前置outcome/owner/invariant，不按运行actual重写expected或放宽trace exclusion；
 - B01–B04实际引入的`src/lqcd_agent/control/`与`src/lqcd_agent/code_agent/`文件：仅限B05发现的contract-preserving integration fix；
 - `src/lqcd_agent/graph/state.py`、`routing.py`、`analysis_graph.py`、`nodes.py`、`approval_packet.py`和`run_graph.py`：仅限canonical CLI/integration fix，不改变A01 topology；
 - `src/lqcd_agent/artifacts/registry.py`、`src/lqcd_agent/memory/store.py`和`src/lqcd_agent/report/generate_report.py`：仅限cross-boundary integration fix；
@@ -124,6 +129,7 @@ owned_requirement_ids = []
 - 继承B00闭合协议：final validator从frozen catalog构造required set，核验owner slices互斥且union exact 131；执行construction与final两个阶段的全部适用required scenarios，并独立核对冻结runtime obligations。只有所有适用证据通过才计入`requirements.passed`，不得仅从matrix现有条目推断必需runtime清单。
 - Unknown/non-required/duplicate/stale/uncovered/uncollectable/skipped/xfail/deselected/live-only/missing trace或invariant任一使final非零。
 - Final创建one-time invocation token并启动必需检查；所有scenario、runtime与exit evidence绑定本次token、实际工作树输入摘要及protocol/catalog/generated protocol/matrix/registry/final obligations摘要。旧token、不同输入或合同版本、自报passing、仅collect成功均不能复用为验收证据。
+- 全部required selection及各pytest exit check可在同一Session有界分批；逐批验证setup/call/teardown、无skip/xfail/deselect和输入未变，合并后核对集合exact、无重复/遗漏，再调用既有observation/runtime/exit验证器。保留原始batch receipts；不同exit check有各自完整selection，不能拿部分required测试冒充full-suite exit。任一批失败、超时、输入漂移、回执错session/case/nodeid或缺失，final均失败。
 - Compatibility/capability/benchmark/happy-path evidence单独报告，不能增加required totals。
 - Final report严格使用B00的`PhaseBAcceptanceReport 0.1`字段与完成语义，拒绝unknown字段/别名。规范化报告排除token、临时路径等不稳定值；原始证据保留session绑定，Layer 0–5 totals等明细通过证据与completion record复核。
 
@@ -204,6 +210,7 @@ Final dispatcher须为smoke/benchmark建立本次唯一的fresh子目录，并�
 - 131项已映射，甚至所有requirement已通过，但缺CLI smoke、benchmark或legacy有效证据时，`phase_b_complete=false`且final非零；
 - Inventory齐全但hook未触发、outcome缺失或28条post-claim path缺一时，`requirements_zero_gap=false`且final非零；
 - 旧token、不同工作树输入或不同合同摘要的证据被拒绝；
+- 分批遗漏/重复nodeid、错session/case/nodeid进程回执、批间输入变化、失败/超时及full-suite selection不完整均被拒绝；正常分批与同一完整selection的验证语义一致；
 - Benchmark退出码为0但case/checklist失败，或full case-set不完整时，exit check失败；
 - 合法0.3 fork创建0.4 child；0.2 fork与0.3原地resume拒绝，source不改写；
 - Bootstrap绕过可信admission或注入allow拒绝；
@@ -222,7 +229,7 @@ Final dispatcher须为smoke/benchmark建立本次唯一的fresh子目录，并�
 - 需要新增product edge/state/artifact/operation/budget/migration/dependency才能通过；
 - 需要真实Backend/provider/network/raw data/history outputs/parallel graph或宽松trace；
 - 需要修改B00–B04 frozen ticket/completion、legacy formats/tests或evaluation expected outputs；
-- final无法用本次有效证据证明全部131项适用requirement、独立runtime obligations及所有exit checks通过；不得因覆盖数已满而忽略runtime/exit evidence缺口；
+- 本票范围内的adapter/调度/跨域场景接线及允许的integration fix完成后，final仍无法用本次有效证据证明全部131项适用requirement、独立runtime obligations及所有exit checks通过；不得因覆盖数已满而忽略缺口。B05开始时尚未接入本票负责的exit adapter不是前置功能缺失，可在本票范围继续实施；
 - baseline/full/benchmark回归无法在Allowed Files内以contract-preserving maintenance fix解决。
 
 触发任一条件时不得标记Phase B completed。局部contract-preserving integration bug按仓库规则建立maintenance record；改变架构/schema/public contract/acceptance boundary则建立corrective ticket并重新review。
@@ -245,6 +252,7 @@ Final dispatcher须为smoke/benchmark建立本次唯一的fresh子目录，并�
 - 确认B04映射覆盖齐全不表示完整需求已通过；`requirements_zero_gap`与`phase_b_complete`分别绑定runtime证据和完整exit evidence；
 - 确认B05不能补做或重新标注B01–B04缺失功能；既有边界内的局部integration bug允许修复并记录maintenance，边界变化必须corrective；
 - 确认统一final先执行所有检查再生成报告，token/工作树/合同摘要有效；final totals、Layer commands、CLI smoke、legacy/mock独立证据与deferred list完整；
+- 确认C04分批机制的final/exit接线在Allowed Files内，所有批次同Session且集合完整；调度变化不改变B00/C04证据权威、trace规则、必需检查或完成语义；
 - 确认0.2仅replay、合格0.3可replay/fork为0.4 child而不可原地resume，且不存在caller注入bootstrap allow的路径；
 - 确认Allowed Files、Do Not Touch、maintenance/corrective边界和verification没有未决placeholder。
 

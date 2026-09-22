@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b02_runtime/control.resume_run.abandon_and_halt.terminal_lifecycle_recorded.before.integrity_conflict.json",
+  "entrypoint": "src/lqcd_agent/control/coordinator.py:boundary",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "frozen_outcome_classification",
+    "publication_side:before"
+  ]
+}

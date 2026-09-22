@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/trace_001.json",
+  "entrypoint": "tests/phase_b/test_source_bound_traces.py:test_source_bound_observation",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "exact_semantic_trace",
+    "raw_source_validation",
+    "session_bound_proof"
+  ]
+}

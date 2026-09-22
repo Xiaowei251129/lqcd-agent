@@ -4,6 +4,7 @@ import ast
 import os
 import subprocess
 import sys
+import secrets
 from pathlib import Path
 
 import pytest
@@ -66,18 +67,18 @@ def observe(scenario_id, result, invariants, trace=None):
     validate_result(result)
     strings(invariants, scenario_id, "invariants")
     if trace is not None:
-        normalize(trace)
+        normalize(trace, binding=ACTIVE.value if ACTIVE else trace.get("proof", {}).get("binding"))
     if ACTIVE:
         ACTIVE.value["observations"].append({"scenario_id": scenario_id, "nodeid": ACTIVE.nodeid,
                                             "result": result, "invariants": invariants, "trace": trace})
 
 
-def production_hook(case_id):
+def production_hook(case_id, *, process_request=None):
     """Called by a bound production hook at the deterministic boundary during a fresh test."""
     frame = inspect.currentframe().f_back
     filename = Path(frame.f_code.co_filename).resolve()
-    if ACTIVE:
-        root = Path(ACTIVE.config.rootpath).resolve()
+    if ACTIVE or process_request is not None:
+        root = Path(ACTIVE.config.rootpath if ACTIVE else process_request["project_root"]).resolve()
         require(filename.is_relative_to(root / "src/lqcd_agent"), "hook", "production_source")
         def locate(nodes, prefix=()):
             for node in nodes:
@@ -94,12 +95,70 @@ def production_hook(case_id):
         qualified = locate(ast.parse(filename.read_bytes()).body)
         require(qualified is not None, "hook", "source_location")
         hook_ref = filename.relative_to(root).as_posix() + ":" + qualified
-        ACTIVE.value["hook_events"].append({"case_id": case_id, "nodeid": ACTIVE.nodeid, "hook_ref": hook_ref})
+        if process_request is not None:
+            require(case_id == process_request["case_id"] and hook_ref == process_request["hook_ref"],
+                    "process_hook", "production_identity", "invalid_evidence")
+            receipt = {"request": process_request, "process_id": os.getpid(), "hook_ref": hook_ref}
+            output = Path(process_request["receipt_path"])
+            with output.open("xb") as stream:
+                stream.write(canonical(receipt))
+                stream.flush()
+                os.fsync(stream.fileno())
+            descriptor = os.open(output.parent, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        else:
+            ACTIVE.value["hook_events"].append({"case_id": case_id, "nodeid": ACTIVE.nodeid, "hook_ref": hook_ref})
+
+
+CONSUMED_PROCESS_RECEIPTS = set()
+PENDING_PROCESS_REQUESTS = {}
+
+
+def process_hook_request(case_id, directory):
+    """Bind one child trigger to the current pytest node and fresh session."""
+    from .contracts import ROOT, DIGEST_KEYS
+    token = secrets.token_hex(32)
+    directory = Path(directory).resolve()
+    require(directory.is_dir() and not directory.is_relative_to(ROOT), "process_hook", "evidence_directory")
+    binding = ACTIVE.value if ACTIVE else {"invocation_token": "unit-only-not-acceptance", "digests": dict.fromkeys(DIGEST_KEYS, "0" * 64)}
+    request = {"schema_version": "0.1", "invocation_token": binding["invocation_token"], "digests": dict(binding["digests"]),
+            "project_root": str(Path(ACTIVE.config.rootpath).resolve() if ACTIVE else ROOT),
+            "nodeid": ACTIVE.nodeid if ACTIVE else "unit-only", "case_id": case_id, "process_token": token,
+            "hook_ref": "src/lqcd_agent/control/coordinator.py:boundary", "receipt_path": str(directory / (token + ".json"))}
+    PENDING_PROCESS_REQUESTS[token] = canonical(request)
+    return request
+
+
+def consume_process_hook(request, process, *, expected_exit):
+    """A crash receipt proves a trigger, never a recovered case outcome."""
+    require(request["process_token"] not in CONSUMED_PROCESS_RECEIPTS, "process_hook", "duplicate_receipt", "invalid_evidence")
+    require(PENDING_PROCESS_REQUESTS.get(request["process_token"]) == canonical(request),
+            "process_hook", "original_parent_request", "invalid_evidence")
+    require(type(expected_exit) is int and process.exitcode == expected_exit and process.pid is not None,
+            "process_hook", "process_exit", "invalid_evidence")
+    if ACTIVE:
+        require(request["invocation_token"] == ACTIVE.value["invocation_token"] and request["digests"] == ACTIVE.value["digests"] and
+                request["nodeid"] == ACTIVE.nodeid and request["project_root"] == str(Path(ACTIVE.config.rootpath).resolve()),
+                "process_hook", "session_binding", "invalid_evidence")
+    receipt = read(Path(request["receipt_path"]))
+    keys(receipt, {"request", "process_id", "hook_ref"}, "process_hook")
+    require(receipt["request"] == request and receipt["process_id"] == process.pid and receipt["hook_ref"] == request["hook_ref"],
+            "process_hook", "receipt_binding", "invalid_evidence")
+    CONSUMED_PROCESS_RECEIPTS.add(request["process_token"])
+    del PENDING_PROCESS_REQUESTS[request["process_token"]]
+    event = {"case_id": request["case_id"], "nodeid": request["nodeid"], "hook_ref": receipt["hook_ref"]}
+    if ACTIVE:
+        ACTIVE.value["hook_events"].append(event)
+    return event
 
 
 def observe_case(case_id, outcome, invariants, trace):
     """Record the recovered outcome after the independently observed production trigger."""
     if ACTIVE:
+        normalize(trace, binding=ACTIVE.value)
         ACTIVE.value["case_results"].append({"case_id": case_id, "nodeid": ACTIVE.nodeid,
                                            "outcome": outcome, "invariants": invariants, "trace": trace})
 
@@ -125,6 +184,30 @@ def run_pytest(session, selection, *, name="required", extra=()):
     value = read(output)
     require(value.get("exit_code") == process.returncode, "pytest", "process_exit", "invalid_evidence")
     return value
+
+
+def run_pytest_batches(session, selection, *, name="runtime", batch_size=25):
+    """Validate every bounded batch before merging an exact single-session selection."""
+    strings(selection, "pytest", "selection")
+    require(type(batch_size) is int and batch_size > 0, "pytest", "batch_size")
+    merged = None
+    for offset in range(0, len(selection), batch_size):
+        nodes = selection[offset:offset + batch_size]
+        value = run_pytest(session, nodes, name=f"{name}-{offset // batch_size:04d}")
+        validate_pytest(value, session, nodes)
+        session.unchanged()
+        if merged is None:
+            merged = {**value, "selection": list(selection)}
+        else:
+            for key in ("collected", "nodes", "observations", "hook_events", "case_results"):
+                merged[key].extend(value[key])
+    merged["collected"].sort()
+    for key, identity in (("observations", "scenario_id"), ("hook_events", "case_id"), ("case_results", "case_id")):
+        ids = [(row[identity], row["nodeid"]) for row in merged[key]]
+        require(len(ids) == len(set(ids)), "pytest", "duplicate_batch_evidence", "invalid_evidence")
+    validate_pytest(merged, session, selection)
+    session.unchanged()
+    return merged
 
 
 def validate_pytest(value, session, selection):
@@ -153,7 +236,7 @@ def validate_pytest(value, session, selection):
         require(type(row["scenario_id"]) is str and bool(row["scenario_id"]) and row["nodeid"] in expected,
                 "observation", "identity")
         if row["trace"] is not None:
-            normalize(row["trace"])
+            normalize(row["trace"], binding=value)
     for row in value["hook_events"]:
         keys(row, {"case_id", "nodeid", "hook_ref"}, "hook")
         require(all(type(row[k]) is str and row[k] for k in ("case_id", "nodeid", "hook_ref")), "hook", "identity")
@@ -163,7 +246,7 @@ def validate_pytest(value, session, selection):
         require(all(type(row[k]) is str and row[k] for k in ("case_id", "nodeid", "outcome")), "case_result", "identity")
         require(row["nodeid"] in expected, "case_result", "nodeid")
         strings(row["invariants"], "case_result", "invariants")
-        normalize(row["trace"])
+        normalize(row["trace"], binding=value)
     return value
 
 
@@ -212,6 +295,6 @@ def validate_observations(value, scenarios, root, *, all_scenarios=None):
         if trace is None:
             require(row["trace"] is None, key[0], "trace")
         else:
-            compare(row["trace"], read(path_in(root, trace)))
+            compare(row["trace"], read(path_in(root, trace)), binding=value)
     require(set(expected) <= seen, "observation", "missing", "invalid_evidence")
     return {s["scenario_id"] for s in scenarios}

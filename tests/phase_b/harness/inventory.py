@@ -78,8 +78,12 @@ SUPPLEMENTAL = {
 }
 
 
-def expected_inventory(protocol):
+CASE_VERSION = "0.2"
+
+
+def expected_inventory(protocol, *, version=CASE_VERSION):
     """Return immutable expectations independently of matrix or registry input."""
+    require(version in ("0.1", CASE_VERSION), "inventory", "case_version")
     control = protocol["state_machines"]["control_operation"]
     entries = []
 
@@ -93,11 +97,21 @@ def expected_inventory(protocol):
 
     for operation in control["operations"]:
         for variant in operation["variants"]:
+            can_commit = {"result_committed"}
+            while True:
+                reachable = can_commit | {source for source, target in variant["success_edges"] if target in can_commit}
+                if reachable == can_commit:
+                    break
+                can_commit = reachable
             for phase in variant["phases"]:
                 contract = control["phase_contracts"][phase]
                 outcomes = list(OUTCOMES)
                 if contract["continuation_policy"] != "materialize_if_precomputed":
                     outcomes.remove("materializable_publication_prefix")
+                if version == CASE_VERSION and phase == "operation_reserved":
+                    outcomes = ["reservation_rolled_back"]
+                elif version == CASE_VERSION and phase not in can_commit:
+                    outcomes = ["terminal_tombstone_replay" if outcome == "committed_result_replay" else outcome for outcome in outcomes]
                 add(f"control.{operation['operation_type']}.{variant['operation_variant']}.{phase}",
                     "B02", "A07#fault-injection-and-crash-outcomes",
                     contract["effect_class"], contract["continuation_policy"], outcomes)
@@ -115,6 +129,8 @@ def expected_inventory(protocol):
                 outcomes = list(OUTCOMES)
                 if fp in REJECTION_BOUNDARIES or group == "ingress":
                     outcomes = ["integrity_conflict"]
+                elif version == CASE_VERSION and fp == "child.source_revision_cas":
+                    outcomes = ["reservation_rolled_back"]
                 elif fp in UNCERTAIN_EFFECT_BOUNDARIES:
                     outcomes.remove("materializable_publication_prefix")
                 add(f"{group}.{boundary}", owner, "A07#fault-injection-and-crash-outcomes",
@@ -126,10 +142,10 @@ def expected_inventory(protocol):
     return sorted(entries, key=lambda x: x["failpoint_id"])
 
 
-def case_specs(protocol):
+def case_specs(protocol, *, version=CASE_VERSION):
     """Freeze the meaning of each case, including the 7 by 4 failure product."""
     cases = {}
-    for entry in expected_inventory(protocol):
+    for entry in expected_inventory(protocol, version=version):
         fp = entry["failpoint_id"]
         if fp.startswith("post_claim."):
             for choice in protocol["state_machines"]["control_operation"]["consumption_failure_contract"]["classification"]:
@@ -145,6 +161,12 @@ def case_specs(protocol):
                 for outcome in entry["allowed_exact_outcomes"]:
                     case_id = f"{fp}.{side}.{outcome}"
                     invariants = [f"publication_side:{side}", "frozen_outcome_classification"]
+                    if outcome == "reservation_rolled_back":
+                        invariants.extend(["authority_context:initial_reservation_before_commit", "no_durable_operation",
+                                           "no_owner_or_capability", "no_domain_mutation", "fresh_request_readmission"])
+                    if outcome == "terminal_tombstone_replay":
+                        invariants.extend(["authority_context:unavailable_only_successor_graph", "immutable_terminal_tombstone",
+                                           "no_fabricated_committed_result", "no_target_reexecution"])
                     if fp in REJECTION_BOUNDARIES or fp.startswith("ingress."):
                         invariants.extend(["no_domain_mutation", "no_automatic_stop", "no_capability_or_dispatch"])
                     if fp.startswith("recovery."):
@@ -155,24 +177,49 @@ def case_specs(protocol):
     return dict(sorted(cases.items()))
 
 
-def expected_obligations(protocol):
-    specs = case_specs(protocol)
+def expected_obligations(protocol, *, version=CASE_VERSION):
+    specs = case_specs(protocol, version=version)
     obligations = []
-    for entry in expected_inventory(protocol):
+    for entry in expected_inventory(protocol, version=version):
         fp = entry["failpoint_id"]
         obligations.append({
             "obligation_id": fp, "contract_refs": META_REFS, "source_locator": entry["source_locator"],
             "case_ids": [cid for cid, spec in specs.items() if spec["failpoint_id"] == fp],
             "failpoint_ids": [fp],
         })
-    return {"schema_version": "0.1", "control_protocol_sha256": PROTOCOL_SHA,
+    return {"schema_version": version, "control_protocol_sha256": PROTOCOL_SHA,
             "requirement_catalog_sha256": CATALOG_SHA, "runtime_obligations": obligations,
             "exit_check_ids": list(EXIT_CHECKS)}
 
 
-def registry_skeleton(protocol):
-    return {"schema_version": "0.1", "control_protocol_sha256": PROTOCOL_SHA,
-            "requirement_catalog_sha256": CATALOG_SHA, "entries": expected_inventory(protocol)}
+def registry_skeleton(protocol, *, version=CASE_VERSION):
+    return {"schema_version": version, "control_protocol_sha256": PROTOCOL_SHA,
+            "requirement_catalog_sha256": CATALOG_SHA, "entries": expected_inventory(protocol, version=version)}
+
+
+def expected_dispositions(protocol):
+    """Account for every old B02 obligation without claiming it has runtime evidence."""
+    owned = {row["failpoint_id"] for row in expected_inventory(protocol, version="0.1") if row["boundary_owner"] == "B02"}
+    rows = []
+    current = case_specs(protocol)
+    for case_id, spec in case_specs(protocol, version="0.1").items():
+        fp = spec["failpoint_id"]
+        if fp not in owned:
+            continue
+        side = case_id.removeprefix(fp + ".").split(".", 1)[0]
+        rollback = fp.endswith(".operation_reserved") or fp == "child.source_revision_cas"
+        tombstone = not rollback and case_id not in current
+        replaced = rollback or tombstone
+        context = "initial_reservation_before_commit" if rollback else "unavailable_only_successor_graph" if tombstone else (
+            "no_owned_mutation_rejection" if fp in REJECTION_BOUNDARIES or fp.startswith("ingress.")
+            else "existing_operation_authority_and_frozen_outcome")
+        rows.append({"old_case_id": case_id, "disposition": "replaced" if replaced else "retained",
+                     "new_case_ids": [fp + "." + side + ".reservation_rolled_back"] if rollback else [fp + "." + side + ".terminal_tombstone_replay"] if tombstone else [case_id],
+                     "authority_context": context, "contract_locator": "A02C01#reference-durability-profile" if rollback else "A07#fault-injection-and-crash-outcomes",
+                     "counterexample_nodeid": "tests/phase_b/test_b02_reservation_boundaries.py::test_fork_source_cas_process_exit_is_still_before_reservation_commit[" + side + "]" if fp == "child.source_revision_cas" else
+                         "tests/phase_b/test_b02_reservation_boundaries.py::test_reservation_process_exit_rolls_back_without_an_operation_or_run[" + side + "]" if rollback else
+                         "tests/phase_b/test_reservation_case_semantics.py::test_unavailable_branch_cannot_replay_a_committed_result[" + fp.split(".")[1] + "." + fp.split(".")[2] + "]" if tombstone else None})
+    return {"schema_version": CASE_VERSION, "previous_case_version": "0.1", "boundary_owner": "B02", "dispositions": rows}
 
 
 def inventory_projection(registry):
@@ -186,6 +233,8 @@ def inventory_projection(registry):
 def validate_inventory(registry, obligations, protocol, root, scenarios):
     from .seals import REGISTRY_INVENTORY_SHA256, FINAL_OBLIGATIONS_SHA256
     keys(registry, {"schema_version", "control_protocol_sha256", "requirement_catalog_sha256", "entries"}, "registry")
+    require(registry["schema_version"] == CASE_VERSION and obligations.get("schema_version") == CASE_VERSION,
+            "inventory", "case_version")
     require(type(registry["entries"]) is list, "registry", "entries")
     fields = set(expected_inventory(protocol)[0])
     for entry in registry["entries"]:
@@ -194,6 +243,9 @@ def validate_inventory(registry, obligations, protocol, root, scenarios):
     require(digest(obligations) == FINAL_OBLIGATIONS_SHA256, "obligations", "independent_seal")
     require(inventory_projection(registry) == registry_skeleton(protocol), "registry", "inventory")
     require(obligations == expected_obligations(protocol), "obligations", "case_semantics")
+    from .strict_json import read
+    dispositions = read(path_in(root, "tests/phase_b/reservation_case_dispositions.json"))
+    require(dispositions == expected_dispositions(protocol), "dispositions", "complete_old_to_new")
     specs = case_specs(protocol)
     scenario_index = {s["scenario_id"]: s for s in scenarios}
     for entry in registry["entries"]:

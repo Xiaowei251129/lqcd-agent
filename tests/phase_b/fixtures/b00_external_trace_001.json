@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b00_external_trace_001.json",
+  "entrypoint": "tests/phase_b/test_external_source_traces.py:test_external_reservation_source_trace",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "complete_artifact_sources",
+    "exact_external_trace",
+    "typed_reservation_source"
+  ]
+}

@@ -64,15 +64,30 @@ def validate_event(value):
     canonical(value)
 
 
-def normalize(trace):
-    keys(trace, {"schema_version", "events"}, "trace")
-    require(trace["schema_version"] == "0.1" and type(trace["events"]) is list, "trace", "schema")
+def normalize(trace, *, binding=None, expected=False):
+    require(type(trace) is dict, "trace", "object")
+    version = trace.get("schema_version")
+    require(version in ("0.1", "0.2", "0.3", "0.4"), "trace", "schema")
+    if version == "0.1":
+        keys(trace, {"schema_version", "events"}, "trace")
+    else:
+        representation = "semantic_expected" if expected else "raw_with_proof"
+        fields = {"schema_version", "representation", "events"} | (set() if expected else {"proof"})
+        keys(trace, fields, "trace")
+        require(trace["representation"] == representation, "trace", "representation", "invalid_evidence")
+    require(type(trace["events"]) is list, "trace", "events")
     events = []
     for item in trace["events"]:
         validate_event(item)
         events.append({key: value for key, value in item.items() if key != "ephemeral"})
-    return {"schema_version": "0.1", "events": events}
+    if version == "0.1":
+        return {"schema_version": "0.1", "events": events}
+    if not expected:
+        from .trace_proof import project
+        events = project(events, trace["proof"], binding, version=version)
+    return {"schema_version": version, "representation": "semantic_expected", "events": events}
 
 
-def compare(actual, expected):
-    require(canonical(normalize(actual)) == canonical(normalize(expected)), "trace", "exact", "invalid_evidence")
+def compare(actual, expected, *, binding=None):
+    require(canonical(normalize(actual, binding=binding)) == canonical(normalize(expected, expected=True)),
+            "trace", "exact", "invalid_evidence")

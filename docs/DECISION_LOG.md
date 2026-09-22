@@ -1235,3 +1235,56 @@ Related Documents:
 - Bind execution records through previous-head canonical hashes. Bind the artifact envelope to execution history, and bind an explicit checkpoint manifest to the exact pair and pre-checkpoint state digest; attach the manifest hash only afterward to avoid self-reference. Retain A03C01's limitation against arbitrary fully coordinated history rewriting without an external immutable anchor.
 - Do not change the legacy 0.2 initializer, product graph, providers, dependencies or existing tests. B02 owns trusted bootstrap admission and durable operations; B03 owns external/backend integration; B04 owns route/resource/grant/stop enforcement. Pure record validation never substitutes for those authorities.
 - Add only the B01 construction slice: 11 requirements, cumulative mapping 26/131, remaining 105, global passing counts null. Preserve all 2286 runtime obligations and 15 exit gaps, both completion flags false. See [B01 Completion Record](tickets/completions/B01_COMPLETION.md) for verification and follow-ups; B02–B05 remain draft.
+
+## 2026-09-16: Approve B00C01 and Stop at an Omitted Exit Call Site
+
+- The user approved the source-bound semantic trace correction. Freeze only its ready ticket in `d9af4e8`, preserving all existing uncommitted B02 work; do not push.
+- Implement explicit trace `0.2` raw proof and semantic expected representations without changing runtime hashes, Phase A bytes, ownership or trace `0.1`. Verify canonical source digests, reference DAGs, production replay, root bindings and fresh-session evidence before narrow path/clock projection.
+- Keep B00C01 incomplete: the existing exit evidence normalizer also calls the trace codec, but its file was omitted from the frozen Allowed Files. A valid new trace is rejected there for missing trusted binding. Do not bypass verification or silently expand the frozen scope.
+- Propose [B00C02](tickets/phase-b-graph-harness/B00C02_SEMANTIC_TRACE_EXIT_BINDING.md) as a draft for those two binding calls and complete exit-path regression. Await independent approval; B00C01 and B02 remain blocked. Record actual progress in [B00C01 execution record](tickets/completions/B00C01_COMPLETION.md); passing construction and partial suites do not establish completion.
+
+## 2026-09-16: Complete B00C02 and Unblock the B02 Prerequisite
+
+- The user independently approved B00C02. Freeze only its ready snapshot in `10db77c`; keep its body unchanged, preserve existing uncommitted work and do not push.
+- Pass the already session-validated pytest envelope explicitly into both trace normalization calls in the exit evidence normalizer. Preserve validation order, raw source proof, old trace semantics, schemas, ownership and fixed exit checks.
+- Extend the existing isolated subprocess scenario through the actual exit validator. Two fresh invocations with different tokens and roots produce identical semantic evidence digests; stale or tampered evidence is rejected even with a recomputed outer checksum or internally consistent stale bindings.
+- Complete B00C02 and close B00C01 after full verification. Restore B02 to ready without modifying its frozen body or implementing its remaining runtime under this corrective ticket. Actual project coverage stays 26/131 with 105 mapping, 2286 runtime and 15 exit gaps; both completion flags remain false.
+- See [B00C02 Completion Record](tickets/completions/B00C02_COMPLETION.md). Historical B00C01/B02 stop records receive append-only resolution notes; B03–B05 remain draft.
+
+## 2026-09-18 — 批准B02C01历史fingerprint缺失表示
+
+用户批准[B02C01](tickets/phase-b-graph-harness/B02C01_LEGACY_SOURCE_FINGERPRINT.md)，在`5e753d6`单独冻结ready快照。真实0.2历史创建器未保存runtime fingerprint；将当前build补成source事实或拒绝所有合法0.2 replay均不合适。因此在既有Replay source字段内部允许唯一closed `not_recorded/legacy_schema_0_2`值，与source proof及child lineage绑定；0.3/0.4、Pause、target与resume规则保持严格，不修改Phase A协议/catalog字节。该决定只关闭source兼容表示缺口，B02其余控制分支与验收仍按原票执行。
+
+## 2026-09-18 — Preserve historical Fork evidence and stop at the frozen trace boundary
+
+B02C01 completed, then original B02 control implementation continued within its approved scope. The historical 0.3 source reader is a trusted Host port; core control verifies bytes, source identity/head, checkpoint and the existing shared revision before child reservation. Checkpoint source verification uses a private copy of the whole durability unit under that coordinator transaction, because SQLite read-only opens may create sidecars and immutable-mode reads can omit live WAL content. Neither path migrates or rewrites the source.
+
+Close/resume competition now terminalizes a losing close without touching the winner. An owned preparation integrity failure derives the existing close-run failure path and preserves the scheduled target; verified control authority permits failed closure, otherwise the closure is unavailable.
+
+A separate acceptance prerequisite remains: trace 0.2 can only resolve execution-head references through 0.4 replay, while a legitimate historical Fork lineage references 0.3 records. All three attempted old-version representations reject deterministically. Do not relabel historical data, omit heads or weaken B00. B02 is blocked under its Stop Conditions; [B00C03](tickets/phase-b-graph-harness/B00C03_HISTORICAL_FORK_SOURCE_TRACES.md) is a review proposal for an explicit new test-owned trace version, not an approved contract or implementation. B02's original body and all Phase A digests/ownership/obligations remain unchanged. B02C01 approval does not silently authorize changing the frozen B00 evidence format.
+
+## 2026-09-21 — 验证历史来源轨迹并恢复B02
+
+用户明确批准B00C03并单独冻结ready快照`3c53a41`。采用显式test-owned trace0.3，按固定原格式validator证明historical execution/checkpoint及真实source revision/reservation，不把历史记录交给0.4 replayer。新版本从lineage/CAS/request的真实preimage计算semantic DAG；身份、material、fingerprint与revision保持精确，旧版本不升级。原来源的SQLite durability unit只在私有副本打开。未知历史格式或非空artifact编码拒绝，不放宽runtime reader资格。
+
+完整1063项回归和fresh B00/B01通过后完成B00C03、恢复原B02；不修改Phase A、production、ownership或独立验收义务。B02尚须交付自身30项construction和205/1488 runtime绑定。结果见[B00C03 completion](tickets/completions/B00C03_COMPLETION.md)。
+
+## 2026-09-21 — Preserve reservation authority while reviewing impossible fault contexts
+
+B00C03 completed, and resumed B02 fixed lost-plan terminalization and granted replan validation within the frozen contract. A new-process hard exit before the initial reservation transaction commits leaves no operation or Run authority. Do not fabricate an operation tombstone or reclassify an immutable committed result to satisfy the current cartesian fault inventory. B02 stops at its explicit acceptance-scope boundary; [B00C04](tickets/phase-b-graph-harness/B00C04_RESERVATION_FAULT_CASE_SEMANTICS.md) is an unimplemented review proposal for versioned case semantics and auditable replacements. No Phase A/runtime contract, inventory seal, ownership or completion gate changed. Original B02 authorization remains valid after the prerequisite is resolved; this does not authorize the new corrective ticket or B03/B04.
+
+## 2026-09-21 B00C04 integrated correction
+
+用户明确批准实施B02统一修复计划，并选择扩充尚未冻结的B00C04，统一处理case可达性、trace资源预留来源及进程证据前置；运行bug保留在原B02 maintenance。新版本仅改变test-owned验收表示，不放宽runtime schema、authority、状态机、source保护或B03/B04边界。首次SQL写入前后仍在COMMIT之前，不能补造可恢复operation。Ready正文按用户不commit/push要求只冻结于worktree，独立副本及正文SHA见B00C04 completion。
+
+2026-09-21 B00C04完成：case0.2、trace0.4、直接production进程回执及严格分批验证落地；旧1488个B02 case为1370 retained/118 replaced，现行B02 **1416**、总数 **2214**，全部324 boundary及B03/B04集合不变。完整pytest **1118 passed**、新增定向 **32 passed**，fresh B00/B01 **15/15、11/11**，coverage26/remaining105。Global passed null、phase_b_complete false。B02验收前置阻塞已解除，接续原票处理已审定的runtime缺陷及完整验收；本修正票不代表B02完成。证据见[B00C04完成记录](tickets/completions/B00C04_COMPLETION.md)。
+
+2026-09-21 C04补充审查：Fork `child.source_revision_cas`在首次reservation提交前，两项独立进程反例均完整回滚。沿用原票已批准的全boundary审查范围补齐这一遗漏；C04重新in_progress，B02暂为blocked。旧1488个B02 case现为1362 retained/126 replaced，现行总数 **2208**、B02 **1410**，减少78均有提交前反例；324 boundary、B03/B04及28 post-claim保持。之前2214/1416及C04完成报告保留为当时验证事实。coverage仍26/105；尚无B02 slice。
+
+## 2026-09-21 — B02失败authority与验收闭合
+
+已批准B00C04现已完成：case0.2区分SQL写入与真正COMMIT，旧1488个B02 case为1362 retained/126 replaced，现行1410；全部205个B02 boundary及B03/B04独立义务保持。Trace0.4只规范化已经证明的资源预留引用；进程回执由production boundary直接持久化，并绑定同session/case/nodeid。旧trace版本不变。
+
+B02运行修复保持原public schema/phase graph：错误必须携带实际失败边界operation、worker、epoch和revision，失败handler不得新读epoch代旧调用取得权限。已取得Run owner的失败原子关闭为已有failed/unavailable类别；外部normal final不可变，Human后续终态向原父resume传递。Query的Run closure投影与原operation持久化结果是不同读取对象，测试分别校验其真实来源。
+
+B02 construction30/30及1410/1410独立case、完整2599测试通过后才完成原票。Expected traces在验收前审查固定，实际运行禁止重写；全部批次共用一个冻结输入/session并验证无遗漏或重复。全局final继续保留后续75/798/15缺口，不放宽门槛；B03–B05仍须分别审定。执行结果见[B02完成记录](tickets/completions/B02_COMPLETION.md)。
