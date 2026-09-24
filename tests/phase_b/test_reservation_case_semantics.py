@@ -11,8 +11,8 @@ from harness.strict_json import Invalid, digest, read
 
 def test_closed_reservation_case_dispositions():
     protocol, _ = load_contracts()
-    before, after = case_specs(protocol, version="0.1"), case_specs(protocol)
-    old, new = expected_inventory(protocol, version="0.1"), expected_inventory(protocol)
+    before, after = case_specs(protocol, version="0.1"), case_specs(protocol, version="0.2")
+    old, new = expected_inventory(protocol, version="0.1"), expected_inventory(protocol, version="0.2")
     assert digest(registry_skeleton(protocol, version="0.1")) == LEGACY_REGISTRY_INVENTORY_SHA256
     assert digest(expected_obligations(protocol, version="0.1")) == LEGACY_FINAL_OBLIGATIONS_SHA256
     assert [(e["failpoint_id"], e["boundary_owner"], e["source_locator"]) for e in old] == [

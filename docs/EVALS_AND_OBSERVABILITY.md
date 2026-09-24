@@ -105,7 +105,7 @@ Phase B matrix必须绑定tracked protocol/catalog exact digests，并以九个o
 
 B00 final driver由同一次调用创建session并驱动Layer 0–5、cross-system fault/concurrency、Phase B suite、full pytest、compileall、synthetic tests、full mock benchmark、legacy regression、CLI smoke及文档/scope检查。证据绑定本次token、实际工作树输入和protocol/catalog/matrix/registry等摘要；旧证据、未触发hook、缺META-015 publication/fresh Analysis/consumption release或28条post-claim case均不能通过。Benchmark退出0但某case/checklist失败仍为exit失败；compatibility/capability不能填补required control数量，但规定的legacy/mock检查是独立必需退出条件。闭合字段与完整义务以[B00冻结合同](tickets/phase-b-graph-harness/B00_ACCEPTANCE_FOUNDATION.md)为准；执行机制已实现并通过隔离适配器验证，B05仍须接入真实exit adapters。
 
-当前matrix已有B00/B01/B02三个slice。B00/B01/B02 construction分别为 **15/15、11/11、30/30**，累计映射 **56/131、remaining75**。B02的 **205个boundary、1410个独立case** 全部具有同一冻结输入、同一fresh session的通过证据；完整suite **2599 passed**。全局final仍仅报告 **75 coverage / 798 runtime / 15 exit** 缺口，`requirements.passed=null`、`requirements_zero_gap=false`、`phase_b_complete=false`。现行独立清单为case语义0.2的2208项；205个B02 boundary已完整绑定，剩余798项属于其他票据。B02-owned fresh证明通过全部实际production hook、passing nodeid、invariants和固定trace，但不能把它改写为全局final通过；全局preflight仍要求其余bindings及B05适配器。
+当前matrix已有B00/B01/B02三个slice。B00/B01/B02 construction分别为 **15/15、11/11、30/30**，累计映射 **56/131、remaining75**。B02的 **205个boundary、1410个独立case** 全部具有同一冻结输入、同一fresh session的通过证据；完整suite **2617 passed**。全局final仍仅报告 **75 coverage / 789 runtime / 15 exit** 缺口，`requirements.passed=null`、`requirements_zero_gap=false`、`phase_b_complete=false`。现行独立清单为case语义0.3的2199项；205个B02 boundary已完整绑定，剩余789项属于其他票据。B02-owned fresh证明通过全部实际production hook、passing nodeid、invariants和固定trace，但不能把它改写为全局final通过；全局preflight仍要求其余bindings及B05适配器。
 
 2026-09-17 B02续执行回归为Phase B **453 passed**、禁用live provider的完整pytest **778 passed**、A02/A03/state **139 passed**。Fresh B00/B01为15/15和11/11，final仅报告105 coverage、2286 runtime与15 exit缺口。这些测试数量不是B02的30项requirement pass计数；尚未追加B02 slice或宣称累计56 covered，详细边界见[B02执行记录](tickets/completions/B02_COMPLETION.md)。
 
@@ -160,3 +160,7 @@ B00C04逐项审查补充：11个仅能到达unavailable的phase不可能产生co
 2026-09-21 C04补充审查：Fork `child.source_revision_cas`在首次reservation提交前，两项独立进程反例均完整回滚。沿用原票已批准的全boundary审查范围补齐这一遗漏；C04重新in_progress，B02暂为blocked。旧1488个B02 case现为1362 retained/126 replaced，现行总数 **2208**、B02 **1410**，减少78均有提交前反例；324 boundary、B03/B04及28 post-claim保持。之前2214/1416及C04完成报告保留为当时验证事实。coverage仍26/105；尚无B02 slice。
 
 2026-09-21 C04集成补验完成：完整pytest1158 passed，fresh B00/B01 15/15、11/11；C04现completed，B02继续in_progress。现行独立case2208/B02 1410，covered26/remaining105，尚无B02 slice；此前blocked及补验in_progress为历史过程。详见[B00C04完成记录](tickets/completions/B00C04_COMPLETION.md)。
+
+## 2026-09-24 B00C05 case0.3
+
+B00C05已完成并解除B03首次ExternalOperation reservation分类阻塞：真实初始producer与case0.3已验证，独立集合2199（B02 1410、B03 645、B04 144），324 boundaries和28 post-claim不变。Fresh B00/B01/B02为15/11/30，完整2617 passed、同Session B02-owned 1410/1410；mapped56/remaining75，final仅75 coverage / 789 runtime binding / 15 exit，global passed=null、Phase B未完成。B03恢复ready，canonical Backend与其28项验收仍待交付。 本次case版本保留0.1/0.2封存规则与摘要，旧trace0.1–0.4语义不变；B03的case版本入口由已批准B00C05显式替代，其冻结正文不改写。前置2599项通过为B02交付时的历史基线，2617项为本次C05 fresh完整验证。

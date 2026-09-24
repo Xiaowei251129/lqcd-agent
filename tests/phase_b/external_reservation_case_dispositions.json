@@ -1,0 +1,215 @@
+{
+  "schema_version": "0.3",
+  "previous_case_version": "0.2",
+  "boundary_owner": "B03",
+  "dispositions": [
+    {
+      "old_case_id": "external.external_operation_reserved.after.committed_result_replay",
+      "disposition": "retained",
+      "new_case_ids": [
+        "external.external_operation_reserved.after.committed_result_replay"
+      ],
+      "authority_context": "durable_terminal_replay_after_legal_continuation",
+      "cut": "after-commit",
+      "contract_locator": "A05#durable-externaloperation-01",
+      "counterexample_nodeid": "tests/phase_b/test_b03_reservation_boundaries.py::test_first_external_reservation_durability[after-commit]",
+      "protection_case_id": "external.external_operation_reserved.after.committed_result_replay",
+      "runtime_owner": "B03"
+    },
+    {
+      "old_case_id": "external.external_operation_reserved.after.integrity_conflict",
+      "disposition": "retained",
+      "new_case_ids": [
+        "external.external_operation_reserved.after.integrity_conflict"
+      ],
+      "authority_context": "durable_producer_conflicting_authority_or_evidence",
+      "cut": "after-commit",
+      "contract_locator": "A05#durable-externaloperation-01",
+      "counterexample_nodeid": "tests/phase_b/test_b03_reservation_boundaries.py::test_first_external_reservation_durability[after-commit]",
+      "protection_case_id": "external.external_operation_reserved.after.integrity_conflict",
+      "runtime_owner": "B03"
+    },
+    {
+      "old_case_id": "external.external_operation_reserved.after.materializable_publication_prefix",
+      "disposition": "retained",
+      "new_case_ids": [
+        "external.external_operation_reserved.after.materializable_publication_prefix"
+      ],
+      "authority_context": "durable_precomputed_suffix_current_epoch",
+      "cut": "after-commit",
+      "contract_locator": "A05#durable-externaloperation-01",
+      "counterexample_nodeid": "tests/phase_b/test_b03_reservation_boundaries.py::test_first_external_reservation_durability[after-commit]",
+      "protection_case_id": "external.external_operation_reserved.after.materializable_publication_prefix",
+      "runtime_owner": "B03"
+    },
+    {
+      "old_case_id": "external.external_operation_reserved.after.non_materializable_domain_gap",
+      "disposition": "retained",
+      "new_case_ids": [
+        "external.external_operation_reserved.after.non_materializable_domain_gap"
+      ],
+      "authority_context": "durable_producer_without_safe_continuation",
+      "cut": "after-commit",
+      "contract_locator": "A05#durable-externaloperation-01",
+      "counterexample_nodeid": "tests/phase_b/test_b03_reservation_boundaries.py::test_first_external_reservation_durability[after-commit]",
+      "protection_case_id": "external.external_operation_reserved.after.non_materializable_domain_gap",
+      "runtime_owner": "B03"
+    },
+    {
+      "old_case_id": "external.external_operation_reserved.before.committed_result_replay",
+      "disposition": "replaced",
+      "new_case_ids": [
+        "external.external_operation_reserved.before.reservation_rolled_back"
+      ],
+      "authority_context": "initial_external_reservation_before_commit",
+      "cut": "before-commit",
+      "contract_locator": "A05#durable-externaloperation-01",
+      "counterexample_nodeid": "tests/phase_b/test_b03_reservation_boundaries.py::test_first_external_reservation_durability[before-commit]",
+      "protection_case_id": "external.external_operation_reserved.after.committed_result_replay",
+      "runtime_owner": "B03"
+    },
+    {
+      "old_case_id": "external.external_operation_reserved.before.integrity_conflict",
+      "disposition": "replaced",
+      "new_case_ids": [
+        "external.external_operation_reserved.before.reservation_rolled_back"
+      ],
+      "authority_context": "initial_external_reservation_before_commit",
+      "cut": "before-commit",
+      "contract_locator": "A05#durable-externaloperation-01",
+      "counterexample_nodeid": "tests/phase_b/test_b03_reservation_boundaries.py::test_first_external_reservation_durability[before-commit]",
+      "protection_case_id": "external.external_operation_reserved.after.integrity_conflict",
+      "runtime_owner": "B03"
+    },
+    {
+      "old_case_id": "external.external_operation_reserved.before.materializable_publication_prefix",
+      "disposition": "replaced",
+      "new_case_ids": [
+        "external.external_operation_reserved.before.reservation_rolled_back"
+      ],
+      "authority_context": "initial_external_reservation_before_commit",
+      "cut": "before-commit",
+      "contract_locator": "A05#durable-externaloperation-01",
+      "counterexample_nodeid": "tests/phase_b/test_b03_reservation_boundaries.py::test_first_external_reservation_durability[before-commit]",
+      "protection_case_id": "external.external_operation_reserved.after.materializable_publication_prefix",
+      "runtime_owner": "B03"
+    },
+    {
+      "old_case_id": "external.external_operation_reserved.before.non_materializable_domain_gap",
+      "disposition": "replaced",
+      "new_case_ids": [
+        "external.external_operation_reserved.before.reservation_rolled_back"
+      ],
+      "authority_context": "initial_external_reservation_before_commit",
+      "cut": "before-commit",
+      "contract_locator": "A05#durable-externaloperation-01",
+      "counterexample_nodeid": "tests/phase_b/test_b03_reservation_boundaries.py::test_first_external_reservation_durability[before-commit]",
+      "protection_case_id": "external.external_operation_reserved.after.non_materializable_domain_gap",
+      "runtime_owner": "B03"
+    },
+    {
+      "old_case_id": "external.stub.after.committed_result_replay",
+      "disposition": "replaced",
+      "new_case_ids": [
+        "external.stub.after.reservation_rolled_back"
+      ],
+      "authority_context": "initial_external_reservation_before_commit",
+      "cut": "after-insert-before-commit",
+      "contract_locator": "A05#durable-externaloperation-01",
+      "counterexample_nodeid": "tests/phase_b/test_b03_reservation_boundaries.py::test_first_external_reservation_durability[after-insert-before-commit]",
+      "protection_case_id": "external.external_operation_reserved.after.committed_result_replay",
+      "runtime_owner": "B03"
+    },
+    {
+      "old_case_id": "external.stub.after.integrity_conflict",
+      "disposition": "replaced",
+      "new_case_ids": [
+        "external.stub.after.reservation_rolled_back"
+      ],
+      "authority_context": "initial_external_reservation_before_commit",
+      "cut": "after-insert-before-commit",
+      "contract_locator": "A05#durable-externaloperation-01",
+      "counterexample_nodeid": "tests/phase_b/test_b03_reservation_boundaries.py::test_first_external_reservation_durability[after-insert-before-commit]",
+      "protection_case_id": "external.external_operation_reserved.after.integrity_conflict",
+      "runtime_owner": "B03"
+    },
+    {
+      "old_case_id": "external.stub.after.materializable_publication_prefix",
+      "disposition": "replaced",
+      "new_case_ids": [
+        "external.stub.after.reservation_rolled_back"
+      ],
+      "authority_context": "initial_external_reservation_before_commit",
+      "cut": "after-insert-before-commit",
+      "contract_locator": "A05#durable-externaloperation-01",
+      "counterexample_nodeid": "tests/phase_b/test_b03_reservation_boundaries.py::test_first_external_reservation_durability[after-insert-before-commit]",
+      "protection_case_id": "external.external_operation_reserved.after.materializable_publication_prefix",
+      "runtime_owner": "B03"
+    },
+    {
+      "old_case_id": "external.stub.after.non_materializable_domain_gap",
+      "disposition": "replaced",
+      "new_case_ids": [
+        "external.stub.after.reservation_rolled_back"
+      ],
+      "authority_context": "initial_external_reservation_before_commit",
+      "cut": "after-insert-before-commit",
+      "contract_locator": "A05#durable-externaloperation-01",
+      "counterexample_nodeid": "tests/phase_b/test_b03_reservation_boundaries.py::test_first_external_reservation_durability[after-insert-before-commit]",
+      "protection_case_id": "external.external_operation_reserved.after.non_materializable_domain_gap",
+      "runtime_owner": "B03"
+    },
+    {
+      "old_case_id": "external.stub.before.committed_result_replay",
+      "disposition": "replaced",
+      "new_case_ids": [
+        "external.stub.before.reservation_rolled_back"
+      ],
+      "authority_context": "initial_external_reservation_before_commit",
+      "cut": "before-insert",
+      "contract_locator": "A05#durable-externaloperation-01",
+      "counterexample_nodeid": "tests/phase_b/test_b03_reservation_boundaries.py::test_first_external_reservation_durability[before-insert]",
+      "protection_case_id": "external.external_operation_reserved.after.committed_result_replay",
+      "runtime_owner": "B03"
+    },
+    {
+      "old_case_id": "external.stub.before.integrity_conflict",
+      "disposition": "replaced",
+      "new_case_ids": [
+        "external.stub.before.reservation_rolled_back"
+      ],
+      "authority_context": "initial_external_reservation_before_commit",
+      "cut": "before-insert",
+      "contract_locator": "A05#durable-externaloperation-01",
+      "counterexample_nodeid": "tests/phase_b/test_b03_reservation_boundaries.py::test_first_external_reservation_durability[before-insert]",
+      "protection_case_id": "external.external_operation_reserved.after.integrity_conflict",
+      "runtime_owner": "B03"
+    },
+    {
+      "old_case_id": "external.stub.before.materializable_publication_prefix",
+      "disposition": "replaced",
+      "new_case_ids": [
+        "external.stub.before.reservation_rolled_back"
+      ],
+      "authority_context": "initial_external_reservation_before_commit",
+      "cut": "before-insert",
+      "contract_locator": "A05#durable-externaloperation-01",
+      "counterexample_nodeid": "tests/phase_b/test_b03_reservation_boundaries.py::test_first_external_reservation_durability[before-insert]",
+      "protection_case_id": "external.external_operation_reserved.after.materializable_publication_prefix",
+      "runtime_owner": "B03"
+    },
+    {
+      "old_case_id": "external.stub.before.non_materializable_domain_gap",
+      "disposition": "replaced",
+      "new_case_ids": [
+        "external.stub.before.reservation_rolled_back"
+      ],
+      "authority_context": "initial_external_reservation_before_commit",
+      "cut": "before-insert",
+      "contract_locator": "A05#durable-externaloperation-01",
+      "counterexample_nodeid": "tests/phase_b/test_b03_reservation_boundaries.py::test_first_external_reservation_durability[before-insert]",
+      "protection_case_id": "external.external_operation_reserved.after.non_materializable_domain_gap",
+      "runtime_owner": "B03"
+    }
+  ]
+}

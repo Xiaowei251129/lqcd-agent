@@ -191,9 +191,9 @@ git diff --check
 
 Evidence子目录与report文件必须不存在，并位于仓库外；不能复用旧目录。CLI自行生成token、冻结实际source/tests/scripts/configs/synthetic inputs/docs/manifests的path/type/mode/bytes摘要，启动禁用live opt-in的fresh pytest subprocess，最后复核输入未变化。不要在验收期间修改仓库。公开CLI没有test runner、旧evidence或任意shell命令注入选项。
 
-选择B00/B01/B02 construction时，owned/covered/passed分别exact为15/11/30；global covered=56、remaining=75、passed/passed_ids=null，两个完成标志false。Construction报告的runtime仍为not_run，不以单票construction代替1410个独立case证据；独立case0.2总数2208，剩余798个其他票据binding未完成，15项exit尚未接入。
+选择B00/B01/B02 construction时，owned/covered/passed分别exact为15/11/30；global covered=56、remaining=75、passed/passed_ids=null，两个完成标志false。Construction报告的runtime仍为not_run，不以单票construction代替1410个独立case证据；独立case0.3总数2199，剩余789个其他票据binding未完成，15项exit尚未接入。
 
-真实final先验证全部输入、独立清单、required node collection与适配器selection；当前预期非零，只有75项coverage_gap、798项runtime_evidence_gap、15项exit_evidence_gap。不能仅凭非零就通过负向验收；任何parser、collection、invalid evidence或internal error都须处理。当前preflight存在缺口，因此不会执行全阶段runtime/exit；报告仍将2208个case列为未在该次final执行，不能与单独B02-owned fresh通过的1410项混淆。
+真实final先验证全部输入、独立清单、required node collection与适配器selection；当前预期非零，只有75项coverage_gap、789项runtime_evidence_gap、15项exit_evidence_gap。不能仅凭非零就通过负向验收；任何parser、collection、invalid evidence或internal error都须处理。当前preflight存在缺口，因此不会执行全阶段runtime/exit；报告仍将2199个case列为未在该次final执行，不能与单独B02-owned fresh通过的1410项混淆。
 
 Final具备前置条件后重新执行两个stage的required scenarios，并分派Layer 0–5、cross-system fault/concurrency、Phase B/full/synthetic/legacy suites、compileall、full mock benchmark、CLI smoke和documentation/scope。实际适配器由B05接入`tests/phase_b/harness/exit_checks.py:production_adapters`，不得改变固定check IDs、schema、stage或完成逻辑。每层selection由matrix派生，cross-system由独立case binding派生，suite selection必须等于fresh全目录collection；B05不能用passing子集替代full suite。
 
@@ -443,7 +443,7 @@ python scripts/validate_phase_b_acceptance.py --mode construction --ticket B02 -
 python scripts/validate_phase_b_acceptance.py --mode final --evidence-dir "$B02_EVIDENCE_DIR/final" --report "$B02_EVIDENCE_DIR/final-report.json"
 ```
 
-最后一条当前应非零，必须检查错误集合恰为75/798/15，不能忽略额外错误。要复跑同一冻结输入下的完整pytest并核查B02-owned证据，可在仓库根执行下面的命令。运行期间保持输入不变；任一批失败或输入摘要变化即停止，不能拼接不同session的通过批次。此入口复用B00的证据validator，不改变全局final门槛。
+最后一条当前应非零，必须检查错误集合恰为75/789/15，不能忽略额外错误。要复跑同一冻结输入下的完整pytest并核查B02-owned证据，可在仓库根执行下面的命令。运行期间保持输入不变；任一批失败或输入摘要变化即停止，不能拼接不同session的通过批次。此入口复用B00的证据validator，不改变全局final门槛。
 
 ```bash
 python - <<'PY'
@@ -492,3 +492,7 @@ PY
 ```
 
 此B02-owned report为局部验证证据，不是`PhaseBAcceptanceReport`成功报告。Global final仍须在后续全部映射、runtime bindings和exit adapters齐备时重新执行；不能导入此session复用为另一次final的证据。日常仅复跑受影响focused tests；完整验证已经通过后，只有新代码、失败或未解决疑点才需要重复。
+
+## 2026-09-24 B00C05 case0.3
+
+B00C05已完成并解除B03首次ExternalOperation reservation分类阻塞：真实初始producer与case0.3已验证，独立集合2199（B02 1410、B03 645、B04 144），324 boundaries和28 post-claim不变。Fresh B00/B01/B02为15/11/30，完整2617 passed、同Session B02-owned 1410/1410；mapped56/remaining75，final仅75 coverage / 789 runtime binding / 15 exit，global passed=null、Phase B未完成。B03恢复ready，canonical Backend与其28项验收仍待交付。 本次case版本保留0.1/0.2封存规则与摘要，旧trace0.1–0.4语义不变；B03的case版本入口由已批准B00C05显式替代，其冻结正文不改写。前置2599项通过为B02交付时的历史基线，2617项为本次C05 fresh完整验证。

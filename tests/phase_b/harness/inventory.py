@@ -78,16 +78,19 @@ SUPPLEMENTAL = {
 }
 
 
-CASE_VERSION = "0.2"
+CASE_VERSION = "0.3"
+EXTERNAL_INITIAL = {"external.stub", "external.external_operation_reserved"}
 
 
 def expected_inventory(protocol, *, version=CASE_VERSION):
     """Return immutable expectations independently of matrix or registry input."""
-    require(version in ("0.1", CASE_VERSION), "inventory", "case_version")
+    require(version in ("0.1", "0.2", CASE_VERSION), "inventory", "case_version")
     control = protocol["state_machines"]["control_operation"]
     entries = []
 
     def add(identifier, owner, locator, effect, precondition, outcomes):
+        if version == "0.3" and identifier in EXTERNAL_INITIAL:
+            outcomes = ["reservation_rolled_back"] if identifier == "external.stub" else [*outcomes, "reservation_rolled_back"]
         entries.append({
             "failpoint_id": identifier, "source_locator": locator, "boundary_owner": owner,
             "implementation_ticket_id": owner, "effect_class": effect, "precondition": precondition,
@@ -108,9 +111,9 @@ def expected_inventory(protocol, *, version=CASE_VERSION):
                 outcomes = list(OUTCOMES)
                 if contract["continuation_policy"] != "materialize_if_precomputed":
                     outcomes.remove("materializable_publication_prefix")
-                if version == CASE_VERSION and phase == "operation_reserved":
+                if version != "0.1" and phase == "operation_reserved":
                     outcomes = ["reservation_rolled_back"]
-                elif version == CASE_VERSION and phase not in can_commit:
+                elif version != "0.1" and phase not in can_commit:
                     outcomes = ["terminal_tombstone_replay" if outcome == "committed_result_replay" else outcome for outcome in outcomes]
                 add(f"control.{operation['operation_type']}.{variant['operation_variant']}.{phase}",
                     "B02", "A07#fault-injection-and-crash-outcomes",
@@ -129,7 +132,7 @@ def expected_inventory(protocol, *, version=CASE_VERSION):
                 outcomes = list(OUTCOMES)
                 if fp in REJECTION_BOUNDARIES or group == "ingress":
                     outcomes = ["integrity_conflict"]
-                elif version == CASE_VERSION and fp == "child.source_revision_cas":
+                elif version != "0.1" and fp == "child.source_revision_cas":
                     outcomes = ["reservation_rolled_back"]
                 elif fp in UNCERTAIN_EFFECT_BOUNDARIES:
                     outcomes.remove("materializable_publication_prefix")
@@ -158,10 +161,16 @@ def case_specs(protocol, *, version=CASE_VERSION):
         else:
             # Each permitted recovery class is tested with its own deterministic authority/evidence context.
             for side in ("before", "after"):
-                for outcome in entry["allowed_exact_outcomes"]:
+                outcomes = entry["allowed_exact_outcomes"]
+                if version == "0.3" and fp in EXTERNAL_INITIAL:
+                    outcomes = ["reservation_rolled_back"] if fp == "external.stub" or side == "before" else sorted(OUTCOMES)
+                for outcome in outcomes:
                     case_id = f"{fp}.{side}.{outcome}"
                     invariants = [f"publication_side:{side}", "frozen_outcome_classification"]
-                    if outcome == "reservation_rolled_back":
+                    if outcome == "reservation_rolled_back" and fp in EXTERNAL_INITIAL:
+                        invariants.extend(["authority_context:initial_external_reservation_before_commit", "no_durable_producer",
+                                           "parent_run_and_target_preserved", "no_external_owner", "no_domain_mutation", "fresh_request_readmission"])
+                    elif outcome == "reservation_rolled_back":
                         invariants.extend(["authority_context:initial_reservation_before_commit", "no_durable_operation",
                                            "no_owner_or_capability", "no_domain_mutation", "fresh_request_readmission"])
                     if outcome == "terminal_tombstone_replay":
@@ -201,7 +210,7 @@ def expected_dispositions(protocol):
     """Account for every old B02 obligation without claiming it has runtime evidence."""
     owned = {row["failpoint_id"] for row in expected_inventory(protocol, version="0.1") if row["boundary_owner"] == "B02"}
     rows = []
-    current = case_specs(protocol)
+    current = case_specs(protocol, version="0.2")
     for case_id, spec in case_specs(protocol, version="0.1").items():
         fp = spec["failpoint_id"]
         if fp not in owned:
@@ -219,7 +228,32 @@ def expected_dispositions(protocol):
                      "counterexample_nodeid": "tests/phase_b/test_b02_reservation_boundaries.py::test_fork_source_cas_process_exit_is_still_before_reservation_commit[" + side + "]" if fp == "child.source_revision_cas" else
                          "tests/phase_b/test_b02_reservation_boundaries.py::test_reservation_process_exit_rolls_back_without_an_operation_or_run[" + side + "]" if rollback else
                          "tests/phase_b/test_reservation_case_semantics.py::test_unavailable_branch_cannot_replay_a_committed_result[" + fp.split(".")[1] + "." + fp.split(".")[2] + "]" if tombstone else None})
-    return {"schema_version": CASE_VERSION, "previous_case_version": "0.1", "boundary_owner": "B02", "dispositions": rows}
+    return {"schema_version": "0.2", "previous_case_version": "0.1", "boundary_owner": "B02", "dispositions": rows}
+
+
+def expected_external_dispositions(protocol):
+    """Freeze the approved initial-window replacement and durable protection contexts."""
+    rows = []
+    cuts = {("external.stub", "before"): "before-insert", ("external.stub", "after"): "after-insert-before-commit",
+            ("external.external_operation_reserved", "before"): "before-commit"}
+    contexts = {"committed_result_replay": "durable_terminal_replay_after_legal_continuation",
+                "materializable_publication_prefix": "durable_precomputed_suffix_current_epoch",
+                "non_materializable_domain_gap": "durable_producer_without_safe_continuation",
+                "integrity_conflict": "durable_producer_conflicting_authority_or_evidence"}
+    for cid, spec in case_specs(protocol, version="0.2").items():
+        fp = spec["failpoint_id"]
+        if fp not in EXTERNAL_INITIAL:
+            continue
+        side = cid.removeprefix(fp + ".").split(".")[0]
+        cut = cuts.get((fp, side))
+        rows.append({"old_case_id": cid, "disposition": "replaced" if cut else "retained",
+                     "new_case_ids": [fp + "." + side + ".reservation_rolled_back"] if cut else [cid],
+                     "authority_context": "initial_external_reservation_before_commit" if cut else contexts[spec["outcome"]],
+                     "cut": cut or "after-commit", "contract_locator": "A05#durable-externaloperation-01",
+                     "counterexample_nodeid": "tests/phase_b/test_b03_reservation_boundaries.py::test_first_external_reservation_durability[" + (cut or "after-commit") + "]",
+                     "protection_case_id": "external.external_operation_reserved.after." + spec["outcome"],
+                     "runtime_owner": "B03"})
+    return {"schema_version": "0.3", "previous_case_version": "0.2", "boundary_owner": "B03", "dispositions": rows}
 
 
 def inventory_projection(registry):
@@ -246,6 +280,8 @@ def validate_inventory(registry, obligations, protocol, root, scenarios):
     from .strict_json import read
     dispositions = read(path_in(root, "tests/phase_b/reservation_case_dispositions.json"))
     require(dispositions == expected_dispositions(protocol), "dispositions", "complete_old_to_new")
+    external_dispositions = read(path_in(root, "tests/phase_b/external_reservation_case_dispositions.json"))
+    require(external_dispositions == expected_external_dispositions(protocol), "external_dispositions", "complete_old_to_new")
     specs = case_specs(protocol)
     scenario_index = {s["scenario_id"]: s for s in scenarios}
     for entry in registry["entries"]:

@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b00_external_reservation_001.json",
+  "entrypoint": "tests/phase_b/test_external_reservation_case_semantics.py:test_external_initial_case_dispositions",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "case_0_2_seals_preserved",
+    "durable_protections_retained",
+    "external_initial_dispositions"
+  ]
+}

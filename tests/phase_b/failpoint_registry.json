@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.2",
+  "schema_version": "0.3",
   "control_protocol_sha256": "7447087f73caae2668a8e71e12fc40e426ebefee5864e3499a3f9cbd1a9322b8",
   "requirement_catalog_sha256": "ed39a0b35feb3372e7647436ee588699c16b7c05555a03c791f69760626a9726",
   "entries": [
@@ -12641,7 +12641,8 @@
         "committed_result_replay",
         "integrity_conflict",
         "materializable_publication_prefix",
-        "non_materializable_domain_gap"
+        "non_materializable_domain_gap",
+        "reservation_rolled_back"
       ],
       "contract_refs": [
         "A07-META-006",
@@ -12893,10 +12894,7 @@
       "effect_class": "verification",
       "precondition": "external.stub:frozen_source_and_authority_verified",
       "allowed_exact_outcomes": [
-        "committed_result_replay",
-        "integrity_conflict",
-        "materializable_publication_prefix",
-        "non_materializable_domain_gap"
+        "reservation_rolled_back"
       ],
       "contract_refs": [
         "A07-META-006",

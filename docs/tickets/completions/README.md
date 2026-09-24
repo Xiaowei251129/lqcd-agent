@@ -41,3 +41,9 @@
 2026-09-21 C04集成补验完成：完整pytest1158 passed，fresh B00/B01 15/15、11/11；C04现completed，B02继续in_progress。现行独立case2208/B02 1410，covered26/remaining105，尚无B02 slice；此前blocked及补验in_progress为历史过程。详见[B00C04完成记录](B00C04_COMPLETION.md)。
 
 2026-09-21：[B02完成记录](B02_COMPLETION.md)已追加整票验收闭合：construction30/30、runtime1410/1410、full2599 passed，累计56/remaining75；B03–B05及全阶段final仍未完成。
+
+2026-09-24：[B03执行记录](B03_COMPLETION.md)：ready已在`b78c15a`提交；首次ExternalOperation事务probe通过4项，发现冻结case分类缺口后blocked，待审B00C05；未交付canonical B03。
+
+- [B00C05执行记录](B00C05_COMPLETION.md)：首次ExternalOperation事务与case0.3修正，completed；2617项全量及B02-owned 1410项通过，原B03阻塞解除。
+
+2026-09-24续：[B03执行记录](B03_COMPLETION.md)已追加B00C05完成与版本衔接证据；原首次reservation阻塞解除，B03恢复ready，整票尚未完成。

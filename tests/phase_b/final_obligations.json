@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.2",
+  "schema_version": "0.3",
   "control_protocol_sha256": "7447087f73caae2668a8e71e12fc40e426ebefee5864e3499a3f9cbd1a9322b8",
   "requirement_catalog_sha256": "ed39a0b35feb3372e7647436ee588699c16b7c05555a03c791f69760626a9726",
   "runtime_obligations": [
@@ -4776,10 +4776,7 @@
         "external.external_operation_reserved.after.integrity_conflict",
         "external.external_operation_reserved.after.materializable_publication_prefix",
         "external.external_operation_reserved.after.non_materializable_domain_gap",
-        "external.external_operation_reserved.before.committed_result_replay",
-        "external.external_operation_reserved.before.integrity_conflict",
-        "external.external_operation_reserved.before.materializable_publication_prefix",
-        "external.external_operation_reserved.before.non_materializable_domain_gap"
+        "external.external_operation_reserved.before.reservation_rolled_back"
       ],
       "failpoint_ids": [
         "external.external_operation_reserved"
@@ -5035,14 +5032,8 @@
       ],
       "source_locator": "A07#fault-injection-and-crash-outcomes",
       "case_ids": [
-        "external.stub.after.committed_result_replay",
-        "external.stub.after.integrity_conflict",
-        "external.stub.after.materializable_publication_prefix",
-        "external.stub.after.non_materializable_domain_gap",
-        "external.stub.before.committed_result_replay",
-        "external.stub.before.integrity_conflict",
-        "external.stub.before.materializable_publication_prefix",
-        "external.stub.before.non_materializable_domain_gap"
+        "external.stub.after.reservation_rolled_back",
+        "external.stub.before.reservation_rolled_back"
       ],
       "failpoint_ids": [
         "external.stub"

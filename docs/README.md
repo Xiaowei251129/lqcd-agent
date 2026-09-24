@@ -37,7 +37,7 @@ Ready ticket 不能静默覆盖 `AGENTS.md`、安全策略或当前 public contr
 
 ## 第二阶段方向与 Tickets
 
-当前B00–B02与已批准corrective均完成，B03–B05仍draft。2026-09-22的[完成核验与后续草案审查](tickets/corrections/B00_B05_READINESS_REVIEW.md)记录了交付证据、后续票据矛盾修订及B03执行前的ready门槛；Phase B整体尚未完成。
+当前B00–B02及B00C01–B00C05、B02C01已完成。B03在`b78c15a`冻结后遇到的首次reservation分类阻塞已由[B00C05](tickets/phase-b-graph-harness/B00C05_EXTERNAL_RESERVATION_FAULT_CASE_SEMANTICS.md)关闭，现恢复ready；B04/B05仍draft。Phase B整体未完成，见[B03执行记录](tickets/completions/B03_COMPLETION.md)。
 
 冻结机读合同为[Control Protocol 0.4](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)及[Phase B需求目录](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)；状态更新不得移除这两项权威引用。
 
@@ -49,7 +49,7 @@ Ready ticket 不能静默覆盖 `AGENTS.md`、安全策略或当前 public contr
 
 Phase Overview 不是执行 prompt。只有经过用户确认并标记为 `status: ready` 的具体 ticket 才能执行；`ready`后ticket正文冻结，执行结果和后续纠偏不得回写原计划。
 
-Phase A的A01–A07、A02C01及A03C01现均为`completed`。B00/B01/B02、B00C01–B00C04及B02C01已完成；B03–B05仍为`draft`。B00/B01/B02 construction分别为 **15/15、11/11、30/30**，累计映射 **56/131、remaining75**。B02的 **205个boundary、1410个独立case** 全部具有同一冻结输入、同一fresh session的通过证据；完整suite **2599 passed**。全局final仍仅报告 **75 coverage / 798 runtime / 15 exit** 缺口，`requirements.passed=null`、`requirements_zero_gap=false`、`phase_b_complete=false`。执行事实见[B02完成记录](tickets/completions/B02_COMPLETION.md)及[Phase B Overview](tickets/phase-b-graph-harness/OVERVIEW.md)。B02交付独立0.4 durable control入口，默认产品runtime仍为schema `0.2`；B03 Backend/Code Bundle、B04产品图和B05全阶段验收仍由各自票据交付。以下日期条目保留当时的进展和阻塞事实，以本段和完成记录最后条目为当前状态。
+Phase A的A01–A07、A02C01及A03C01现均为`completed`。B00/B01/B02、B00C01–B00C04及B02C01已完成；B03为`ready`，B00C05为`completed`，B04/B05仍为`draft`。B00/B01/B02 construction分别为 **15/15、11/11、30/30**，累计映射 **56/131、remaining75**。B02的 **205个boundary、1410个独立case** 全部具有同一冻结输入、同一fresh session的通过证据；完整suite **2617 passed**。全局final仍仅报告 **75 coverage / 789 runtime / 15 exit** 缺口，`requirements.passed=null`、`requirements_zero_gap=false`、`phase_b_complete=false`。执行事实见[B02完成记录](tickets/completions/B02_COMPLETION.md)及[Phase B Overview](tickets/phase-b-graph-harness/OVERVIEW.md)。B02交付独立0.4 durable control入口，默认产品runtime仍为schema `0.2`；B03 Backend/Code Bundle、B04产品图和B05全阶段验收仍由各自票据交付。以下日期条目保留当时的进展和阻塞事实，以本段和完成记录最后条目为当前状态。
 
 2026-09-16更新：[B00C01](tickets/phase-b-graph-harness/B00C01_SOURCE_BOUND_SEMANTIC_TRACES.md)与[B00C02](tickets/phase-b-graph-harness/B00C02_SEMANTIC_TRACE_EXIT_BINDING.md)均已completed。来源绑定的trace0.2及完整exit摘要接线通过验证，旧trace0.1不变；见[B00C02完成记录](tickets/completions/B00C02_COMPLETION.md)。B02前置阻塞解除后已恢复执行，剩余control runtime和30项验收仍须按原冻结票完成。
 
@@ -96,3 +96,7 @@ B00C04已按用户明确批准扩充并进入in_progress：独立case语义0.2�
 2026-09-21 C04集成补验完成：完整pytest1158 passed，fresh B00/B01 15/15、11/11；C04现completed，B02继续in_progress。现行独立case2208/B02 1410，covered26/remaining105，尚无B02 slice；此前blocked及补验in_progress为历史过程。详见[B00C04完成记录](tickets/completions/B00C04_COMPLETION.md)。
 
 2026-09-21 B02验收接线：C04已completed后，新增B02完整30项slice、5条完整来源轨迹及1410个独立runtime case绑定。初始reservation的两项C04进程反例作为并列必需final证据保留，没有移除旧正负检查；历史trace回归只隔离其B00/B01前置slice，完整matrix另行验证。现行映射56/131、remaining75；B02仍in_progress，正执行fresh验收，不能将接线或离线通过当作完成。全局final规则未改变，其他票据798个runtime binding及15项exit仍未交付。
+
+2026-09-24 B00C05续执行：用户批准补齐审阅建议并执行，ready冻结于`52c508b`；真实初始producer入口与case0.3修正已实现，70项定向检查通过，完整集成验证尚未完成。工作树独立集合为2199/B03 645，前置B02 1410、B04 144及28 post-claim保持；B03仍blocked，不能把此项修正计为canonical Backend完成。此前2208/654/798计数为case0.2冻结基线。
+
+2026-09-24 B00C05完成：B00C05已完成并解除B03首次ExternalOperation reservation分类阻塞：真实初始producer与case0.3已验证，独立集合2199（B02 1410、B03 645、B04 144），324 boundaries和28 post-claim不变。Fresh B00/B01/B02为15/11/30，完整2617 passed、同Session B02-owned 1410/1410；mapped56/remaining75，final仅75 coverage / 789 runtime binding / 15 exit，global passed=null、Phase B未完成。B03恢复ready，canonical Backend与其28项验收仍待交付。

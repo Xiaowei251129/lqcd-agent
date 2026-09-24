@@ -314,13 +314,17 @@ class Coordinator:
             competing.close()
 
     @contextmanager
-    def transaction(self):
+    def transaction(self, *, commit_boundary=None):
         require(not self.connection.in_transaction, "Nested coordinator transaction")
         self.connection.execute("BEGIN IMMEDIATE")
         try:
             yield self.connection
             boundary(self.observer, "coordinator.database_commit", "before")
+            if commit_boundary is not None:
+                boundary(self.observer, commit_boundary, "before")
             self.connection.commit()
+            if commit_boundary is not None:
+                boundary(self.observer, commit_boundary, "after")
             boundary(self.observer, "coordinator.database_commit", "after")
         except BaseException:
             if self.connection.in_transaction:

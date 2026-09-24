@@ -80,6 +80,33 @@
   ],
   "scenarios": [
     {
+      "scenario_id": "B00-EXTERNAL-RESERVATION-001",
+      "contract_refs": [
+        "A07-META-006",
+        "A07-META-015"
+      ],
+      "layer": "schema",
+      "fixture_id": "tests/phase_b/fixtures/b00_external_reservation_001.json",
+      "entrypoint": "tests/phase_b/test_external_reservation_case_semantics.py:test_external_initial_case_dispositions",
+      "expected_trace_fixture": null,
+      "expected_result": {
+        "kind": "boolean",
+        "value": true
+      },
+      "required_invariants": [
+        "case_0_2_seals_preserved",
+        "durable_protections_retained",
+        "external_initial_dispositions"
+      ],
+      "pytest_nodeids": [
+        "tests/phase_b/test_external_reservation_case_semantics.py::test_external_initial_case_dispositions"
+      ],
+      "required": true,
+      "evidence_class": "required_control_acceptance",
+      "implementation_ticket_id": "B00",
+      "validation_stage": "construction"
+    },
+    {
       "scenario_id": "B00-EXTERNAL-TRACE-001",
       "contract_refs": [
         "A07-META-005"

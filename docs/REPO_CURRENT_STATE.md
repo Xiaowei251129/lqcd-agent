@@ -2,12 +2,12 @@
 
 ## 状态摘要
 
-- **更新时间**：2026-09-22
+- **更新时间**：2026-09-24
 - **当前分支**：`codex/phase-11-agent-harness-upgrade`（已快进包含`xgao`的Phase A设计冻结提交`d0f108a`）
-- **当前阶段**：Phase A、B00/B01/B02、B00C01–B00C04及B02C01已completed；B03–B05仍draft。
-- **活动 ticket**：B00C04/B02已完成；B02 construction30/30、runtime1410/1410，coverage56/remaining75。B03–B05草案已完成本轮可执行性审查与修订；下一张B03仍须独立审定为ready。
+- **当前阶段**：Phase A、B00/B01/B02、B00C01–B00C04及B02C01已completed；B03 ready、B00C05 completed，B04/B05仍draft。
+- **活动 ticket**：B00C05已完成，B03恢复ready，接续`b78c15a`冻结票及case0.3窄修正；当前仍为coverage56/remaining75。
 - **稳定基线**：[`v0.2-demo`](milestones/V0_2_DEMO_BASELINE.md)
-- **本轮范围**：复核C04/B02交付与2599项全量证据的输入一致性，新增114项定向回归；修订B03–B05草案的owner、失败分类、预留责任、golden同步及分批验收接线，见[审查记录](tickets/corrections/B00_B05_READINESS_REVIEW.md)。用户已授权验证通过后commit/push当前进度，未授权执行B03。
+- **本轮范围**：B00C05已完成并解除B03首次ExternalOperation reservation分类阻塞：真实初始producer与case0.3已验证，独立集合2199（B02 1410、B03 645、B04 144），324 boundaries和28 post-claim不变。Fresh B00/B01/B02为15/11/30，完整2617 passed、同Session B02-owned 1410/1410；mapped56/remaining75，final仅75 coverage / 789 runtime binding / 15 exit，global passed=null、Phase B未完成。B03恢复ready，canonical Backend与其28项验收仍待交付。 见[B00C05完成记录](tickets/completions/B00C05_COMPLETION.md)。
 
 ## 当前稳定实现
 
@@ -206,3 +206,7 @@ B02与C04现均in_progress：C04独立语义/来源/进程修正已通过定向�
 2026-09-21 C04集成补验完成：完整pytest1158 passed，fresh B00/B01 15/15、11/11；C04现completed，B02继续in_progress。现行独立case2208/B02 1410，covered26/remaining105，尚无B02 slice；此前blocked及补验in_progress为历史过程。详见[B00C04完成记录](tickets/completions/B00C04_COMPLETION.md)。
 
 2026-09-21 B02验收接线：C04已completed后，新增B02完整30项slice、5条完整来源轨迹及1410个独立runtime case绑定。初始reservation的两项C04进程反例作为并列必需final证据保留，没有移除旧正负检查；历史trace回归只隔离其B00/B01前置slice，完整matrix另行验证。现行映射56/131、remaining75；B02仍in_progress，正执行fresh验收，不能将接线或离线通过当作完成。全局final规则未改变，其他票据798个runtime binding及15项exit仍未交付。
+
+2026-09-24 B00C05续执行：用户批准补齐审阅建议并执行，ready冻结于`52c508b`；真实初始producer入口与case0.3修正已实现，70项定向检查通过，完整集成验证尚未完成。工作树独立集合为2199/B03 645，前置B02 1410、B04 144及28 post-claim保持；B03仍blocked，不能把此项修正计为canonical Backend完成。此前2208/654/798计数为case0.2冻结基线。
+
+2026-09-24 B00C05完成：B00C05已完成并解除B03首次ExternalOperation reservation分类阻塞：真实初始producer与case0.3已验证，独立集合2199（B02 1410、B03 645、B04 144），324 boundaries和28 post-claim不变。Fresh B00/B01/B02为15/11/30，完整2617 passed、同Session B02-owned 1410/1410；mapped56/remaining75，final仅75 coverage / 789 runtime binding / 15 exit，global passed=null、Phase B未完成。B03恢复ready，canonical Backend与其28项验收仍待交付。

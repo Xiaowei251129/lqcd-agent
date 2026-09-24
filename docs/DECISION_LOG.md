@@ -1288,3 +1288,9 @@ B00C03 completed, and resumed B02 fixed lost-plan terminalization and granted re
 B02运行修复保持原public schema/phase graph：错误必须携带实际失败边界operation、worker、epoch和revision，失败handler不得新读epoch代旧调用取得权限。已取得Run owner的失败原子关闭为已有failed/unavailable类别；外部normal final不可变，Human后续终态向原父resume传递。Query的Run closure投影与原operation持久化结果是不同读取对象，测试分别校验其真实来源。
 
 B02 construction30/30及1410/1410独立case、完整2599测试通过后才完成原票。Expected traces在验收前审查固定，实际运行禁止重写；全部批次共用一个冻结输入/session并验证无遗漏或重复。全局final继续保留后续75/798/15缺口，不放宽门槛；B03–B05仍须分别审定。执行结果见[B02完成记录](tickets/completions/B02_COMPLETION.md)。
+
+## 2026-09-24 — B00C05初始ExternalOperation故障上下文与B03版本衔接
+
+用户批准按审阅建议补齐并实施B00C05，ready正文在`52c508b`冻结。Case0.3明确限定三个pre-COMMIT side为合法新producer首次事务；无durable producer时只证明完整回滚与重新准入，不伪造原operation恢复或Run failure。原16项逐项记录12 replaced/4 retained；提交后的四类durable保护及全部后继边界保留，完整canonical runtime证据仍由B03负责。由独立规则得到2199/B03 645，计数不作为反向裁剪目标。
+
+Host初始reserve/lookup复用现有external_operations和coordinator，不引入第二authority、表或public control API。真实进程与双client验证通过；完整2617项及同Session B02-owned 1410项通过后才关闭本修正。Case0.1/0.2、trace0.1–0.4、protocol/catalog、requirements/owners和exit门槛保持。Case0.3显式窄范围替代B03的旧case0.2入口，原B03正文仍冻结；B03的canonical Backend、28项construction与645项runtime不因本修正而宣称完成。
