@@ -55,7 +55,7 @@ A07执行时只冻结以下拆分；其后起草的六张票见下方Draft Ticke
 - transition、identity、invalidation、resume、budget 和 harness acceptance 已进入核心文档；
 - 实现者不需要自行补充控制层设计决定。
 
-这些阶段级进入条件已由A07 completion满足。B00在`f654f44`、B01在`537d10c`、B02在`83681a7`冻结后执行；三票均已completed。B02历史来源、reservation语义和trace/进程证据前置问题分别由B02C01与B00C01–B00C04关闭；本轮原B02运行修复与完整验收通过，见[B02完成记录](../completions/B02_COMPLETION.md)。B03已在`b78c15a`冻结；B00C05关闭首次reservation分类阻塞；B00C06已关闭A05来源轨迹前置，接续B03又确认状态投影/golden授权边界，因此B03仍blocked，待窄范围补充审阅。B04/B05仍draft。
+这些阶段级进入条件已由A07 completion满足。B00在`f654f44`、B01在`537d10c`、B02在`83681a7`冻结后执行；三票均已completed。B02历史来源、reservation语义和trace/进程证据前置问题分别由B02C01与B00C01–B00C04关闭；本轮原B02运行修复与完整验收通过，见[B02完成记录](../completions/B02_COMPLETION.md)。B03已在`b78c15a`冻结；B00C05关闭首次reservation分类阻塞；B00C06–B00C08已完成来源、状态与fixture交接。B03基础实施后确认活动时间账本表达缺口，现blocked，待审[B00C09](B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md)。B04/B05仍draft。
 
 ## Implementation Tickets
 
@@ -129,3 +129,7 @@ B00C04已按用户批准扩充并in_progress，统一完成case0.2、trace0.4与
 2026-09-24 B03接续：B00C07已完成治理交接，但新注册member反例确认其B02 fixture替换与禁止trace0.5的限制冲突，B03再次blocked，待审B00C08。未修改production或golden；15项定向反例/回归通过。当前mapped56/remaining75，预算事务与canonical B03仍未实现。 见[B00C08待审票](B00C08_B02_CANONICAL_EVIDENCE_TRACE_HANDOFF.md)。
 
 2026-09-24：B00C08在13f3b74冻结并完成治理交接；B03恢复ready。Normal/timeout完整来源、source trace0.5、独立Analysis success前置及其golden审计范围已批准，尚待B03实现。预算事务与canonical交付未完成，mapped56/remaining75、Phase B未完成。
+
+2026-09-24 B03续执行：B00C08治理提交92603f6后，B03进入in_progress。原resume verification资源事务、Task/Manifest closed validators及prestart aggregate/core publication已实现基础并进行回归；完整canonical Backend/Bundle/Analysis与28/645验收未完成，mapped56/remaining75保持。见[B03执行记录](../completions/B03_COMPLETION.md)。
+
+2026-09-24：B03 workspace/prestart基础已验证；public Pause和独立reader反例确认Host setup Run-only计费缺失。B03现blocked，待审[B00C09活动时间合同设计](B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md)。70项基础/边界测试与14项workspace测试通过，不计28/645 acceptance，mapped56/remaining75保持；C08治理完成但canonical交接尚待runtime实施。

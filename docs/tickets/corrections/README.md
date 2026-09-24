@@ -44,3 +44,5 @@
 2026-09-21：[B02 maintenance](B02_MAINTENANCE.md)已追加本轮lease、Pause/external/Human失败收尾、close重试和只读Resume准入修复的验证结果；C04验收前置与原B02运行范围分别闭合。
 
 - 2026-09-22：[B00–B02完成核验与B03–B05草案审查](B00_B05_READINESS_REVIEW.md)：复核前置交付与验收输入一致性；修订后续draft的owner/失败分类、B03预留责任、trace基线及分批验收范围，保持未批准执行。
+
+- 2026-09-24：[B03 resource transaction maintenance](B03_MAINTENANCE.md)：原 resume 的独立 verification reservation/settlement、事务外 consumer、双重 fence 与失败 snapshot 接线；B03 仍执行中。

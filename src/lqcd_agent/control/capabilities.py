@@ -69,6 +69,9 @@ class ArtifactEffectPort:
     def write_member(self, relative, content):
         from pathlib import Path
         from .coordinator import exclusive_directory
+        if self.db is None:
+            with self.leases.coordinator.transaction() as db:
+                return ArtifactEffectPort(self.leases, db, self.capability_id, self.worker, self.epoch).write_member(relative, content)
         require(type(content) is bytes, "Artifact output must be bytes")
         path = Path(relative)
         require(not path.is_absolute() and path.parts and all(item not in (".", "..") for item in path.parts), "Invalid artifact member path")
@@ -86,6 +89,11 @@ class ArtifactEffectPort:
         publish_exact(destination, content, observer=self.leases.coordinator.observer, name="invocation.artifact_member")
         self.leases._fence(self.db, self.capability_id, self.worker, self.epoch)
         return destination
+
+    def run_verification(self, *, spec_id, input_digest, config_digest, timeout_seconds, effect):
+        from lqcd_agent.code_agent.verification_resources import run_verification
+        return run_verification(self, spec_id=spec_id, input_digest=input_digest, config_digest=config_digest,
+                                timeout_seconds=timeout_seconds, effect=effect)
 
 
 def prepare_capability(coordinator, db, operation, run_root, manifest, projection, *, advanced=False):
@@ -319,6 +327,11 @@ class InvocationLeases:
             value.update(state="leased_not_started", worker_id=worker_id, invocation_epoch=expected_epoch + 1,
                          expires_at=min(now.monotonic_seconds + lease_seconds, deadline), deadline=deadline,
                          updated_at=asdict(now))
+            if "external_consumption" in authorization:
+                producer = self.coordinator.get(authorization["producer_operation_id"], db=db)
+                self.coordinator.fence(db, producer["operation_id"], producer["worker_owner_id"],
+                                       producer["lease_epoch"], authorization["activation_result_revision"])
+                value["consumer_resume_epoch"] = producer["lease_epoch"]
             self._save(db, capability_id, revision, value)
             return value
 
@@ -334,6 +347,10 @@ class InvocationLeases:
                 value["deadline"] is not None and now.monotonic_seconds < value["deadline"],
                 "Stale or expired invocation lease")
         require(value["state"] in ("leased_not_started", "started"), "Invocation cannot execute")
+        if "external_consumption" in value["authorization"]:
+            producer = self.coordinator.get(value["authorization"]["producer_operation_id"], db=db)
+            self.coordinator.fence(db, producer["operation_id"], producer["worker_owner_id"],
+                                   value["consumer_resume_epoch"], value["authorization"]["activation_result_revision"])
         return revision, value, root, now
 
     def start_intent(self, capability_id, worker_id, epoch):
@@ -407,6 +424,8 @@ class InvocationLeases:
         intent = value["started_intent"]
         require(value["state"] == "started" and intent is not None and intent["published"],
                 "Effect precedes durable Attempt started")
+        from lqcd_agent.code_agent.verification_resources import owned_prefix
+        intent = owned_prefix(value)
         require(read_regular(root / "execution_history.jsonl") == intent["content"].encode(), "Foreign invocation head progression")
         require(read_regular(root / "artifact_index.json") == intent["index"].encode(), "Foreign artifact projection")
         authorization = value["authorization"]
@@ -437,18 +456,23 @@ class InvocationLeases:
         target_error = None
         with self.coordinator.transaction() as db:
             self._effect_authority(db, capability_id, worker_id, epoch)
+            _, current, _, _ = self._fence(db, capability_id, worker_id, epoch)
+            external = current["authorization"].get("external_consumption")
+        if external is not None:
+            require(hasattr(target_port, "consume_external"), "Code consumer requires a trusted materialization-only port")
+            outcome = target_port.consume_external(dict(current["authorization"]["identity"]),
+                loads(canonical_bytes(external)), ArtifactEffectPort(self, None, capability_id, worker_id, epoch))
+        with self.coordinator.transaction() as db:
+            self._effect_authority(db, capability_id, worker_id, epoch)
             revision, value, root, _ = self._fence(db, capability_id, worker_id, epoch)
             authorization = value["authorization"]
             try:
-                if "external_consumption" in authorization:
-                    require(hasattr(target_port, "consume_external"), "Code consumer requires a trusted materialization-only port")
-                    outcome = target_port.consume_external(dict(authorization["identity"]),
-                        loads(canonical_bytes(authorization["external_consumption"])), ArtifactEffectPort(self, db, capability_id, worker_id, epoch))
-                elif hasattr(target_port, "invoke_with_artifacts"):
-                    outcome = target_port.invoke_with_artifacts(dict(authorization["identity"]),
-                        ArtifactEffectPort(self, db, capability_id, worker_id, epoch))
-                else:
-                    outcome = target_port.invoke(dict(authorization["identity"]))
+                if external is None:
+                    if hasattr(target_port, "invoke_with_artifacts"):
+                        outcome = target_port.invoke_with_artifacts(dict(authorization["identity"]),
+                            ArtifactEffectPort(self, db, capability_id, worker_id, epoch))
+                    else:
+                        outcome = target_port.invoke(dict(authorization["identity"]))
             except Exception as error:
                 target_error = error
                 outcome = TargetOutcome("failed", {"current_artifact_ids": {}},
@@ -457,10 +481,18 @@ class InvocationLeases:
             require(outcome.status in ("succeeded", "failed", "pending"), "Invalid target disposition")
             self._effect_authority(db, capability_id, worker_id, epoch)
             _, _, _, now = self._fence(db, capability_id, worker_id, epoch)
-            previous = value["started_intent"]["content"].encode()
+            from lqcd_agent.code_agent.verification_resources import owned_prefix
+            prefix = owned_prefix(value)
+            previous = prefix["content"].encode()
             execution = parse_ledger(previous)
             started = value["started_intent"]["record"]
-            index = loads(value["started_intent"]["index"])
+            index = loads(prefix["index"])
+            resources = {r["payload"]["resource_operation_id"] for r in execution.values
+                         if r["record_type"] == "budget" and r["event"] == "resource_reserved" and
+                         r["payload"]["attempt_id"] == started["attempt_id"]}
+            settled = {r["payload"]["resource_operation_id"] for r in execution.values
+                       if r["record_type"] == "budget" and r["event"] == "resource_settled"}
+            require(resources <= settled, "Invocation cannot finish with unsettled resources")
             artifact_publication = None
             if outcome.artifact is not None:
                 code_proof = None
@@ -638,9 +670,11 @@ class InvocationLeases:
             require(intent is not None, "Missing frozen invocation completion")
             authorization = value["authorization"]
             self._publish_artifact_plan(root, intent, lambda: self._fence(db, capability_id, worker_id, epoch))
-            publish_exact(root / "execution_history.jsonl", intent["content"].encode(), previous=value["started_intent"]["content"].encode(),
+            from lqcd_agent.code_agent.verification_resources import owned_prefix
+            prefix = owned_prefix(value)
+            publish_exact(root / "execution_history.jsonl", intent["content"].encode(), previous=prefix["content"].encode(),
                           observer=self.coordinator.observer, name="invocation.attempt_finished")
-            replace_projection(root / "artifact_index.json", value["started_intent"]["index"].encode(), intent["index"].encode(),
+            replace_projection(root / "artifact_index.json", prefix["index"].encode(), intent["index"].encode(),
                                observer=self.coordinator.observer)
             deferred = intent.get("checkpoint_deferred_until_release", False)
             if not deferred:
@@ -674,6 +708,8 @@ class InvocationLeases:
                 verify_checkpoint(root, authorization["manifest"])
                 self._validate_anchor(root, authorization)
             else:
+                from lqcd_agent.code_agent.verification_resources import owned_prefix
+                intent = owned_prefix(value)
                 actual = read_regular(root / "execution_history.jsonl")
                 require(actual in (intent["previous"].encode(), intent["content"].encode()), "Foreign owned head progression")
             revision, value, _, now = self._fence(db, capability_id, worker_id, epoch)
@@ -698,9 +734,11 @@ class InvocationLeases:
             if value["state"] == "finished":
                 return intent["projection"]
             self._publish_artifact_plan(root, intent, lambda: self.coordinator.fence(db, operation_id, worker_id, epoch, operation["phase_revision"]))
-            publish_exact(root / "execution_history.jsonl", intent["content"].encode(), previous=value["started_intent"]["content"].encode(),
+            from lqcd_agent.code_agent.verification_resources import owned_prefix
+            prefix = owned_prefix(value)
+            publish_exact(root / "execution_history.jsonl", intent["content"].encode(), previous=prefix["content"].encode(),
                           observer=self.coordinator.observer, name="invocation.attempt_finished")
-            replace_projection(root / "artifact_index.json", value["started_intent"]["index"].encode(), intent["index"].encode(), observer=self.coordinator.observer)
+            replace_projection(root / "artifact_index.json", prefix["index"].encode(), intent["index"].encode(), observer=self.coordinator.observer)
             deferred = intent.get("checkpoint_deferred_until_release", False)
             if not deferred:
                 persist_checkpoint(self.coordinator, db, operation, root, intent["checkpoint"],

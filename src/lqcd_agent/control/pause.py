@@ -1852,6 +1852,8 @@ class ConsumptionFailure:
             require(pause_row is not None and loads(pause_row[0])["owner"] == owner, "Failure has no original Pause claim")
             require(db.execute("SELECT 1 FROM run_terminal_closure WHERE run_key=?", (key,)).fetchone() is None, "Failure lost Run terminal CAS")
             try:
+                from lqcd_agent.code_agent.verification_resources import recover_publications
+                recover_publications(coordinator, db, current)
                 source = validate_owned_resume_prefix(coordinator, db, current)
             except (ControlIntegrityError, OSError, ValueError, KeyError):
                 source = None
@@ -1911,6 +1913,26 @@ class ConsumptionFailure:
     def _last_trusted_source(self, db, operation, pause):
         """Retain historical authority without treating it as an appendable prefix."""
         from .coordinator import MaterializationSnapshotError
+        from .capabilities import InvocationLeases
+        from .execution import parse_ledger
+        from .projections import bounded_projection
+        from lqcd_agent.code_agent.verification_resources import owned_prefix
+
+        capability = "capability_" + operation["operation_id"]
+        row = db.execute("SELECT 1 FROM invocation_capabilities WHERE capability_id=?", (capability,)).fetchone()
+        if row is not None:
+            _, value = InvocationLeases(self.coordinator).get(capability, db=db)
+            if value.get("verification_intents"):
+                authorization = value["authorization"]
+                require(authorization["producer_operation_id"] == operation["operation_id"] and
+                        all(authorization["identity"][k] == v for k, v in operation["request"]["run_locator"].items()),
+                        "Foreign historical verification journal")
+                prefix = owned_prefix(value, published=False)
+                execution, index = parse_ledger(prefix["content"].encode()), loads(prefix["index"])
+                state = bounded_projection(execution, artifact_index=index, artifact_head=index["artifact_head"],
+                                           artifact_event_index=index["revision"]).value
+                state["checkpoint_head"] = authorization["heads"]["checkpoint_head"]
+                return {"records": execution.values, "index": index, "state": state}
 
         try:
             return self.coordinator.snapshot(operation["operation_id"], db=db)["source"]

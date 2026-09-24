@@ -241,6 +241,12 @@ def validate_owned_resume_prefix(coordinator, db, operation):
         value = loads(capability[0])
         require(value["authorization"]["producer_operation_id"] == operation["operation_id"] and
                 value["authorization_digest"] == digest(value["authorization"]), "Corrupt resume capability authority")
+        if value.get("verification_intents"):
+            from lqcd_agent.code_agent.verification_resources import owned_prefix
+            owned_prefix(value, published=False)
+            for intent in value["verification_intents"]:
+                ledgers.append(intent["content"].encode())
+                indexes.append(intent["index"].encode())
         for name in ("started_intent", "completion_intent"):
             intent = value.get(name)
             if intent is not None:

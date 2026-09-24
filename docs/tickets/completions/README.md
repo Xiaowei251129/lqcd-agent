@@ -57,3 +57,5 @@
 - [B00C07完成记录](B00C07_COMPLETION.md)：文档交接completed，B03恢复ready，尚未交付runtime。
 
 - [B00C08完成记录](B00C08_COMPLETION.md)：完整fixture/source范围文档交接完成，B03恢复ready。
+
+2026-09-24：[B03执行记录](B03_COMPLETION.md)已追加workspace基础与活动时间账本阻塞；当前B03 blocked、[B00C09设计票](../phase-b-graph-harness/B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md) review。C08完成条目中的恢复ready为当时事实，不表示当前B03状态。
