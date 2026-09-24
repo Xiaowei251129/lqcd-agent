@@ -1,7 +1,7 @@
 ---
 ticket_id: B00C06
 phase: phase-b-graph-harness
-status: review
+status: ready
 type: corrective-implementation
 depends_on: [B00, B01, B02, B00C05]
 ---
@@ -12,7 +12,7 @@ depends_on: [B00, B01, B02, B00C05]
 
 在不改变A05 runtime内容摘要与A06 reservation语义的前提下，使同一Code场景在不同fresh Run/workspace根下产生唯一、可验证的exact semantic trace。增加显式trace `0.5`，保持旧`0.1–0.4`语义不变，解除B03的来源摘要投影阻塞。
 
-本票为待审批方案，未实施。B00C05已completed并解决首次reservation分类；本票不重开或替代C05。
+用户于2026-09-24批准按审阅建议补强本票、冻结提交并执行；验证后继续原B03授权。B00C05已completed并解决首次reservation分类；本票不重开或替代C05。
 
 ## Why
 
@@ -31,7 +31,7 @@ A05要求task冻结validated execution/artifact heads，manifest再绑定task；
 - A05 Task/Manifest/Seal/Result/Bundle/Analysis合同、A06 reservation与budget reference、A07 Normalized Exact Trajectory；
 - frozen protocol/catalog、B00、B00C01–B00C05及完成记录；
 - B03冻结票及`docs/tickets/completions/B03_COMPLETION.md`；
-- `tests/phase_b/harness/trace.py`、`trace_proof.py`、`matrix.py`、`exit_evidence.py`；
+- `tests/phase_b/harness/trace.py`、`trace_proof.py`、`matrix.py`、`exit_checks.py`；
 - `tests/phase_b/test_b03_task_trace_boundary.py`及既有source-bound/exit trace回归。
 
 ## Scope and Version Handoff
@@ -54,7 +54,7 @@ A05要求task冻结validated execution/artifact heads，manifest再绑定task；
 
 - 本ticket：ready后仅YAML生命周期。
 - `tests/phase_b/harness/trace.py`、`trace_proof.py`及该目录新增的A05 source/derivation验证模块：仅显式新trace/proof版本及来源投影；不得更改旧版本语义。
-- `tests/phase_b/harness/matrix.py`、`exit_evidence.py`及确有版本分派的调用点：仅新版本接线，不能放宽session、source、exact comparison、report或completion判定。
+- `tests/phase_b/harness/matrix.py`、`exit_checks.py`及确有版本分派的调用点：仅新版本接线，不能放宽session、source、exact comparison、report或completion判定。
 - `tests/phase_b/test_b03_task_trace_boundary.py`、新A05 trace/exit/meta测试及必要的`helpers/`：保留旧0.4反例，新0.5对照通过；明确fixture与canonical runtime证据边界。
 - `tests/phase_b/fixtures/`、`expected_traces/`：仅新增本修正meta fixture和离线双fresh根审定的expected trace；现存golden保持原字节。
 - `tests/phase_b/acceptance_matrix.json`：仅在原B00 owner追加META-006/015适用的construction/final meta证据，不创建B03 slice或改变映射计数。
@@ -75,8 +75,14 @@ A05要求task冻结validated execution/artifact heads，manifest再绑定task；
 3. 自描述checksum须验证其exact算法后才能映射到同一对象semantic identity，不能产生自引用环或不校验就删除。A03 member SHA-256与对象自描述摘要不同，必须各自闭合。
 4. Task requirements、policy、base、artifact内容、verification command/result、seal evidence、usage、operation/lease/phase、status、route或outcome变化必须改变语义轨迹或被拒绝。只有A07明确允许的临时值可以在证明绑定后投影。
 5. Same-case两次fresh根trace exact相同；task/manifest/raw reservation checksum仍各自真实且因根不同而可不同。除了prestart链，还需有覆盖上述完整DAG的contract-level正负fixture，防止后续bundle/Analysis遇到同类缺口。
-6. Collector、matrix scenario验证与exit semantic摘要使用同一个投影实现；新版本不能只在unit helper中有效。旧版本仍独立通过，旧golden不得整体升级以隐藏差异。
+6. Collector、matrix scenario、runtime case验证与exit semantic摘要四条路径使用同一个投影实现并分别有新版本正负测试；新版本不能只在unit helper中有效。旧版本仍独立通过，旧golden不得整体升级以隐藏差异。
 7. B00C06通过后，B03仍须独立完成28项construction、645项runtime以及trusted verification资源事务接线。不能把本票通过等同于B03必然完成。
+
+### Explicit review additions
+
+- 新版本必须逐项覆盖顶层`task_digest`、`manifest_digest`、`seal_digest`、`bundle_digest`、`analysis_spec_digest`、`result_digest`、`binding_digest`及`artifacts[].digest`；非空引用必须有符合其类型、身份与算法的来源，非法摘要和缺少来源均拒绝，不能沿用旧版本的literal fallback。
+- Derivation表与fixture覆盖嵌套A03成员SHA、A06 reservation input/task/manifest、settlement evidence及适用failure evidence依赖，区分材料内容摘要与派生对象引用；正常完成、host_timeout、失败收尾各有完整来源闭包对照。Typed absence必须保留，不能补造receipt/seal。
+- B03接续先核验verification reservation/execute/settlement与invocation完成、失败前缀的共同归属，再核验canonical/legacy状态投影及历史兼容。此两项属于B03工作，不由本票的trace通过证据代替；若状态迁移确需超出B03允许的golden派生同步范围，先形成具体差异和独立审批，不扩大本票`src/`禁区。
 
 ## Deliverables and Acceptance Criteria
 
@@ -110,4 +116,4 @@ git diff --check
 
 ## Required Documentation Updates
 
-记录新版本的来源规则、完整DAG审计与证据边界、B03窄范围version handoff、实际验证结果及仍未实现的canonical runtime。Decision Log仅在方案获批实施后记录新政策；本review不宣称新版本已成为合同。
+记录新版本的来源规则、完整DAG审计与证据边界、B03窄范围version handoff、实际验证结果及仍未实现的canonical runtime。Decision Log记录获批实施的新政策；只有全部验收通过才将新版本声明为已实现。
