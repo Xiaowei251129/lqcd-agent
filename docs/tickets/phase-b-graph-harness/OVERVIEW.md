@@ -55,7 +55,7 @@ A07执行时只冻结以下拆分；其后起草的六张票见下方Draft Ticke
 - transition、identity、invalidation、resume、budget 和 harness acceptance 已进入核心文档；
 - 实现者不需要自行补充控制层设计决定。
 
-这些阶段级进入条件已由A07 completion满足。B00在`f654f44`、B01在`537d10c`、B02在`83681a7`冻结后执行；三票均已completed。B02历史来源、reservation语义和trace/进程证据前置问题分别由B02C01与B00C01–B00C04关闭；本轮原B02运行修复与完整验收通过，见[B02完成记录](../completions/B02_COMPLETION.md)。B03已在`b78c15a`冻结；B00C05关闭首次reservation分类阻塞后现恢复ready，B04/B05仍draft。
+这些阶段级进入条件已由A07 completion满足。B00在`f654f44`、B01在`537d10c`、B02在`83681a7`冻结后执行；三票均已completed。B02历史来源、reservation语义和trace/进程证据前置问题分别由B02C01与B00C01–B00C04关闭；本轮原B02运行修复与完整验收通过，见[B02完成记录](../completions/B02_COMPLETION.md)。B03已在`b78c15a`冻结；B00C05关闭首次reservation分类阻塞；接续B03时发现A05内容摘要trace缺口，现blocked，待审[B00C06](B00C06_A05_SOURCE_BOUND_DIGEST_TRACES.md)。B04/B05仍draft。
 
 ## Implementation Tickets
 
@@ -64,7 +64,7 @@ A07执行时只冻结以下拆分；其后起草的六张票见下方Draft Ticke
 - [`B00_ACCEPTANCE_FOUNDATION.md`](B00_ACCEPTANCE_FOUNDATION.md)：`completed`，验收基础已实现；执行记录见[B00 Completion](../completions/B00_COMPLETION.md)，只证明construction证据，不证明runtime已通过。
 - [`B01_EXECUTION_0_4_CONTROL_FOUNDATION.md`](B01_EXECUTION_0_4_CONTROL_FOUNDATION.md)：`completed`，已实现纯Execution `0.4` records、budget/lifecycle replay、trusted clock、bounded projection与cross-head integrity；见[B01 Completion](../completions/B01_COMPLETION.md)。未接入默认产品图，不授权后续durable/product实现。
 - [`B02_DURABLE_CONTROL_OPERATIONS.md`](B02_DURABLE_CONTROL_OPERATIONS.md)：`completed`；单一coordinator、bootstrap/advance/Pause/Resume/Replay/Fork/Cancel/interrupt/terminal及failure recovery交付。Construction30/30，205个boundary下1410个独立runtime case全部通过；见[B02完成记录](../completions/B02_COMPLETION.md)。
-- [`B03_GRAPH_MANAGED_FAKE_CODE_AGENT.md`](B03_GRAPH_MANAGED_FAKE_CODE_AGENT.md)：`ready`；首次reservation分类阻塞由B00C05关闭，原冻结正文不变，canonical实现及28项construction尚未完成。
+- [`B03_GRAPH_MANAGED_FAKE_CODE_AGENT.md`](B03_GRAPH_MANAGED_FAKE_CODE_AGENT.md)：`blocked`；C05已关闭首次reservation分类阻塞，新A05 source-bound digest trace阻塞由待审[B00C06](B00C06_A05_SOURCE_BOUND_DIGEST_TRACES.md)处理，原冻结正文不变，canonical实现及28项construction尚未完成。
 - [`B04_TARGET_PRODUCT_TOPOLOGY_AND_BUDGETED_LOOPS.md`](B04_TARGET_PRODUCT_TOPOLOGY_AND_BUDGETED_LOOPS.md)：拟接入A01产品图、四层fallback、Human return、A03 invalidation与A06 admission/grant/stop；当前只供review，不可执行。
 - [`B05_ACCEPTANCE_INTEGRATION_AND_END_TO_END_HARNESS.md`](B05_ACCEPTANCE_INTEGRATION_AND_END_TO_END_HARNESS.md)：拟完成cross-system faults/concurrency、CLI smoke、legacy/mock regression及final zero-gap exit；当前只供review，不可执行。
 
@@ -86,7 +86,7 @@ B04的131 covered/0 remaining仅表示映射齐全；允许调用final作负向�
 
 ## 退出方向
 
-整个Phase B完成后进入Phase C，先执行C00 capability gate。当前B00–B02及B00C01–B00C05、B02C01已完成；B03恢复原授权执行，B04/B05仍须分别审定。
+整个Phase B完成后进入Phase C，先执行C00 capability gate。当前B00–B02及B00C01–B00C05、B02C01已完成；B03因待审B00C06停止越界修改，B04/B05仍须分别审定。
 
 2026-09-18批准后：B02C01 ready快照为`5e753d6`，当前in_progress，见[执行记录](../completions/B02C01_COMPLETION.md)。原B02批准范围继续有效，其30项slice与全量控制验收仍待完成。
 
@@ -115,3 +115,5 @@ B00C04已按用户批准扩充并in_progress，统一完成case0.2、trace0.4与
 2026-09-24 B00C05续执行：用户批准补齐审阅建议并执行，ready冻结于`52c508b`；真实初始producer入口与case0.3修正已实现，70项定向检查通过，完整集成验证尚未完成。工作树独立集合为2199/B03 645，前置B02 1410、B04 144及28 post-claim保持；B03仍blocked，不能把此项修正计为canonical Backend完成。此前2208/654/798计数为case0.2冻结基线。
 
 2026-09-24 B00C05完成：B00C05已完成并解除B03首次ExternalOperation reservation分类阻塞：真实初始producer与case0.3已验证，独立集合2199（B02 1410、B03 645、B04 144），324 boundaries和28 post-claim不变。Fresh B00/B01/B02为15/11/30，完整2617 passed、同Session B02-owned 1410/1410；mapped56/remaining75，final仅75 coverage / 789 runtime binding / 15 exit，global passed=null、Phase B未完成。B03恢复ready，canonical Backend与其28项验收仍待交付。
+
+2026-09-24 B03接续审查：B00C05已completed并提交为`7af288c`；真实B02 Code target/C05 producer及A05/A06 contract-shaped数据反例确认trace0.4存在派生摘要投影缺口，B03现blocked，待审B00C06。反例不计canonical Backend验收；case0.3、2199/645及mapped56/remaining75不变。详见B03执行记录最后条目。

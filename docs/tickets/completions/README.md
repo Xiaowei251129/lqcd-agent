@@ -47,3 +47,5 @@
 - [B00C05执行记录](B00C05_COMPLETION.md)：首次ExternalOperation事务与case0.3修正，completed；2617项全量及B02-owned 1410项通过，原B03阻塞解除。
 
 2026-09-24续：[B03执行记录](B03_COMPLETION.md)已追加B00C05完成与版本衔接证据；原首次reservation阻塞解除，B03恢复ready，整票尚未完成。
+
+2026-09-24接续：[B03执行记录](B03_COMPLETION.md)新增A05内容摘要trace反例；C05已完成并提交，B03再次blocked，待审[B00C06](../phase-b-graph-harness/B00C06_A05_SOURCE_BOUND_DIGEST_TRACES.md)。这是新的来源投影前置问题，未改写原票，也未把contract fixture计入B03 runtime。
