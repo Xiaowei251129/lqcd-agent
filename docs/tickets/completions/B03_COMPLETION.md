@@ -87,3 +87,15 @@ Trusted verification的durable reservation → side effect → settlement仍需�
 - Scope检查确认production、frozen harness/matrix/inventory/registry、golden、Phase A合同保持`7af288c`原字节；138个本地文档链接存在。B03正文SHA-256仍为`0dd1744b1a13226775d10aa5beb9e3718de42db3859ff07f776842963e86209b`。
 - 完整2617项pytest及同Session B02-owned1410/1410属于刚完成的C05验证。本次仅新增三项独立合同反例和文档，未再次运行完整suite，不声称有2620项fresh全量或B03-owned通过证据。
 - 所有验证时输入固定；随后仅追加本节记录。B00C06保持review，B03保持blocked；本轮review checkpoint提交不构成批准新trace合同，没有push。
+
+### 2026-09-24 — B00C06 completed; state projection scope gate
+
+用户批准按审阅建议继续；B00C06 ready 冻结于 cd29d9f 后已完成。最终2677 passed、同 Session B02-owned1410/1410，fresh construction15/11/30；final仅75/789/15。显式 trace0.5 / proof0.2 关闭 Task/Manifest/reservation/core/Pause、canonical members/current pointer、control envelope、settlement/failure 和Analysis依赖投影缺口；旧版本不变。详见[B00C06完成记录](B00C06_COMPLETION.md)。
+
+按 C06 Explicit review additions 进行 B03 接续核验，发现此前提示的 state migration 风险已可复现：在没有源码和runtime fingerprint变化的独立进程中，仅补 A05 规定的六个 null bounded字段，真实B02 recovery仍完成，但7个projection preimage及9个event的派生摘要变化。`control/projections.py`从共享`STATE_FIELDS_BY_SLOT`生成state；直接扩展该全局表，又使既有legacy artifact实际被registry的exact state_paths校验拒绝。恢复表后原对象通过。两个探针未改变源码或原Run。
+
+证据在 `/private/tmp/lqcd-agent-b00c06-3f4x2xhh/`：`probe-state-projection.py`、`B03-state-projection-probe.json`、`B03-state-projection-raw.json`、`probe-registry-compat.py`、`B03-registry-compat-probe.json`。探针中的全局替换仅证明兼容风险，不是拟采用实现；真实方案必须隔离版本，四个paths与两个scalar分开。
+
+原 B03 Allowed Files 只允许 fingerprint及其派生head/reference的前置golden同步；上述差异在fingerprint不变时存在，不能归入该例外。A05又要求无current时字段显式为null，不能延迟到出现canonical bundle后再加字段或让normalizer忽略它们。依原票Stop Conditions，需要独立的窄补充授权后才能继续，因此B03保持blocked；原ready正文不改写。
+
+Trusted verification的reservation/execute/settlement与invocation completion/failure共同归属仍是B03已授权工作：当前consume_external处于writer transaction，existing head fence和failure prefix未接受resource suffix。必须添加可验证的owned资源publication并在同一ownership下收尾，不能通过放宽head检查或嵌套transaction规避。此项尚未实现；状态兼容授权也不代表B03必然完成。

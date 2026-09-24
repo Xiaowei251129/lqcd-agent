@@ -1294,3 +1294,11 @@ B02 construction30/30及1410/1410独立case、完整2599测试通过后才完成
 用户批准按审阅建议补齐并实施B00C05，ready正文在`52c508b`冻结。Case0.3明确限定三个pre-COMMIT side为合法新producer首次事务；无durable producer时只证明完整回滚与重新准入，不伪造原operation恢复或Run failure。原16项逐项记录12 replaced/4 retained；提交后的四类durable保护及全部后继边界保留，完整canonical runtime证据仍由B03负责。由独立规则得到2199/B03 645，计数不作为反向裁剪目标。
 
 Host初始reserve/lookup复用现有external_operations和coordinator，不引入第二authority、表或public control API。真实进程与双client验证通过；完整2617项及同Session B02-owned 1410项通过后才关闭本修正。Case0.1/0.2、trace0.1–0.4、protocol/catalog、requirements/owners和exit门槛保持。Case0.3显式窄范围替代B03的旧case0.2入口，原B03正文仍冻结；B03的canonical Backend、28项construction与645项runtime不因本修正而宣称完成。
+
+## 2026-09-24 — B00C06 A05 digest provenance（实施中）
+
+用户批准补强、冻结并执行 B00C06，ready 正文提交为 `cd29d9f`。新增显式 trace 0.5 / proof 0.2，旧版本和旧 goldens 不重新解释。完整 raw checksum/identity/dependency 验证先于 semantic projection；self digest、完整 canonical digest 与 A03 byte digest 不可混用。嵌套 Code pointer、Pause、settlement/failure evidence 纳入闭包，材料与权威状态变化继续可区分。具体规则见 Verification Guide 的 derivation 表。
+
+本票不修改 src、A05/A06 runtime 合同、case0.3、2199 cases、131 requirements 或 exit 门槛。Contract fixtures 不计 B03 canonical evidence；集成完成后才解除 trace 前置。原 B03 授权保持，其预算事务与状态迁移问题须按原冻结范围处理。
+
+B00C06最终验证完成后关闭。新版本与旧版本隔离，原required/owner/case集合不变。B03接续发现的null projection造成真实语义变化，即使runtime fingerprint相同也存在；不将其归入原fingerprint-only golden例外，不通过忽略null或全局扩展legacy表规避。先形成窄范围补充授权，B03因此保持blocked。

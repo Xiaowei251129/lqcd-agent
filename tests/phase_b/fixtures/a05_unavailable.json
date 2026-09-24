@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/a05_unavailable.json",
+  "entrypoint": "tests/phase_b/test_a05_source_traces.py:test_reviewed_full_chain_golden",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "exact_semantic_trace",
+    "raw_source_validation",
+    "session_bound_proof"
+  ]
+}

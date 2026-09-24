@@ -67,7 +67,7 @@ def validate_event(value):
 def normalize(trace, *, binding=None, expected=False):
     require(type(trace) is dict, "trace", "object")
     version = trace.get("schema_version")
-    require(version in ("0.1", "0.2", "0.3", "0.4"), "trace", "schema")
+    require(version in ("0.1", "0.2", "0.3", "0.4", "0.5"), "trace", "schema")
     if version == "0.1":
         keys(trace, {"schema_version", "events"}, "trace")
     else:
@@ -83,8 +83,12 @@ def normalize(trace, *, binding=None, expected=False):
     if version == "0.1":
         return {"schema_version": "0.1", "events": events}
     if not expected:
-        from .trace_proof import project
-        events = project(events, trace["proof"], binding, version=version)
+        if version == "0.5":
+            from .a05_trace import project
+            events = project(events, trace["proof"], binding)
+        else:
+            from .trace_proof import project
+            events = project(events, trace["proof"], binding, version=version)
     return {"schema_version": version, "representation": "semantic_expected", "events": events}
 
 

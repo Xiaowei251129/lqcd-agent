@@ -49,3 +49,7 @@
 2026-09-24续：[B03执行记录](B03_COMPLETION.md)已追加B00C05完成与版本衔接证据；原首次reservation阻塞解除，B03恢复ready，整票尚未完成。
 
 2026-09-24接续：[B03执行记录](B03_COMPLETION.md)新增A05内容摘要trace反例；C05已完成并提交，B03再次blocked，待审[B00C06](../phase-b-graph-harness/B00C06_A05_SOURCE_BOUND_DIGEST_TRACES.md)。这是新的来源投影前置问题，未改写原票，也未把contract fixture计入B03 runtime。
+
+- [B00C06执行记录](B00C06_COMPLETION.md)：用户已批准，ready 冻结于 `cd29d9f`，当前 in_progress；A05 trace 0.5 的来源闭包与四条验收路径正在集成验证。
+
+2026-09-24最终：[B00C06已完成](B00C06_COMPLETION.md)，2677项全量、同Session B02-owned1410项与fresh construction15/11/30通过。B03来源前置解除，但因新确认的状态投影/golden边界继续blocked，见[B03记录](B03_COMPLETION.md)。

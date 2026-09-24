@@ -496,3 +496,29 @@ PY
 ## 2026-09-24 B00C05 case0.3
 
 B00C05已完成并解除B03首次ExternalOperation reservation分类阻塞：真实初始producer与case0.3已验证，独立集合2199（B02 1410、B03 645、B04 144），324 boundaries和28 post-claim不变。Fresh B00/B01/B02为15/11/30，完整2617 passed、同Session B02-owned 1410/1410；mapped56/remaining75，final仅75 coverage / 789 runtime binding / 15 exit，global passed=null、Phase B未完成。B03恢复ready，canonical Backend与其28项验收仍待交付。 本次case版本保留0.1/0.2封存规则与摘要，旧trace0.1–0.4语义不变；B03的case版本入口由已批准B00C05显式替代，其冻结正文不改写。前置2599项通过为B02交付时的历史基线，2617项为本次C05 fresh完整验证。
+
+## B00C06：A05 来源轨迹 0.5
+
+显式 trace `0.5` 使用 proof `0.2`；分派入口仍为 `harness.trace.normalize/compare`。旧 `0.1–0.4` 不变，已有 expected 文件不升级。新增 `harness/a05_trace.py` 的 `CHECKSUMS`、`COMMON`、`PROFILE_REFS`、`EVENT_REFS` 和 `BUNDLE_MEMBERS` 是 project-owned derivation 表；调用者只能提交原始对象及类型声明，不能指定忽略字段或别名。来源验证不是 B03 runtime authority，也不替代 closed-schema、ingress、registry 或 trusted verification。
+
+| 来源／字段 | 原始算法与依赖 | 身份／投影边界 |
+| --- | --- | --- |
+| Task、Manifest、Core、Receipt、Seal、External/Code Result、Analysis Spec 自描述 checksum | canonical JSON 去掉且仅去掉对应 self 字段后 SHA-256；完整对象另有完整 canonical SHA | 先验证 checksum；普通引用必须使用 self digest，A03 成员必须使用完整 bytes SHA，不能互换 |
+| Task execution/artifact heads、budget envelope | 原版本 structural head replay；allow/code_agent BudgetDecision 的 exact event ID/path，且不晚于冻结 execution head | 相同 Case/Run/Attempt；task ID 必须等于 Attempt 的 code_task identity |
+| Manifest → Task；Core → Task/Manifest/aggregate reservation；Pause binding → Core/reservation/Task/Manifest | 按指定 kind 和算法解析完整闭包 | Case/Run/Attempt/producer/workspace 的共享身份逐项相等；Pause identity 在关联来源中必须相等 |
+| A06 reservation input/task/manifest/context；settlement evidence | 验证原格式完整 ledger；派生对象沿已知字段解析，material/config/policy/base/tree 摘要保留 | 资源 owner 不变；settlement 可引用 external final、verification、interrupt/failure 或 exact failure identity preimage |
+| Failure identity | canonical JSON 全对象：owner/source_phase/source_revision/epoch/cause_type/cause | owner 必须匹配消费 operation；cause 材料文本不被通用字符串替换 |
+| Receipt/Seal/External Result/Verification/Code Result/Delivery/Analysis Spec | receipt、seal、audit、change、verification、final、bundle/code 等引用按 derivation 表闭合 | Analysis 的 source Code Attempt 必须 exact；不把 Analysis 自己的 Attempt/workspace 当成 Code owner |
+| A03 Code registered members、pointer、current index 嵌套副本 | 每个 canonical member 验证原始 SHA、字节数、Attempt namespace 和类型；pointer 必须与 registered source exact-match | backend_delivery 与 host_timeout 分别检查成员集合；已验证 size 随语义成员投影，避免根长度影响摘要 |
+| tool_audit.jsonl、changes.patch | 原始 UTF-8 bytes SHA；audit 必须 canonical JSONL、连续 index、完整 owner 和有序时间 | patch 内容 SHA 保留；audit 命令、status、usage 保留 |
+| workspace evidence | full canonical digest 绑定 manifest、managed identity、物理目录与 owner | 只允许独立 canonical `/private/tmp/lqcd-agent-*` 根；仅 evidence.workspace_path、verification.results[].cwd、audit[].cwd 可投影；其他材料路径拒绝冒用 |
+| 时间、provider reference | 时间只在 profile 的精确位置规范化，验证数值与 start/end 顺序；provider reference 先检查同 operation 一致性 | lease/phase/status/route/usage 不排除；provider 身份不能跨 owner 复用 |
+| 顶层七类摘要及 artifacts[].digest | 非空值须有 exact kind/算法/身份来源 | 禁止 literal fallback；missing/duplicate/orphan/cycle/mixed version/stale Session 均拒绝 |
+
+Contract fixture 使用真实 B02 Run、planner artifact、Code target 和 C05 initial producer；其后 A05 对象为合同级来源样本，aggregate/settlement 通过 production builder/replayer，未据此宣称真实 Backend 执行或获得 B03 的 645 项 runtime credit。Normal、host_timeout、failed、unavailable 分别保存双 fresh 根证据与审定 expected；timeout 保留 absence，不补造 seal/receipt。
+
+四条验收路径使用同一 normalizer：collector 写入前验证、matrix exact comparison、runtime case comparison、exit semantic digest。新增 isolated subprocess/hook 只证明验收器通路，不绑定 production registry。完整集成通过前，B03 继续 blocked；通过后仅其 A05 新轨迹采用 0.5。B03 verification 预算事务与 canonical/legacy 状态迁移仍需独立验证。
+
+Control envelope 不能使已知 A05 引用退回 literal：包括真实 resume input 的 `external_final_digest`。内嵌 Task/ExternalOperation 等对象只有与已声明、已校验的完整 raw source exact-match 时才作为该来源投影；不可把包装后的 raw checksum 遗留在语义 hash 中。动态 ExternalOperation 使用 full-object profile，phase/status/lease/revision 保持材料语义，不与 immutable core 的 self digest 混用。
+
+B00C06最终集成已完成：181项定向、2677项全量及同Session B02-owned1410项通过。上述实现已可用于B03新A05轨迹；B03因独立state projection/golden范围仍blocked，参见completion。
