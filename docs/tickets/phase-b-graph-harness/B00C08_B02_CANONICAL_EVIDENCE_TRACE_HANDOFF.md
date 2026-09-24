@@ -1,7 +1,7 @@
 ---
 ticket_id: B00C08
 phase: phase-b-graph-harness
-status: ready
+status: completed
 type: corrective-contract
 depends_on: [B00, B01, B02, B00C05, B00C06, B00C07]
 ---
