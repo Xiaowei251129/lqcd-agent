@@ -634,3 +634,9 @@ accepted memory, while a valid `reject_or_hold` decision writes rejected memory.
 `pre_a06` proof结合受支持的closed Run-created、同Run旧schema records、policy文件不存在及无冲突versioned authority，并冻结source creation与ledger bytes摘要；不能仅凭policy文件缺失降级0.4。详见[B02C01](tickets/phase-b-graph-harness/B02C01_LEGACY_SOURCE_FINGERPRINT.md)和[验证记录](tickets/completions/B02C01_COMPLETION.md)。
 
 2026-09-18 B02进展：normal/timeout消费及Analysis准备通过typed external/domain ports验证控制顺序，synthetic artifacts/receipts不等同A05 canonical Bundle或真实workspace。Historical source Fork检查原selected pointer/member bytes并保持来源不可变；child lineage引用真实历史head。当前B00 trace 0.2不支持该0.3 head引用图，不能将runtime成功写成验收通过，详见[B00C03 review](tickets/phase-b-graph-harness/B00C03_HISTORICAL_FORK_SOURCE_TRACES.md)。
+
+## B00C07 approved implementation handoff
+
+2026-09-24：B00C07已按用户同意补强，ready冻结于`7ab58ce`并完成文档交接。B03恢复ready；四个canonical paths来源修复与B02 needs_input fixture窄替换获得明确授权，尚未实现。先推进B03预算事务/失败恢复，再完成canonical实现与28/645验收；当前mapped56/remaining75、Phase B未完成。
+
+详见[B00C07冻结补充票](tickets/phase-b-graph-harness/B00C07_A05_STATE_PROJECTION_GOLDEN_HANDOFF.md)。旧0.2/0.3格式保持原字节，新0.4使用完整nullable path集合与独立status/usable；trace0.5仅修复受来源约束的四个canonical paths，旧trace版本保持。B02材料适配保留原控制断言并使用相同canonical validator；不得将文档交接当作已实现能力。

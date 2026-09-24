@@ -37,7 +37,7 @@ Ready ticket 不能静默覆盖 `AGENTS.md`、安全策略或当前 public contr
 
 ## 第二阶段方向与 Tickets
 
-当前B00–B02及B00C01–B00C06、B02C01已完成。B03的来源轨迹阻塞已由B00C06关闭；接续审查确认A05 state projection与原golden同步授权存在独立边界，现仍blocked，待窄范围补充审阅。B04/B05仍draft。Phase B整体未完成，见[B03执行记录](tickets/completions/B03_COMPLETION.md)。
+当前B00–B02及B00C01–B00C06、B02C01已完成。B03的状态投影与golden范围已由B00C07补充授权，现恢复ready，canonical实现及完整验收仍待完成。B04/B05仍draft。Phase B整体未完成，见[B03执行记录](tickets/completions/B03_COMPLETION.md)。
 
 冻结机读合同为[Control Protocol 0.4](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)及[Phase B需求目录](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)；状态更新不得移除这两项权威引用。
 
@@ -49,7 +49,7 @@ Ready ticket 不能静默覆盖 `AGENTS.md`、安全策略或当前 public contr
 
 Phase Overview 不是执行 prompt。只有经过用户确认并标记为 `status: ready` 的具体 ticket 才能执行；`ready`后ticket正文冻结，执行结果和后续纠偏不得回写原计划。
 
-Phase A的A01–A07、A02C01及A03C01现均为`completed`。B00/B01/B02、B00C01–B00C06及B02C01已完成；B03为`blocked`（A05状态投影/golden授权边界待补充审阅），B00C05为`completed`，B04/B05仍为`draft`。B00/B01/B02 construction分别为 **15/15、11/11、30/30**，累计映射 **56/131、remaining75**。B02的 **205个boundary、1410个独立case** 全部具有同一冻结输入、同一fresh session的通过证据；完整suite **2677 passed**。全局final仍仅报告 **75 coverage / 789 runtime / 15 exit** 缺口，`requirements.passed=null`、`requirements_zero_gap=false`、`phase_b_complete=false`。执行事实见[B02完成记录](tickets/completions/B02_COMPLETION.md)及[Phase B Overview](tickets/phase-b-graph-harness/OVERVIEW.md)。B02交付独立0.4 durable control入口，默认产品runtime仍为schema `0.2`；B03 Backend/Code Bundle、B04产品图和B05全阶段验收仍由各自票据交付。以下日期条目保留当时的进展和阻塞事实，以本段和完成记录最后条目为当前状态。
+Phase A的A01–A07、A02C01及A03C01现均为`completed`。B00/B01/B02、B00C01–B00C06及B02C01已完成；B03为`ready`（B00C07文档交接完成），B00C05为`completed`，B04/B05仍为`draft`。B00/B01/B02 construction分别为 **15/15、11/11、30/30**，累计映射 **56/131、remaining75**。B02的 **205个boundary、1410个独立case** 全部具有同一冻结输入、同一fresh session的通过证据；完整suite **2677 passed**。全局final仍仅报告 **75 coverage / 789 runtime / 15 exit** 缺口，`requirements.passed=null`、`requirements_zero_gap=false`、`phase_b_complete=false`。执行事实见[B02完成记录](tickets/completions/B02_COMPLETION.md)及[Phase B Overview](tickets/phase-b-graph-harness/OVERVIEW.md)。B02交付独立0.4 durable control入口，默认产品runtime仍为schema `0.2`；B03 Backend/Code Bundle、B04产品图和B05全阶段验收仍由各自票据交付。以下日期条目保留当时的进展和阻塞事实，以本段和完成记录最后条目为当前状态。
 
 2026-09-16更新：[B00C01](tickets/phase-b-graph-harness/B00C01_SOURCE_BOUND_SEMANTIC_TRACES.md)与[B00C02](tickets/phase-b-graph-harness/B00C02_SEMANTIC_TRACE_EXIT_BINDING.md)均已completed。来源绑定的trace0.2及完整exit摘要接线通过验证，旧trace0.1不变；见[B00C02完成记录](tickets/completions/B00C02_COMPLETION.md)。B02前置阻塞解除后已恢复执行，剩余control runtime和30项验收仍须按原冻结票完成。
 
@@ -108,3 +108,5 @@ B00C04已按用户明确批准扩充并进入in_progress：独立case语义0.2�
 2026-09-24 B00C06完成：trace0.5/proof0.2 全链来源与四条验收路径通过，2677 passed、同 Session B02 runtime1410/1410，fresh B00/B01/B02为15/11/30；mapped56/remaining75，final仅75/789/15。旧trace、旧goldens、src、case0.3保持。B03来源阻塞已解除，但接续实证确认A05空字段投影超出原fingerprint-only golden授权，因该独立边界继续blocked，待窄范围补充审阅。
 
 2026-09-24：已形成待审 [B00C07 状态投影与 golden 窄范围补充](tickets/phase-b-graph-harness/B00C07_A05_STATE_PROJECTION_GOLDEN_HANDOFF.md)。该票为 review，尚未批准或执行；只提出 B03 的版本隔离、已知 nullable projection 派生同步与兼容核验边界，不预先交付 runtime。原 B03 授权保留，但依其冻结 Stop Conditions 暂保持 blocked，待本补充批准后继续。
+
+2026-09-24：B00C07已按用户同意补强，ready冻结于`7ab58ce`并完成文档交接。B03恢复ready；四个canonical paths来源修复与B02 needs_input fixture窄替换获得明确授权，尚未实现。先推进B03预算事务/失败恢复，再完成canonical实现与28/645验收；当前mapped56/remaining75、Phase B未完成。

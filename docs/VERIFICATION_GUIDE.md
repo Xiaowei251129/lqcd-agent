@@ -522,3 +522,9 @@ Contract fixture 使用真实 B02 Run、planner artifact、Code target 和 C05 i
 Control envelope 不能使已知 A05 引用退回 literal：包括真实 resume input 的 `external_final_digest`。内嵌 Task/ExternalOperation 等对象只有与已声明、已校验的完整 raw source exact-match 时才作为该来源投影；不可把包装后的 raw checksum 遗留在语义 hash 中。动态 ExternalOperation 使用 full-object profile，phase/status/lease/revision 保持材料语义，不与 immutable core 的 self digest 混用。
 
 B00C06最终集成已完成：181项定向、2677项全量及同Session B02-owned1410项通过。上述实现已可用于B03新A05轨迹；B03因独立state projection/golden范围仍blocked，参见completion。
+
+## B00C07 approved implementation handoff
+
+2026-09-24：B00C07已按用户同意补强，ready冻结于`7ab58ce`并完成文档交接。B03恢复ready；四个canonical paths来源修复与B02 needs_input fixture窄替换获得明确授权，尚未实现。先推进B03预算事务/失败恢复，再完成canonical实现与28/645验收；当前mapped56/remaining75、Phase B未完成。
+
+详见[B00C07冻结补充票](tickets/phase-b-graph-harness/B00C07_A05_STATE_PROJECTION_GOLDEN_HANDOFF.md)。旧0.2/0.3格式保持原字节，新0.4使用完整nullable path集合与独立status/usable；trace0.5仅修复受来源约束的四个canonical paths，旧trace版本保持。B02材料适配保留原控制断言并使用相同canonical validator；不得将文档交接当作已实现能力。
