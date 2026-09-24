@@ -99,3 +99,5 @@ Trusted verification的durable reservation → side effect → settlement仍需�
 原 B03 Allowed Files 只允许 fingerprint及其派生head/reference的前置golden同步；上述差异在fingerprint不变时存在，不能归入该例外。A05又要求无current时字段显式为null，不能延迟到出现canonical bundle后再加字段或让normalizer忽略它们。依原票Stop Conditions，需要独立的窄补充授权后才能继续，因此B03保持blocked；原ready正文不改写。
 
 Trusted verification的reservation/execute/settlement与invocation completion/failure共同归属仍是B03已授权工作：当前consume_external处于writer transaction，existing head fence和failure prefix未接受resource suffix。必须添加可验证的owned资源publication并在同一ownership下收尾，不能通过放宽head检查或嵌套transaction规避。此项尚未实现；状态兼容授权也不代表B03必然完成。
+
+2026-09-24：已形成待审 [B00C07 状态投影与 golden 窄范围补充](../phase-b-graph-harness/B00C07_A05_STATE_PROJECTION_GOLDEN_HANDOFF.md)。该票为 review，尚未批准或执行；只提出 B03 的版本隔离、已知 nullable projection 派生同步与兼容核验边界，不预先交付 runtime。原 B03 授权保留，但依其冻结 Stop Conditions 暂保持 blocked，待本补充批准后继续。

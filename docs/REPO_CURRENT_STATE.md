@@ -4,8 +4,8 @@
 
 - **更新时间**：2026-09-24
 - **当前分支**：`codex/phase-11-agent-harness-upgrade`（已快进包含`xgao`的Phase A设计冻结提交`d0f108a`）
-- **当前阶段**：Phase A、B00/B01/B02、B00C01–B00C06及B02C01已completed；B03 blocked（A05 state projection / golden范围待补充审阅），B04/B05仍draft。
-- **活动 ticket**：B00C06已完成；B03来源轨迹前置已解除，现因确认的状态投影兼容与golden授权边界保持blocked。当前coverage56/remaining75，详见B03执行记录。
+- **当前阶段**：Phase A、B00/B01/B02、B00C01–B00C06及B02C01已completed；B03 blocked（B00C07 review），B04/B05仍draft。
+- **活动 ticket**：B00C06已完成；B03来源轨迹前置已解除，现因确认的状态投影兼容与golden授权边界保持blocked，待审B00C07。当前coverage56/remaining75，详见B03执行记录。
 - **稳定基线**：[`v0.2-demo`](milestones/V0_2_DEMO_BASELINE.md)
 - **本轮范围**：2026-09-24 B00C06完成：trace0.5/proof0.2 全链来源与四条验收路径通过，2677 passed、同 Session B02 runtime1410/1410，fresh B00/B01/B02为15/11/30；mapped56/remaining75，final仅75/789/15。旧trace、旧goldens、src、case0.3保持。B03来源阻塞已解除，但接续实证确认A05空字段投影超出原fingerprint-only golden授权，因该独立边界继续blocked，待窄范围补充审阅。
 
@@ -216,3 +216,5 @@ B02与C04现均in_progress：C04独立语义/来源/进程修正已通过定向�
 2026-09-24 B00C06：用户批准补强、冻结提交并执行，ready commit `cd29d9f`。显式 trace 0.5 / proof 0.2 及 A05 全链 contract/meta 证据正在集成验证，旧 trace、旧 goldens、src、case0.3 不变。B03 暂保持 blocked；通过后仅解除来源轨迹前置，预算事务和状态投影兼容仍须独立核验。
 
 2026-09-24 B00C06完成：trace0.5/proof0.2 全链来源与四条验收路径通过，2677 passed、同 Session B02 runtime1410/1410，fresh B00/B01/B02为15/11/30；mapped56/remaining75，final仅75/789/15。旧trace、旧goldens、src、case0.3保持。B03来源阻塞已解除，但接续实证确认A05空字段投影超出原fingerprint-only golden授权，因该独立边界继续blocked，待窄范围补充审阅。
+
+2026-09-24：已形成待审 [B00C07 状态投影与 golden 窄范围补充](tickets/phase-b-graph-harness/B00C07_A05_STATE_PROJECTION_GOLDEN_HANDOFF.md)。该票为 review，尚未批准或执行；只提出 B03 的版本隔离、已知 nullable projection 派生同步与兼容核验边界，不预先交付 runtime。原 B03 授权保留，但依其冻结 Stop Conditions 暂保持 blocked，待本补充批准后继续。

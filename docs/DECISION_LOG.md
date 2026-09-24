@@ -1302,3 +1302,5 @@ Host初始reserve/lookup复用现有external_operations和coordinator，不引�
 本票不修改 src、A05/A06 runtime 合同、case0.3、2199 cases、131 requirements 或 exit 门槛。Contract fixtures 不计 B03 canonical evidence；集成完成后才解除 trace 前置。原 B03 授权保持，其预算事务与状态迁移问题须按原冻结范围处理。
 
 B00C06最终验证完成后关闭。新版本与旧版本隔离，原required/owner/case集合不变。B03接续发现的null projection造成真实语义变化，即使runtime fingerprint相同也存在；不将其归入原fingerprint-only golden例外，不通过忽略null或全局扩展legacy表规避。先形成窄范围补充授权，B03因此保持blocked。
+
+2026-09-24：已形成待审 [B00C07 状态投影与 golden 窄范围补充](tickets/phase-b-graph-harness/B00C07_A05_STATE_PROJECTION_GOLDEN_HANDOFF.md)。该票为 review，尚未批准或执行；只提出 B03 的版本隔离、已知 nullable projection 派生同步与兼容核验边界，不预先交付 runtime。原 B03 授权保留，但依其冻结 Stop Conditions 暂保持 blocked，待本补充批准后继续。
