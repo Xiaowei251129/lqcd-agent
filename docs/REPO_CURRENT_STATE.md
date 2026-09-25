@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-09-24
 - **当前分支**：`codex/phase-11-agent-harness-upgrade`（已快进包含`xgao`的Phase A设计冻结提交`d0f108a`）
-- **当前阶段**：Phase A、B00/B01/B02、B00C01–B00C06及B02C01已completed；B03 blocked（B00C08 completed，B00C09 review），B04/B05仍draft。
+- **当前阶段**：Phase A、B00/B01/B02、B00C01–B00C08及B02C01已completed；B03 blocked（B00C09 review），B04/B05仍draft。
 - **活动 ticket**：B03 blocked；活动时间账本表达需要独立合同审定，见[B00C09](tickets/phase-b-graph-harness/B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md)。已完成基础保留，完整 canonical 交付与验收未完成。
 - **稳定基线**：[`v0.2-demo`](milestones/V0_2_DEMO_BASELINE.md)
 - **本轮范围**：B00C08在13f3b74冻结，92603f6提交治理完成；B03 blocked。资源事务、Task/Manifest、aggregate/core、workspace 基础已定向验证；真实 Pause 的 Run-only setup 计费缺口已复现；normal/timeout canonical 来源、Bundle、fresh Analysis、golden 和整票验收尚未完成。mapped56/remaining75、Phase B未完成。
@@ -225,6 +225,8 @@ B02与C04现均in_progress：C04独立语义/来源/进程修正已通过定向�
 
 2026-09-24：B00C08在13f3b74冻结并完成治理交接；B03恢复ready。Normal/timeout完整来源、source trace0.5、独立Analysis success前置及其golden审计范围已批准，尚待B03实现。预算事务与canonical交付未完成，mapped56/remaining75、Phase B未完成。
 
-2026-09-24：B03因活动时间记账合同缺口blocked，B00C09设计票review。3秒Host setup在真实public Pause和新进程ledger replay中遗漏；不能靠增加Backend active_seconds解决Run-only计费。基础定向70 passed、workspace14 passed；完整canonical与28/645验收未完成，mapped56/remaining75保持。详见[B03最新执行记录](tickets/completions/B03_COMPLETION.md)。
+2026-09-24：B03因活动时间记账合同缺口blocked，B00C09纠偏实施票为review，已补齐待审wire、发布与恢复边界，尚未获准执行。3秒Host setup在真实public Pause和新进程ledger replay中遗漏；不能靠增加Backend active_seconds解决Run-only计费。基础定向70 passed、workspace14 passed；完整canonical与28/645验收未完成，mapped56/remaining75保持。详见[B03最新执行记录](tickets/completions/B03_COMPLETION.md)。
 
 本轮收尾：B02消费/失败收尾回归96 passed，协议/生成字节/冻结正文及181个链接校验通过。基础实现和阻塞记录保存为开发检查点；B03 blocked、B00C09 review，未push，不代表完整suite或B03验收通过。
+
+2026-09-24 B00C09修订：待审票已明确 B00C05 首次 stub COMMIT 后再发布冻结的 setup event，保留 verification 资源的实测时长、覆盖 normal/timeout 与部分 Pause 的结算，并限定旧 golden 的派生更新。仍为 `review`，未获准实施；B03 保持 `blocked`。

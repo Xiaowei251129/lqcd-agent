@@ -37,7 +37,7 @@ Ready ticket 不能静默覆盖 `AGENTS.md`、安全策略或当前 public contr
 
 ## 第二阶段方向与 Tickets
 
-当前B00–B02及B00C01–B00C06、B02C01已完成。B00C07/B00C08已完成文档交接，B03为blocked，等待活动时间账本合同审定；待审设计见[B00C09](tickets/phase-b-graph-harness/B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md)。B04/B05仍draft。Phase B整体未完成，见[B03执行记录](tickets/completions/B03_COMPLETION.md)。
+当前B00–B02及B00C01–B00C06、B02C01已完成。B00C07/B00C08已完成文档交接，B03为blocked，等待活动时间账本合同审定；待审纠偏实施票见[B00C09](tickets/phase-b-graph-harness/B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md)。B04/B05仍draft。Phase B整体未完成，见[B03执行记录](tickets/completions/B03_COMPLETION.md)。
 
 冻结机读合同为[Control Protocol 0.4](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)及[Phase B需求目录](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)；状态更新不得移除这两项权威引用。
 
@@ -115,4 +115,4 @@ B00C04已按用户明确批准扩充并进入in_progress：独立case语义0.2�
 
 2026-09-24：B00C08在13f3b74冻结并完成治理交接；B03恢复ready。Normal/timeout完整来源、source trace0.5、独立Analysis success前置及其golden审计范围已批准，尚待B03实现。预算事务与canonical交付未完成，mapped56/remaining75、Phase B未完成。
 
-2026-09-24 B03接续：prestart/workspace基础已验证，真实public Pause反例确认Host setup的Run-only时间未进入预算回放。新增6项反例通过；依B03 Stop Conditions暂停依赖实现，等待[B00C09设计审阅](tickets/phase-b-graph-harness/B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md)。C08治理仍completed，B03仍未交付28/645验收；上述历史2677/1410不代表当前未完成工作树的fresh全量结果。
+2026-09-24 B03接续：prestart/workspace基础已验证，真实public Pause反例确认Host setup的Run-only时间未进入预算回放。新增6项反例通过；依B03 Stop Conditions暂停依赖实现，等待[B00C09纠偏实施票审阅](tickets/phase-b-graph-harness/B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md)。该票已修订但仍为`review`，未获准执行；C08治理仍completed，B03仍未交付28/645验收；上述历史2677/1410不代表当前未完成工作树的fresh全量结果。
