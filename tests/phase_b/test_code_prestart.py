@@ -47,7 +47,7 @@ def test_prestart_commits_one_exact_aggregate_and_core_before_any_workspace(pres
     assert aggregate(service, witness) == reservation
     assert service.commit_core() == core
     rows = parse_ledger((root / "execution_history.jsonl").read_bytes()).values
-    assert rows == [*before, reservation]
+    assert rows == [*before, service.publish_setup(), reservation]
     assert core["reservation_digest"] == digest(reservation)
     external = loads(service.coordinator.connection.execute("SELECT value FROM external_operations").fetchone()[0])
     assert external["operation_phase"] == "core_contract_committed" and external["pause_id"] is None

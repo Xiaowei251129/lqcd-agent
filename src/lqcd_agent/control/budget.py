@@ -30,7 +30,7 @@ LIMITS = (
 ROUTE_DIMENSIONS = tuple(row[0] for row in LIMITS if row[0].startswith("automatic_"))
 RESOURCE_DIMENSIONS = ("llm_calls", "tool_calls", "verification_commands", "active_seconds")
 EVENTS = ("policy_initialized", "resource_reserved", "resource_settled", "failure_observed",
-          "grant_issued", "grant_consumed", "decision_recorded")
+          "grant_issued", "grant_consumed", "decision_recorded", "active_interval_reserved", "active_interval_settled")
 
 
 def policy(profile_id="balanced_v1"):
@@ -176,6 +176,12 @@ def validate_budget_payload(event, value):
                               "task_digest", "config_digest", "producer_operation_id", "workspace_id"),
         "resource_settled": ("resource_operation_id", "actual", "tokens", "cost", "evidence_digest",
                              "operation_id", "lease_epoch", "phase_revision"),
+        "active_interval_reserved": ("schema_version", "interval_id", "stage", "attempt_id", "producer_operation_id",
+                                     "owner_operation_id", "clock_epoch_id", "start_at", "maximum_seconds",
+                                     "run_remaining_before", "attempt_remaining_before", "deadline_monotonic_seconds"),
+        "active_interval_settled": ("schema_version", "interval_id", "stage", "attempt_id", "producer_operation_id",
+                                    "owner_operation_id", "settlement_operation_id", "lease_epoch", "phase_revision",
+                                    "clock_epoch_id", "end_at", "actual_seconds", "disposition", "evidence_digest"),
         "failure_observed": ("fingerprint", "occurrence"),
         "grant_issued": ("budget_grant_id", "budget_grant_index", "cycle_id", "human_request_id", "human_response_id",
                          "pause_id", "response_reference", "response_digest", "route_dimension", "fingerprint_digest",
@@ -221,6 +227,40 @@ def validate_budget_payload(event, value):
         text(value["operation_id"])
         number(value["lease_epoch"], integer=True, minimum=1)
         number(value["phase_revision"], integer=True, minimum=1)
+    elif event in ("active_interval_reserved", "active_interval_settled"):
+        require(value["schema_version"] == "active_time_0.1", "Unknown active-time payload version")
+        require(value["stage"] in ("host_setup", "attempt_active"), "Unknown active-time stage")
+        for key in ("interval_id", "attempt_id", "producer_operation_id", "owner_operation_id", "clock_epoch_id"):
+            text(value[key])
+        if event == "active_interval_reserved":
+            from .clock import Timestamp
+            closed(value["start_at"], ("source", "wall_seconds", "monotonic_seconds"))
+            Timestamp(**value["start_at"])
+            for key in ("maximum_seconds", "run_remaining_before", "deadline_monotonic_seconds"):
+                number(value[key])
+            require(value["maximum_seconds"] > 0 and value["run_remaining_before"] >= value["maximum_seconds"] and
+                    value["deadline_monotonic_seconds"] == value["start_at"]["monotonic_seconds"] + value["maximum_seconds"],
+                    "Invalid active-time window")
+            if value["stage"] == "host_setup":
+                require(value["attempt_remaining_before"] is None and
+                        value["owner_operation_id"] == value["producer_operation_id"], "Setup must be Run-only")
+            else:
+                number(value["attempt_remaining_before"])
+                require(value["attempt_remaining_before"] >= value["maximum_seconds"], "Attempt window is insufficient")
+        else:
+            for key in ("settlement_operation_id",):
+                text(value[key])
+            number(value["lease_epoch"], integer=True, minimum=1)
+            number(value["phase_revision"], integer=True, minimum=1)
+            require(value["disposition"] in ("actual", "conservative_maximum"), "Unknown active-time disposition")
+            if value["disposition"] == "actual":
+                from .clock import Timestamp
+                closed(value["end_at"], ("source", "wall_seconds", "monotonic_seconds"))
+                Timestamp(**value["end_at"])
+                number(value["actual_seconds"])
+            else:
+                require(value["end_at"] is None and value["actual_seconds"] is None, "Conservative settlement cannot claim actual")
+            digest_value(value["evidence_digest"])
     elif event == "failure_observed":
         validate_fingerprint(value["fingerprint"])
         number(value["occurrence"], integer=True, minimum=1)

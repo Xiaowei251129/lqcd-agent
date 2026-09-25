@@ -1,6 +1,7 @@
 """Trusted clock ports; interval semantics from A06 Resource Reservation."""
 from dataclasses import dataclass
 import time
+import uuid
 from typing import Protocol
 
 from .strict_json import number, require
@@ -23,12 +24,16 @@ class Clock(Protocol):
 
 
 class HostClock:
+    def __init__(self):
+        self.epoch_id = "host_clock_" + uuid.uuid4().hex
+
     def now(self):
         return Timestamp("host", time.time(), time.monotonic())
 
 
 class FakeClock:
-    def __init__(self, wall_seconds=0, monotonic_seconds=0):
+    def __init__(self, wall_seconds=0, monotonic_seconds=0, *, epoch_id="fake_clock_epoch_1"):
+        self.epoch_id = epoch_id
         self._current = Timestamp("deterministic_harness", wall_seconds, monotonic_seconds)
 
     def now(self):

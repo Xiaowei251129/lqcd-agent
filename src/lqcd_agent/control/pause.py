@@ -1051,9 +1051,41 @@ class PauseOperations:
         materialized = operation.get("_materialized_records", ())
         if len(materialized) > len(records):
             stamp = Timestamp(**materialized[len(records)]["created_at"])
+        active_time = None
+        initial = None
+        if request["reason"] == "external_result":
+            producer = request["external_dependency"]["producer_operation_id"]
+            setup = [row for row in original["records"] if row["record_type"] == "budget" and
+                     row["event"] == "active_interval_reserved" and row["payload"]["stage"] == "host_setup" and
+                     row["payload"]["producer_operation_id"] == producer]
+            require(len(setup) <= 1, "External Pause has duplicate setup intervals")
+            initial = setup[0]["payload"] if setup else None
+        if initial is not None:
+            actual = (stamp.monotonic_seconds - initial["start_at"]["monotonic_seconds"]
+                      if getattr(self.coordinator.clock, "epoch_id", None) == initial["clock_epoch_id"] and
+                      stamp.source == initial["start_at"]["source"] and
+                      stamp.wall_seconds >= initial["start_at"]["wall_seconds"] and
+                      stamp.monotonic_seconds >= initial["start_at"]["monotonic_seconds"] else None)
+            require(actual is None or actual <= initial["maximum_seconds"],
+                    f"Setup active window exceeded: observed={actual}, maximum={initial['maximum_seconds']}")
+            evidence = {"producer_operation_id": producer, "pause_id": identity["pause_id"],
+                        "paused_lifecycle_head": digest(paused)}
+            payload = {key: initial[key] for key in ("schema_version", "interval_id", "stage", "attempt_id",
+                                                     "producer_operation_id", "owner_operation_id", "clock_epoch_id")}
+            payload.update(settlement_operation_id=operation["operation_id"], lease_epoch=operation["lease_epoch"],
+                           phase_revision=6, end_at=asdict(stamp) if actual is not None else None,
+                           actual_seconds=actual, disposition="actual" if actual is not None else "conservative_maximum",
+                           evidence_digest=digest(evidence))
+            policy = next(row["payload"]["policy"] for row in records if row["record_type"] == "budget" and row["event"] == "policy_initialized")
+            ordinal = 1 + sum(row["record_type"] == "budget" for row in records)
+            append("budget", "active_interval_settled", budget_event_id=f"budget_event_{ordinal:06d}",
+                   budget_event_index=ordinal, policy_version="0.1", policy_digest=policy["policy_digest"], payload=payload)
+            active_time = {"interval_id": initial["interval_id"], "settlement_execution_head": digest(records[-1])}
         proof = {"prepared": {"execution_head": digest(prepared)}, "prepared_checkpoint": pending["manifest"],
                  "paused_lifecycle": {"execution_head": digest(paused)}, "opened_at": asdict(stamp),
                  "deadline": stamp.wall_seconds + selected["pause_deadline_seconds"]}
+        if active_time is not None:
+            proof["active_time"] = active_time
         append("pause", "pause_opened", **identity, status="opened", state_digest=pending["manifest"]["state_digest"],
                operation_id=operation["operation_id"], lease_epoch=operation["lease_epoch"], phase_revision=6, proof=proof)
         opened = records[-1]
@@ -1457,6 +1489,26 @@ class ExternalInterrupt(ExternalCancellation):
         coordinator, locator = self.coordinator, request.run_locator
         root = coordinator.root / locator["case_id"] / locator["run_id"]
         with coordinator.transaction() as db:
+            pending_owner = coordinator.lookup_key("internal_interrupt", key, db=db)
+            if pending_owner is None:
+                trigger_path = root / request.trigger_reference
+                require(trigger_path == trigger_path.resolve() and trigger_path.is_relative_to(root), "Interrupt trigger escaped Run")
+                raw = read_regular(trigger_path)
+                require(sha256(raw).hexdigest() == request.trigger_digest, "Interrupt trigger bytes changed")
+                trigger = loads(raw)
+                require(trigger["reason"] == request.reason and trigger["producer_operation_id"] == request.producer_operation_id and
+                        trigger["run_locator"] == locator, "Interrupt trigger identity mismatch")
+            producer = ExternalControl(coordinator).read(db, request.producer_operation_id)
+            active = producer.get("prestart", {}).get("active_time")
+            needs_setup = pending_owner is None and active is not None and not active["published"]
+        if needs_setup:
+            from lqcd_agent.code_agent.external_operation import ExternalProducer
+            from lqcd_agent.code_agent.prestart import CodePrestart
+            producer = ExternalProducer(coordinator).recover_setup(request.producer_operation_id,
+                worker_id=self.worker, lease_seconds=self.lease_seconds)
+            CodePrestart(coordinator, request.producer_operation_id,
+                         producer["worker_owner_id"], producer["lease_epoch"]).publish_setup()
+        with coordinator.transaction() as db:
             operation = coordinator.lookup_key("internal_interrupt", key, db=db)
             if operation is not None:
                 require(operation["request_digest"] == digest({"operation_type": "resolve_external_interrupt", "operation_variant": variant, "request": canonical}), "Interrupt request conflict")
@@ -1590,6 +1642,33 @@ class ExternalInterrupt(ExternalCancellation):
         plan.step("external_final_evidence_verified", {"interrupt_external_final_evidence_digest": final_digest,
                   "interrupt_resolution_owner_and_revision": {"owner": owner, "revision": value["phase_revision"]}, "proof_kind": value["proof_kind"],
                   "trusted_usage_and_integrity_evidence": final})
+        active = value.get("prestart", {}).get("active_time")
+        if active is not None:
+            initial = active["setup_record"]["payload"]
+            require(active["published"] and active["setup_record"] in source["records"],
+                    "Interrupt lacks the canonical setup reservation")
+            already_settled = any(row["record_type"] == "budget" and row["event"] == "active_interval_settled" and
+                                  row["payload"]["interval_id"] == initial["interval_id"] for row in source["records"])
+            if not already_settled:
+                stamp = plan.timestamp
+                same_clock = (self.coordinator.clock.epoch_id == initial["clock_epoch_id"] and
+                              stamp.source == initial["start_at"]["source"] and
+                              stamp.wall_seconds >= initial["start_at"]["wall_seconds"] and
+                              stamp.monotonic_seconds >= initial["start_at"]["monotonic_seconds"])
+                duration = stamp.monotonic_seconds - initial["start_at"]["monotonic_seconds"] if same_clock else None
+                require(duration is None or duration <= initial["maximum_seconds"],
+                        f"Interrupt setup interval exceeded: observed={duration}, maximum={initial['maximum_seconds']}")
+                budget_index = max(r["budget_event_index"] for r in plan.records if r["record_type"] == "budget") + 1
+                plan.append("budget", "active_interval_settled", budget_event_id=f"budget_event_{budget_index:06d}",
+                            budget_event_index=budget_index, policy_version="0.1",
+                            policy_digest=active["setup_record"]["policy_digest"], payload={
+                                **{key: initial[key] for key in ("schema_version", "interval_id", "stage", "attempt_id",
+                                                               "producer_operation_id", "owner_operation_id", "clock_epoch_id")},
+                                "settlement_operation_id": owner, "lease_epoch": operation["lease_epoch"],
+                                "phase_revision": 4, "end_at": asdict(stamp) if duration is not None else None,
+                                "actual_seconds": duration,
+                                "disposition": "actual" if duration is not None else "conservative_maximum",
+                                "evidence_digest": final_digest})
         resource = operation["reservation"]["resource_reservation_snapshot"]
         settlement = {"tag": "not_applicable", "reservation_absence": resource}
         violation = final.get("proven_policy_violation") is True
@@ -1723,11 +1802,20 @@ def validate_pause_record(record):
         require(type(proof["dependency"]) is dict and type(proof["allowed_target_action"]) is dict,
                 "Missing Pause dependency or target contract")
     elif record["status"] == "opened":
-        closed(proof, ("prepared", "prepared_checkpoint", "paused_lifecycle", "opened_at", "deadline"))
+        closed(proof, ("prepared", "prepared_checkpoint", "paused_lifecycle", "opened_at", "deadline") +
+               (("active_time",) if "active_time" in proof else ()))
         for field in ("prepared", "paused_lifecycle"):
             closed(proof[field], ("execution_head",))
             digest_value(proof[field]["execution_head"])
-        require(proof["paused_lifecycle"]["execution_head"] == record["previous_execution_head"], "Pause opened pre-head mismatch")
+        if "active_time" in proof:
+            closed(proof["active_time"], ("interval_id", "settlement_execution_head"))
+            text(proof["active_time"]["interval_id"])
+            digest_value(proof["active_time"]["settlement_execution_head"])
+            require(proof["active_time"]["settlement_execution_head"] == record["previous_execution_head"],
+                    "Pause opened settlement head mismatch")
+        else:
+            require(proof["paused_lifecycle"]["execution_head"] == record["previous_execution_head"],
+                    "Pause opened pre-head mismatch")
         require(type(proof["prepared_checkpoint"]) is dict, "Missing prepared checkpoint")
         closed(proof["opened_at"], ("source", "wall_seconds", "monotonic_seconds"))
         Timestamp(**proof["opened_at"])
@@ -1786,6 +1874,15 @@ def replay_pauses(records):
                     require(run_status == "paused", "Pause opened before paused lifecycle")
                     require(proof["prepared"]["execution_head"] == digest(pauses[identity][0]), "Foreign prepared head")
                     life = by_head.get(record["previous_execution_head"])
+                    if "active_time" in proof:
+                        settled = life
+                        require(settled is not None and settled["record_type"] == "budget" and
+                                settled["event"] == "active_interval_settled" and
+                                settled["payload"]["interval_id"] == proof["active_time"]["interval_id"] and
+                                settled["payload"]["stage"] == "host_setup" and
+                                settled["payload"]["settlement_operation_id"] == record["operation_id"],
+                                "Pause opened lacks exact setup settlement")
+                        life = by_head.get(settled["previous_execution_head"])
                     require(life is not None and life["record_type"] == "run_lifecycle" and
                             life["from_status"] == "running" and life["to_status"] == "paused" and
                             life["pause_id"] == identity, "Pause opened lacks exact lifecycle closure")
@@ -2048,6 +2145,38 @@ class ConsumptionFailure:
                 state_digest=digest(source["state"]), operation_id=owner, lease_epoch=operation["lease_epoch"], phase_revision=failure["source_phase_revision"] + 4,
                 proof={"opened": {"execution_head": digest(opened)}, "failure_id_digest": failure["failure_id_digest"]})
         attempt = next(r for r in reversed(plan.records) if r["record_type"] == "attempt" and r["attempt_id"] == external["value"]["attempt_id"])
+        active = next((r["payload"] for r in plan.records if r["record_type"] == "budget" and
+                       r["event"] == "active_interval_reserved" and r["payload"]["stage"] == "attempt_active" and
+                       r["payload"]["attempt_id"] == attempt["attempt_id"]), None)
+        if active is not None:
+            require(attempt["status"] == "running" and not any(r["record_type"] == "budget" and
+                    r["event"] == "active_interval_settled" and r["payload"]["interval_id"] == active["interval_id"]
+                    for r in plan.records), "Failure active interval is not an open Attempt")
+            stamp = plan.timestamp
+            same_clock = (self.coordinator.clock.epoch_id == active["clock_epoch_id"] and
+                          stamp.source == active["start_at"]["source"] and
+                          stamp.wall_seconds >= active["start_at"]["wall_seconds"] and
+                          stamp.monotonic_seconds >= active["start_at"]["monotonic_seconds"])
+            verification_uncertain = any(r["record_type"] == "budget" and r["event"] == "resource_reserved" and
+                r["payload"]["resource_kind"] == "verification_command" and r["payload"]["attempt_id"] == attempt["attempt_id"] and
+                (r["payload"]["resource_operation_id"] not in settled or
+                 next((s["payload"]["actual"] for s in plan.records if s["record_type"] == "budget" and
+                       s["event"] == "resource_settled" and s["payload"]["resource_operation_id"] == r["payload"]["resource_operation_id"]), None) is None)
+                for r in plan.records)
+            duration = stamp.monotonic_seconds - active["start_at"]["monotonic_seconds"] if same_clock and not verification_uncertain else None
+            require(duration is None or duration <= active["maximum_seconds"],
+                    f"Failure active interval exceeded: observed={duration}, maximum={active['maximum_seconds']}")
+            position = max(r["budget_event_index"] for r in plan.records if r["record_type"] == "budget") + 1
+            plan.append("budget", "active_interval_settled", budget_event_id=f"budget_event_{position:06d}",
+                        budget_event_index=position, policy_version="0.1",
+                        policy_digest=source["state"]["budget"]["policy_digest"], payload={
+                            **{key: active[key] for key in ("schema_version", "interval_id", "stage", "attempt_id",
+                                                       "producer_operation_id", "owner_operation_id", "clock_epoch_id")},
+                            "settlement_operation_id": owner, "lease_epoch": operation["lease_epoch"],
+                            "phase_revision": failure["source_phase_revision"] + 4,
+                            "end_at": asdict(stamp) if duration is not None else None, "actual_seconds": duration,
+                            "disposition": "actual" if duration is not None else "conservative_maximum",
+                            "evidence_digest": failure["failure_id_digest"]})
         if attempt["status"] in ("scheduled", "running"):
             fields = {k: attempt[k] for k in RECORD_FIELDS["attempt"]}
             fields.update(status="abandoned" if attempt["status"] == "scheduled" else "failed",
@@ -2219,6 +2348,8 @@ class InterruptedDelivery:
         require(intent["previous"] == plan.ledger() and capability["authorization"]["canonical_failed_delivery_digest"] == delivery_digest,
                 "Timeout start intent differs from its frozen source")
         old_index = canonical_bytes(plan.index).decode()
+        if intent.get("interval_record") is not None:
+            plan.records.append(intent["interval_record"])
         plan.records.append(intent["record"])
         plan.step("interrupted_code_attempt_started", {"same_interrupt_winner": owner, "exact_code_target_authorization": capability["authorization_digest"],
             "invocation_started_intent": intent, "exact_a02_started_record": intent["record"]})
@@ -2242,6 +2373,8 @@ class InterruptedDelivery:
             {"path": "artifact_history.jsonl", "previous": publication["previous"], "content": publication["content"], "replacement": False},
             {"path": "artifact_index.json", "previous": canonical_bytes(plan.index).decode(), "content": canonical_bytes(registered).decode(), "replacement": True}])
         plan.index = registered
+        if completion.get("interval_settlement") is not None:
+            plan.records.append(completion["interval_settlement"])
         plan.records.append(completion["finished_record"])
         plan.step("interrupted_code_attempt_finished", {"same_interrupt_winner": owner, "failed_code_artifact_head": registered["artifact_head"],
             "exact_code_attempt_failed_record": completion["finished_record"], "no_outbound_transition": True})
@@ -2292,9 +2425,36 @@ class InterruptedDelivery:
             refs = {slot: pointer["artifact_id"] for slot, pointer in index["current"].items() if pointer is not None}
             fields = {k: target[k] for k in FIELDS["attempt"]}
             fields.update(status="failed", output_references={"current_artifact_ids": refs}, error={"type": "OperationTimeout", "message": "Trusted safe timeout"})
-            finished = build_record("attempt", "finished", **operation["request"]["run_locator"], event_index=len(plan.records) + 1,
-                previous_execution_head=digest(target), artifact_head=index["artifact_head"], artifact_event_index=index["revision"], timestamp=now, **fields).value
-            completion = {"registered_index": index, "artifact_publication": publication, "finished_record": finished}
+            settlement = None
+            parent = capability["started_intent"].get("interval_record")
+            if parent is not None:
+                interval = parent["payload"]
+                same_clock = (self.coordinator.clock.epoch_id == interval["clock_epoch_id"] and
+                              now.source == interval["start_at"]["source"] and
+                              now.wall_seconds >= interval["start_at"]["wall_seconds"] and
+                              now.monotonic_seconds >= interval["start_at"]["monotonic_seconds"])
+                duration = now.monotonic_seconds - interval["start_at"]["monotonic_seconds"] if same_clock else None
+                require(duration is None or duration <= interval["maximum_seconds"],
+                        f"Timeout active interval exceeded: observed={duration}, maximum={interval['maximum_seconds']}")
+                budget = replay(plan.records).projection.value["budget"]
+                position = budget["budget_event_index"] + 1
+                settlement = build_record("budget", "active_interval_settled", **operation["request"]["run_locator"],
+                    event_index=len(plan.records) + 1, previous_execution_head=digest(target),
+                    artifact_head=index["artifact_head"], artifact_event_index=index["revision"], timestamp=now,
+                    budget_event_id=f"budget_event_{position:06d}", budget_event_index=position,
+                    policy_version="0.1", policy_digest=budget["policy_digest"], payload={
+                        **{key: interval[key] for key in ("schema_version", "interval_id", "stage", "attempt_id",
+                                                       "producer_operation_id", "owner_operation_id", "clock_epoch_id")},
+                        "settlement_operation_id": owner, "lease_epoch": operation["lease_epoch"],
+                        "phase_revision": operation["phase_revision"],
+                        "end_at": asdict(now) if duration is not None else None, "actual_seconds": duration,
+                        "disposition": "actual" if duration is not None else "conservative_maximum",
+                        "evidence_digest": digest({"delivery_digest": digest(delivery), "artifact_head": index["artifact_head"]})}).value
+            finished = build_record("attempt", "finished", **operation["request"]["run_locator"], event_index=len(plan.records) + 1 + (settlement is not None),
+                previous_execution_head=digest(settlement) if settlement is not None else digest(target),
+                artifact_head=index["artifact_head"], artifact_event_index=index["revision"], timestamp=now, **fields).value
+            completion = {"registered_index": index, "artifact_publication": publication,
+                          "interval_settlement": settlement, "finished_record": finished}
             leases = InvocationLeases(self.coordinator)
             revision, value = leases.get("capability_" + owner, db=db)
             require(value["started_intent"] == capability["started_intent"] and value.get("timeout_completion") is None, "Timeout completion already frozen")

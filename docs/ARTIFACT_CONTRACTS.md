@@ -116,6 +116,8 @@ Replay/Fork child在任何child bytes前冻结field-disjoint `SourceSnapshotProo
 
 外部结果Pause还必须引用A05已定义的ExternalOperation core、one-time Pause binding和final evidence，以及A06已确认的resource reservation/settlement；这些control records不改变A03 domain artifact slots。只有消费、Attempt terminal artifact、settlement与active binding release形成exact closure后，checkpoint和后续Transition才能发布。
 
+B00C09只在同一execution ledger增加`active_time_0.1`的setup/Attempt预算记录，并在ExternalOperation内部`prestart.active_time`保存首次COMMIT冻结的exact intent。它不新增或重写A05 `CodeAgentTask/Result/Workspace` public 0.1 member；新Pause proof通过`active_time.interval_id/settlement_execution_head`绑定setup settlement，旧B02 synthetic proof仍按原形状读取。详见[活动时间合同](tickets/corrections/B00C09_ACTIVE_TIME_LEDGER_CONTRACT.md)。
+
 ## A05 已确认的 Code Agent Artifact Contract（尚未实现）
 
 [A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)冻结独立schema `0.1`的`CodeAgentTask`、`CodeAgentExternalResult`、`CodeAgentResult`、`BackendDispatchReceipt`、`WorkspaceManifest`、`WorkspaceSeal`、change manifest与verification results。它们不兼容解释当前`coder_task_packet.yaml`、`code_change_summary.md`或`tests_status.json`。

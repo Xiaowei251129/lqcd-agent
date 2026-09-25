@@ -95,6 +95,8 @@ A06要求Phase B normalized trace与acceptance matrix能够从权威policy和led
 
 Token和normalized cost只作audit metric；provider未报告时必须显示`unknown`，不能计作0或影响hard-gate通过率。Stop telemetry必须区分`halted`、已证明且可发布的`failed`、`recovery_required`、`terminal_closure: unavailable`和非terminal`materialization_pending`，不得只报告“任务失败”。B01已有pure construction traces覆盖execution order/heads、policy/fingerprint、clock归属和typed integrity rejection；默认产品trace仍是普通`llm_calls/`和schema `0.2` execution records，durable stop telemetry尚未接入。
 
+B00C09使B03 canonical Code path的Host setup、Backend aggregate与Attempt active在同一ledger中可独立重放；观测必须分别报告Run-only setup、Run/Attempt共同收费、未结算maximum、跨epoch conservative disposition、nested verification的command与实测audit秒数。旧B02 synthetic路径不得因缺少新版marker而被当成canonical计费。B00C09定向与兼容测试不代替B03的28项construction或645项runtime，完整验收仍按原owner集合执行。
+
 ## Phase B Acceptance Foundation 与待实现的 Runtime Evidence
 
 A07把评估证据分成required control acceptance、compatibility regression和capability evaluation。只有第一类计入required control coverage：它必须network-free、deterministic、使用production selector/validator/ledger/registry/Pause/budget/CodeAgentSubgraph入口，并对exact normalized semantic trace和typed invariants断言。Legacy、live provider、benchmark score、人工演示或单一happy path必须单独报告，不能填补required coverage。

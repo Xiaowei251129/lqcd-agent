@@ -90,7 +90,7 @@ def recover_publications(coordinator, db, operation):
     leases._save(db, capability, revision, value)
 
 
-def _commit(port, event, payload):
+def _commit(port, event, payload, *, timestamp=None):
     coordinator, leases = port.leases.coordinator, port.leases
     with coordinator.transaction() as db:
         leases._effect_authority(db, port.capability_id, port.worker, port.epoch)
@@ -106,7 +106,7 @@ def _commit(port, event, payload):
         position = state["budget"]["budget_event_index"] + 1
         record = build_record("budget", event, case_id=state["case_id"], run_id=state["run_id"],
             event_index=len(execution.records) + 1, previous_execution_head=state["execution_head"],
-            artifact_head=index["artifact_head"], artifact_event_index=index["revision"], timestamp=now,
+            artifact_head=index["artifact_head"], artifact_event_index=index["revision"], timestamp=timestamp or now,
             budget_event_id=f"budget_event_{position:06d}", budget_event_index=position,
             policy_version="0.1", policy_digest=state["budget"]["policy_digest"], payload=payload).value
         content = append_record_bytes(previous["content"].encode(), record)
@@ -159,6 +159,22 @@ def run_verification(port, *, spec_id, input_digest, config_digest, timeout_seco
             keys = ("verification_commands_per_code_attempt",) if name == "verification_commands" else (name + "_per_attempt", name + "_per_run")
             limits[name] = min(policy[k] for k in keys)
             remaining[name] = min(dimensions[k]["remaining"] for k in keys)
+        if "active_time" in authorization:
+            parent = value["started_intent"].get("interval_record")
+            require(parent is not None and parent["payload"]["interval_id"] == authorization["active_time"]["interval_id"],
+                    "Verification lacks its active parent")
+            require(coordinator.clock.epoch_id == parent["payload"]["clock_epoch_id"],
+                    "Verification clock epoch differs from its active parent")
+            prior = [r["payload"] for r in records if r["record_type"] == "budget" and r["event"] == "resource_reserved" and
+                     r["event_index"] > parent["event_index"] and r["payload"]["resource_kind"] == "verification_command" and
+                     r["payload"]["attempt_id"] == state["attempt_id"]]
+            resolved = {r["payload"]["resource_operation_id"]: r["payload"] for r in records if
+                        r["record_type"] == "budget" and r["event"] == "resource_settled"}
+            covered = sum((resolved[r["resource_operation_id"]]["actual"]["active_seconds"] if
+                           r["resource_operation_id"] in resolved and resolved[r["resource_operation_id"]]["actual"] is not None else
+                           r["maximum_charge"]["active_seconds"]) for r in prior)
+            remaining["active_seconds"] = max(0, min(parent["payload"]["deadline_monotonic_seconds"] - now.monotonic_seconds,
+                                                    parent["payload"]["maximum_seconds"] - covered))
         external = authorization["external_consumption"]["value"]
         payload = {"resource_operation_id": resource_id, "resource_kind": "verification_command", "attempt_id": state["attempt_id"],
             "ordinal": 1 + sum(r["attempt_id"] == state["attempt_id"] for r in reserved),
@@ -166,12 +182,15 @@ def run_verification(port, *, spec_id, input_digest, config_digest, timeout_seco
             "applicable_limits": limits, "remaining_before": remaining, "timeout_seconds": timeout_seconds,
             "input_digest": input_digest, "task_digest": external["task_digest"], "config_digest": config_digest,
             "producer_operation_id": external["producer_operation_id"], "workspace_id": external["workspace_id"]}
-    _commit(port, "resource_reserved", payload)
+    _commit(port, "resource_reserved", payload, timestamp=now)
     leases.require_effect_authority(port.capability_id, port.worker, port.epoch)
     started = coordinator._time()
     result = effect()
     require(type(result) is dict, "Untyped verification result")
     ended = coordinator._time()
+    if "active_time" in authorization:
+        require(coordinator.clock.epoch_id == parent["payload"]["clock_epoch_id"],
+                "Verification clock epoch changed during its active parent")
     require(ended.source == started.source and ended.wall_seconds >= started.wall_seconds and
             0 <= ended.monotonic_seconds - started.monotonic_seconds <= timeout_seconds, "Invalid verification duration")
     operation = coordinator.get(authorization["producer_operation_id"])

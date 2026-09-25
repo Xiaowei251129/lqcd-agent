@@ -8,7 +8,7 @@ from hashlib import sha256
 
 from .checkpoints import verify_checkpoint
 from .coordinator import boundary, publish_exact, read_regular, replace_projection
-from .execution import append_record_bytes, parse_ledger
+from .execution import append_record_bytes, parse_ledger, replay
 from .integrity import validate_advanced_run_root, validate_run_root
 from .protocol import PROTOCOL, operation_variant
 from .records import FIELDS, build_record
@@ -168,6 +168,15 @@ def authorize_resume_capability(coordinator, db, operation, run_root, manifest, 
                      "scope": CONTRACT["authorization_scopes"]["resume_continue"]}
     if operation["request"]["input_kind"] == "external_result":
         authorization["external_consumption"] = operation["reservation"]["target_prestart_closure"]["external"]
+        from .operations import ExternalControl
+        external_id = authorization["external_consumption"]["value"]["producer_operation_id"]
+        external = ExternalControl(coordinator).read(db, external_id)
+        active = external.get("prestart", {}).get("active_time")
+        if active is not None:
+            require(active["published"], "Code consumption lacks published setup active-time intent")
+            authorization["active_time"] = {"producer_operation_id": external_id,
+                                            "interval_id": active["attempt_interval_id"],
+                                            "maximum_seconds": active["attempt_maximum_seconds"]}
     preparation = operation["reservation"]["target_prestart_closure"].get("preparation")
     if preparation is not None:
         authorization.update(preparation)
@@ -199,6 +208,15 @@ def authorize_interrupt_capability(coordinator, db, operation, root, checkpoint,
         "artifact_history_digest": sha256(read_regular(root / "artifact_history.jsonl")).hexdigest(),
         "producing_epoch": operation["lease_epoch"], "terminal_closure_revision": 0, "checkpoint_anchor_kind": "same_head",
         "scope": CONTRACT["authorization_scopes"]["recoverable_interrupt"]}
+    from .operations import ExternalControl
+    external_id = operation["reservation"]["exact_external_operation_resolution_tuple"]["external_operation_id"]
+    external = ExternalControl(coordinator).read(db, external_id)
+    active = external.get("prestart", {}).get("active_time")
+    if active is not None:
+        require(active["published"], "Timeout consumption lacks published setup active-time intent")
+        authorization["active_time"] = {"producer_operation_id": external_id,
+                                        "interval_id": active["attempt_interval_id"],
+                                        "maximum_seconds": active["attempt_maximum_seconds"]}
     value = {"authorization": authorization, "authorization_digest": digest(authorization), "state": "unclaimed", "worker_id": None,
         "invocation_epoch": 0, "expires_at": None, "deadline": None, "started_intent": None, "updated_at": asdict(coordinator._time())}
     capability_id = "capability_" + operation["operation_id"]
@@ -321,6 +339,8 @@ class InvocationLeases:
                     "Invocation target is no longer scheduled")
             remaining = state["budget"]["dimensions"]
             duration = min(remaining["active_seconds_per_attempt"]["remaining"], remaining["active_seconds_per_run"]["remaining"])
+            if "active_time" in authorization:
+                duration = min(duration, authorization["active_time"]["maximum_seconds"])
             deadline = value["deadline"] if value["deadline"] is not None else now.monotonic_seconds + duration
             now = self._now(value)
             require(now.monotonic_seconds < deadline, "Invocation budget deadline elapsed")
@@ -371,16 +391,41 @@ class InvocationLeases:
             fields = {key: scheduled[key] for key in FIELDS["attempt"]}
             fields["status"] = "running"
             state = execution.projection.value
+            interval = None
+            if "active_time" in authorization:
+                planned = authorization["active_time"]
+                maximum = min(planned["maximum_seconds"], value["deadline"] - now.monotonic_seconds)
+                require(maximum > 0, "Code Attempt active window elapsed")
+                position = state["budget"]["budget_event_index"] + 1
+                interval = build_record("budget", "active_interval_reserved", run_id=state["run_id"], case_id=state["case_id"],
+                    event_index=len(execution.records) + 1, previous_execution_head=state["execution_head"],
+                    artifact_head=authorization["heads"]["artifact_head"],
+                    artifact_event_index=authorization["projection"]["artifact_event_index"], timestamp=now,
+                    budget_event_id=f"budget_event_{position:06d}", budget_event_index=position,
+                    policy_version="0.1", policy_digest=state["budget"]["policy_digest"], payload={
+                        "schema_version": "active_time_0.1", "interval_id": planned["interval_id"], "stage": "attempt_active",
+                        "attempt_id": authorization["identity"]["attempt_id"],
+                        "producer_operation_id": planned["producer_operation_id"],
+                        "owner_operation_id": authorization["producer_operation_id"],
+                        "clock_epoch_id": self.coordinator.clock.epoch_id, "start_at": asdict(now),
+                        "maximum_seconds": maximum,
+                        "run_remaining_before": state["budget"]["dimensions"]["active_seconds_per_run"]["remaining"],
+                        "attempt_remaining_before": state["budget"]["dimensions"]["active_seconds_per_attempt"]["remaining"],
+                        "deadline_monotonic_seconds": now.monotonic_seconds + maximum}).value
+                execution = replay([*execution.values, interval])
             started = build_record("attempt", "started", run_id=state["run_id"], case_id=state["case_id"],
-                                   event_index=len(execution.records) + 1, previous_execution_head=state["execution_head"],
+                                   event_index=len(execution.records) + 1,
+                                   previous_execution_head=digest(interval) if interval is not None else state["execution_head"],
                                    artifact_head=authorization["heads"]["artifact_head"],
                                    artifact_event_index=authorization["projection"]["artifact_event_index"],
                                    timestamp=now, **fields)
-            new_bytes = append_record_bytes(old_bytes, started.value)
+            new_bytes = append_record_bytes(old_bytes, interval) if interval is not None else old_bytes
+            new_bytes = append_record_bytes(new_bytes, started.value)
             new_index = canonical_bytes({**loads(old_index), "execution_head": started.digest})
             revision, value, _, now = self._fence(db, capability_id, worker_id, epoch)
             require(value["state"] == "leased_not_started" and value["started_intent"] is None, "Start intent already exists")
-            value.update(state="started", started_intent={"record": started.value, "previous": old_bytes.decode(),
+            value.update(state="started", started_intent={"record": started.value, "interval_record": interval,
+                                                          "previous": old_bytes.decode(),
                                                           "content": new_bytes.decode(), "published": False,
                                                           "previous_index": old_index.decode(), "index": new_index.decode()},
                          updated_at=asdict(now))
@@ -516,6 +561,27 @@ class InvocationLeases:
             if outcome.artifact is not None:
                 expected = {slot: pointer["artifact_id"] for slot, pointer in index["current"].items() if pointer is not None}
                 require(outcome.output_references == {"current_artifact_ids": expected}, "Target output references disagree with verified registry")
+            if "active_time" in authorization:
+                interval = value["started_intent"]["interval_record"]["payload"]
+                same_clock = self.coordinator.clock.epoch_id == interval["clock_epoch_id"] and now.source == interval["start_at"]["source"]
+                duration = now.monotonic_seconds - interval["start_at"]["monotonic_seconds"] if same_clock else None
+                require(duration is None or 0 <= duration <= interval["maximum_seconds"],
+                        f"Code active interval exceeded: observed={duration}, maximum={interval['maximum_seconds']}")
+                position = execution.projection.value["budget"]["budget_event_index"] + 1
+                producer = self.coordinator.get(authorization["producer_operation_id"], db=db)
+                settlement = build_record("budget", "active_interval_settled", **{key: started[key] for key in ("case_id", "run_id")},
+                    event_index=len(execution.records) + 1, previous_execution_head=execution.projection.value["execution_head"],
+                    artifact_head=index["artifact_head"], artifact_event_index=index["revision"], timestamp=now,
+                    budget_event_id=f"budget_event_{position:06d}", budget_event_index=position,
+                    policy_version="0.1", policy_digest=execution.projection.value["budget"]["policy_digest"], payload={
+                        **{key: interval[key] for key in ("schema_version", "interval_id", "stage", "attempt_id",
+                                                       "producer_operation_id", "owner_operation_id", "clock_epoch_id")},
+                        "settlement_operation_id": authorization["producer_operation_id"],
+                        "lease_epoch": producer["lease_epoch"], "phase_revision": producer["phase_revision"],
+                        "end_at": asdict(now) if duration is not None else None,
+                        "actual_seconds": duration, "disposition": "actual" if duration is not None else "conservative_maximum",
+                        "evidence_digest": digest({"status": outcome.status, "artifact_head": index["artifact_head"]})}).value
+                execution = replay([*execution.values, settlement])
             finished = build_record("attempt", "finished", **{key: started[key] for key in ("case_id", "run_id")},
                                     event_index=len(execution.records) + 1, previous_execution_head=execution.projection.value["execution_head"],
                                     artifact_head=index["artifact_head"], artifact_event_index=index["revision"],

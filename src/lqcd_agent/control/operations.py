@@ -52,6 +52,11 @@ class ExternalControl:
         from .strict_json import number
         number(value["lease_epoch"], integer=True, minimum=1)
         number(value["phase_revision"], integer=True, minimum=1)
+        if external_id.startswith("external_"):
+            active = value.get("prestart", {}).get("active_time")
+            require(active is not None and active["setup_record"]["payload"]["producer_operation_id"] == external_id and
+                    digest(active["setup_record"]) == active["setup_record_digest"],
+                    "Canonical producer lost its frozen active-time intent")
         return value
 
     def attached(self, db, locator):
@@ -201,6 +206,12 @@ class ExternalControl:
                 payload["attempt_id"] == target["attempt_id"] and payload["workspace_id"] == value["workspace_id"] and
                 payload["task_digest"] == value["task_digest"] and payload["workspace_manifest_digest"] == value["workspace_manifest_digest"],
                 "External dependency cross-wired with reservation")
+        active = value.get("prestart", {}).get("active_time")
+        if active is not None:
+            setup = [r for r in records if r["record_type"] == "budget" and r["event"] == "active_interval_reserved" and
+                     r["payload"]["stage"] == "host_setup" and r["payload"]["producer_operation_id"] == value["producer_operation_id"]]
+            require(active["published"] and len(setup) == 1 and setup[0] == active["setup_record"] and
+                    digest(setup[0]) == active["setup_record_digest"], "External setup reservation is not committed")
         digest_value(value["operation_contract_digest"])
         return {"producer_operation_id": value["producer_operation_id"], "lease_epoch": value["lease_epoch"],
                 "phase_revision": value["phase_revision"], "reservation_digest": value["reservation_digest"],
@@ -1001,7 +1012,7 @@ def retain_materialized_record(operation, candidate):
     if candidate["record_type"] == "transition":
         require(existing["committed_at"] == existing["created_at"], "Materialized Transition timestamp mismatch")
         mutable_producer.add("committed_at")
-    if candidate["record_type"] == "budget" and candidate["event"] == "resource_settled":
+    if candidate["record_type"] == "budget" and candidate["event"] in ("resource_settled", "active_interval_settled"):
         require(existing["payload"]["lease_epoch"] <= operation["lease_epoch"], "Future settlement producer epoch")
         candidate = {**candidate, "payload": {**candidate["payload"], "lease_epoch": existing["payload"]["lease_epoch"]}}
     require({key: value for key, value in existing.items() if key not in mutable_producer} ==

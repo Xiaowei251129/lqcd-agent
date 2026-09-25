@@ -1310,3 +1310,9 @@ B00C06最终验证完成后关闭。新版本与旧版本隔离，原required/ow
 2026-09-24 B03接续：B00C07已完成治理交接，但新注册member反例确认其B02 fixture替换与禁止trace0.5的限制冲突，B03再次blocked，待审B00C08。未修改production或golden；15项定向反例/回归通过。当前mapped56/remaining75，预算事务与canonical B03仍未实现。 见[B00C08待审票](tickets/phase-b-graph-harness/B00C08_B02_CANONICAL_EVIDENCE_TRACE_HANDOFF.md)。
 
 2026-09-24：B00C08在13f3b74冻结并完成治理交接；B03恢复ready。Normal/timeout完整来源、source trace0.5、独立Analysis success前置及其golden审计范围已批准，尚待B03实现。预算事务与canonical交付未完成，mapped56/remaining75、Phase B未完成。
+
+## 2026-09-24 — B00C09 canonical Code 活动时间仍由单一ledger裁决
+
+用户批准B00C09，ready快照单独冻结于`47bd0f6`。A06七类旧budget event和Phase A protocol/catalog保持原字节；仅B03 canonical Code path新增`active_time_0.1`的setup/Attempt closed事件，复用原B02 execution ledger/head与checkpoint authority。Setup只扣Run，Backend aggregate及Attempt区间同时扣Run/Attempt；verification保留正timeout、实测秒数与command audit，但在可信parent区间内不重复扣active。旧B02 synthetic事件和Pause proof不套用新marker。
+
+首次producer事务冻结setup record，COMMIT后exact发布；过期时原producer通过内部`recovery_only`新lease epoch仅补发同一record，旧epoch拒绝且不准新增pre-start效果。Pause以最后frozen suffix结算setup，normal/timeout及可安全关闭的失败收尾沿原owner和phase结算Attempt。跨epoch与不确定effect保留maximum；可信overage记录原观测值并进入原A06失败/不可用终态。独立合同见[B00C09](tickets/corrections/B00C09_ACTIVE_TIME_LEDGER_CONTRACT.md)。此决定只解除B03活动时间前置，完整Backend、Bundle、Analysis和28/645仍归B03，Phase B全局门槛不变。

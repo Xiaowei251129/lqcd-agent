@@ -156,12 +156,26 @@ def validate_control_root(coordinator, db, locator, control):
     if control["checkpoint_anchor_kind"] == "external_prestart":
         from .operations import ExternalControl
         external = ExternalControl(coordinator).read(db, control["external_owner"])
+        active = external.get("prestart", {}).get("active_time")
         require(external["run_locator"] == locator and external["parent_control_operation_id"] == operation["operation_id"] and
-                len(records) == len(expected_records) + 1 and records[:-1] == expected_records, "External source prefix changed")
-        reservation = records[-1]
-        require(reservation["record_type"] == "budget" and reservation["event"] == "resource_reserved" and
-                digest(reservation) == external["reservation_digest"] and reservation["payload"]["producer_operation_id"] == external["producer_operation_id"] and
-                reservation["payload"]["attempt_id"] == external["attempt_id"] == snapshot["projection"]["attempt_id"], "External reservation source mismatch")
+                records[:len(expected_records)] == expected_records and
+                external["attempt_id"] == snapshot["projection"]["attempt_id"], "External source prefix changed")
+        if active is not None:
+            require(active["published"] and len(records) in (len(expected_records) + 1, len(expected_records) + 2) and
+                    records[len(expected_records)] == active["setup_record"] and
+                    digest(active["setup_record"]) == active["setup_record_digest"], "Setup reservation source mismatch")
+            if len(records) == len(expected_records) + 1:
+                require(external["reservation_digest"] is None, "Aggregate source is missing")
+                reservation = None
+            else:
+                reservation = records[-1]
+        else:
+            require(len(records) == len(expected_records) + 1, "External source prefix changed")
+            reservation = records[-1]
+        if reservation is not None:
+            require(reservation["record_type"] == "budget" and reservation["event"] == "resource_reserved" and
+                    digest(reservation) == external["reservation_digest"] and reservation["payload"]["producer_operation_id"] == external["producer_operation_id"] and
+                    reservation["payload"]["attempt_id"] == external["attempt_id"], "External reservation source mismatch")
         require(snapshot["manifest"] == control["manifest"], "External preparation replaced checkpoint")
         return validate_advanced_run_root(root, manifest=control["manifest"], projection=control["projection"])
     require(snapshot["run_locator"] == locator and snapshot["projection"] == control["projection"] and

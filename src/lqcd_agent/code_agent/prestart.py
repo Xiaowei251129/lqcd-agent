@@ -22,13 +22,25 @@ class CodePrestart:
         self.coordinator, self.producer = coordinator, producer_operation_id
         self.worker, self.epoch = worker_id, epoch
 
-    def _fence(self, db):
+    def _fence(self, db, *, materialize_setup_only=False):
         coordinator = self.coordinator
         value = ExternalControl(coordinator).read(db, self.producer)
         now = coordinator._time().monotonic_seconds
         require(value["worker_owner_id"] == self.worker and value["lease_epoch"] == self.epoch and
-                now < min(value["worker_lease_expires_at"], value["hard_deadline"]) and
                 value["resolution_owner"] is None, "Stale external prestart owner")
+        if not materialize_setup_only:
+            require(now < min(value["worker_lease_expires_at"], value["hard_deadline"]),
+                    "Stale external prestart owner")
+        active = value.get("prestart", {}).get("active_time")
+        if materialize_setup_only:
+            require(active is not None and now < value["worker_lease_expires_at"] and
+                    (now < min(value["hard_deadline"], active["setup_record"]["payload"]["deadline_monotonic_seconds"]) or
+                     active.get("recovery_only") is True and active.get("recovery_epoch") == self.epoch and
+                     now < active["recovery_expires_at"]), "Stale setup materialization owner")
+        if active is not None and not materialize_setup_only:
+            require(active.get("recovery_only") is not True, "Setup recovery lease cannot execute effects")
+            require(now < active["setup_record"]["payload"]["deadline_monotonic_seconds"],
+                    "Setup active-time deadline elapsed")
         parent = coordinator.get(value["parent_control_operation_id"], db=db)
         require(parent["operation_type"] == "advance_run" and parent["status"] == "committed", "Missing committed Code parent")
         _, cap = InvocationLeases(coordinator).get(parent["result"]["capability_id"], db=db)
@@ -68,6 +80,42 @@ class CodePrestart:
                 state["attempt_status"] == "scheduled" and state["run_status"] == "running", "Code prestart target changed")
         return control, parse_ledger(read_regular(root / "execution_history.jsonl")), loads(read_regular(root / "artifact_index.json"))
 
+    def publish_setup(self):
+        with self.coordinator.transaction(commit_boundary="external.active_time_reserved") as db:
+            saved = ExternalControl(self.coordinator).read(db, self.producer)
+            frozen = saved.get("prestart", {}).get("active_time")
+            require(frozen is not None and digest(frozen["setup_record"]) == frozen["setup_record_digest"],
+                    "Missing frozen setup interval")
+            if frozen["published"]:
+                root = self.coordinator.root / saved["run_locator"]["case_id"] / saved["run_locator"]["run_id"]
+                records = parse_ledger(read_regular(root / "execution_history.jsonl")).values
+                require(sum(record == frozen["setup_record"] for record in records) == 1,
+                        "Published setup interval changed")
+                return frozen["setup_record"]
+            value, _, root = self._fence(db, materialize_setup_only=True)
+            frozen = value.get("prestart", {}).get("active_time")
+            require(frozen is not None and digest(frozen["setup_record"]) == frozen["setup_record_digest"],
+                    "Missing frozen setup interval")
+            require(value["operation_phase"] == "external_operation_reserved", "Setup publication out of order")
+            row = db.execute("SELECT value FROM run_controls WHERE run_key=?", (digest(value["run_locator"]),)).fetchone()
+            require(row is not None and loads(row[0]) == frozen["source_control"], "Setup control source changed")
+            publish_exact(root / "execution_history.jsonl", frozen["setup_content"].encode(),
+                          previous=frozen["previous_ledger"].encode(), observer=self.coordinator.observer,
+                          name="external.setup_reservation")
+            replace_projection(root / "artifact_index.json", canonical_bytes(frozen["source_index"]),
+                               canonical_bytes(frozen["setup_index"]), observer=self.coordinator.observer)
+            execution = parse_ledger(frozen["setup_content"].encode())
+            index = frozen["setup_index"]
+            state = bounded_projection(execution, artifact_index=index, artifact_head=index["artifact_head"],
+                                       artifact_event_index=index["revision"]).value
+            control = {**frozen["source_control"], "checkpoint_anchor_kind": "external_prestart", "external_owner": self.producer,
+                       "projection": {**state, "checkpoint_head": frozen["source_control"]["manifest"]["checkpoint_head"]}}
+            db.execute("UPDATE run_controls SET revision=revision+1,value=? WHERE run_key=?",
+                       (canonical_bytes(control), digest(value["run_locator"])))
+            frozen["published"] = True
+            self._save(db, value)
+            return frozen["setup_record"]
+
     def commit_task(self, task):
         task = validate_task(task).value
         with self.coordinator.transaction() as db:
@@ -75,7 +123,11 @@ class CodePrestart:
             if "task" not in value.get("prestart", {}):
                 require(value["operation_phase"] == "external_operation_reserved", "Task publication out of order")
                 _, execution, index = self._source(db, value, root)
-                transition = execution.values[-1]
+                source = self.coordinator.snapshot(value["parent_control_operation_id"], db=db)
+                transition = source["records"][-1]
+                active = value["prestart"]["active_time"]
+                expected = [transition, active["setup_record"]] if active["published"] else [transition]
+                require(execution.values[-len(expected):] == expected, "Task lacks exact setup source")
                 require(transition["record_type"] == "transition" and transition["event"] == "committed", "Task lacks inbound Transition")
                 expected = {**value["run_locator"], "cycle_id": value["cycle_id"], "attempt_id": value["attempt_id"],
                             "transition_id": transition["transition_id"], "producer_operation_id": self.producer}
@@ -110,6 +162,7 @@ class CodePrestart:
                     require((evidence["artifact_id"], evidence["path"], evidence["sha256"]) in members and
                             sha256(read_regular(root / evidence["path"])).hexdigest() == evidence["sha256"], "Task evidence changed")
                 self._freeze(db, value, "task", task)
+        self.publish_setup()
         return self._document("task", task, "external_operation_reserved", "task_committed", "task_digest", "external.task")
 
     def _freeze(self, db, value, name, payload):
@@ -176,6 +229,8 @@ class CodePrestart:
                 require(value["operation_phase"] == "workspace_manifest_committed", "Aggregate publication out of order")
                 require(self.coordinator._time().monotonic_seconds + timeout_seconds <= value["hard_deadline"],
                         "Aggregate exceeds producer deadline")
+                require(maximum_charge["active_seconds"] == value["prestart"]["active_time"]["backend_maximum_seconds"],
+                        "Backend active maximum differs from producer intent")
                 control, execution, index = self._source(db, value, root)
                 task, manifest = value["prestart"]["task"], value["prestart"]["manifest"]
                 policy = loads(read_regular(root / "budget_policy.json"))

@@ -576,8 +576,12 @@ def test_static_definitions_match_frozen_sources():
               "Verification commands / Code Attempt", "Active seconds / Attempt", "Active seconds / Run")
     for label, (_, balanced, harness) in zip(labels, budget.LIMITS):
         assert f"| {label} | {balanced} | {harness} |" in source
-    for event_name in budget.EVENTS:
+    for event_name in budget.EVENTS[:7]:
         assert f"`{event_name}`" in source
+    assert budget.EVENTS[7:] == ("active_interval_reserved", "active_interval_settled")
+    corrective = (root / "docs/tickets/phase-b-graph-harness/B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md").read_text()
+    for event_name in budget.EVENTS[7:]:
+        assert f"`{event_name}`" in corrective
     for kind in budget.WORK_KINDS + budget.CONTROL_KINDS:
         assert f"`{kind}`" in source
     for key in ("code_task_context_digest", "analysis_execution_context_digest", "causal_context_digest", "fingerprint_digest"):

@@ -55,7 +55,7 @@ A07执行时只冻结以下拆分；其后起草的六张票见下方Draft Ticke
 - transition、identity、invalidation、resume、budget 和 harness acceptance 已进入核心文档；
 - 实现者不需要自行补充控制层设计决定。
 
-这些阶段级进入条件已由A07 completion满足。B00在`f654f44`、B01在`537d10c`、B02在`83681a7`冻结后执行；三票均已completed。B02历史来源、reservation语义和trace/进程证据前置问题分别由B02C01与B00C01–B00C04关闭；本轮原B02运行修复与完整验收通过，见[B02完成记录](../completions/B02_COMPLETION.md)。B03已在`b78c15a`冻结；B00C05关闭首次reservation分类阻塞；B00C06–B00C08已完成来源、状态与fixture交接。B03基础实施后确认活动时间账本表达缺口，现blocked，待审[B00C09](B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md)。B04/B05仍draft。
+这些阶段级进入条件已由A07 completion满足。B00在`f654f44`、B01在`537d10c`、B02在`83681a7`冻结后执行；三票均已completed。B02历史来源、reservation语义和trace/进程证据前置问题分别由B02C01与B00C01–B00C04关闭；本轮原B02运行修复与完整验收通过，见[B02完成记录](../completions/B02_COMPLETION.md)。B03已在`b78c15a`冻结；B00C05关闭首次reservation分类阻塞；B00C06–B00C08已完成来源、状态与fixture交接。[B00C09](B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md)已完成活动时间账本纠偏，B03恢复ready。B04/B05仍draft。
 
 ## Implementation Tickets
 
@@ -64,8 +64,8 @@ A07执行时只冻结以下拆分；其后起草的六张票见下方Draft Ticke
 - [`B00_ACCEPTANCE_FOUNDATION.md`](B00_ACCEPTANCE_FOUNDATION.md)：`completed`，验收基础已实现；执行记录见[B00 Completion](../completions/B00_COMPLETION.md)，只证明construction证据，不证明runtime已通过。
 - [`B01_EXECUTION_0_4_CONTROL_FOUNDATION.md`](B01_EXECUTION_0_4_CONTROL_FOUNDATION.md)：`completed`，已实现纯Execution `0.4` records、budget/lifecycle replay、trusted clock、bounded projection与cross-head integrity；见[B01 Completion](../completions/B01_COMPLETION.md)。未接入默认产品图，不授权后续durable/product实现。
 - [`B02_DURABLE_CONTROL_OPERATIONS.md`](B02_DURABLE_CONTROL_OPERATIONS.md)：`completed`；单一coordinator、bootstrap/advance/Pause/Resume/Replay/Fork/Cancel/interrupt/terminal及failure recovery交付。Construction30/30，205个boundary下1410个独立runtime case全部通过；见[B02完成记录](../completions/B02_COMPLETION.md)。
-- [`B03_GRAPH_MANAGED_FAKE_CODE_AGENT.md`](B03_GRAPH_MANAGED_FAKE_CODE_AGENT.md)：`blocked`；C05–C08已完成，来源/状态/golden交接已审定，现待审活动时间账本纠偏 B00C09。原冻结正文不变，canonical实现及28项construction、645 runtime仍未完成。
-- [`B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md`](B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md)：`review`；已修订 setup 预留、nested verification、normal/timeout 恢复与旧 golden 边界，尚未授权实施。
+- [`B03_GRAPH_MANAGED_FAKE_CODE_AGENT.md`](B03_GRAPH_MANAGED_FAKE_CODE_AGENT.md)：`ready`；C05–C09已完成并解除已知前置阻塞。原冻结正文不变，canonical实现及28项construction、645 runtime仍未完成。
+- [`B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md`](B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md)：`completed`；setup预留、nested verification、normal/timeout恢复与旧golden的纠偏通过Phase B 2459项及全仓2784项回归，见[执行记录](../completions/B00C09_COMPLETION.md)。
 - [`B04_TARGET_PRODUCT_TOPOLOGY_AND_BUDGETED_LOOPS.md`](B04_TARGET_PRODUCT_TOPOLOGY_AND_BUDGETED_LOOPS.md)：拟接入A01产品图、四层fallback、Human return、A03 invalidation与A06 admission/grant/stop；当前只供review，不可执行。
 - [`B05_ACCEPTANCE_INTEGRATION_AND_END_TO_END_HARNESS.md`](B05_ACCEPTANCE_INTEGRATION_AND_END_TO_END_HARNESS.md)：拟完成cross-system faults/concurrency、CLI smoke、legacy/mock regression及final zero-gap exit；当前只供review，不可执行。
 
@@ -87,7 +87,7 @@ B04的131 covered/0 remaining仅表示映射齐全；允许调用final作负向�
 
 ## 退出方向
 
-整个Phase B完成后进入Phase C，先执行C00 capability gate。当前B00–B02及B00C01–B00C08、B02C01已完成；B03因活动时间账本合同缺口保持blocked，B00C09为review，B04/B05仍须分别审定。
+整个Phase B完成后进入Phase C，先执行C00 capability gate。当前B00–B02及B00C01–B00C09、B02C01已完成；B03 ready但未完成，B04/B05仍须分别审定。
 
 2026-09-18批准后：B02C01 ready快照为`5e753d6`，当前in_progress，见[执行记录](../completions/B02C01_COMPLETION.md)。原B02批准范围继续有效，其30项slice与全量控制验收仍待完成。
 
@@ -136,3 +136,5 @@ B00C04已按用户批准扩充并in_progress，统一完成case0.2、trace0.4与
 2026-09-24：B03 workspace/prestart基础已验证；public Pause和独立reader反例确认Host setup Run-only计费缺失。B03现blocked，[B00C09活动时间纠偏实施票](B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md)已补齐具体合同并保持review，尚待用户审定。70项基础/边界测试与14项workspace测试通过，不计28/645 acceptance，mapped56/remaining75保持；C08治理完成但canonical交接尚待runtime实施。
 
 2026-09-24 B00C09修订：review正文现要求 B00C05 首次 stub 事务 COMMIT 后 exact 发布 setup event，验证正常与超时消费的同一活动区间，保留 verifier 正 timeout/实测资源时长，并对部分 Pause、旧 golden 差异设置明确验收。未提升 `ready`，B03 仍 blocked。
+
+2026-09-25 B00C09完成：同一execution ledger的活动时间区间及Pause、Attempt、nested verification、恢复规则已实现，Phase B 2459 passed、全仓2784 passed；11份golden只同步runtime指纹派生摘要。B03恢复ready，原冻结正文和28/645验收边界不变；mapped56/remaining75、Phase B未完成。见[完成记录](../completions/B00C09_COMPLETION.md)。

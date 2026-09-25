@@ -2,12 +2,12 @@
 
 ## 状态摘要
 
-- **更新时间**：2026-09-24
+- **更新时间**：2026-09-25
 - **当前分支**：`codex/phase-11-agent-harness-upgrade`（已快进包含`xgao`的Phase A设计冻结提交`d0f108a`）
-- **当前阶段**：Phase A、B00/B01/B02、B00C01–B00C08及B02C01已completed；B03 blocked（B00C09 review），B04/B05仍draft。
-- **活动 ticket**：B03 blocked；活动时间账本表达需要独立合同审定，见[B00C09](tickets/phase-b-graph-harness/B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md)。已完成基础保留，完整 canonical 交付与验收未完成。
+- **当前阶段**：Phase A、B00/B01/B02、B00C01–B00C09及B02C01已completed；B03 ready，B04/B05仍draft。
+- **活动 ticket**：[B03](tickets/phase-b-graph-harness/B03_GRAPH_MANAGED_FAKE_CODE_AGENT.md)原执行授权保留，活动时间合同阻塞已由B00C09解除；完整 canonical 交付与验收未完成。
 - **稳定基线**：[`v0.2-demo`](milestones/V0_2_DEMO_BASELINE.md)
-- **本轮范围**：B00C08在13f3b74冻结，92603f6提交治理完成；B03 blocked。资源事务、Task/Manifest、aggregate/core、workspace 基础已定向验证；真实 Pause 的 Run-only setup 计费缺口已复现；normal/timeout canonical 来源、Bundle、fresh Analysis、golden 和整票验收尚未完成。mapped56/remaining75、Phase B未完成。
+- **本轮范围**：B00C09在`47bd0f6`冻结ready正文；同一execution ledger的setup/Attempt区间、Pause/normal/timeout/failure收尾、nested verification和恢复门禁已实现，131项定向与57项A05来源检查、Phase B 2459项及全仓2784项通过。B03的完整Backend、Bundle、fresh Analysis及28/645验收尚未完成；mapped56/remaining75、Phase B未完成。
 
 ## 当前稳定实现
 
@@ -230,3 +230,5 @@ B02与C04现均in_progress：C04独立语义/来源/进程修正已通过定向�
 本轮收尾：B02消费/失败收尾回归96 passed，协议/生成字节/冻结正文及181个链接校验通过。基础实现和阻塞记录保存为开发检查点；B03 blocked、B00C09 review，未push，不代表完整suite或B03验收通过。
 
 2026-09-24 B00C09修订：待审票已明确 B00C05 首次 stub COMMIT 后再发布冻结的 setup event，保留 verification 资源的实测时长、覆盖 normal/timeout 与部分 Pause 的结算，并限定旧 golden 的派生更新。仍为 `review`，未获准实施；B03 保持 `blocked`。
+
+2026-09-25 B00C09完成：活动时间区间、Pause与Attempt结算、nested verification和恢复门禁已按冻结合同实现；Phase B 2459 passed、全仓2784 passed，11份golden仅同步136个派生摘要值。B00C09为completed，B03恢复ready；canonical Backend/Bundle/Analysis和28/645验收仍未完成，mapped56/remaining75及Phase B全局未完成。见[B00C09完成记录](tickets/completions/B00C09_COMPLETION.md)。

@@ -534,3 +534,9 @@ B00C06最终集成已完成：181项定向、2677项全量及同Session B02-owne
 2026-09-24：B00C08在13f3b74冻结并完成治理交接；B03恢复ready。Normal/timeout完整来源、source trace0.5、独立Analysis success前置及其golden审计范围已批准，尚待B03实现。预算事务与canonical交付未完成，mapped56/remaining75、Phase B未完成。
 
 [B00C08](tickets/phase-b-graph-harness/B00C08_B02_CANONICAL_EVIDENCE_TRACE_HANDOFF.md)明确替代C07受影响source证据不得升级0.5的限制，补齐upstream与safe-timeout材料。迁移source轨迹另存0.5 expected；无成员摘要的phase-only证据仍为0.1。Analysis前置使用独立success/usable bundle，normal needs_input不计canonical Analysis成功。以上为待实施边界。
+
+## B00C09 活动时间账本复核
+
+在相同源版本下运行 `pytest -q tests/phase_b/test_b03_active_time_boundary.py tests/phase_b/test_b00c09_active_time_ledger.py`，再执行冻结票列出的 prestart、reservation、verification、Pause、Phase B 与全仓回归。先用两个 fresh 根比较每个受影响 A05/B02 source-bound outcome 的完整 normalized trace；只有事件形状/identity不变且差异逐项限于 runtime `application_build` 派生的semantic digest/head时，才可在验收运行之前更新相应expected。该次旧/新路径及摘要清单保存在 `/private/tmp/lqcd-agent-b00c09-golden-review.json` 和 `/private/tmp/lqcd-agent-b00c09-b02-golden-review/`。B02旧fixture输入、expected排版、trace版本、case owner/outcome不变。
+
+定向判据包括：setup 3 秒+未结算Backend maximum10得到Run13/Attempt10；setup3+Backend actual6+Attempt5（其中两个verifier各实测1秒）得到Run14/Attempt11且command count2；无调用Attempt6另增加Run/Attempt各6。检查首次stub COMMIT前回滚、COMMIT后setup exact续写、Pause部分前缀、same-owner normal/timeout/failure settlement、跨epoch maximum、过期恢复lease旧epoch拒绝和可信overage的`recovery_required`/unavailable收尾。只有独立reader与live projection相同且完整回归通过，才可完成B00C09；B03完整Backend/Bundle/Analysis和28/645仍按原票执行。

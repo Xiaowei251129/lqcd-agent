@@ -234,7 +234,9 @@ Mutable workspace path、patch bytes、tool transcript、完整verification logs
 
 ## A06 已确认的 Budget 目标 State Boundary（B01纯投影已实现，产品接入待实现）
 
-[A06](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)把budget authority放在immutable policy与append-only execution ledger，而不是graph state。Phase B execution schema `0.4`在现有`execution_history.jsonl`增加`record_type: budget`，Run-local `budget_event_id/index`连续且唯一；允许的event固定为`policy_initialized`、`resource_reserved`、`resource_settled`、`failure_observed`、`grant_issued`、`grant_consumed`和`decision_recorded`。Cycle、Attempt、Transition与automatic-route用量继续从其A02权威记录重放，不建立第二份mutable counter history。
+[A06](tickets/phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)把budget authority放在immutable policy与append-only execution ledger，而不是graph state。Phase B execution schema `0.4`在现有`execution_history.jsonl`增加`record_type: budget`，Run-local `budget_event_id/index`连续且唯一；A06原七类event为`policy_initialized`、`resource_reserved`、`resource_settled`、`failure_observed`、`grant_issued`、`grant_consumed`和`decision_recorded`。B00C09仅为B03 canonical Code path追加版本化`active_interval_reserved`/`active_interval_settled`，旧七类payload不重解释。Cycle、Attempt、Transition与automatic-route用量继续从其A02权威记录重放，不建立第二份mutable counter history。
+
+活动区间reservation在未结算前按maximum进入bounded `active_seconds_per_run`，`host_setup`不扣Attempt；`attempt_active`同时扣Run与所属Code Attempt。结算后仅可信同epoch actual可替代maximum，其他情形保留maximum。已证明嵌套在同一Attempt区间内的verification resource仅保留command计数及实测audit秒数，不能重复扣active。完整字段、邻接顺序和旧B02 synthetic兼容见[B00C09合同](tickets/corrections/B00C09_ACTIVE_TIME_LEDGER_CONTRACT.md)。默认schema `0.2` AnalysisState字段没有变化。
 
 Bounded state只保存可从validated policy与ledger确定性派生的projection，至少包括：
 

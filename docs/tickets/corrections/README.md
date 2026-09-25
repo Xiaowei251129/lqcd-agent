@@ -46,3 +46,5 @@
 - 2026-09-22：[B00–B02完成核验与B03–B05草案审查](B00_B05_READINESS_REVIEW.md)：复核前置交付与验收输入一致性；修订后续draft的owner/失败分类、B03预留责任、trace基线及分批验收范围，保持未批准执行。
 
 - 2026-09-24：[B03 resource transaction maintenance](B03_MAINTENANCE.md)：原 resume 的独立 verification reservation/settlement、事务外 consumer、双重 fence 与失败 snapshot 接线；B03 仍执行中。
+
+- 2026-09-24：[B00C09 Active-Time Ledger Contract](B00C09_ACTIVE_TIME_LEDGER_CONTRACT.md)：canonical Code setup/Attempt区间的closed ledger事件、原producer恢复lease、Pause/Attempt发布与nested verification计费边界；不改变Phase A冻结字节或旧B02 synthetic语义。

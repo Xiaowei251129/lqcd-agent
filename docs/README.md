@@ -37,7 +37,7 @@ Ready ticket 不能静默覆盖 `AGENTS.md`、安全策略或当前 public contr
 
 ## 第二阶段方向与 Tickets
 
-当前B00–B02及B00C01–B00C06、B02C01已完成。B00C07/B00C08已完成文档交接，B03为blocked，等待活动时间账本合同审定；待审纠偏实施票见[B00C09](tickets/phase-b-graph-harness/B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md)。B04/B05仍draft。Phase B整体未完成，见[B03执行记录](tickets/completions/B03_COMPLETION.md)。
+当前B00–B02、B00C01–B00C09及B02C01已完成。[B00C09](tickets/phase-b-graph-harness/B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md)活动时间账本纠偏通过完整回归，B03恢复ready，尚未完成canonical实现与28/645验收；B04/B05仍draft。Phase B整体未完成，见[B00C09执行记录](tickets/completions/B00C09_COMPLETION.md)与[B03执行记录](tickets/completions/B03_COMPLETION.md)。
 
 冻结机读合同为[Control Protocol 0.4](tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json)及[Phase B需求目录](tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json)；状态更新不得移除这两项权威引用。
 
@@ -49,7 +49,7 @@ Ready ticket 不能静默覆盖 `AGENTS.md`、安全策略或当前 public contr
 
 Phase Overview 不是执行 prompt。只有经过用户确认并标记为 `status: ready` 的具体 ticket 才能执行；`ready`后ticket正文冻结，执行结果和后续纠偏不得回写原计划。
 
-Phase A的A01–A07、A02C01及A03C01现均为`completed`。B00/B01/B02、B00C01–B00C06及B02C01已完成；B03为`blocked`（基础实现保留，活动时间账本合同待审 B00C09），B00C05为`completed`，B04/B05仍为`draft`。B00/B01/B02 construction分别为 **15/15、11/11、30/30**，累计映射 **56/131、remaining75**。B02的 **205个boundary、1410个独立case** 全部具有同一冻结输入、同一fresh session的通过证据；完整suite **2677 passed**。全局final仍仅报告 **75 coverage / 789 runtime / 15 exit** 缺口，`requirements.passed=null`、`requirements_zero_gap=false`、`phase_b_complete=false`。执行事实见[B02完成记录](tickets/completions/B02_COMPLETION.md)及[Phase B Overview](tickets/phase-b-graph-harness/OVERVIEW.md)。B02交付独立0.4 durable control入口，默认产品runtime仍为schema `0.2`；B03 Backend/Code Bundle、B04产品图和B05全阶段验收仍由各自票据交付。以下日期条目保留当时的进展和阻塞事实，以本段和完成记录最后条目为当前状态。
+Phase A的A01–A07、A02C01及A03C01现均为`completed`。B00/B01/B02、B00C01–B00C09及B02C01已完成；B03为`ready`，B04/B05仍为`draft`。B00/B01/B02 construction分别为 **15/15、11/11、30/30**，累计映射 **56/131、remaining75**。B02的 **205个boundary、1410个独立case** 已有原完成时的同一冻结输入、同一fresh session通过证据；历史完整suite **2677 passed**。全局final仍仅报告 **75 coverage / 789 runtime / 15 exit** 缺口，`requirements.passed=null`、`requirements_zero_gap=false`、`phase_b_complete=false`。执行事实见[B02完成记录](tickets/completions/B02_COMPLETION.md)及[Phase B Overview](tickets/phase-b-graph-harness/OVERVIEW.md)。B02交付独立0.4 durable control入口，默认产品runtime仍为schema `0.2`；B03 Backend/Code Bundle、B04产品图和B05全阶段验收仍由各自票据交付。以下日期条目保留当时的进展和阻塞事实，以本段和完成记录最后条目为当前状态。
 
 2026-09-16更新：[B00C01](tickets/phase-b-graph-harness/B00C01_SOURCE_BOUND_SEMANTIC_TRACES.md)与[B00C02](tickets/phase-b-graph-harness/B00C02_SEMANTIC_TRACE_EXIT_BINDING.md)均已completed。来源绑定的trace0.2及完整exit摘要接线通过验证，旧trace0.1不变；见[B00C02完成记录](tickets/completions/B00C02_COMPLETION.md)。B02前置阻塞解除后已恢复执行，剩余control runtime和30项验收仍须按原冻结票完成。
 

@@ -188,6 +188,15 @@ def _checked_replay(records):
         registry._validate_execution_index_sequence(
             ((key, life[0][index]) for key, life in seen[kind].items()), label=kind,
             prefix=kind, width=4 if kind == "cycle" else 6)
+    for position, row in enumerate(records):
+        if (row["record_type"] != "budget" or row["event"] not in ("active_interval_reserved", "active_interval_settled") or
+                row["payload"]["stage"] != "attempt_active" or position + 1 == len(records)):
+            continue
+        next_row = records[position + 1]
+        expected = "started" if row["event"] == "active_interval_reserved" else "finished"
+        require(next_row["record_type"] == "attempt" and next_row["event"] == expected and
+                next_row["attempt_id"] == row["payload"]["attempt_id"] and
+                next_row["created_at"] == row["created_at"], "Code Attempt active boundary is not adjacent")
     budget = _budget_projection(records, seen)
     projection = {"schema_version": "0.4", "run_id": root["run_id"], "case_id": root["case_id"],
                   "parent_run_id": root["parent_run_id"], "run_status": run_status,
@@ -273,14 +282,69 @@ def _budget_projection(records, seen):
                 (admission["record_type"] == "budget" and admission["event"] == "decision_recorded" and
                  admission["payload"]["decision"] == "allow"), "Missing bootstrap admission record")
     reservations, settlements, fingerprints, grants, consumed = {}, {}, {}, {}, set()
+    intervals, interval_settlements, nested = {}, {}, set()
+    resource_times, settlement_times = {}, {}
     latest_failure = None
     latest_decision = None
     ordinals = {}
     aggregate_bindings = set()
+    def active_used(attempt=None):
+        total = sum((interval_settlements[key]["actual_seconds"] if
+                     interval_settlements.get(key, {}).get("disposition") == "actual" else value["maximum_seconds"])
+                    for key, value in intervals.items() if attempt is None or
+                    (value["stage"] == "attempt_active" and value["attempt_id"] == attempt))
+        total += sum((settlements[key]["actual"]["active_seconds"] if
+                      key in settlements and settlements[key]["actual"] is not None else value["maximum_charge"]["active_seconds"])
+                     for key, value in reservations.items() if key not in nested and
+                     (attempt is None or value["attempt_id"] == attempt))
+        return total
     for record in events:
         event, payload = record["event"], record["payload"]
         if event == "policy_initialized":
             require(record is events[0], "Duplicate policy initialization")
+        elif event == "active_interval_reserved":
+            identity, attempt = payload["interval_id"], payload["attempt_id"]
+            require(identity not in intervals and attempt in seen["attempt"] and
+                    seen["attempt"][attempt][0]["attempt_kind"] == "code_agent" and
+                    payload["start_at"] == record["created_at"], "Unbound active interval")
+            prior = [row for row in seen["attempt"][attempt] if row["event_index"] < record["event_index"]]
+            require(prior and prior[-1]["status"] == "scheduled", "Active interval starts outside scheduled Code target")
+            require(not any(value["attempt_id"] == attempt and value["stage"] == payload["stage"] for value in intervals.values()),
+                    "Duplicate Code active interval")
+            run_remaining = max(0, policy["limits"]["active_seconds_per_run"] - active_used())
+            require(payload["run_remaining_before"] == run_remaining and payload["maximum_seconds"] <= run_remaining,
+                    "Run active interval exceeds replayed capacity")
+            if payload["stage"] == "attempt_active":
+                attempt_remaining = max(0, policy["limits"]["active_seconds_per_attempt"] - active_used(attempt))
+                require(payload["attempt_remaining_before"] == attempt_remaining and
+                        payload["maximum_seconds"] <= attempt_remaining, "Attempt active interval exceeds replayed capacity")
+            else:
+                require(not any(value["stage"] == "host_setup" and value["attempt_id"] == attempt for value in intervals.values()),
+                        "Duplicate setup interval")
+            intervals[identity] = payload
+        elif event == "active_interval_settled":
+            identity = payload["interval_id"]
+            require(identity in intervals and identity not in interval_settlements, "Unknown or duplicate active settlement")
+            original = intervals[identity]
+            require(all(payload[key] == original[key] for key in ("interval_id", "stage", "attempt_id", "producer_operation_id",
+                                                                  "owner_operation_id", "clock_epoch_id")),
+                    "Active settlement owner or epoch mismatch")
+            if original["stage"] == "attempt_active":
+                require(payload["settlement_operation_id"] == original["owner_operation_id"],
+                        "Attempt active interval has a foreign settlement owner")
+            if payload["disposition"] == "actual":
+                start, end = original["start_at"], payload["end_at"]
+                require(start["source"] == end["source"] and end["wall_seconds"] >= start["wall_seconds"] and
+                        payload["end_at"] == record["created_at"] and
+                        payload["actual_seconds"] == end["monotonic_seconds"] - start["monotonic_seconds"] and
+                        0 <= payload["actual_seconds"] <= original["maximum_seconds"], "Untrusted active interval duration")
+                covered = [key for key in nested if reservations[key]["attempt_id"] == original["attempt_id"]]
+                require(all(key in settlements for key in covered) and
+                        sum(settlements[key]["actual"]["active_seconds"] if settlements[key]["actual"] is not None else
+                            reservations[key]["maximum_charge"]["active_seconds"] for key in covered) <= payload["actual_seconds"] and
+                        all(settlement_times[key]["monotonic_seconds"] <= end["monotonic_seconds"] for key in covered),
+                        "Actual active interval does not cover verification")
+            interval_settlements[identity] = payload
         elif event == "resource_reserved":
             identity, attempt = payload["resource_operation_id"], payload["attempt_id"]
             require(identity not in reservations and attempt in seen["attempt"], "Duplicate or unbound resource")
@@ -296,19 +360,39 @@ def _budget_projection(records, seen):
                 bindings = {(key, payload[key]) for key in ("attempt_id", "producer_operation_id", "workspace_id", "task_id", "task_digest")}
                 require(not bindings.intersection(aggregate_bindings), "Duplicate Backend aggregate")
                 aggregate_bindings.update(bindings)
+            parent = next((value for key, value in intervals.items() if value["stage"] == "attempt_active" and
+                           value["attempt_id"] == attempt and key not in interval_settlements), None)
+            is_nested = payload["resource_kind"] == "verification_command" and parent is not None
+            if is_nested:
+                require(record["created_at"]["source"] == parent["start_at"]["source"] and
+                        record["created_at"]["monotonic_seconds"] <= parent["deadline_monotonic_seconds"] and
+                        prior_lifecycle[-1]["event"] == "started" and
+                        payload["producer_operation_id"] == parent["producer_operation_id"],
+                        "Verification is outside its active parent")
+                nested.add(identity)
             for key, amount in payload["maximum_charge"].items():
                 attempt_used = run_used = 0
                 for prior_id, prior in reservations.items():
                     settled = settlements.get(prior_id)
                     charge = settled["actual"] if settled and settled["actual"] is not None else prior["maximum_charge"]
-                    run_used += charge[key]
-                    if prior["attempt_id"] == attempt:
+                    if prior_id not in nested or key != "active_seconds":
+                        run_used += charge[key]
+                    if prior["attempt_id"] == attempt and (prior_id not in nested or key != "active_seconds"):
                         attempt_used += charge[key]
                 if key == "verification_commands":
                     limit = policy["limits"]["verification_commands_per_code_attempt"] if prior_lifecycle[-1]["attempt_kind"] == "code_agent" else 0
                     remaining = max(0, limit - attempt_used)
+                elif key == "active_seconds" and is_nested:
+                    limit = min(policy["limits"]["active_seconds_per_attempt"], policy["limits"]["active_seconds_per_run"])
+                    covered = sum((settlements[item]["actual"]["active_seconds"] if item in settlements and
+                                   settlements[item]["actual"] is not None else reservations[item]["maximum_charge"]["active_seconds"])
+                                  for item in nested if item != identity and reservations[item]["attempt_id"] == attempt)
+                    remaining = max(0, min(parent["deadline_monotonic_seconds"] - record["created_at"]["monotonic_seconds"],
+                                           parent["maximum_seconds"] - covered))
                 else:
                     limit = min(policy["limits"][key + "_per_attempt"], policy["limits"][key + "_per_run"])
+                    if key == "active_seconds":
+                        run_used, attempt_used = active_used(), active_used(attempt)
                     remaining = max(0, min(policy["limits"][key + "_per_attempt"] - attempt_used,
                                            policy["limits"][key + "_per_run"] - run_used))
                 require(payload["applicable_limits"][key] == limit and payload["remaining_before"][key] == remaining,
@@ -324,10 +408,21 @@ def _budget_projection(records, seen):
                         all(value == 0 for key, value in payload["maximum_charge"].items() if key not in (dimension, "active_seconds")),
                         "Ordinary reservation must bind exactly one resource call")
             reservations[identity] = payload
+            resource_times[identity] = record["created_at"]
         elif event == "resource_settled":
             identity = payload["resource_operation_id"]
             require(identity in reservations and identity not in settlements, "Unknown or duplicate settlement")
+            if identity in nested:
+                parent = next((value for key, value in intervals.items() if value["stage"] == "attempt_active" and
+                               value["attempt_id"] == reservations[identity]["attempt_id"] and key not in interval_settlements), None)
+                require(parent is not None and record["created_at"]["source"] == parent["start_at"]["source"] and
+                        record["created_at"]["monotonic_seconds"] <= parent["deadline_monotonic_seconds"] and
+                        payload["operation_id"] == parent["owner_operation_id"] and
+                        (payload["actual"] is None or payload["actual"]["active_seconds"] <=
+                         record["created_at"]["monotonic_seconds"] - resource_times[identity]["monotonic_seconds"]),
+                        "Nested verification escaped active parent")
             settlements[identity] = payload
+            settlement_times[identity] = record["created_at"]
         elif event == "failure_observed":
             failure = payload["fingerprint"]
             key = failure["causal_context_digest"], failure["fingerprint_digest"]
@@ -407,11 +502,19 @@ def _budget_projection(records, seen):
         settlement = settlements.get(identity)
         charge = settlement["actual"] if settlement and settlement["actual"] is not None else reservation["maximum_charge"]
         for resource, amount in charge.items():
+            if resource == "active_seconds" and identity in nested:
+                continue
             if resource != "verification_commands":
                 totals[resource + "_per_run"] += amount
             if reservation["attempt_id"] == current_attempt:
                 key = "verification_commands_per_code_attempt" if resource == "verification_commands" else resource + "_per_attempt"
                 totals[key] += amount
+    for identity, interval in intervals.items():
+        settlement = interval_settlements.get(identity)
+        amount = settlement["actual_seconds"] if settlement is not None and settlement["disposition"] == "actual" else interval["maximum_seconds"]
+        totals["active_seconds_per_run"] += amount
+        if interval["stage"] == "attempt_active" and interval["attempt_id"] == current_attempt:
+            totals["active_seconds_per_attempt"] += amount
     dimensions = {key: {"used": amount, "remaining": max(0, policy["limits"][key] - amount)} for key, amount in totals.items()}
     active_grants = [grant for key, grant in grants.items() if key not in consumed]
     require(len(active_grants) <= 1, "Overlapping active grants")
