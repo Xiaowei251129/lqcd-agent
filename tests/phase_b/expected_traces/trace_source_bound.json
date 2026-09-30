@@ -452,7 +452,7 @@
       "outcome": "validated",
       "execution_head": "semantic_sha256:4c85cb9d9575a11017866f849391ec98a02a47ba8d2662999d6acabc2fe2ad92",
       "artifact_head": null,
-      "checkpoint_head": "semantic_sha256:6495f28166c63662ceae50e935b4d16ab2e14fe5eea0ce6f1d259e4c67113041",
+      "checkpoint_head": "semantic_sha256:97ae9fa944504a5bd9ba09afd577cb8e909b46ad000a553fe263afc50bbf50eb",
       "policy_digest": null,
       "result_digest": null,
       "task_digest": null,

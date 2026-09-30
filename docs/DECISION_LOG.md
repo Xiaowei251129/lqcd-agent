@@ -1316,3 +1316,7 @@ B00C06最终验证完成后关闭。新版本与旧版本隔离，原required/ow
 用户批准B00C09，ready快照单独冻结于`47bd0f6`。A06七类旧budget event和Phase A protocol/catalog保持原字节；仅B03 canonical Code path新增`active_time_0.1`的setup/Attempt closed事件，复用原B02 execution ledger/head与checkpoint authority。Setup只扣Run，Backend aggregate及Attempt区间同时扣Run/Attempt；verification保留正timeout、实测秒数与command audit，但在可信parent区间内不重复扣active。旧B02 synthetic事件和Pause proof不套用新marker。
 
 首次producer事务冻结setup record，COMMIT后exact发布；过期时原producer通过内部`recovery_only`新lease epoch仅补发同一record，旧epoch拒绝且不准新增pre-start效果。Pause以最后frozen suffix结算setup，normal/timeout及可安全关闭的失败收尾沿原owner和phase结算Attempt。跨epoch与不确定effect保留maximum；可信overage记录原观测值并进入原A06失败/不可用终态。独立合同见[B00C09](tickets/corrections/B00C09_ACTIVE_TIME_LEDGER_CONTRACT.md)。此决定只解除B03活动时间前置，完整Backend、Bundle、Analysis和28/645仍归B03，Phase B全局门槛不变。
+
+## 2026-09-28 — B03C02未启动consumer的post-claim runtime语义
+
+用户批准[B03C02](tickets/phase-b-graph-harness/B03C02_POST_CLAIM_UNSTARTED_CASE_SEMANTICS.md)后，case0.4仅将`invocation_authorized`前六个entry phase各两项无法触发的`consumer_stop=unavailable` runtime case替换为同phase、同Run authority的`unstarted_recovery` case。未启动时冻结的`started_intent=null`给出可信`not_dispatched`，不调用stop adapter；appendable对应`failed_closure`，unavailable对应`unavailable_closure`。同一原owner的failure intent必须先在SQLite事务提交，再由新进程恢复；事务内phase `after`本身不构成持久化证据。旧case0.3、A07设计时7×4分类、全部其他2187项case、协议/catalog/required IDs/owners/exit门槛保持原义；case0.4仍为2199/B03 645/post-claim 28。B03C02不替代B03其余626项独立runtime验收，Phase B完成条件不变。审定与双fresh根证据见[独立记录](tickets/completions/B03C02_COMPLETION.md)。

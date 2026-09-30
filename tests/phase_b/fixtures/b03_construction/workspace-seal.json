@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b03_construction/workspace-seal.json",
+  "entrypoint": "src/lqcd_agent/code_agent/workspace.py:WorkspaceProvider.verify_sealed",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "sealed_tree_checked",
+    "unsafe_filesystem_object_rejected"
+  ]
+}

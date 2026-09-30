@@ -3,6 +3,7 @@ from copy import deepcopy
 
 import pytest
 
+from harness.pytest_evidence import observe
 from lqcd_agent.code_agent.schemas import relative_path, task_context, validate_manifest, validate_task
 from lqcd_agent.control.strict_json import ControlIntegrityError, canonical_bytes, digest
 from test_b03_task_trace_boundary import immutable_base, task_trace_witness
@@ -26,6 +27,8 @@ def test_task_manifest_accept_real_source_identity_and_detach_inputs(canonical_i
     task["task_summary"] = "Mutated caller object"
     assert validated.value != task
     assert validate_task(validated.canonical).canonical == validated.canonical
+    observe("b03-construction-closed-identities", {"kind": "boolean", "value": True},
+            sorted(["strict_task_and_manifest", "detached_inputs", "canonical_identity"]))
 
 
 def test_task_context_keeps_material_inputs_without_execution_identity(canonical_inputs):
@@ -99,3 +102,6 @@ def test_closed_input_and_policy_reject_even_rehashed_candidates(canonical_input
             validate_manifest(manifest, task)
         else:
             validate_task(task)
+    if case == "legacy":
+        observe("b03-construction-legacy-rejection", {"kind": "boolean", "value": True},
+                sorted(["legacy_attempt_kind_rejected", "no_canonical_conversion"]))

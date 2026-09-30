@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b03_construction/workspace-identity.json",
+  "entrypoint": "src/lqcd_agent/code_agent/workspace.py:WorkspaceProvider.verify_identity",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "replacement_rejected",
+    "same_workspace_identity"
+  ]
+}

@@ -61,3 +61,14 @@
 2026-09-24：[B03执行记录](B03_COMPLETION.md)已追加workspace基础与活动时间账本阻塞；当前B03 blocked、[B00C09设计票](../phase-b-graph-harness/B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md) review。C08完成条目中的恢复ready为当时事实，不表示当前B03状态。
 
 2026-09-25：[B00C09完成记录](B00C09_COMPLETION.md)：Phase B 2459项、全仓2784项通过；B00C09 completed，B03恢复ready，28/645验收尚未完成。
+
+2026-09-25：[B03C01执行记录](B03C01_COMPLETION.md)与[B03执行记录](B03_COMPLETION.md)：重复Code scheduled prior IDs及独立B02 unavailable尾部已局部修复；B03 construction 28/28、累计84/131、runtime 7/645。两票仍in_progress，Phase B全局未完成，完整回归尚待收尾。
+
+2026-09-28：[B03C01执行记录](B03C01_COMPLETION.md)现有最终前置及全仓证据，B03C01 已 completed；[B03执行记录](B03_COMPLETION.md)证实 Phase B 2531、全仓 2856 与同 Session B02 1410 通过，但 B03 独立 runtime 仍 7/645。12 个不可达 post-claim case 需待审 B03C02 独立批准，B03 blocked、Phase B 全局未完成；不提交、不推送。
+
+2026-09-29：[B03C02完成记录](B03C02_COMPLETION.md)载明case0.4逐项替换、旧0.3原字节/seal封存、两个fresh根各12/12跨进程hook/nodeid/exact trace，以及当前输入Phase B **2552 passed**、全仓 **2877 passed**。B03C02已completed；B03仍有626项独立runtime待绑定，Phase B未完成；不提交、不推送。
+
+2026-09-29：[B03执行记录](B03_COMPLETION.md)新增containment stop的38项真实进程切点、双fresh根固定trace及全部219项同Session通过；construction28/28，余426项。repeat-Code旧raw preimage已找回并验证；六项golden及最终全量验收仍未关闭，B03保持in_progress，未提交或推送。
+
+
+2026-09-29 B03完成：canonical Fake Backend、Host stop/unavailable、trusted Code消费/资源结算/Bundle、按producer/version的0.4状态投影和fresh Analysis交接通过验收。最终construction **15/11/30/28**，同一fresh Session的B03 **645/645**、B02 **1410/1410**，全仓 **3514 passed**（Phase B **3189 passed**）。Mapped **84/131、remaining47**；全局 `phase_b_complete=false`，B04/B05仍draft，默认产品runtime仍schema0.2。协议/catalog、case/owner/exit门槛与legacy合同保持。详见[B03完成记录](B03_COMPLETION.md)；较早in_progress及219/379等条目保留为历史事实。未提交或推送。

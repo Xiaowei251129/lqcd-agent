@@ -12,7 +12,7 @@ schema变化必须由独立implementation ticket批准，并同步runtime、test
 
 Record union覆盖A02 `run/cycle/attempt/transition/human_request/human_response`及A04/A06 `run_lifecycle/budget`。A02 identity/nesting格式不变；公共envelope使用连续`execution_event_NNNNNN`/`event_index`、`previous_execution_head`、append前`artifact_head/artifact_event_index`及typed `created_at`。Resulting execution head为该完整canonical record的SHA-256，包含previous head但不嵌入自身future digest。Run created使用`initializing`；Run lifecycle edges来自generated protocol。Budget events有独立连续`budget_event_NNNNNN`，但仍在同一execution ledger中。
 
-`ExecutionReplay`可验证未完成的纯publication前缀；这不是可恢复/可运行证明。Stable-root adapter另行要求完整A03反向closure、grant/Transition闭合与exact checkpoint manifest；它不能创建或补齐任何suffix。B02已接入Pause records、coordinator proofs和capability activation；B03 domain执行仍由后续票据实现。单独的合法Run lifecycle edge不能充当durable Pause或启动授权。
+`ExecutionReplay`可验证未完成的纯publication前缀；这不是可恢复/可运行证明。Stable-root adapter另行要求完整A03反向closure、grant/Transition闭合与exact checkpoint manifest；它不能创建或补齐任何suffix。B02已接入Pause records、coordinator proofs和capability activation；B03工作树已接入Fake Code消费、canonical Code pointer投影与fresh Analysis交接，完整runtime验收仍在进行。单独的合法Run lifecycle edge不能充当durable Pause或启动授权。
 
 Bounded projection只保留当前Run lifecycle、A02当前identity/counters、latest execution/artifact heads、A03 current pointers及convenience paths、policy identity、budget counters/used/remaining、active fingerprint/occurrence、nullable grant和latest decision/stop summary，不复制完整history。`checkpoint_manifest`绑定Run/thread、checkpoint identity/content digest、写入时exact execution/artifact pair及pre-checkpoint state digest；最后把manifest摘要作为`checkpoint_head`附到projection，避免hash自引用。Manifest参数是显式checkpointer evidence，实际checkpoint写入与durable真实性由B02所有者负责；B01不操作checkpoint backend。
 
@@ -288,3 +288,6 @@ Bounded state只保存可从validated policy与ledger确定性派生的projectio
 2026-09-24：B00C08在13f3b74冻结并完成治理交接；B03恢复ready。Normal/timeout完整来源、source trace0.5、独立Analysis success前置及其golden审计范围已批准，尚待B03实现。预算事务与canonical交付未完成，mapped56/remaining75、Phase B未完成。
 
 [B00C08](tickets/phase-b-graph-harness/B00C08_B02_CANONICAL_EVIDENCE_TRACE_HANDOFF.md)明确替代C07受影响source证据不得升级0.5的限制，补齐upstream与safe-timeout材料。迁移source轨迹另存0.5 expected；无成员摘要的phase-only证据仍为0.1。Analysis前置使用独立success/usable bundle，normal needs_input不计canonical Analysis成功。以上为待实施边界。
+
+
+2026-09-29 B03完成：canonical Fake Backend、Host stop/unavailable、trusted Code消费/资源结算/Bundle、按producer/version的0.4状态投影和fresh Analysis交接通过验收。最终construction **15/11/30/28**，同一fresh Session的B03 **645/645**、B02 **1410/1410**，全仓 **3514 passed**（Phase B **3189 passed**）。Mapped **84/131、remaining47**；全局 `phase_b_complete=false`，B04/B05仍draft，默认产品runtime仍schema0.2。协议/catalog、case/owner/exit门槛与legacy合同保持。详见[B03完成记录](tickets/completions/B03_COMPLETION.md)；较早in_progress及219/379等条目保留为历史事实。未提交或推送。

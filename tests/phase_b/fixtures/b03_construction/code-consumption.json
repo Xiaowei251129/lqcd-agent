@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b03_construction/code-consumption.json",
+  "entrypoint": "src/lqcd_agent/code_agent/subgraph.py:CodeAgentSubgraph.consume_external",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "one_attempt_and_bundle",
+    "release_before_final_checkpoint",
+    "same_resume_owner"
+  ]
+}

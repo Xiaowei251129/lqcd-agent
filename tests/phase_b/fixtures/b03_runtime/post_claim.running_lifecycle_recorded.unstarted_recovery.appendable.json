@@ -1,0 +1,17 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b03_runtime/post_claim.running_lifecycle_recorded.unstarted_recovery.appendable.json",
+  "entrypoint": "src/lqcd_agent/control/coordinator.py:boundary",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "normal_external_resolution_immutable",
+    "run_authority:appendable",
+    "same_resume_owner",
+    "started_intent:null",
+    "stop_adapter_calls:0",
+    "stop_proof:not_dispatched"
+  ]
+}

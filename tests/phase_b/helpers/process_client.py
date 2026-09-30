@@ -291,20 +291,25 @@ def external_resume_client(pipe, root, request, crash_boundary=None, *, elapsed=
     from pathlib import Path
     from lqcd_agent.control.interfaces import ActorContext, ControlPlane
     from lqcd_agent.control.pause import ResumeRunRequest
-    from test_external_consumption_control import ExternalDomainConsumer, ExternalDomainFailure
+    from test_external_consumption_control import CanonicalDomainConsumer, ExternalDomainConsumer, ExternalDomainFailure
 
     def observer(name, side, value):
         if (name, side) == crash_boundary:
             os._exit(93)
 
-    coordinator = Coordinator(root, clock=FakeClock(100 + elapsed, elapsed), observer=observer)
+    coordinator = Coordinator(root, clock=FakeClock(100 + elapsed, elapsed,
+        epoch_id="fake_clock_epoch_2" if elapsed else "fake_clock_epoch_1"), observer=observer)
     try:
         locator = request["run_locator"]
         run_root = Path(root) / locator["case_id"] / locator["run_id"]
-        adapter = ExternalDomainFailure(run_root, safe=safe) if failure else ExternalDomainConsumer(run_root)
+        canonical = (Path(root) / "base_repository").is_dir()
+        adapter = (ExternalDomainFailure(run_root, safe=safe) if failure else
+                   CanonicalDomainConsumer(coordinator, Path(root) / "base_repository")
+                   if canonical else ExternalDomainConsumer(run_root))
         plane = ControlPlane(coordinator, worker_id="external-consumer-" + str(os.getpid()),
                              external_adapter=adapter, resume_target_adapter=adapter)
-        result = plane.resume_run(ResumeRunRequest(**request), actor=ActorContext("operator", "human", ("cancel", "control.internal", "resume", "start")))
+        scopes = ("control.internal", "resume") if canonical else ("cancel", "control.internal", "resume", "start")
+        result = plane.resume_run(ResumeRunRequest(**request), actor=ActorContext("operator", "human", scopes))
         pipe.send((result, adapter.calls))
     finally:
         coordinator.close()
@@ -372,9 +377,10 @@ def timeout_client(pipe, root, request, crash_boundary=None, *, elapsed=0):
         if (name, side) == crash_boundary:
             os._exit(96)
 
-    coordinator = Coordinator(root, clock=FakeClock(100 + elapsed, elapsed), observer=observer)
+    coordinator = Coordinator(root, clock=FakeClock(100 + elapsed, elapsed,
+        epoch_id="fake_clock_epoch_2" if elapsed else "fake_clock_epoch_1"), observer=observer)
     try:
-        adapter = DomainTimeout()
+        adapter = DomainTimeout(coordinator)
         result = ControlPlane(coordinator, worker_id="timeout-" + str(os.getpid()), external_adapter=adapter).resolve_external_interrupt(
             ResolveExternalInterruptRequest(**request), actor=ActorContext("operator", "human", ("control.internal",)))
         pipe.send((result, adapter.calls, adapter.deliveries))

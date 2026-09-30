@@ -5,6 +5,7 @@ import os
 import json
 from pathlib import Path
 import tempfile
+from functools import partial
 
 import pytest
 
@@ -14,11 +15,13 @@ from lqcd_agent.control.coordinator import Coordinator, TABLES
 from lqcd_agent.control.interfaces import ActorContext, ControlPlane, StartRunRequest
 from lqcd_agent.control.operations import AdvanceRunRequest, ExternalControl
 from lqcd_agent.control.strict_json import ControlIntegrityError, canonical_bytes, digest
+from harness.pytest_evidence import consume_process_hook, production_hook
+from harness.trace import event
 from test_advance_control import SyntheticDomainRoute
 from test_invocation_artifacts import ArtifactTarget
 
 
-def external_reservation_worker(pipe, output, locator, parent_operation_id, cut):
+def external_reservation_worker(pipe, output, locator, parent_operation_id, cut, hook_request=None):
     coordinator = Coordinator(Path(output), clock=FakeClock(100, 0))
     from lqcd_agent.code_agent.external_operation import ExternalProducer
     phases = {"before_insert": ("external.stub", "before"), "after_insert": ("external.stub", "after"),
@@ -33,15 +36,16 @@ def external_reservation_worker(pipe, output, locator, parent_operation_id, cut)
                    "in_transaction": coordinator.connection.in_transaction, "row_visible_to_writer": row is not None})
         os._exit(93)
 
+    if hook_request is not None:
+        observer.production_hooks = {phases[cut]: (partial(production_hook, hook_request["case_id"],
+                                                          process_request=hook_request),)}
     coordinator.observer = observer
     ExternalProducer(coordinator).reserve("capability_" + parent_operation_id, backend_kind="fake", backend_version="0.1",
                                           hard_deadline=20, worker_id="external-host", lease_seconds=30)
     raise AssertionError("The requested production boundary did not execute")
 
 
-@pytest.mark.parametrize("cut", ("before_insert", "after_insert", "before", "after"),
-                         ids=("before-insert", "after-insert-before-commit", "before-commit", "after-commit"))
-def test_first_external_reservation_durability(cut):
+def first_external_reservation_durability(cut, hook_request=None, *, with_context=False):
     coordinator, locator, advanced = make_code_target()
     output = coordinator.root
     run = output / locator["case_id"] / locator["run_id"]
@@ -51,7 +55,7 @@ def test_first_external_reservation_durability(cut):
     context = multiprocessing.get_context("spawn")
     parent, child = context.Pipe()
     process = context.Process(target=external_reservation_worker,
-                              args=(child, str(output), locator, advanced["operation_id"], cut))
+                              args=(child, str(output), locator, advanced["operation_id"], cut, hook_request))
     try:
         process.start()
         child.close()
@@ -59,6 +63,8 @@ def test_first_external_reservation_durability(cut):
         observation = parent.recv()
         process.join(20)
         assert process.exitcode == 93
+        if hook_request is not None:
+            consume_process_hook(hook_request, process, expected_exit=93)
         assert observation["in_transaction"] == (cut != "after")
         assert observation["row_visible_to_writer"] == (cut != "before_insert")
         reader, child_reader = context.Pipe()
@@ -99,6 +105,14 @@ def test_first_external_reservation_durability(cut):
                 assert admitted["lease_epoch"] == 1 and admitted["task_digest"] is None
         finally:
             restarted.close()
+        trace = {"schema_version": "0.1", "events": [
+            event("external_reservation_cut", stage=cut,
+                  outcome="committed_stub" if cut == "after" else "reservation_rolled_back",
+                  started=False, accepted=cut == "after"),
+            event("external_reservation_recovered", stage=cut,
+                  outcome="original_stub" if cut == "after" else "fresh_request_readmission",
+                  started=False, accepted=True)]}
+        return (trace, str(output), observation["producer_operation_id"], locator) if with_context else trace
     finally:
         if process.is_alive():
             process.kill()
@@ -106,11 +120,17 @@ def test_first_external_reservation_durability(cut):
         parent.close()
 
 
-def make_code_target():
+@pytest.mark.parametrize("cut", ("before_insert", "after_insert", "before", "after"),
+                         ids=("before-insert", "after-insert-before-commit", "before-commit", "after-commit"))
+def test_first_external_reservation_durability(cut):
+    first_external_reservation_durability(cut)
+
+
+def make_code_target(*, worker_id="host"):
     output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-reservation-", dir="/private/tmp"))
     coordinator = Coordinator(output, clock=FakeClock(100, 0))
     actor = ActorContext("operator", "human", ("control.internal", "start"))
-    plane = ControlPlane(coordinator, worker_id="host", route_adapter=SyntheticDomainRoute("code_agent"))
+    plane = ControlPlane(coordinator, worker_id=worker_id, route_adapter=SyntheticDomainRoute("code_agent"))
     inputs = {"root_goal": {"goal": "reservation audit"}, "input_snapshot": {"data": "synthetic"}}
     started = plane.start_run(StartRunRequest("case", inputs, digest(inputs), "start", "phase_b_test"), actor=actor)
     locator = started["result"]["run_locator"]

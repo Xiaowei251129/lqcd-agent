@@ -9,7 +9,7 @@ from lqcd_agent.control.coordinator import publish_exact, read_regular
 from lqcd_agent.control.operations import AdvanceRunRequest, PreparationVerification
 from lqcd_agent.control.strict_json import ControlIntegrityError, canonical_bytes, digest, loads
 from test_advance_control import SyntheticDomainRoute
-from test_external_consumption_control import normal_external
+from test_external_consumption_control import success_external
 
 
 class DomainPreparation(SyntheticDomainRoute):
@@ -63,8 +63,8 @@ class DomainPreparation(SyntheticDomainRoute):
 
 
 @pytest.fixture
-def prepared_source(normal_external):
-    coordinator, plane, actor, locator, resume, consumer = normal_external
+def prepared_source(success_external):
+    coordinator, plane, actor, locator, resume, consumer = success_external
     assert plane.resume_run(resume, actor=actor)["operation_status"] == "committed"
     root = coordinator.root / locator["case_id"] / locator["run_id"]
     plane.route_adapter = DomainPreparation(root)

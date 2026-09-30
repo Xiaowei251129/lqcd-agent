@@ -1,0 +1,13 @@
+{
+  "fixture_id": "tests/phase_b/fixtures/b03_runtime/consumption_failure.failure_intent_worker_race.after.materializable_publication_prefix.json",
+  "entrypoint": "src/lqcd_agent/control/coordinator.py:boundary",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "frozen_outcome_classification",
+    "publication_side:after"
+  ],
+  "schema_version": "0.1"
+}

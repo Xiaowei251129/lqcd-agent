@@ -1,16 +1,22 @@
 """Real durable prestart publication, without Backend or Bundle coverage."""
 from copy import deepcopy
+from functools import partial
 import multiprocessing
 import os
 from pathlib import Path
 
 import pytest
 
+from harness.pytest_evidence import observe, production_hook
+from lqcd_agent.code_agent.containment import DeterministicContainment
+from lqcd_agent.code_agent.external_operation import CodeWatchdog
+from lqcd_agent.code_agent.fake_backend import FakeCodingBackend
 from lqcd_agent.code_agent.prestart import CodePrestart
 from lqcd_agent.control.clock import FakeClock
 from lqcd_agent.control.coordinator import Coordinator
 from lqcd_agent.control.execution import parse_ledger
-from lqcd_agent.control.strict_json import ControlIntegrityError, digest, loads
+from lqcd_agent.control.operations import ExternalControl
+from lqcd_agent.control.strict_json import ControlIntegrityError, canonical_bytes, digest, loads
 from helpers.code_workspace import immutable_base_repository
 from test_b03_task_trace_boundary import task_trace_witness
 
@@ -54,6 +60,8 @@ def test_prestart_commits_one_exact_aggregate_and_core_before_any_workspace(pres
     assert external["operation_contract_digest"] == core["operation_contract_digest"]
     assert not any(r["record_type"] == "attempt" and r["attempt_id"] == witness["task"]["attempt_id"] and r["event"] == "started" for r in rows)
     assert not any(p.name == witness["manifest"]["workspace_id"] for p in service.coordinator.root.rglob("*"))
+    observe("b03-construction-prestart", {"kind": "boolean", "value": True},
+            sorted(["acyclic_prestart_order", "one_aggregate_reservation", "idempotent_publication"]))
 
 
 @pytest.mark.parametrize("mutation", ["heads", "evidence", "producer", "backend", "admission"])
@@ -76,6 +84,8 @@ def test_prestart_rejects_rehashed_foreign_authority_without_publication(prestar
         service.commit_task(task)
     assert (root / "execution_history.jsonl").read_bytes() == before
     assert not (root / "code_agent_control").exists()
+    observe("b03-construction-source-authority", {"kind": "boolean", "value": True},
+            sorted(["source_identity_checked", "foreign_authority_rejected", "no_publication"]))
 
 
 def test_prestart_budget_excess_has_no_reservation_or_workspace(prestart):
@@ -136,21 +146,30 @@ def test_prestart_integrity_and_fencing_prevent_core_publication(prestart, fault
     assert value["operation_contract_digest"] is None and value["operation_phase"] == "reservation_committed"
 
 
-def prestart_client(pipe, output, witness, cut, physical=False):
+def prestart_client(pipe, output, witness, cut, physical=False, hook_request=None, expect_rejection=False):
     coordinator = Coordinator(Path(output), clock=FakeClock(100, 0))
     def observer(name, side, value):
         if (name, side) == cut:
             os._exit(95)
+    if hook_request is not None:
+        observer.production_hooks = {cut: (partial(production_hook, hook_request["case_id"],
+                                                   process_request=hook_request),)}
     coordinator.observer = observer
     service = CodePrestart(coordinator, witness["task"]["producer_operation_id"], "host", 1)
     try:
-        service.commit_task(witness["task"])
-        service.commit_manifest(witness["manifest"])
-        aggregate(service, witness)
-        core = service.commit_core()
-        if physical:
-            service.materialize_workspace(witness["base_repository"])
-        pipe.send(core)
+        try:
+            service.commit_task(witness["task"])
+            service.commit_manifest(witness["manifest"])
+            aggregate(service, witness)
+            core = service.commit_core()
+            if physical:
+                service.materialize_workspace(witness["base_repository"])
+            assert not expect_rejection
+            pipe.send(core)
+        except ControlIntegrityError as error:
+            if not expect_rejection:
+                raise
+            pipe.send({"rejected": str(error)})
     finally:
         coordinator.close()
         pipe.close()
@@ -191,3 +210,38 @@ def test_prestart_fresh_process_recovers_only_frozen_publication_suffix(prestart
         assert proof["base_tree_digest"] == witness["manifest"]["base_tree_digest"]
     else:
         assert service.commit_core() == core
+
+
+def test_expired_aggregate_recovery_rejects_changed_frozen_bytes_before_publication(prestart):
+    service, root, witness = prestart
+    service.commit_task(witness["task"])
+    service.commit_manifest(witness["manifest"])
+    coordinator = service.coordinator
+
+    def observer(name, side, value):
+        if (name, side) == ("external.aggregate_reservation", "before"):
+            raise ControlIntegrityError("Injected aggregate publication cut")
+
+    coordinator.observer = observer
+    with pytest.raises(ControlIntegrityError, match="Injected aggregate"):
+        aggregate(service, witness)
+    coordinator.observer = None
+    before_ledger = (root / "execution_history.jsonl").read_bytes()
+    before_index = (root / "artifact_index.json").read_bytes()
+    producer = service.producer
+    with coordinator.transaction() as db:
+        saved = ExternalControl(coordinator).read(db, producer)
+        saved["prestart"]["aggregate"]["content"] += "{}\n"
+        db.execute("UPDATE external_operations SET value=? WHERE external_operation_id=?",
+                   (canonical_bytes(saved), producer))
+    coordinator.clock = FakeClock(140, 40)
+    backend = FakeCodingBackend(coordinator.root / "fake_backend")
+    watchdog = CodeWatchdog(coordinator, backend, DeterministicContainment(coordinator.root / "containment"),
+                            backend.read_receipt)
+    with pytest.raises(ControlIntegrityError, match="Frozen aggregate source changed"):
+        watchdog.enforce(producer)
+    assert (root / "execution_history.jsonl").read_bytes() == before_ledger
+    assert (root / "artifact_index.json").read_bytes() == before_index
+    final = ExternalControl(coordinator).read(coordinator.connection, producer)
+    assert final["operation_phase"] == "workspace_manifest_committed" and final["reservation_digest"] is None
+    assert backend.lookup(producer)["status"] == "unknown"

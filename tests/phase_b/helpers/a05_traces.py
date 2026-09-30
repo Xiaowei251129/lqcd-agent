@@ -165,8 +165,15 @@ def full_trace(base=None, *, outcome="normal", clock=100):
     bundle = {**owner, "schema_version": "0.1", "slot": "code", "event": "registered", "members": members,
               "artifact_id": owner["attempt_id"] + ":code", "execution_head": digest(witness["reservation"])}
     bundle["pointer"] = {k: deepcopy(bundle[k]) for k in ("slot", "artifact_id", "attempt_id", "members")}
+    run_root = Path(trace["proof"]["output_roots"][0]["path"])
+    paths = {"code_change_summary_path": None, "tests_status_path": None}
+    paths.update({field: str(run_root / "attempts" / owner["attempt_id"] / name) for field, name in (
+        ("code_agent_task_path", "code_agent_task.json"),
+        ("code_agent_result_path", "code_agent_result.json"),
+        ("code_change_manifest_path", "change_manifest.json"),
+        ("code_verification_results_path", "verification_results.json"))})
     bundle["pointer"].update(attempt_kind="code_agent", status=values["code_result"]["status"],
-        state_paths={"code_agent_result_path": members[2]["canonical_path"], "code_change_summary_path": None, "tests_status_path": None})
+        state_paths=paths)
     bundle_head = digest(bundle)
     trace["proof"]["objects"].append(source_object("canonical_json", bundle, version="0.4"))
     index = {"schema_version": "0.1", "case_id": owner["case_id"], "run_id": owner["run_id"],
@@ -190,6 +197,26 @@ def full_trace(base=None, *, outcome="normal", clock=100):
     return trace, values
 
 
+def state_projection_trace(base=None, *, outcome="normal", clock=100):
+    """Attach bounded state and a checkpoint copy to the contract trace."""
+    trace, values = full_trace(base, outcome=outcome, clock=clock)
+    bundle = next(row["value"] for row in trace["proof"]["objects"] if
+                  row["kind"] == "canonical_json" and row["value"].get("slot") == "code" and
+                  row["value"].get("event") == "registered")
+    pointer = deepcopy(bundle["pointer"])
+    state = {"schema_version": "0.4", "case_id": bundle["case_id"], "run_id": bundle["run_id"],
+             "current_artifacts": {"code": pointer}, **pointer["state_paths"],
+             "code_agent_status": values["code_result"]["status"],
+             "code_agent_usable": values["code_result"]["usable"]}
+    for name, value in (("bounded_state_contract", state),
+                        ("checkpoint_copy_contract", {"channel_values": {"control": deepcopy(state)}})):
+        head = digest(value)
+        trace["proof"]["objects"].append(source_object("canonical_json", value, version="0.4"))
+        trace["events"].append(event(name, run_id=bundle["run_id"], binding_digest=head,
+                                     outcome="contract_only"))
+    return trace, values
+
+
 def rebind(trace, kind, mutate):
     """Rehash a changed fixture DAG so negative tests reach provenance checks."""
     trace = deepcopy(trace)
@@ -202,6 +229,8 @@ def rebind(trace, kind, mutate):
             aliases[rows[h]["value"][checksum]] = h
     selected = next(h for h in rows if profiles.get(h) == kind or
                     kind == "code_bundle" and rows[h]["value"].get("slot") == "code" and rows[h]["value"].get("event") == "registered" or
+                    kind == "bounded_state" and rows[h]["value"].get("schema_version") == "0.4" and "current_artifacts" in rows[h]["value"] or
+                    kind == "checkpoint_copy" and "channel_values" in rows[h]["value"] or
                     kind == "control_envelope" and rows[h]["value"].get("operation_type") == "resume_run")
     mutate(rows[selected]["value"])
     done, digests = {}, {}

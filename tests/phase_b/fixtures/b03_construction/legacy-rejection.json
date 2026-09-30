@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b03_construction/legacy-rejection.json",
+  "entrypoint": "src/lqcd_agent/code_agent/schemas.py:validate_task",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "legacy_attempt_kind_rejected",
+    "no_canonical_conversion"
+  ]
+}

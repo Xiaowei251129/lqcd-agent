@@ -2,7 +2,7 @@
 from copy import deepcopy
 
 from .contracts import PROTOCOL_SHA, CATALOG_SHA, EXIT_CHECKS
-from .strict_json import keys, require, strings, text, digest, path_in, callable_ref
+from .strict_json import keys, require, strings, text, digest, sha, path_in, callable_ref
 
 META_REFS = ["A07-META-006", "A07-META-015"]
 OUTCOMES = (
@@ -78,18 +78,22 @@ SUPPLEMENTAL = {
 }
 
 
-CASE_VERSION = "0.3"
+CASE_VERSION = "0.4"
 EXTERNAL_INITIAL = {"external.stub", "external.external_operation_reserved"}
+UNSTARTED_POST_CLAIM = (
+    "pause_ownership_reserved", "pause_claimed_recorded", "prestart_records_committed",
+    "pause_consumed_recorded", "running_lifecycle_recorded", "resume_checkpoint_committed",
+)
 
 
 def expected_inventory(protocol, *, version=CASE_VERSION):
     """Return immutable expectations independently of matrix or registry input."""
-    require(version in ("0.1", "0.2", CASE_VERSION), "inventory", "case_version")
+    require(version in ("0.1", "0.2", "0.3", CASE_VERSION), "inventory", "case_version")
     control = protocol["state_machines"]["control_operation"]
     entries = []
 
     def add(identifier, owner, locator, effect, precondition, outcomes):
-        if version == "0.3" and identifier in EXTERNAL_INITIAL:
+        if version in ("0.3", "0.4") and identifier in EXTERNAL_INITIAL:
             outcomes = ["reservation_rolled_back"] if identifier == "external.stub" else [*outcomes, "reservation_rolled_back"]
         entries.append({
             "failpoint_id": identifier, "source_locator": locator, "boundary_owner": owner,
@@ -151,7 +155,19 @@ def case_specs(protocol, *, version=CASE_VERSION):
     for entry in expected_inventory(protocol, version=version):
         fp = entry["failpoint_id"]
         if fp.startswith("post_claim."):
+            phase = fp.removeprefix("post_claim.")
             for choice in protocol["state_machines"]["control_operation"]["consumption_failure_contract"]["classification"]:
+                if version == "0.4" and phase in UNSTARTED_POST_CLAIM and choice["consumer_stop"] == "unavailable":
+                    authority = choice["run_authority"]
+                    case_id = f"{fp}.unstarted_recovery.{authority}"
+                    cases[case_id] = {
+                        "failpoint_id": fp,
+                        "outcome": "failed_closure" if authority == "appendable" else "unavailable_closure",
+                        "invariants": ["started_intent:null", "stop_proof:not_dispatched", "stop_adapter_calls:0",
+                                       f"run_authority:{authority}", "same_resume_owner",
+                                       "normal_external_resolution_immutable"],
+                    }
+                    continue
                 case_id = f"{fp}.{choice['consumer_stop']}.{choice['run_authority']}"
                 cases[case_id] = {
                     "failpoint_id": fp, "outcome": choice["outcome"],
@@ -162,7 +178,7 @@ def case_specs(protocol, *, version=CASE_VERSION):
             # Each permitted recovery class is tested with its own deterministic authority/evidence context.
             for side in ("before", "after"):
                 outcomes = entry["allowed_exact_outcomes"]
-                if version == "0.3" and fp in EXTERNAL_INITIAL:
+                if version in ("0.3", "0.4") and fp in EXTERNAL_INITIAL:
                     outcomes = ["reservation_rolled_back"] if fp == "external.stub" or side == "before" else sorted(OUTCOMES)
                 for outcome in outcomes:
                     case_id = f"{fp}.{side}.{outcome}"
@@ -256,6 +272,28 @@ def expected_external_dispositions(protocol):
     return {"schema_version": "0.3", "previous_case_version": "0.2", "boundary_owner": "B03", "dispositions": rows}
 
 
+def expected_post_claim_dispositions(protocol):
+    """Account for the twelve replaced unstarted consumer cases and all retained cases."""
+    old = case_specs(protocol, version="0.3")
+    new = case_specs(protocol, version="0.4")
+    rows = []
+    for phase in UNSTARTED_POST_CLAIM:
+        for authority in ("appendable", "unavailable"):
+            old_id = f"post_claim.{phase}.unavailable.{authority}"
+            new_id = f"post_claim.{phase}.unstarted_recovery.{authority}"
+            rows.append({"old": old_id, "new": new_id, "new_outcome": new[new_id]["outcome"]})
+            require(old_id in old and new_id not in old and new_id in new, "post_claim_dispositions", "replacement")
+    replaced = {row["old"] for row in rows}
+    introduced = {row["new"] for row in rows}
+    require(len(old) == len(new) == 2199 and len(rows) == len(replaced) == len(introduced) == 12,
+            "post_claim_dispositions", "counts")
+    require({key: spec for key, spec in old.items() if key not in replaced} ==
+            {key: spec for key, spec in new.items() if key not in introduced},
+            "post_claim_dispositions", "retained_cases")
+    return {"schema_version": "0.4", "previous_case_version": "0.3", "boundary_owner": "B03",
+            "retained_count": 2187, "replacements": rows}
+
+
 def inventory_projection(registry):
     result = deepcopy(registry)
     for entry in result["entries"]:
@@ -265,7 +303,9 @@ def inventory_projection(registry):
 
 
 def validate_inventory(registry, obligations, protocol, root, scenarios):
-    from .seals import REGISTRY_INVENTORY_SHA256, FINAL_OBLIGATIONS_SHA256
+    from .seals import (REGISTRY_INVENTORY_SHA256, FINAL_OBLIGATIONS_SHA256,
+                        CASE_0_3_REGISTRY_INVENTORY_SHA256, CASE_0_3_FINAL_OBLIGATIONS_SHA256,
+                        CASE_0_3_REGISTRY_RAW_SHA256, CASE_0_3_FINAL_OBLIGATIONS_RAW_SHA256)
     keys(registry, {"schema_version", "control_protocol_sha256", "requirement_catalog_sha256", "entries"}, "registry")
     require(registry["schema_version"] == CASE_VERSION and obligations.get("schema_version") == CASE_VERSION,
             "inventory", "case_version")
@@ -278,10 +318,25 @@ def validate_inventory(registry, obligations, protocol, root, scenarios):
     require(inventory_projection(registry) == registry_skeleton(protocol), "registry", "inventory")
     require(obligations == expected_obligations(protocol), "obligations", "case_semantics")
     from .strict_json import read
+    old_registry_path = path_in(root, "tests/phase_b/case_0_3_failpoint_registry.json")
+    old_obligations_path = path_in(root, "tests/phase_b/case_0_3_final_obligations.json")
+    require(sha(old_registry_path.read_bytes()) == CASE_0_3_REGISTRY_RAW_SHA256 and
+            sha(old_obligations_path.read_bytes()) == CASE_0_3_FINAL_OBLIGATIONS_RAW_SHA256,
+            "case_0_3", "raw_seal")
+    old_registry, old_obligations = read(old_registry_path), read(old_obligations_path)
+    require(digest(inventory_projection(old_registry)) == CASE_0_3_REGISTRY_INVENTORY_SHA256 and
+            inventory_projection(old_registry) == registry_skeleton(protocol, version="0.3"),
+            "case_0_3", "inventory_seal")
+    require(digest(old_obligations) == CASE_0_3_FINAL_OBLIGATIONS_SHA256 and
+            old_obligations == expected_obligations(protocol, version="0.3"),
+            "case_0_3", "obligations_seal")
     dispositions = read(path_in(root, "tests/phase_b/reservation_case_dispositions.json"))
     require(dispositions == expected_dispositions(protocol), "dispositions", "complete_old_to_new")
     external_dispositions = read(path_in(root, "tests/phase_b/external_reservation_case_dispositions.json"))
     require(external_dispositions == expected_external_dispositions(protocol), "external_dispositions", "complete_old_to_new")
+    post_claim_dispositions = read(path_in(root, "tests/phase_b/post_claim_case_dispositions.json"))
+    require(post_claim_dispositions == expected_post_claim_dispositions(protocol),
+            "post_claim_dispositions", "complete_old_to_new")
     specs = case_specs(protocol)
     scenario_index = {s["scenario_id"]: s for s in scenarios}
     for entry in registry["entries"]:

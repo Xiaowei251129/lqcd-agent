@@ -5,7 +5,7 @@ Execution Ledger and Event Identity. Builders are pure, not write authority.
 """
 from dataclasses import asdict
 
-from lqcd_agent.artifacts.registry import ARTIFACT_SLOTS, STATE_FIELDS_BY_SLOT
+from lqcd_agent.artifacts.registry import ARTIFACT_SLOTS, STATE_FIELDS_BY_SLOT, CODE_STATE_PATH_FIELDS
 from lqcd_agent.graph.state import (canonical_attempt_kind, stable_attempt_id, stable_cycle_id,
                                   stable_human_request_id, stable_human_response_id, stable_transition_id,
                                   stable_checkpoint_thread_id)
@@ -129,7 +129,7 @@ def validate_record(record):
         for key in ("input_references", "output_references"):
             require(type(record[key]) is dict, "Invalid evidence references")
             references = record[key]
-            allowed = {field for fields in STATE_FIELDS_BY_SLOT.values() for field in fields} | {"current_artifact_ids"}
+            allowed = {field for fields in STATE_FIELDS_BY_SLOT.values() for field in fields} | set(CODE_STATE_PATH_FIELDS) | {"current_artifact_ids"}
             require(set(references) <= allowed, "Unknown artifact reference field")
             if "current_artifact_ids" in references:
                 require(type(references["current_artifact_ids"]) is dict and

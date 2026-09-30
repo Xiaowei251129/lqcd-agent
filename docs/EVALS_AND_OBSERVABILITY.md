@@ -170,3 +170,23 @@ B00C05已完成并解除B03首次ExternalOperation reservation分类阻塞：真
 2026-09-24 B00C06：用户批准补强、冻结提交并执行，ready commit `cd29d9f`。显式 trace 0.5 / proof 0.2 及 A05 全链 contract/meta 证据正在集成验证，旧 trace、旧 goldens、src、case0.3 不变。B03 暂保持 blocked；通过后仅解除来源轨迹前置，预算事务和状态投影兼容仍须独立核验。
 
 2026-09-24 B00C06完成：trace0.5/proof0.2 全链来源与四条验收路径通过，2677 passed、同 Session B02 runtime1410/1410，fresh B00/B01/B02为15/11/30；mapped56/remaining75，final仅75/789/15。旧trace、旧goldens、src、case0.3保持。B03来源阻塞已解除，但接续实证确认A05空字段投影超出原fingerprint-only golden授权，因该独立边界继续blocked，待窄范围补充审阅。
+
+2026-09-25 B03工作树状态：construction的28项owned requirement已有66个真实nodeid与26个场景，fresh验收为28/28；累计mapped84/131、remaining47。7/645个B03 runtime case已由子进程production hook、recovery outcome和exact trace在同一局部Session验证，余638未绑定；B02 1410项仍待当前输入的同Session复验。十份source-bound expected经旧/新raw、两fresh根及字段审定，来源定向79项通过。当前final负向报告仅47 coverage、782 runtime binding、15 exit adapter缺口，`phase_b_complete=false`；这些数字不能替代完整Phase B或全仓测试。
+
+2026-09-28续审：另两份B00来源expected及一份B02 recovery expected完成旧源码/当前双fresh根raw审计，当前累计13份；recovery只更新6个派生execution head与3个result digest，43条控制事件和owner/outcome/route顺序不变。旧member-digest反例已改为验证现行trace0.5的跨根exact标准化及raw篡改拒绝。B03 runtime仍7/645，B02同Session1410及全量回归待本轮复验，Phase B完成标志仍false。
+
+2026-09-28最终固定输入：Phase B **2531 passed**、全仓 **2856 passed**；同一fresh Session复核B00/B01/B02/B03 construction **15/11/30/28**、B02独立runtime **1410/1410** 及B03已绑定 **7/7**。当前final负向报告精确为47 coverage、782 runtime binding（B03 638、B04 144）、15 exit，`phase_b_complete=false`。B03C01完成，B03因冻结case0.3的12个不可达post-claim组合而blocked；[B03C02](tickets/phase-b-graph-harness/B03C02_POST_CLAIM_UNSTARTED_CASE_SEMANTICS.md)仅为review，现行case0.3计数与seals未改。普通pytest通过数不能充当缺失的638项runtime hook/nodeid/trace证据。
+
+2026-09-28 B03C02实施：现行test-owned case版本为 **0.4**；相对0.3恰好12个未启动consumer的post-claim case替换、2187项保留，其中六个appendable outcome从`unavailable_closure`更正为`failed_closure`。总量 **2199**、B02 **1410**、B03 **645**、B04 **144**、post-claim **28**、boundary **324** 和required IDs **131** 不变；旧0.3 raw快照、seal和reader仍独立验证。12项真实提交后故障与新进程恢复在两个fresh根各获12个production hook回执、passing nodeid和固定exact trace，标准化快照SHA-256均为`2c96adbd77702aadac2cf423070d4c28683a702cba3b491a2a1c502dec41d017`；事务内phase `after`退出的6个回滚反例通过。旧`invocation_authorized`四格仅计普通回归。B03已有19项runtime绑定，尚缺626项，不能因此宣称645/645或Phase B完成；本轮全量结果见[B03C02独立记录](tickets/completions/B03C02_COMPLETION.md)。
+
+同日固定输入复核：B00/B01/B02/B03 construction为 **15/11/30/28**，当前输入B02独立case **1410/1410**、B03已绑定case **19/19** 均经各自fresh Session的真实hook、passing nodeid及exact trace验证。Final负向预检仅有 **47 coverage / 770 runtime binding（B03 626、B04 144）/ 15 exit** 缺口，`phase_b_complete=false`。此时全量suite尚待磁盘空间允许后复验；前一输入的2531/2856通过数不是当前输入结果。
+
+2026-09-29 B03C02最终验收：受控清理无引用的旧reservation测试目录后，当前输入完整Phase B **2552 passed**、全仓 **2877 passed**，均退出0且没有skip、xfail或deselect。case0.4的12项提交后跨进程故障与恢复、两个fresh根exact trace、旧0.3原字节/seal、B02 **1410/1410**、construction **15/11/30/28** 均已验证；[B03C02](tickets/phase-b-graph-harness/B03C02_POST_CLAIM_UNSTARTED_CASE_SEMANTICS.md)现为completed。B03仍缺626项独立runtime，final负向缺口保持 **47/770/15**，`phase_b_complete=false`。原始日志和清理manifest见[B03C02完成记录](tickets/completions/B03C02_COMPLETION.md)。
+
+2026-09-29最新B03验收检查点：28/28 construction、累计mapped84/131、remaining47；219/645项独立runtime具有同一fresh Session的production hook、passing nodeid及exact trace，426项未绑定。新增38项containment stop覆盖恢复/重放、来源冲突和证明不足；current final预检仅47 coverage、570 runtime binding及15 exit adapter缺口，全局未运行，phase_b_complete=false。六项golden及B02/Phase B/全仓最终回归仍待闭合；先前计数为历史检查点，不能据此宣布B03完成。
+
+
+2026-09-29 B03最终验收输入准备：B03已有 **645/645** 静态runtime绑定及新增family的双fresh根exact审计。最终同一fresh Session的B03 645项/B02 1410项、construction 15/11/30/28及全仓回归仍待完成；B03保持in_progress，mapped84/131、remaining47，global `phase_b_complete=false`，B04/B05仍draft。详见[B03执行记录](tickets/completions/B03_COMPLETION.md)。早期219/379等条目是历史输入的检查点。
+
+
+2026-09-29 B03完成：canonical Fake Backend、Host stop/unavailable、trusted Code消费/资源结算/Bundle、按producer/version的0.4状态投影和fresh Analysis交接通过验收。最终construction **15/11/30/28**，同一fresh Session的B03 **645/645**、B02 **1410/1410**，全仓 **3514 passed**（Phase B **3189 passed**）。Mapped **84/131、remaining47**；全局 `phase_b_complete=false`，B04/B05仍draft，默认产品runtime仍schema0.2。协议/catalog、case/owner/exit门槛与legacy合同保持。详见[B03完成记录](tickets/completions/B03_COMPLETION.md)；较早in_progress及219/379等条目保留为历史事实。未提交或推送。

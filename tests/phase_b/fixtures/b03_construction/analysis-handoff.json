@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b03_construction/analysis-handoff.json",
+  "entrypoint": "src/lqcd_agent/code_agent/analysis_handoff.py:AnalysisHandoff.execute",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "current_success_bundle",
+    "fresh_analysis_workspace",
+    "fresh_subprocess"
+  ]
+}

@@ -1,4 +1,4 @@
-"""Trace 0.4 proves the actual external Pause resource reservation."""
+"""Trace 0.5 proves the canonical external source and member closure."""
 import pytest
 
 from harness.contracts import ROOT
@@ -64,3 +64,26 @@ def test_reservation_reference_is_versioned_and_position_specific():
         assert path not in dict(reference_paths(value, kind="execution_0_4", version=version))
     material = {"reservation_digest": value["proof"]["dependency"]["reservation_digest"]}
     assert source_object("canonical_json", material, version="0.4")["references"] == []
+
+
+@pytest.mark.parametrize("fault", ["missing_member", "changed_member", "missing_interval", "stale_session"])
+def test_canonical_source_rejects_missing_or_changed_proof(fault):
+    trace = fresh_external_trace()
+    rows = trace["proof"]["objects"]
+    if fault in ("missing_member", "changed_member"):
+        bundle = next(row["value"] for row in rows if row["kind"] == "canonical_json" and
+                      row["value"].get("slot") == "code" and row["value"].get("event") == "registered")
+        member = next(item for item in bundle["members"] if item["canonical_path"].endswith("/code_agent_result.json"))
+        source = next(row for row in rows if row["sha256"] == member["sha256"])
+        if fault == "missing_member":
+            rows.remove(source)
+        else:
+            source["value"]["summary"] = "changed after capture"
+    elif fault == "missing_interval":
+        interval = next(row["value"] for row in rows if row["kind"] == "execution_0_4" and
+                        row["value"].get("event") == "active_interval_settled")
+        rows.remove(next(row for row in rows if row["sha256"] == interval["payload"]["evidence_digest"]))
+    else:
+        trace["proof"]["binding"]["invocation_token"] += "foreign"
+    with pytest.raises(Invalid):
+        normalize(trace, binding=current_binding())

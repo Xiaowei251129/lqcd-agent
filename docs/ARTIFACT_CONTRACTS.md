@@ -6,7 +6,7 @@
 
 A02 已完成 Run/Cycle/Attempt/Transition/Human execution ledger，A03 已完成 per-attempt domain-artifact namespace、artifact history/current index、supersession/invalidation 和 fixed-path compatibility projection。A04已冻结后继Pause/Run lifecycle、checkpoint evidence与child lineage目标合同，A05已冻结后继Code Agent task/result、workspace evidence、code bundle、trusted verification与fresh Analysis handoff合同，A06已冻结后继budget policy、budget events、resource envelope与fingerprint/grant evidence合同；这些目标合同均未改变当前artifact schema或runtime。Physics RAG evidence bundle仍未获批，只能在后续独立ticket中定义。
 
-B02当前实现边界：独立0.4 control入口持久化Run-local immutable inputs、policy、Pause/checkpoint与child lineage，fenced invocation复用A03 bundle注册；normal/timeout消费和preparation经typed domain ports验证顺序，默认0.2及slot policy不变。完整来源轨迹包含artifact历史原文；trace0.4先证明external Pause `reservation_digest`指向同Run/Attempt/producer的真实`resource_reserved`记录，再做语义规范化，其他material摘要仍精确比较。B03 canonical Code schemas、Backend和workspace由后续票据实现。当前已验证范围见[B02完成记录](tickets/completions/B02_COMPLETION.md)。
+B02当前实现边界：独立0.4 control入口持久化Run-local immutable inputs、policy、Pause/checkpoint与child lineage，fenced invocation复用A03 bundle注册；normal/timeout消费和preparation经typed domain ports验证顺序，默认0.2及slot policy不变。完整来源轨迹包含artifact历史原文；trace0.4先证明external Pause `reservation_digest`指向同Run/Attempt/producer的真实`resource_reserved`记录，再做语义规范化，其他material摘要仍精确比较。B03当前工作树已实现canonical Code schemas、Fake Backend、workspace、trusted Bundle和fresh Analysis交接，当前219/645个独立runtime case已正式绑定并在同一fresh Session通过，另426项未绑定，尚非整票交付。当前已验证范围见[B02完成记录](tickets/completions/B02_COMPLETION.md)和[B03执行记录](tickets/completions/B03_COMPLETION.md)。
 
 ## Execution Identity History
 
@@ -118,7 +118,7 @@ Replay/Fork child在任何child bytes前冻结field-disjoint `SourceSnapshotProo
 
 B00C09只在同一execution ledger增加`active_time_0.1`的setup/Attempt预算记录，并在ExternalOperation内部`prestart.active_time`保存首次COMMIT冻结的exact intent。它不新增或重写A05 `CodeAgentTask/Result/Workspace` public 0.1 member；新Pause proof通过`active_time.interval_id/settlement_execution_head`绑定setup settlement，旧B02 synthetic proof仍按原形状读取。详见[活动时间合同](tickets/corrections/B00C09_ACTIVE_TIME_LEDGER_CONTRACT.md)。
 
-## A05 已确认的 Code Agent Artifact Contract（尚未实现）
+## A05 已确认的 Code Agent Artifact Contract（B03 工作树实现中）
 
 [A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)冻结独立schema `0.1`的`CodeAgentTask`、`CodeAgentExternalResult`、`CodeAgentResult`、`BackendDispatchReceipt`、`WorkspaceManifest`、`WorkspaceSeal`、change manifest与verification results。它们不兼容解释当前`coder_task_packet.yaml`、`code_change_summary.md`或`tests_status.json`。
 
@@ -648,3 +648,6 @@ accepted memory, while a valid `reject_or_hold` decision writes rejected memory.
 2026-09-24：B00C08在13f3b74冻结并完成治理交接；B03恢复ready。Normal/timeout完整来源、source trace0.5、独立Analysis success前置及其golden审计范围已批准，尚待B03实现。预算事务与canonical交付未完成，mapped56/remaining75、Phase B未完成。
 
 [B00C08](tickets/phase-b-graph-harness/B00C08_B02_CANONICAL_EVIDENCE_TRACE_HANDOFF.md)明确替代C07受影响source证据不得升级0.5的限制，补齐upstream与safe-timeout材料。迁移source轨迹另存0.5 expected；无成员摘要的phase-only证据仍为0.1。Analysis前置使用独立success/usable bundle，normal needs_input不计canonical Analysis成功。以上为待实施边界。
+
+
+2026-09-29 B03完成：canonical Fake Backend、Host stop/unavailable、trusted Code消费/资源结算/Bundle、按producer/version的0.4状态投影和fresh Analysis交接通过验收。最终construction **15/11/30/28**，同一fresh Session的B03 **645/645**、B02 **1410/1410**，全仓 **3514 passed**（Phase B **3189 passed**）。Mapped **84/131、remaining47**；全局 `phase_b_complete=false`，B04/B05仍draft，默认产品runtime仍schema0.2。协议/catalog、case/owner/exit门槛与legacy合同保持。详见[B03完成记录](tickets/completions/B03_COMPLETION.md)；较早in_progress及219/379等条目保留为历史事实。未提交或推送。

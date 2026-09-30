@@ -2,12 +2,12 @@
 
 ## 状态摘要
 
-- **更新时间**：2026-09-25
+- **更新时间**：2026-09-29
 - **当前分支**：`codex/phase-11-agent-harness-upgrade`（已快进包含`xgao`的Phase A设计冻结提交`d0f108a`）
-- **当前阶段**：Phase A、B00/B01/B02、B00C01–B00C09及B02C01已completed；B03 ready，B04/B05仍draft。
-- **活动 ticket**：[B03](tickets/phase-b-graph-harness/B03_GRAPH_MANAGED_FAKE_CODE_AGENT.md)原执行授权保留，活动时间合同阻塞已由B00C09解除；完整 canonical 交付与验收未完成。
+- **当前阶段**：Phase A、B00–B03及相关已批准纠偏票已completed；B04/B05仍draft，Phase B全局未完成。
+- **活动 ticket**：B03完成，见[B03完成记录](tickets/completions/B03_COMPLETION.md)；没有启动B04/B05。
 - **稳定基线**：[`v0.2-demo`](milestones/V0_2_DEMO_BASELINE.md)
-- **本轮范围**：B00C09在`47bd0f6`冻结ready正文；同一execution ledger的setup/Attempt区间、Pause/normal/timeout/failure收尾、nested verification和恢复门禁已实现，131项定向与57项A05来源检查、Phase B 2459项及全仓2784项通过。B03的完整Backend、Bundle、fresh Analysis及28/645验收尚未完成；mapped56/remaining75、Phase B未完成。
+- **本轮范围**：Canonical Fake Backend、public Pause/Resume外部操作、Host安全停止/unavailable、trusted Code消费、资源结算、canonical Bundle、0.4状态投影与fresh Analysis交接已完成B03验收。最终fresh construction **15/11/30/28**；同一冻结输入Session的B03 **645/645**、B02 **1410/1410**通过，完整全仓 **3514 passed**（Phase B **3189 passed**），legacy/A03定向119 passed。Case0.4仍2199（1410/645/144）、post-claim28、boundary324；mapped **84/131、remaining47**，global `phase_b_complete=false`。B04产品route未接入，默认产品runtime仍schema0.2。协议/生成字节、golden raw来源、编译、链接、范围与冻结正文检查通过；发布前原始证据复核及关键功能100项复测通过，用户已授权commit/push。历史检查点不代替最终完成记录。
 
 ## 当前稳定实现
 
@@ -232,3 +232,9 @@ B02与C04现均in_progress：C04独立语义/来源/进程修正已通过定向�
 2026-09-24 B00C09修订：待审票已明确 B00C05 首次 stub COMMIT 后再发布冻结的 setup event，保留 verification 资源的实测时长、覆盖 normal/timeout 与部分 Pause 的结算，并限定旧 golden 的派生更新。仍为 `review`，未获准实施；B03 保持 `blocked`。
 
 2026-09-25 B00C09完成：活动时间区间、Pause与Attempt结算、nested verification和恢复门禁已按冻结合同实现；Phase B 2459 passed、全仓2784 passed，11份golden仅同步136个派生摘要值。B00C09为completed，B03恢复ready；canonical Backend/Bundle/Analysis和28/645验收仍未完成，mapped56/remaining75及Phase B全局未完成。见[B00C09完成记录](tickets/completions/B00C09_COMPLETION.md)。
+
+2026-09-25 B03接续：fresh B02 construction为30/30、累计56/remaining75。B03在原授权下进入in_progress；Fake Backend持久化port、public Pause后dispatch、同operation receipt/result引用、deterministic containment与Host workspace seal基础已增加，98项相关定向回归通过。尚未完成可信ingress、normal final、Bundle、Analysis和28/645验收，未改动前置case owner与全局exit判断。见[B03执行记录](tickets/completions/B03_COMPLETION.md)。
+
+2026-09-28 B03当前工作树：B03C01重复Code prior IDs与B03 canonical Backend、消费、Bundle、状态和fresh Analysis基础已实现；fresh construction为B00/B01/B02/B03 **15/11/30/28**，累计映射 **84/131、remaining47**。B03独立runtime仅 **7/645** 有本次子进程production hook、passing nodeid和exact trace，另638未绑定；B02 1410项同Session重验待执行。前次Phase B探索性全量为2527 passed、4 failed；其中canonical fixture恢复actor、trace0.5旧反例已按maintenance修复，第十三份B02 recovery expected经旧源码raw及当前双fresh根审定后只同步9个派生字段，相关定向22 passed，Phase B复验运行中。`phase_b_complete=false`，B03/B03C01仍in_progress，未提交或推送。见[B03执行记录](tickets/completions/B03_COMPLETION.md)。
+
+2026-09-28固定输入复核：Phase B **2531 passed**、全仓 **2856 passed**，同一fresh Session的construction **15/11/30/28**、B02独立runtime **1410/1410** 与B03已绑定 **7/7** 通过；累计mapped **84/131、remaining47**，final仅 **47 coverage、782 runtime binding、15 exit** 缺口，`phase_b_complete=false`。B03C01重复Code纠偏已completed。B03冻结case0.3的六个未启动post-claim阶段共有12项`consumer_stop=unavailable`不可达，按原Stop Conditions转为blocked；[B03C02](tickets/phase-b-graph-harness/B03C02_POST_CLAIM_UNSTARTED_CASE_SEMANTICS.md)为review、未改case文件。B03仍缺638项独立runtime绑定；无提交或推送。详见[B03完成记录](tickets/completions/B03_COMPLETION.md)。

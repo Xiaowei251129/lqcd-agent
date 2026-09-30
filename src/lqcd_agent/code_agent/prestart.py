@@ -22,22 +22,35 @@ class CodePrestart:
         self.coordinator, self.producer = coordinator, producer_operation_id
         self.worker, self.epoch = worker_id, epoch
 
-    def _fence(self, db, *, materialize_setup_only=False):
+    def _fence(self, db, *, materialize_setup_only=False, materialize_frozen_aggregate_only=False):
         coordinator = self.coordinator
         value = ExternalControl(coordinator).read(db, self.producer)
         now = coordinator._time().monotonic_seconds
         require(value["worker_owner_id"] == self.worker and value["lease_epoch"] == self.epoch and
                 value["resolution_owner"] is None, "Stale external prestart owner")
-        if not materialize_setup_only:
+        require(not (materialize_setup_only and materialize_frozen_aggregate_only),
+                "Conflicting prestart recovery modes")
+        if materialize_frozen_aggregate_only:
+            require(now < value["worker_lease_expires_at"] and
+                    value["operation_phase"] == "workspace_manifest_committed" and
+                    value["reservation_digest"] is None and
+                    "aggregate" in value.get("prestart", {}),
+                    "Frozen aggregate recovery has no unpublished suffix")
+        elif not materialize_setup_only:
             require(now < min(value["worker_lease_expires_at"], value["hard_deadline"]),
                     "Stale external prestart owner")
         active = value.get("prestart", {}).get("active_time")
+        if materialize_frozen_aggregate_only:
+            require(active is not None and active["published"] is True and
+                    active.get("recovery_only") is not True and
+                    now >= min(value["hard_deadline"], active["setup_record"]["payload"]["deadline_monotonic_seconds"]),
+                    "Frozen aggregate recovery requires an expired original effect window")
         if materialize_setup_only:
             require(active is not None and now < value["worker_lease_expires_at"] and
                     (now < min(value["hard_deadline"], active["setup_record"]["payload"]["deadline_monotonic_seconds"]) or
                      active.get("recovery_only") is True and active.get("recovery_epoch") == self.epoch and
                      now < active["recovery_expires_at"]), "Stale setup materialization owner")
-        if active is not None and not materialize_setup_only:
+        if active is not None and not (materialize_setup_only or materialize_frozen_aggregate_only):
             require(active.get("recovery_only") is not True, "Setup recovery lease cannot execute effects")
             require(now < active["setup_record"]["payload"]["deadline_monotonic_seconds"],
                     "Setup active-time deadline elapsed")
@@ -260,20 +273,41 @@ class CodePrestart:
                          "previous_index": index, "index": {**index, "execution_head": digest(record)}, "control": control}
                 self._freeze(db, value, "aggregate", saved)
             require(saved["request"] == request, "Conflicting aggregate reservation")
+        return self._materialize_aggregate()
+
+    def recover_frozen_aggregate(self):
+        """Complete only the original side-effect-free aggregate publication."""
+        return self._materialize_aggregate(expired=True)
+
+    def _materialize_aggregate(self, *, expired=False):
         with self.coordinator.transaction(commit_boundary="external.reservation_committed") as db:
-            value, _, root = self._fence(db)
+            value, _, root = self._fence(db, materialize_frozen_aggregate_only=expired)
             saved = value["prestart"]["aggregate"]
+            record = saved["record"]
+            require(saved["content"].encode() == append_record_bytes(saved["previous"].encode(), record) and
+                    saved["index"] == {**saved["previous_index"], "execution_head": digest(record)} and
+                    record["payload"]["resource_operation_id"] == self.producer + ":aggregate" and
+                    record["payload"]["producer_operation_id"] == self.producer and
+                    record["payload"]["attempt_id"] == value["attempt_id"] and
+                    record["payload"]["task_digest"] == value["task_digest"] and
+                    record["payload"]["workspace_manifest_digest"] == value["workspace_manifest_digest"],
+                    "Frozen aggregate source changed")
+            state = bounded_projection(parse_ledger(saved["content"].encode()), artifact_index=saved["index"],
+                artifact_head=saved["index"]["artifact_head"], artifact_event_index=saved["index"]["revision"]).value
+            if value["operation_phase"] == "workspace_manifest_committed":
+                row = db.execute("SELECT value FROM run_controls WHERE run_key=?",
+                                 (digest(value["run_locator"]),)).fetchone()
+                require(row is not None and loads(row[0]) == saved["control"],
+                        "Frozen aggregate control source changed")
             publish_exact(root / "execution_history.jsonl", saved["content"].encode(), previous=saved["previous"].encode(),
                           observer=self.coordinator.observer, name="external.aggregate_reservation")
             replace_projection(root / "artifact_index.json", canonical_bytes(saved["previous_index"]), canonical_bytes(saved["index"]),
                                observer=self.coordinator.observer)
-            self._fence(db)
+            self._fence(db, materialize_frozen_aggregate_only=expired)
             if value["operation_phase"] == "workspace_manifest_committed":
                 value["reservation_id"] = saved["record"]["payload"]["resource_operation_id"]
                 value["reservation_digest"] = digest(saved["record"])
                 self._phase(db, value, "reservation_committed")
-                state = bounded_projection(parse_ledger(saved["content"].encode()), artifact_index=saved["index"],
-                    artifact_head=saved["index"]["artifact_head"], artifact_event_index=saved["index"]["revision"]).value
                 control = saved["control"]
                 control.update(checkpoint_anchor_kind="external_prestart", external_owner=self.producer,
                                projection={**state, "checkpoint_head": control["manifest"]["checkpoint_head"]})

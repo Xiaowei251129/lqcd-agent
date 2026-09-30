@@ -13,7 +13,7 @@ from harness.strict_json import Invalid, digest, read
 
 def test_external_initial_case_dispositions():
     protocol, _ = load_contracts()
-    old, new = case_specs(protocol, version="0.2"), case_specs(protocol)
+    old, new = case_specs(protocol, version="0.2"), case_specs(protocol, version="0.3")
     assert digest(registry_skeleton(protocol, version="0.2")) == CASE_0_2_REGISTRY_INVENTORY_SHA256
     assert digest(expected_obligations(protocol, version="0.2")) == CASE_0_2_FINAL_OBLIGATIONS_SHA256
     assert {c: s for c, s in old.items() if s["failpoint_id"] not in EXTERNAL_INITIAL} == {

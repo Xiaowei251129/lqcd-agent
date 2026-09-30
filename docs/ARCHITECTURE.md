@@ -171,7 +171,7 @@ Replay只从source immutable root inputs创建新child并从`START`执行；Fork
 
 以上是Phase B实现约束，不是当前架构能力：当前CLI、demo server、LangGraph checkpointer、`graph_state.json`和legacy Human decision re-entry均未改动，仍不能调用这些A04接口。
 
-## A05 已确认的 Code Agent 控制架构（尚未实现）
+## A05 已确认的 Code Agent 控制架构（B03 独立工作树实现中）
 
 [A05 Code Agent Contract](tickets/phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)冻结一个稳定的`CodeAgentSubgraph`边界和可替换的`CodingBackend`语义端口。Parent LangGraph只看见一个canonical `code_agent` Attempt及其structured outcome；subgraph负责task、workspace identity、A06 reservation、A04 Pause/Resume、trusted verification、artifact registration和route outcome，外部backend只执行受限编码工具循环，无权修改graph state、ledger、registry、budget或route。
 
@@ -271,3 +271,6 @@ Local console 可发现 YAML/JSON cases、预览分析路线、选择已配置 p
 B02的child入口按source schema分派只读reader，现新增真实0.2 root replay并复用原coordinator、bootstrap admission及child saga；不启用旧runtime或migration。旧JSON空白允许，duplicate keys及不合法值拒绝。`graph_state.json`仅提供经Run-created SHA绑定的`user_goal`，绝不恢复整份旧state。Historical fingerprint absence使用已批准的source-only closed值；source与target校验分离。0.3 reader及其fork CAS仍属原B02剩余实现，本补充不宣称它已完成。见[B02C01执行记录](tickets/completions/B02C01_COMPLETION.md)。
 
 2026-09-18 B02实现进展：独立control入口现有normal external消费/释放、同resume失败收尾、prepared Pause中断、normal-final系统关闭、timeout failed-delivery及fresh preparation的typed Host端口。历史0.3来源通过只读reader端口及同coordinator revision CAS创建0.4 child；checkpoint来源读取使用独立临时durability-unit副本，不改来源目录。真实Backend/workspace/产品图仍属B03/B04。B02目前因historical Fork的B00精确轨迹格式缺口blocked，未获完整验收；见[B02记录](tickets/completions/B02_COMPLETION.md)。
+
+
+2026-09-29 B03完成：canonical Fake Backend、Host stop/unavailable、trusted Code消费/资源结算/Bundle、按producer/version的0.4状态投影和fresh Analysis交接通过验收。最终construction **15/11/30/28**，同一fresh Session的B03 **645/645**、B02 **1410/1410**，全仓 **3514 passed**（Phase B **3189 passed**）。Mapped **84/131、remaining47**；全局 `phase_b_complete=false`，B04/B05仍draft，默认产品runtime仍schema0.2。协议/catalog、case/owner/exit门槛与legacy合同保持。详见[B03完成记录](tickets/completions/B03_COMPLETION.md)；较早in_progress及219/379等条目保留为历史事实。未提交或推送。

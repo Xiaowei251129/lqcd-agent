@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b03_construction/trusted-verification.json",
+  "entrypoint": "src/lqcd_agent/code_agent/verification.py:TrustedVerifier.verify_all",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "backend_claim_not_authority",
+    "fixed_command_registry",
+    "fresh_verification_tree"
+  ]
+}

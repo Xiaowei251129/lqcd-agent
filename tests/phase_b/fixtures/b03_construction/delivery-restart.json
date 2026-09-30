@@ -1,0 +1,15 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b03_construction/delivery-restart.json",
+  "entrypoint": "src/lqcd_agent/code_agent/subgraph.py:CodeAgentSubgraph.consume_external",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "one_attempt_start",
+    "one_pause_consumption",
+    "one_settlement",
+    "same_operation_after_restart"
+  ]
+}

@@ -320,6 +320,8 @@ class PauseOperations:
                             final.get("resource_actual") is not None and all(final["resource_actual"][k] <= v for k, v in reserved["payload"]["maximum_charge"].items()),
                             "Normal external consumption lacks safe exact resource settlement")
                     external = {"tag": "normal_final", "value": value, "final": final, "reservation": reserved}
+                    if hasattr(self.target_adapter, "preflight_delivery"):
+                        self.target_adapter.preflight_delivery(external)
                 if human:
                     require(opened["target_attempt_id"] is None and self.target_adapter is not None, "Human resume needs null target and a trusted validator")
                     require(self.decision_adapter is not None, "Human resume needs a trusted repause decision adapter")
@@ -592,7 +594,8 @@ class PauseOperations:
                                 "authorization_digest": durable["authorization_digest"], "cause_type": type(error).__name__})
             elif value["state"] != "finished":
                 if value.get("completion_intent") is not None:
-                    leases.recover_completion(capability, operation["operation_id"], self.worker_id, operation["lease_epoch"])
+                    with coordinator.failure_context(operation):
+                        leases.recover_completion(capability, operation["operation_id"], self.worker_id, operation["lease_epoch"])
                 else:
                     if operation["request"]["input_kind"] == "external_result":
                         return failure.start(operation, ControlIntegrityError("Uncertain consumer started intent cannot be redispatched"))
@@ -2048,6 +2051,8 @@ class ConsumptionFailure:
     def continue_failure(self, operation):
         from .operations import ExternalControl, continue_publication_plan
         from .integrity import validate_owned_resume_prefix
+        from .coordinator import read_regular
+        from .execution import parse_ledger
 
         coordinator = self.coordinator
         frozen = self.intent(operation)
@@ -2086,13 +2091,21 @@ class ConsumptionFailure:
                         authority = {"classification": "unavailable", "source": None}
                     return {"same_failure_owner": current["operation_id"],
                             "original_external_normal_final_digest_unchanged": {"expected_digest": failure["original_normal_final_digest"], "verified": authority["classification"] == "appendable"},
-                            "consumer_verifier_containment_stop_and_write_fence_proof": {"classification": "safe_stop" if safe else "unavailable", "proof": proof},
+                            "consumer_verifier_containment_stop_and_write_fence_proof": {"classification": "safe_stop" if safe else "unavailable",
+                                "proof": proof, "trusted_stop_at": asdict(coordinator._time())},
                             "all_pending_resource_usage_or_conservative_charge": observation.resource_actual,
                             "run_authority_integrity_proof_or_unavailable": authority}
 
                 operation = coordinator.step(operation["operation_id"], self.worker, operation["lease_epoch"], operation["phase_revision"],
                                              "consumption_failure_stop_verified", stop_verified)
-            snapshot = self._plan(operation, None)
+            locator = frozen["run_locator"]
+            root = coordinator.root / locator["case_id"] / locator["run_id"]
+            stop = next(row["evidence"] for row in coordinator.history(operation["operation_id"])
+                        if row["phase"] == "consumption_failure_stop_verified")
+            appendable = stop["run_authority_integrity_proof_or_unavailable"]["classification"] == "appendable"
+            safe = stop["consumer_verifier_containment_stop_and_write_fence_proof"]["classification"] == "safe_stop"
+            materialized = parse_ledger(read_regular(root / "execution_history.jsonl")).values if appendable and safe else []
+            snapshot = self._plan({**operation, "_materialized_records": materialized}, None)
             return continue_publication_plan(coordinator, operation, self.worker, self.lease_seconds, self._phase,
                                              rebuild=self._plan, plan_snapshot=snapshot)
         except (ControlIntegrityError, OSError) as error:
@@ -2112,7 +2125,16 @@ class ConsumptionFailure:
         authority = stop["run_authority_integrity_proof_or_unavailable"]
         outcome = "failed_closure" if authority["classification"] == "appendable" and stop["consumer_verifier_containment_stop_and_write_fence_proof"]["classification"] == "safe_stop" else "unavailable_closure"
         source = authority["source"] or frozen["source"]
-        plan = PublicationPlan({**operation, "_plan_start_revision": failure["source_phase_revision"] + 2}, source["records"], deepcopy(source["index"]))
+        materialized = operation.get("_materialized_records", ())
+        prior_active_close = next((row for row in materialized if row["record_type"] == "budget" and
+            row["event"] == "active_interval_settled" and row["payload"]["stage"] == "attempt_active" and
+            row["payload"]["settlement_operation_id"] == owner), None)
+        operation = {**operation, "_plan_start_revision": failure["source_phase_revision"] + 2}
+        if prior_active_close is not None:
+            operation["_materialization_time"] = prior_active_close["created_at"]
+        else:
+            operation["_materialization_time"] = stop["consumer_verifier_containment_stop_and_write_fence_proof"]["trusted_stop_at"]
+        plan = PublicationPlan(operation, source["records"], deepcopy(source["index"]))
         plan.source = "consumption_failure_stop_verified"
         plan.step("consumption_failure_classified", {"consumer_failure_stop_proof": stop["consumer_verifier_containment_stop_and_write_fence_proof"],
                   "run_authority_classification": authority["classification"], "consumption_failure_outcome": outcome})
@@ -2148,10 +2170,14 @@ class ConsumptionFailure:
         active = next((r["payload"] for r in plan.records if r["record_type"] == "budget" and
                        r["event"] == "active_interval_reserved" and r["payload"]["stage"] == "attempt_active" and
                        r["payload"]["attempt_id"] == attempt["attempt_id"]), None)
-        if active is not None:
-            require(attempt["status"] == "running" and not any(r["record_type"] == "budget" and
-                    r["event"] == "active_interval_settled" and r["payload"]["interval_id"] == active["interval_id"]
-                    for r in plan.records), "Failure active interval is not an open Attempt")
+        active_closed = active is not None and any(r["record_type"] == "budget" and
+            r["event"] == "active_interval_settled" and r["payload"]["interval_id"] == active["interval_id"]
+            for r in plan.records)
+        if active_closed:
+            require(attempt["status"] in ("succeeded", "failed", "pending"),
+                    "Closed Code interval has an open Attempt")
+        elif active is not None:
+            require(attempt["status"] == "running", "Failure active interval is not an open Attempt")
             stamp = plan.timestamp
             same_clock = (self.coordinator.clock.epoch_id == active["clock_epoch_id"] and
                           stamp.source == active["start_at"]["source"] and
@@ -2163,7 +2189,8 @@ class ConsumptionFailure:
                  next((s["payload"]["actual"] for s in plan.records if s["record_type"] == "budget" and
                        s["event"] == "resource_settled" and s["payload"]["resource_operation_id"] == r["payload"]["resource_operation_id"]), None) is None)
                 for r in plan.records)
-            duration = stamp.monotonic_seconds - active["start_at"]["monotonic_seconds"] if same_clock and not verification_uncertain else None
+            duration = (prior_active_close["payload"]["actual_seconds"] if prior_active_close is not None else
+                        stamp.monotonic_seconds - active["start_at"]["monotonic_seconds"] if same_clock and not verification_uncertain else None)
             require(duration is None or duration <= active["maximum_seconds"],
                     f"Failure active interval exceeded: observed={duration}, maximum={active['maximum_seconds']}")
             position = max(r["budget_event_index"] for r in plan.records if r["record_type"] == "budget") + 1
@@ -2279,6 +2306,7 @@ class InterruptedDelivery:
         from hashlib import sha256
         from pathlib import Path
         from .capabilities import InvocationLeases
+        from .coordinator import read_regular
         from .operations import ExternalControl
 
         owner, opened = operation["operation_id"], snapshot["opened"]
@@ -2303,13 +2331,33 @@ class InterruptedDelivery:
             delivery = asdict(proposed)
         require(delivery["result_semantics"] == PROTOCOL["state_machines"]["control_operation"]["recoverable_code_consumption_contract"]["result"],
                 "Timeout delivery changed its failure semantics")
-        require(type(delivery["member_contents"]) is dict and len(delivery["member_contents"]) >= 2 and
-                set(delivery["state_members"]) == {"code_change_summary_path", "tests_status_path"}, "Incomplete timeout domain members")
+        from lqcd_agent.artifacts.registry import CODE_STATE_PATH_FIELDS
+        from lqcd_agent.code_agent.artifacts import timeout_bundle
+        from lqcd_agent.code_agent.schemas import validate_manifest, validate_task
+        require(type(delivery["member_contents"]) is dict and
+                set(delivery["state_members"]) == set(CODE_STATE_PATH_FIELDS), "Incomplete timeout domain members")
         for name, content in delivery["member_contents"].items():
             relative = Path(name)
             require(not relative.is_absolute() and relative.parts and all(p not in (".", "..") for p in relative.parts) and
                     relative.as_posix() == name and type(content) is str, "Invalid frozen timeout member")
-        require(set(delivery["state_members"].values()) <= set(delivery["member_contents"]), "Timeout state member is absent")
+        require(set(name for name in delivery["state_members"].values() if name is not None) <=
+                set(delivery["member_contents"]), "Timeout state member is absent")
+        directory = root / "code_agent_control" / value["attempt_id"]
+        task = validate_task(read_regular(directory / "code_agent_task.json")).value
+        manifest = validate_manifest(read_regular(directory / "workspace_manifest.json"), task).value
+        receipt = None
+        if value["dispatch_receipt_reference"] is not None:
+            receipt = read_regular(root / value["dispatch_receipt_reference"])
+        expected_members, expected_result = timeout_bundle(task, manifest, value, final,
+            dispatch_phase=operation["reservation"]["exact_external_operation_resolution_tuple"]["external_phase"],
+            receipt=receipt)
+        require(delivery["member_contents"] == {name: raw.decode() for name, raw in expected_members.items()} and
+                delivery["artifact_status"] == expected_result["status"] and
+                delivery["state_members"] == {"code_change_summary_path": None, "tests_status_path": None,
+                    "code_agent_task_path": "code_agent_task.json", "code_agent_result_path": "code_agent_result.json",
+                    "code_change_manifest_path": "change_manifest.json",
+                    "code_verification_results_path": "verification_results.json"},
+                "Timeout delivery differs from its original canonical evidence")
         text(delivery["artifact_status"])
         delivery_digest = digest(delivery)
         evidence = {"safe_stop_final_evidence": {"value": value, "final": final}, "canonical_failed_code_agent_delivery": delivery,
@@ -2416,7 +2464,8 @@ class InterruptedDelivery:
                     exclusive_directory(parent)
                 self.coordinator.materialize_publication(db, operation, "interrupted_code_result_registered", path, name="interrupt.timeout_member")
             output = ArtifactOutput("code", tuple(namespace / name for name in delivery["member_contents"]),
-                {k: str(namespace / name) for k, name in delivery["state_members"].items()}, delivery["artifact_status"])
+                {k: str(namespace / name) if name is not None else None for k, name in delivery["state_members"].items()},
+                delivery["artifact_status"])
             members = [{"path": str(path.relative_to(root)), "sha256": sha256(read_regular(path)).hexdigest()} for path in output.member_paths]
             proof = CodeConsumptionProof(external["producer_operation_id"], external["terminal_evidence_digest"], external["attempt_id"], digest(members), "failed")
             now = self.coordinator._time()

@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b03_construction/repeat-code.json",
+  "entrypoint": "src/lqcd_agent/control/operations.py:AdvanceOperations._snapshot",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "distinct_producer_and_workspace",
+    "frozen_prior_artifact_ids",
+    "immutable_old_members"
+  ]
+}

@@ -31,7 +31,7 @@ B00创建test-owned `tests/phase_b/acceptance_matrix.json`，使用`PhaseBAccept
 
 以下为[B00冻结合同](B00_ACCEPTANCE_FOUNDATION.md)已实现的验收协议：每个scenario使用`validation_stage=construction | final`，保持原requirement owner；construction仅确认当前slice的construction证据，累计`requirements.covered/remaining`仅表示映射覆盖与缺口，未重验的全局`requirements.passed/passed_ids=null`，两个完成标志均为false。
 
-Final须同时验证两个stage的全部required scenarios及独立于matrix的final obligations。每个registry entry必须有实际production hook、触发证据、适用outcome、passing nodeid和exact trace；META-006/015不能仅凭inventory或静态检查完成，META-015还须覆盖publication、fresh Analysis、consumption release及7×4 post-claim paths。Unknown、non-required、duplicate、stale、uncollectable、skip、xfail、deselect、live-only或缺失trace/invariant均失败。
+Final须同时验证两个stage的全部required scenarios及独立于matrix的final obligations。每个registry entry必须有实际production hook、触发证据、适用outcome、passing nodeid和exact trace；META-006/015不能仅凭inventory或静态检查完成，META-015还须覆盖publication、fresh Analysis、consumption release及case0.4的28个post-claim runtime case。A07设计时7×4分类保持；前六个未启动consumer阶段的12个runtime case按B03C02以提交后恢复证据替换。Unknown、non-required、duplicate、stale、uncollectable、skip、xfail、deselect、live-only或缺失trace/invariant均失败。
 
 统一`PhaseBAcceptanceReport 0.1`及closed exit evidence以B00为唯一字段定义：`requirements_zero_gap`表示131项全部适用证据通过；`phase_b_complete`还要求全部exit checks有效且通过。Final创建本次session、执行检查、核验token/实际工作树输入及合同摘要后才生成报告；旧证据和自报passing不可复用，规范化报告排除临时路径/token。
 
@@ -55,7 +55,7 @@ A07执行时只冻结以下拆分；其后起草的六张票见下方Draft Ticke
 - transition、identity、invalidation、resume、budget 和 harness acceptance 已进入核心文档；
 - 实现者不需要自行补充控制层设计决定。
 
-这些阶段级进入条件已由A07 completion满足。B00在`f654f44`、B01在`537d10c`、B02在`83681a7`冻结后执行；三票均已completed。B02历史来源、reservation语义和trace/进程证据前置问题分别由B02C01与B00C01–B00C04关闭；本轮原B02运行修复与完整验收通过，见[B02完成记录](../completions/B02_COMPLETION.md)。B03已在`b78c15a`冻结；B00C05关闭首次reservation分类阻塞；B00C06–B00C08已完成来源、状态与fixture交接。[B00C09](B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md)已完成活动时间账本纠偏，B03恢复ready。B04/B05仍draft。
+这些阶段级进入条件已由A07 completion满足。B00在`f654f44`、B01在`537d10c`、B02在`83681a7`冻结后执行；三票均已completed。B02历史来源、reservation语义和trace/进程证据前置问题分别由B02C01与B00C01–B00C04关闭，见[B02完成记录](../completions/B02_COMPLETION.md)。B03已在`b78c15a`冻结；B00C05–B00C09、B03C01均已完成，B03消费失败尾部局部回归已由maintenance修复。B03C02的case0.4纠偏已完成独立验收，见[完成记录](../completions/B03C02_COMPLETION.md)；B03仍缺426个独立runtime case，B04/B05仍draft。
 
 ## Implementation Tickets
 
@@ -64,7 +64,8 @@ A07执行时只冻结以下拆分；其后起草的六张票见下方Draft Ticke
 - [`B00_ACCEPTANCE_FOUNDATION.md`](B00_ACCEPTANCE_FOUNDATION.md)：`completed`，验收基础已实现；执行记录见[B00 Completion](../completions/B00_COMPLETION.md)，只证明construction证据，不证明runtime已通过。
 - [`B01_EXECUTION_0_4_CONTROL_FOUNDATION.md`](B01_EXECUTION_0_4_CONTROL_FOUNDATION.md)：`completed`，已实现纯Execution `0.4` records、budget/lifecycle replay、trusted clock、bounded projection与cross-head integrity；见[B01 Completion](../completions/B01_COMPLETION.md)。未接入默认产品图，不授权后续durable/product实现。
 - [`B02_DURABLE_CONTROL_OPERATIONS.md`](B02_DURABLE_CONTROL_OPERATIONS.md)：`completed`；单一coordinator、bootstrap/advance/Pause/Resume/Replay/Fork/Cancel/interrupt/terminal及failure recovery交付。Construction30/30，205个boundary下1410个独立runtime case全部通过；见[B02完成记录](../completions/B02_COMPLETION.md)。
-- [`B03_GRAPH_MANAGED_FAKE_CODE_AGENT.md`](B03_GRAPH_MANAGED_FAKE_CODE_AGENT.md)：`ready`；C05–C09已完成并解除已知前置阻塞。原冻结正文不变，canonical实现及28项construction、645 runtime仍未完成。
+- [`B03_GRAPH_MANAGED_FAKE_CODE_AGENT.md`](B03_GRAPH_MANAGED_FAKE_CODE_AGENT.md)：已按原授权恢复`in_progress`；C05–C09、B03C01/C02已完成。原冻结正文不变，construction最近为28/28；本轮新增Backend dispatch前后六项恢复/stop/完整性反例、Backend terminal completion前后八项、dispatch authorization前后十四项、Backend cancel前后六项恢复/冲突/不可用反例、16项原post-claim分类、首次ExternalOperation已提交stub的四类后继、80项pre-start事务/重放/完整性/deadline反例及28项receipt/result发布、冲突与不可物化收尾反例，以及38项containment stop切点，现有219/645项静态runtime绑定并同Session通过，余426项仍待绑定及整票fresh验收。repeat-Code旧golden的head/digest差异仍待production稳定后按raw来源审定。aggregate reservation部分发布及Backend stop proof分类缺口已在原B03范围内局部修复，详见maintenance。
+- [`B03C02_POST_CLAIM_UNSTARTED_CASE_SEMANTICS.md`](B03C02_POST_CLAIM_UNSTARTED_CASE_SEMANTICS.md)：已完成12项case0.3→0.4替换及独立验收，见[完成记录](../completions/B03C02_COMPLETION.md)；不替代B03其余runtime。
 - [`B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md`](B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md)：`completed`；setup预留、nested verification、normal/timeout恢复与旧golden的纠偏通过Phase B 2459项及全仓2784项回归，见[执行记录](../completions/B00C09_COMPLETION.md)。
 - [`B04_TARGET_PRODUCT_TOPOLOGY_AND_BUDGETED_LOOPS.md`](B04_TARGET_PRODUCT_TOPOLOGY_AND_BUDGETED_LOOPS.md)：拟接入A01产品图、四层fallback、Human return、A03 invalidation与A06 admission/grant/stop；当前只供review，不可执行。
 - [`B05_ACCEPTANCE_INTEGRATION_AND_END_TO_END_HARNESS.md`](B05_ACCEPTANCE_INTEGRATION_AND_END_TO_END_HARNESS.md)：拟完成cross-system faults/concurrency、CLI smoke、legacy/mock regression及final zero-gap exit；当前只供review，不可执行。
@@ -87,7 +88,7 @@ B04的131 covered/0 remaining仅表示映射齐全；允许调用final作负向�
 
 ## 退出方向
 
-整个Phase B完成后进入Phase C，先执行C00 capability gate。当前B00–B02及B00C01–B00C09、B02C01已完成；B03 ready但未完成，B04/B05仍须分别审定。
+整个Phase B完成后进入Phase C，先执行C00 capability gate。当前B00–B02及B00C01–B00C09、B02C01已完成；B03 in_progress但未完成，B04/B05仍须分别审定。
 
 2026-09-18批准后：B02C01 ready快照为`5e753d6`，当前in_progress，见[执行记录](../completions/B02C01_COMPLETION.md)。原B02批准范围继续有效，其30项slice与全量控制验收仍待完成。
 
@@ -138,3 +139,21 @@ B00C04已按用户批准扩充并in_progress，统一完成case0.2、trace0.4与
 2026-09-24 B00C09修订：review正文现要求 B00C05 首次 stub 事务 COMMIT 后 exact 发布 setup event，验证正常与超时消费的同一活动区间，保留 verifier 正 timeout/实测资源时长，并对部分 Pause、旧 golden 差异设置明确验收。未提升 `ready`，B03 仍 blocked。
 
 2026-09-25 B00C09完成：同一execution ledger的活动时间区间及Pause、Attempt、nested verification、恢复规则已实现，Phase B 2459 passed、全仓2784 passed；11份golden只同步runtime指纹派生摘要。B03恢复ready，原冻结正文和28/645验收边界不变；mapped56/remaining75、Phase B未完成。见[完成记录](../completions/B00C09_COMPLETION.md)。
+
+2026-09-25 B03接续：fresh B02 construction仍为30/30、累计56/remaining75。Fake Backend port、public Pause后dispatch、原operation receipt/result引用、deterministic containment及Host seal基础已实现并通过98项相关定向回归；B03为in_progress，可信ingress、normal final、Bundle、Analysis与28/645验收仍待交付。见[执行记录](../completions/B03_COMPLETION.md)。
+
+2026-09-25 B03补充验收：B03C01已修正第二次canonical Code scheduled prior IDs，B03 maintenance恢复B02 unavailable失败尾部及construction观察归属；十二份前置来源golden经旧/新raw与双fresh根审定。独立fresh construction **15/11/30/28**、累计映射 **84/131、remaining47**，7/645个B03 runtime case具有本次真实hook、passing nodeid和exact trace。Final负向报告恰有47 coverage、782 runtime binding、15 exit缺口；`phase_b_complete=false`。B03与B03C01仍in_progress，完整同Session runtime、Phase B和全仓复验未完成，见[执行记录](../completions/B03_COMPLETION.md)。
+
+2026-09-28 B03续审：Phase B探索性全量2527 passed、4 failed后，按maintenance修正canonical fixture恢复actor及trace0.5反例，另对B02 recovery golden做旧源码与当前两fresh根来源审定，只更新9个派生摘要字段，累计13份expected。相关定向22 passed，Phase B复验进行中；B03 runtime仍7/645、B02同Session1410未完成，B03/B03C01不标记完成，不提交或推送。
+
+2026-09-28最终复核：当前输入的Phase B **2531 passed**、全仓 **2856 passed**；同一fresh Session的B00/B01/B02/B03 construction **15/11/30/28**、B02独立runtime **1410/1410**、B03已绑定 **7/7** 通过。累计mapped **84/131、remaining47**，final负向缺口 **47 coverage / 782 runtime binding（B03 638、B04 144）/ 15 exit**，全局Phase B仍未完成。B03C01已独立completed。真实post-claim探针证明`invocation_authorized`前六阶段未启动consumer，冻结case0.3中12项`consumer_stop=unavailable`不可达；B03依Stop Conditions变为blocked，待审[B03C02](B03C02_POST_CLAIM_UNSTARTED_CASE_SEMANTICS.md)提出保持总数、owner及设计时7×4不变的最小case0.4替换，尚未批准或实施。B03其余638项runtime仍须独立绑定。
+
+2026-09-28 B03C02执行复核：已批准的case0.4仅逐项替换12个未启动consumer的post-claim case，旧case0.3原字节/seal仍独立验证；2199/B03 645/B02 1410/B04 144、28 post-claim、324 boundary和131 required IDs不变。当前输入的fresh construction **15/11/30/28**、B02 runtime **1410/1410**、B03已绑定 **19/19** 分别通过；12项新case另有两个独立fresh根完全相同的固定trace。Final负向预检仅剩 **47 coverage / 770 runtime binding（B03 626、B04 144）/ 15 exit**；`phase_b_complete=false`。此时Phase B与全仓完整suite尚待空间允许后复验，见[B03C02记录](../completions/B03C02_COMPLETION.md)。
+
+2026-09-29 B03C02最终验收：当前输入的Phase B **2552 passed**、全仓 **2877 passed**，均退出0；B03C02已completed。B03仍只有19/645项独立runtime证据，余626项；累计mapped **84/131、remaining47**，final缺口 **47 coverage / 770 runtime binding / 15 exit**，`phase_b_complete=false`。详细原始证据见[B03C02完成记录](../completions/B03C02_COMPLETION.md)。
+
+
+2026-09-29 B03最终验收输入准备：B03已有 **645/645** 静态runtime绑定及新增family的双fresh根exact审计。最终同一fresh Session的B03 645项/B02 1410项、construction 15/11/30/28及全仓回归仍待完成；B03保持in_progress，mapped84/131、remaining47，global `phase_b_complete=false`，B04/B05仍draft。详见[B03执行记录](../completions/B03_COMPLETION.md)。早期219/379等条目是历史输入的检查点。
+
+
+2026-09-29 B03完成：canonical Fake Backend、Host stop/unavailable、trusted Code消费/资源结算/Bundle、按producer/version的0.4状态投影和fresh Analysis交接通过验收。最终construction **15/11/30/28**，同一fresh Session的B03 **645/645**、B02 **1410/1410**，全仓 **3514 passed**（Phase B **3189 passed**）。Mapped **84/131、remaining47**；全局 `phase_b_complete=false`，B04/B05仍draft，默认产品runtime仍schema0.2。协议/catalog、case/owner/exit门槛与legacy合同保持。详见[B03完成记录](../completions/B03_COMPLETION.md)；较早in_progress及219/379等条目保留为历史事实。未提交或推送。

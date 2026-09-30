@@ -9,6 +9,7 @@ import tempfile
 
 import pytest
 
+from harness.pytest_evidence import observe
 from lqcd_agent.code_agent.workspace import WorkspaceProvider, immutable_git_tree, scan_tree, tree_digest, validate_changes
 from lqcd_agent.control.strict_json import ControlIntegrityError, digest
 
@@ -35,6 +36,8 @@ def test_workspace_reopens_exact_identity_and_rejects_replacement(workspace):
     assert scan_tree(path) == base
     with pytest.raises(ControlIntegrityError, match="replaced"):
         reopened.verify_identity(manifest, witness)
+    observe("b03-construction-workspace-identity", {"kind": "boolean", "value": True},
+            sorted(["same_workspace_identity", "replacement_rejected"]))
 
 
 def test_workspace_fence_runs_before_any_directory_or_file_creation(workspace):
@@ -79,6 +82,8 @@ def test_workspace_scope_and_seal_fail_closed(workspace, fault):
     finally:
         if socket_handle is not None:
             socket_handle.close()
+    observe("b03-construction-workspace-seal", {"kind": "boolean", "value": True},
+            sorted(["sealed_tree_checked", "unsafe_filesystem_object_rejected"]))
 
 
 def test_changes_are_derived_from_full_content_and_explicit_scope(workspace):
@@ -95,6 +100,8 @@ def test_changes_are_derived_from_full_content_and_explicit_scope(workspace):
     widened["write_paths"].append("cache")
     with pytest.raises(ControlIntegrityError, match="scope"):
         validate_changes(widened, base, {**final, "cache/temp.py": b"pass\n"})
+    observe("b03-construction-workspace-scope", {"kind": "boolean", "value": True},
+            sorted(["full_content_diff", "explicit_write_scope", "scope_expansion_rejected"]))
 
 
 def test_immutable_base_reads_committed_blobs_without_checkout_or_dirty_bytes():

@@ -1,14 +1,15 @@
 """Immutable text trees and fenced, disposable Host-managed workspaces."""
 from hashlib import sha256
+import difflib
 import os
 from pathlib import Path
 import stat
 import subprocess
 
 from lqcd_agent.control.coordinator import exclusive_directory, publish_exact, read_regular
-from lqcd_agent.control.strict_json import canonical_bytes, digest, loads, require
+from lqcd_agent.control.strict_json import canonical_bytes, closed, digest, digest_value, loads, number, require
 
-from .schemas import protected_path, relative_path, within
+from .schemas import protected_path, relative_path, validate_manifest, validate_task, within
 
 
 def tree_digest(files):
@@ -113,6 +114,19 @@ def validate_changes(task, base, final):
     return changes
 
 
+def canonical_patch(base, final, changes):
+    """Derive patch bytes from the complete Host-observed before/after trees."""
+    output = []
+    for change in changes:
+        path = change["path"]
+        before = base.get(path, b"").decode("utf-8").splitlines(keepends=True)
+        after = final.get(path, b"").decode("utf-8").splitlines(keepends=True)
+        old_name = "/dev/null" if change["kind"] == "added" else "a/" + path
+        new_name = "/dev/null" if change["kind"] == "deleted" else "b/" + path
+        output.extend(difflib.unified_diff(before, after, fromfile=old_name, tofile=new_name, lineterm="\n"))
+    return "".join(output).encode("utf-8")
+
+
 class WorkspaceProvider:
     """A filesystem port; the caller supplies a live coordinator fence each time."""
 
@@ -185,3 +199,69 @@ class WorkspaceProvider:
         files = scan_tree(path)
         require(tree_digest(files) == expected_tree, "Post-seal workspace mutation")
         return files
+
+
+def validate_tool_audit(content, task, manifest):
+    """Keep every observed invocation; backend claims never satisfy verification."""
+    require(type(content) is bytes and (not content or content.endswith(b"\n")), "Incomplete tool audit")
+    events = [loads(line) for line in content.splitlines()]
+    require(all(line == canonical_bytes(event) for line, event in zip(content.splitlines(), events)),
+            "Noncanonical tool audit event")
+    tool_ids = {spec["spec_id"] for spec in task["tool_policy"]}
+    for index, event in enumerate(events, 1):
+        closed(event, ("tool_event_index", "task_id", "workspace_id", "tool_id", "argv_digest", "cwd",
+                       "start_at", "end_at", "status", "affected_paths", "output_digest", "resource_usage"))
+        require(event["tool_event_index"] == index and event["task_id"] == task["task_id"] and
+                event["workspace_id"] == manifest["workspace_id"] and event["tool_id"] in tool_ids,
+                "Tool audit sequence or authority changed")
+        digest_value(event["argv_digest"])
+        digest_value(event["output_digest"])
+        relative_path(event["cwd"], root=True)
+        number(event["start_at"])
+        number(event["end_at"])
+        require(event["end_at"] >= event["start_at"] and
+                event["status"] in ("completed", "failed", "timeout", "blocked"), "Invalid tool observation")
+        paths = event["affected_paths"]
+        require(type(paths) is list and paths == sorted(set(paths)), "Invalid tool path audit")
+        for path in paths:
+            relative_path(path)
+            require(within(path, task["write_paths"]) and not protected_path(path), "Tool escaped task scope")
+        usage = closed(event["resource_usage"], ("llm_calls", "tool_calls", "active_seconds"))
+        for name, value in usage.items():
+            number(value, integer=name != "active_seconds", minimum=0)
+        require(usage["tool_calls"] == 1, "One audit event must represent one tool invocation")
+    return events
+
+
+def seal_workspace(provider, task, manifest, witness, base, *, backend_status, stop_proof, tool_audit,
+                   sealed_at, fence):
+    """Freeze complete Host-observed content only after a proved stop."""
+    task = validate_task(task).value
+    manifest = validate_manifest(manifest, task).value
+    require(backend_status in ("completed", "failed"), "Backend has no terminal result")
+    require(type(stop_proof) is dict and set(stop_proof) == {
+        "termination_or_not_dispatched", "write_lease_revocation", "verify_empty", "bounded_drain",
+        "post_stop_stability"} and stop_proof["termination_or_not_dispatched"] == "confirmed" and
+        all(stop_proof[name] is True for name in stop_proof if name != "termination_or_not_dispatched"),
+        "Workspace lacks complete safe stop proof")
+    number(sealed_at)
+    fence()
+    final = scan_tree(provider.verify_identity(manifest, witness))
+    changes = validate_changes(task, base, final)
+    validate_tool_audit(tool_audit, task, manifest)
+    provider.verify_sealed(manifest, witness, tree_digest(final))
+    change_manifest = {"schema_version": "0.1", "task_id": task["task_id"],
+                       "workspace_id": manifest["workspace_id"], "base_tree_digest": task["base_tree_digest"],
+                       "final_tree_digest": tree_digest(final), "changes": changes}
+    change_manifest["change_manifest_digest"] = digest(change_manifest)
+    seal = {"schema_version": "0.1", "workspace_id": manifest["workspace_id"],
+            "workspace_manifest_digest": manifest["manifest_digest"], "producer_operation_id": task["producer_operation_id"],
+            "coding_backend_kind": task["coding_backend_kind"], "backend_version": task["backend_version"],
+            "terminal_backend_status": backend_status, "final_tree_digest": change_manifest["final_tree_digest"],
+            "change_manifest_digest": change_manifest["change_manifest_digest"],
+            "tool_audit_digest": sha256(tool_audit).hexdigest(), "stop_proof_digest": digest(stop_proof),
+            "sealed_at": sealed_at, "write_lease_revoked": True}
+    seal["seal_digest"] = digest(seal)
+    fence()
+    provider.verify_sealed(manifest, witness, seal["final_tree_digest"])
+    return change_manifest, seal

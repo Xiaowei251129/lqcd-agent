@@ -48,3 +48,9 @@
 - 2026-09-24：[B03 resource transaction maintenance](B03_MAINTENANCE.md)：原 resume 的独立 verification reservation/settlement、事务外 consumer、双重 fence 与失败 snapshot 接线；B03 仍执行中。
 
 - 2026-09-24：[B00C09 Active-Time Ledger Contract](B00C09_ACTIVE_TIME_LEDGER_CONTRACT.md)：canonical Code setup/Attempt区间的closed ledger事件、原producer恢复lease、Pause/Attempt发布与nested verification计费边界；不改变Phase A冻结字节或旧B02 synthetic语义。
+
+- 2026-09-25：[B03C01 重复 Code Attempt 失效来源](../phase-b-graph-harness/B03C01_REPEAT_CODE_ATTEMPT_INVALIDATION.md)为 `review`，尚未批准或实施；B03 因同一 Run 的第二个 canonical Code target 在 scheduled prior IDs 与 A03 clear 反向验证间冲突而 blocked。复现见 [B03 completion](../completions/B03_COMPLETION.md)。
+
+- 2026-09-28：[B03C01](../phase-b-graph-harness/B03C01_REPEAT_CODE_ATTEMPT_INVALIDATION.md)已按独立验收 completed，见[完成记录](../completions/B03C01_COMPLETION.md)；上述 review 条目为历史状态。[B03C02 未启动 post-claim case 语义](../phase-b-graph-harness/B03C02_POST_CLAIM_UNSTARTED_CASE_SEMANTICS.md)仍为 `review`、未批准或实施，拟仅替换冻结 case0.3 中 12 个不可达 runtime 组合。B03 因验收边界保持 blocked。
+
+- 2026-09-29：[B03C02](../phase-b-graph-harness/B03C02_POST_CLAIM_UNSTARTED_CASE_SEMANTICS.md)已完成case0.4的12项替换及独立验收，旧0.3原字节与语义独立封存；上条review为历史状态。12项真实提交后恢复在两个fresh根分别验证，Phase B 2552项和全仓2877项通过，见[完成记录](../completions/B03C02_COMPLETION.md)。B03余626项runtime仍须执行。

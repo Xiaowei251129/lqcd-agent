@@ -1,0 +1,68 @@
+{
+  "schema_version": "0.4",
+  "previous_case_version": "0.3",
+  "boundary_owner": "B03",
+  "retained_count": 2187,
+  "replacements": [
+    {
+      "old": "post_claim.pause_ownership_reserved.unavailable.appendable",
+      "new": "post_claim.pause_ownership_reserved.unstarted_recovery.appendable",
+      "new_outcome": "failed_closure"
+    },
+    {
+      "old": "post_claim.pause_ownership_reserved.unavailable.unavailable",
+      "new": "post_claim.pause_ownership_reserved.unstarted_recovery.unavailable",
+      "new_outcome": "unavailable_closure"
+    },
+    {
+      "old": "post_claim.pause_claimed_recorded.unavailable.appendable",
+      "new": "post_claim.pause_claimed_recorded.unstarted_recovery.appendable",
+      "new_outcome": "failed_closure"
+    },
+    {
+      "old": "post_claim.pause_claimed_recorded.unavailable.unavailable",
+      "new": "post_claim.pause_claimed_recorded.unstarted_recovery.unavailable",
+      "new_outcome": "unavailable_closure"
+    },
+    {
+      "old": "post_claim.prestart_records_committed.unavailable.appendable",
+      "new": "post_claim.prestart_records_committed.unstarted_recovery.appendable",
+      "new_outcome": "failed_closure"
+    },
+    {
+      "old": "post_claim.prestart_records_committed.unavailable.unavailable",
+      "new": "post_claim.prestart_records_committed.unstarted_recovery.unavailable",
+      "new_outcome": "unavailable_closure"
+    },
+    {
+      "old": "post_claim.pause_consumed_recorded.unavailable.appendable",
+      "new": "post_claim.pause_consumed_recorded.unstarted_recovery.appendable",
+      "new_outcome": "failed_closure"
+    },
+    {
+      "old": "post_claim.pause_consumed_recorded.unavailable.unavailable",
+      "new": "post_claim.pause_consumed_recorded.unstarted_recovery.unavailable",
+      "new_outcome": "unavailable_closure"
+    },
+    {
+      "old": "post_claim.running_lifecycle_recorded.unavailable.appendable",
+      "new": "post_claim.running_lifecycle_recorded.unstarted_recovery.appendable",
+      "new_outcome": "failed_closure"
+    },
+    {
+      "old": "post_claim.running_lifecycle_recorded.unavailable.unavailable",
+      "new": "post_claim.running_lifecycle_recorded.unstarted_recovery.unavailable",
+      "new_outcome": "unavailable_closure"
+    },
+    {
+      "old": "post_claim.resume_checkpoint_committed.unavailable.appendable",
+      "new": "post_claim.resume_checkpoint_committed.unstarted_recovery.appendable",
+      "new_outcome": "failed_closure"
+    },
+    {
+      "old": "post_claim.resume_checkpoint_committed.unavailable.unavailable",
+      "new": "post_claim.resume_checkpoint_committed.unstarted_recovery.unavailable",
+      "new_outcome": "unavailable_closure"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b03_runtime/external.external_operation_reserved.before.reservation_rolled_back.json",
+  "entrypoint": "src/lqcd_agent/control/coordinator.py:boundary",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "authority_context:initial_external_reservation_before_commit",
+    "fresh_request_readmission",
+    "frozen_outcome_classification",
+    "no_domain_mutation",
+    "no_durable_producer",
+    "no_external_owner",
+    "parent_run_and_target_preserved",
+    "publication_side:before"
+  ]
+}

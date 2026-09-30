@@ -174,20 +174,24 @@ class ExternalControl:
                 "terminal_code_attempt_head": digest(attempts[-1]), "canonical_code_artifact_head": artifact_head}
 
     def release_consumption(self, db, operation, proof):
-        from .coordinator import read_regular
+        from .coordinator import boundary, read_regular
         from .execution import parse_ledger
-        value, _ = self.final_evidence(db, proof["external_operation_id"])
-        locator = value["run_locator"]
-        root = self.coordinator.root / locator["case_id"] / locator["run_id"]
-        require(db.execute("SELECT 1 FROM run_terminal_closure WHERE run_key=?", (digest(locator),)).fetchone() is None,
-                "Terminal owner blocks external consumption release")
-        require(value["active_binding_status"] == "active" and value["consumption_release"] is None and value["close_disposition"] is None,
-                "External binding release CAS lost")
-        expected = self.consumption_proof(operation, value, parse_ledger(read_regular(root / "execution_history.jsonl")).values,
-                                          loads(read_regular(root / "artifact_index.json")), phase_revision=operation["phase_revision"] + 1)
-        require(proof == expected, "External consumption proof does not match current heads")
-        value.update(active_binding_status="released", consumption_release=proof)
-        db.execute("UPDATE external_operations SET value=? WHERE external_operation_id=?", (canonical_bytes(value), value["producer_operation_id"]))
+        boundary(self.coordinator.observer, "external.consumption_release_validation", "before", value=proof)
+        try:
+            value, _ = self.final_evidence(db, proof["external_operation_id"])
+            locator = value["run_locator"]
+            root = self.coordinator.root / locator["case_id"] / locator["run_id"]
+            require(db.execute("SELECT 1 FROM run_terminal_closure WHERE run_key=?", (digest(locator),)).fetchone() is None,
+                    "Terminal owner blocks external consumption release")
+            require(value["active_binding_status"] == "active" and value["consumption_release"] is None and value["close_disposition"] is None,
+                    "External binding release CAS lost")
+            expected = self.consumption_proof(operation, value, parse_ledger(read_regular(root / "execution_history.jsonl")).values,
+                                              loads(read_regular(root / "artifact_index.json")), phase_revision=operation["phase_revision"] + 1)
+            require(proof == expected, "External consumption proof does not match current heads")
+            value.update(active_binding_status="released", consumption_release=proof)
+            db.execute("UPDATE external_operations SET value=? WHERE external_operation_id=?", (canonical_bytes(value), value["producer_operation_id"]))
+        finally:
+            boundary(self.coordinator.observer, "external.consumption_release_validation", "after", value=proof)
 
     def preparation(self, db, locator, target, records):
         values = self.attached(db, locator)
@@ -1025,7 +1029,7 @@ def retain_materialized_record(operation, candidate):
 def continue_publication_plan(coordinator, operation, worker, lease_seconds, commit_phase, *, rebuild=None, stop_after=(), plan_snapshot=None):
     """Materialize a trusted handler's frozen plan through the generated graph."""
     from .checkpoints import persist_checkpoint
-    from .coordinator import MaterializationSnapshotError, exclusive_directory
+    from .coordinator import MaterializationSnapshotError, boundary, exclusive_directory
 
     if operation["status"] != "in_progress":
         return operation
@@ -1070,9 +1074,18 @@ def continue_publication_plan(coordinator, operation, worker, lease_seconds, com
                     path = root / item["path"]
                     if item["path"].startswith("checkpoints/"):
                         exclusive_directory(root / "checkpoints")
+                    analysis_spec = (current["operation_type"] == "advance_run" and
+                                     step["target"] == "target_preparation_committed" and
+                                     item["path"].endswith("/control/analysis_execution_spec.json"))
+                    if analysis_spec:
+                        boundary(coordinator.observer, "analysis.artifact_publication", "before", value=current)
+                        boundary(coordinator.observer, "analysis.spec_exclusive_create", "before", value=current)
                     coordinator.materialize_publication(db, current, step["target"], path,
                                                         name=current["operation_type"] + "." + item["path"],
                                                         replacement=item["replacement"])
+                    if analysis_spec:
+                        boundary(coordinator.observer, "analysis.spec_exclusive_create", "after", value=current)
+                        boundary(coordinator.observer, "analysis.artifact_publication", "after", value=current)
                 checkpoint = step["checkpoint"]
                 if checkpoint is not None:
                     persist_checkpoint(coordinator, db, current, root, checkpoint["checkpoint"],
@@ -1343,7 +1356,14 @@ class AdvanceOperations:
                 require(control["projection"] is not None, "Run checkpoint unavailable")
                 require(db.execute("SELECT 1 FROM run_terminal_closure WHERE run_key=?", (key,)).fetchone() is None, "Run has terminal owner")
                 verify_checkpoint(root, control["manifest"])
+                index_bytes = read_regular(root / "artifact_index.json")
                 state = validate_run_root(root, manifest=control["manifest"], projection=control["projection"]).value
+                require(read_regular(root / "artifact_index.json") == index_bytes, "Advance artifact index changed during source validation")
+                index = loads(index_bytes)
+                require(index["current"] == state["current_artifacts"] and
+                        index["revision"] == state["artifact_event_index"] and
+                        index["execution_head"] == state["execution_head"] and
+                        index["artifact_head"] == state["artifact_head"], "Advance artifact index disagrees with validated source")
                 require(state["run_status"] == "running" and state.get("active_pause") is None and state.get("pending_pause") is None,
                         "Advance requires a stable running source")
                 records = parse_ledger(read_regular(root / "execution_history.jsonl")).values
@@ -1356,17 +1376,18 @@ class AdvanceOperations:
                 view = loads(canonical_bytes({"run_locator": locator, "source": source, "state": state,
                                              "next_attempt_index": state["attempt_index"] + 1,
                                              "next_transition_index": state["transition_index"] + 1,
-                                             "selected_code": loads(read_regular(root / "artifact_index.json"))["current"]["code"]}))
+                                             "selected_code": index["current"]["code"]}))
                 admitted = self.route_adapter.admit(view)
                 require(type(admitted) is RouteAdmission, "Domain adapter returned an untyped route admission")
-                index = loads(read_regular(root / "artifact_index.json"))
                 history = read_regular(root / "artifact_history.jsonl")
                 built = {}
 
                 def reserve(operation_id, stamp):
+                    require(read_regular(root / "artifact_index.json") == index_bytes, "Advance artifact index changed before reservation")
                     op = {"operation_id": operation_id, "operation_type": "advance_run", "operation_variant": "not_applicable",
                           "created_at": asdict(stamp), "lease_epoch": 1, "phase_revision": 1, "request": canonical}
                     built.update(self._snapshot(op, records, index, history, control["manifest"], state, row["revision"], admitted))
+                    require(read_regular(root / "artifact_index.json") == index_bytes, "Advance artifact index changed during reservation")
                     return built["reservation"]
 
                 operation = coordinator.reserve_in_transaction(db, "advance_run", "not_applicable", "internal_advance",
@@ -1462,6 +1483,9 @@ class AdvanceOperations:
         cycle_id = stable_cycle_id(cycle_index)
         slots = registry._slots_for_target(target_kind, new_human_request=admitted.human_request is not None) if target_kind is not None else ()
         invalidation = [{"slot": slot, "artifact_id": index["current"][slot]["artifact_id"]} for slot in slots if index["current"][slot] is not None]
+        prior_ids = ({item["slot"]: item["artifact_id"] for item in invalidation}
+                     if state["schema_version"] == "0.4" and target_kind == "code_agent" and
+                     isinstance(index["current"]["code"], dict) and index["current"]["code"].get("attempt_kind") == "code_agent" else {})
         plan.step("transition_target_classified", {"transition_target_kind": branch,
                                                   "precomputed_transition_identity_and_digest": {"transition_id": transition_id}})
         target = {"tag": "null"}
@@ -1483,7 +1507,7 @@ class AdvanceOperations:
             target = plan.append("attempt", "scheduled", cycle_id=cycle_id, cycle_index=cycle_index,
                                  attempt_id=attempt_id, attempt_index=state["attempt_index"] + 1, parent_attempt_id=source["attempt_id"],
                                  attempt_kind=target_kind, node_name=admitted.target_node, attempt_trigger=admitted.trigger_reason,
-                                 inbound_transition_id=transition_id, status="scheduled", input_references={"current_artifact_ids": {}},
+                                 inbound_transition_id=transition_id, status="scheduled", input_references={"current_artifact_ids": prior_ids},
                                  output_references={"current_artifact_ids": {}}, error=None)
             plan.step("target_attempt_scheduled", {"precomputed_target_attempt_identity": attempt_id, "scheduled_target_record": target})
             for item in invalidation:

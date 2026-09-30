@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b03_construction/backend-lookup.json",
+  "entrypoint": "src/lqcd_agent/code_agent/fake_backend.py:FakeCodingBackend.lookup",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "immutable_receipt_and_result",
+    "lookup_same_operation",
+    "no_provider_budget_authority"
+  ]
+}

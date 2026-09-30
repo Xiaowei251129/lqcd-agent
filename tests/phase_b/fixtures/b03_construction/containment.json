@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b03_construction/containment.json",
+  "entrypoint": "src/lqcd_agent/code_agent/containment.py:DeterministicContainment.proof",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "kill_all_and_drain",
+    "restart_safe_stop_proof",
+    "write_lease_revoked"
+  ]
+}

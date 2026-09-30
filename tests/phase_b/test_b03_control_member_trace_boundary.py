@@ -36,11 +36,12 @@ def registered_code(trace):
                 row["value"].get("event") == "registered" and row["value"].get("slot") == "code")
 
 
-def test_source_bound_member_changes_old_control_trace_across_fresh_roots():
+def test_source_bound_member_normalizes_across_fresh_roots():
     first, second = source_bound_member_trace(), source_bound_member_trace()
     assert first["proof"]["output_roots"] != second["proof"]["output_roots"]
+    assert first["events"] != second["events"]
     projected = [normalize(trace, binding=current_binding()) for trace in (first, second)]
-    assert projected[0] != projected[1]
+    assert projected[0] == projected[1]
     members = []
     for trace in (first, second):
         registered = registered_code(trace)
@@ -49,11 +50,6 @@ def test_source_bound_member_changes_old_control_trace_across_fresh_roots():
         members.append(member)
     assert members[0]["sha256"] != members[1]["sha256"]
     assert members[0]["size_bytes"] == members[1]["size_bytes"]
-    assert len(projected[0]["events"]) == len(projected[1]["events"])
-    differences = set()
-    for left, right in zip(projected[0]["events"], projected[1]["events"]):
-        differences.update(key for key in left if left[key] != right[key])
-    assert differences and differences <= {"execution_head", "artifact_head", "checkpoint_head", "result_digest"}
 
 
 def test_source_bound_member_raw_tamper_is_still_rejected():

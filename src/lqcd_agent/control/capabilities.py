@@ -233,8 +233,10 @@ class InvocationLeases:
 
     def get(self, capability_id, *, db=None):
         text(capability_id)
+        boundary(self.coordinator.observer, "invocation.capability_lookup", "before")
         row = (db or self.coordinator.connection).execute("SELECT revision,value FROM invocation_capabilities WHERE capability_id=?",
                                                          (capability_id,)).fetchone()
+        boundary(self.coordinator.observer, "invocation.capability_lookup", "after")
         require(row is not None, "Unknown invocation capability")
         value = loads(row["value"])
         require(digest(value["authorization"]) == value["authorization_digest"], "Invocation authorization changed")

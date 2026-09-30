@@ -32,6 +32,9 @@ COMMON = {
     "tool_audit_digest": {"tool_audit"}, "operation_contract_digest": {"core"},
     "terminal_evidence_digest": {"external_final"}, "interrupt_evidence_digest": {"interrupt_evidence"},
     "external_final_digest": {"external_final"},
+    "external_result_digest": {"external_result"},
+    "paused_lifecycle_head": {"execution_0_4"},
+    "delivery_digest": {"delivery"},
     "failure_id_digest": {"failure_identity"}, "code_task_context_digest": {"code_context"},
     "pause_binding_digest": {"pause_binding"},
     "analysis_execution_context_digest": {"analysis_context"},
@@ -61,6 +64,13 @@ CLOCKS = {
 }
 OPAQUE = {"provider_operation_reference", "provider_thread_reference", "provider_session_reference"}
 RUN_PATH_FIELDS = {"canonical_output_root", "output_root"} | {field for fields in STATE_FIELDS_BY_SLOT.values() for field in fields}
+CANONICAL_CODE_PATHS = {
+    "code_agent_task_path": "code_agent_task.json",
+    "code_agent_result_path": "code_agent_result.json",
+    "code_change_manifest_path": "change_manifest.json",
+    "code_verification_results_path": "verification_results.json",
+}
+CODE_PATH_KEYS = {"code_change_summary_path", "tests_status_path", *CANONICAL_CODE_PATHS}
 BUNDLE_MEMBERS = {"code_agent_task.json": "task", "code_agent_result.json": "code_result",
                   "workspace_manifest.json": "manifest", "change_manifest.json": "change_manifest",
                   "verification_results.json": "verification", "backend_dispatch_receipt.json": "receipt",
@@ -145,6 +155,55 @@ def _project(events, proof, binding):
     require(all(type(proof[k]) is list for k in ("typed_sources", "material_sources", "workspace_roots")), "a05_proof", "arrays")
     kinds = {head: source_kind(row) for head, row in sources.items()}
     aliases = {head: head for head in sources}
+    declared_kinds = {row["source_sha256"]: row["kind"] for row in proof["typed_sources"] if
+                      type(row) is dict and "source_sha256" in row and "kind" in row}
+    member_owners, producer_owners = {}, {}
+    for row in sources.values():
+        if source_kind(row) != "code_bundle":
+            continue
+        bundle = row["value"]
+        by_name = {Path(member["canonical_path"]).name: member["sha256"] for member in bundle["members"]}
+        require("code_agent_task.json" in by_name and "workspace_manifest.json" in by_name,
+                "a05_bundle", "owner_members")
+        task_head, manifest_head = by_name["code_agent_task.json"], by_name["workspace_manifest.json"]
+        require(task_head in sources and manifest_head in sources, "a05_bundle", "owner_sources")
+        task_owner = identity(sources[task_head]["value"])
+        manifest_owner = identity(sources[manifest_head]["value"])
+        require(all(task_owner.get(k) == manifest_owner.get(k) for k in
+                    ("case_id", "run_id", "attempt_id", "producer_operation_id")) and
+                all(bundle.get(k) == task_owner.get(k) for k in ("case_id", "run_id", "attempt_id")),
+                "a05_bundle", "owner_identity")
+        owner = {**task_owner, "workspace_id": manifest_owner["workspace_id"]}
+        producer = owner["producer_operation_id"]
+        require(producer not in producer_owners or producer_owners[producer] == owner,
+                "a05_bundle", "producer_owner_conflict")
+        producer_owners[producer] = owner
+        for member in bundle["members"]:
+            member_head = member["sha256"]
+            require(member_head not in member_owners or member_owners[member_head] == owner,
+                    "a05_bundle", "member_owner_conflict")
+            member_owners[member_head] = owner
+
+    def source_identity(head):
+        actual = identity(sources[head]["value"])
+        inherited = member_owners.get(head)
+        if inherited is None and declared_kinds.get(head) == "external_final":
+            final = sources[head]["value"]
+            result_head = final.get("result_digest")
+            if result_head in sources and declared_kinds.get(result_head) == "external_result":
+                inherited = identity(sources[result_head]["value"])
+            elif result_head is None:
+                inherited = producer_owners.get(final.get("producer_operation_id"))
+        if inherited is None and declared_kinds.get(head) == "delivery" and "member_contents" in sources[head]["value"]:
+            contents = sources[head]["value"]["member_contents"]
+            task = loads(contents["code_agent_task.json"])
+            manifest = loads(contents["workspace_manifest.json"])
+            inherited = {**identity(task), "workspace_id": manifest["workspace_id"]}
+        if inherited is None:
+            return actual
+        _same_owner(actual, inherited)
+        return {**inherited, **actual}
+
     checksums, typed, immutable_owners = {}, set(), set()
     for declaration in proof["typed_sources"]:
         keys(declaration, {"kind", "source_sha256"}, "a05_source")
@@ -157,13 +216,19 @@ def _project(events, proof, binding):
                 text(value[field], "a05_failure_identity", field)
             require(all(type(value[k]) is int and value[k] >= 0 for k in ("source_revision", "epoch")), "a05_failure_identity", "revision")
         if kind not in ("code_context", "analysis_context", "failure_identity"):
-            owner = identity(value)
+            owner = source_identity(head)
             require(all(type(owner.get(k)) is str and owner[k] for k in ("case_id", "run_id", "attempt_id")), "a05_source", "identity")
             require((owner["case_id"], owner["run_id"]) in roots, "a05_source", "run")
             require(all(type(owner.get(k)) is str and owner[k] for k in
                         (("producer_operation_id",) if kind == "task" else ("producer_operation_id", "workspace_id"))) or
                     kind == "analysis_spec", "a05_source", "producer_workspace")
         checksum = CHECKSUMS[kind]
+        if kind in ("change_manifest", "verification", "interrupt_evidence"):
+            optional = {"change_manifest": "change_manifest_digest",
+                        "verification": "verification_results_digest",
+                        "interrupt_evidence": "interrupt_evidence_digest"}[kind]
+            if optional in value:
+                checksum = optional
         if checksum is not None:
             require(value.get("schema_version") == "0.1", "a05_source", "schema_version")
             logical = value[checksum]
@@ -171,7 +236,7 @@ def _project(events, proof, binding):
             require(logical == digest({k: v for k, v in value.items() if k != checksum}), "a05_source", "checksum", "invalid_evidence")
             require(logical not in aliases or aliases[logical] == head, "a05_source", "ambiguous_alias")
             aliases[logical], checksums[head] = head, checksum
-            key = (kind, *(identity(value).get(k) for k in IDENTITIES))
+            key = (kind, *(source_identity(head).get(k) for k in IDENTITIES))
             require(key not in immutable_owners, "a05_source", "conflicting_immutable_identity")
             immutable_owners.add(key)
         kinds[head] = kind
@@ -207,17 +272,21 @@ def _project(events, proof, binding):
         material[head] = {**row, "value": value}
         aliases[head], kinds[head] = head, row["kind"]
 
-    def resolve(raw, accepted, origin=None, *, member=False):
+    def resolve(raw, accepted, origin=None, *, member=False, field=None):
         base.sha_value(raw, "a05_reference")
         require(raw in aliases, "a05_reference", "missing_source", "invalid_evidence")
         head = aliases[raw]
         require(kinds[head] in accepted, "a05_reference", "kind", "invalid_evidence")
         if head in checksums:
-            expected = head if member else sources[head]["value"][checksums[head]]
+            production_receipt = kinds[head] == "receipt" and "dispatch_status" in sources[head]["value"]
+            production_final_result = (origin is not None and kinds[origin] == "external_final" and
+                                       field == "result_digest" and
+                                       "schema_version" not in sources[origin]["value"])
+            expected = head if member or production_receipt or production_final_result else sources[head]["value"][checksums[head]]
             require(raw == expected, "a05_reference", "algorithm", "invalid_evidence")
-        target = identity(sources[head]["value"]) if head in sources else material[head]["owner"]
+        target = source_identity(head) if head in sources else material[head]["owner"]
         if origin is not None:
-            left = identity(sources[origin]["value"])
+            left = source_identity(origin)
             _same_owner(left, target, analysis=kinds[origin] == "analysis_spec")
             if kinds[origin] == "analysis_spec" and target.get("attempt_id") is not None:
                 require(sources[origin]["value"].get("source_code_attempt_id") == target["attempt_id"], "a05_reference", "analysis_source")
@@ -243,7 +312,7 @@ def _project(events, proof, binding):
         require(path.is_absolute() and str(path) == row["path"] and path.resolve() == path and path.is_dir() and
                 path.is_relative_to(temporary) and path != temporary and path.relative_to(temporary).parts[0].startswith("lqcd-agent-"), "a05_workspace", "containment")
         require(all(not path.is_relative_to(p) and not p.is_relative_to(path) for p in [*roots.values(), *workspace_roots]), "a05_workspace", "overlap")
-        workspace_roots[path] = (head, identity(evidence))
+        workspace_roots[path] = (head, source_identity(head))
 
     bundles = {}
     for head, kind in kinds.items():
@@ -254,6 +323,46 @@ def _project(events, proof, binding):
             bundles[key] = head
 
     inline_refs = {}
+    canonical_paths = {}
+
+    def code_path(head, path, field, pointer, source, run_identity=None):
+        owner = source_identity(head)
+        run = run_identity or (owner.get("case_id"), owner.get("run_id"))
+        require(run in roots and pointer["attempt_kind"] == "code_agent", "a05_path", "code_owner")
+        member = next((entry for entry in pointer["members"] if
+                       entry["canonical_path"] == "attempts/" + pointer["attempt_id"] + "/" + CANONICAL_CODE_PATHS[field]), None)
+        physical = Path(pointer["state_paths"][field])
+        require(member is not None and pointer["state_paths"][field] ==
+                str(roots[run] / member["canonical_path"]) and
+                physical.is_absolute() and physical.resolve() == physical,
+                "a05_path", "registered_code_member")
+        canonical_paths[head, path] = (run, pointer["attempt_id"], field, source)
+
+    def projection_paths(head, state, prefix):
+        require(state.get("schema_version") == "0.4" and
+                set(CODE_PATH_KEYS) <= set(state), "a05_path", "state_shape")
+        pointer = state.get("current_artifacts", {}).get("code")
+        if pointer is None:
+            require(all(state[field] is None for field in CODE_PATH_KEYS) and
+                    state.get("code_agent_status") is None and state.get("code_agent_usable") is None,
+                    "a05_path", "empty_code_state")
+            return
+        owner = identity(state)
+        target = bundles.get((owner.get("run_id"), pointer.get("artifact_id")))
+        require(target is not None and pointer == sources[target]["value"]["pointer"] and
+                all(state[field] == pointer["state_paths"][field] for field in CODE_PATH_KEYS),
+                "a05_path", "state_pointer_binding")
+        code_bundle = sources[target]["value"]
+        code_member = next(entry for entry in code_bundle["members"] if
+                           entry["canonical_path"].endswith("/code_agent_result.json"))
+        result_head = aliases[code_member["sha256"]]
+        code_result = sources[result_head]["value"]
+        require(state.get("code_agent_status") == code_result["status"] and
+                state.get("code_agent_usable") is code_result["usable"],
+                "a05_path", "state_result_binding")
+        for field in CANONICAL_CODE_PATHS:
+            code_path(head, prefix + (field,), field, pointer, target,
+                      (owner["case_id"], owner["run_id"]))
 
     def references(head):
         row, kind = sources[head], kinds[head]
@@ -262,6 +371,45 @@ def _project(events, proof, binding):
         typed_object = kind in CHECKSUMS
         budget = row["kind"] == "execution_0_4" and value.get("record_type") == "budget"
         pause = row["kind"] == "execution_0_4" and value.get("record_type") == "pause"
+        if pause and value.get("event") in ("pause_claimed", "pause_consumed") and "input_snapshot" in value.get("proof", {}):
+            require(value["proof"].get("input_digest") == digest(value["proof"]["input_snapshot"]),
+                    "a05_pause", "input_snapshot_digest", "invalid_evidence")
+        if (row["kind"] == "canonical_json" and value.get("operation_type") == "resume_run" and
+                "input_digest" in value["request"]):
+            request = value["request"]
+            require(request.get("input_digest") == digest(request["input_snapshot"]),
+                    "a05_request", "input_snapshot_digest", "invalid_evidence")
+        if budget and value.get("event") == "active_interval_settled":
+            payload = value["payload"]
+            run = value["case_id"], value["run_id"]
+            records = executions[run]
+            previous = records[value["event_index"] - 2]
+            if payload["stage"] == "host_setup":
+                require(previous["record_type"] == "run_lifecycle" and
+                        previous["event"] == "transitioned" and previous["to_status"] == "paused" and
+                        digest(previous) == value["previous_execution_head"],
+                        "a05_active_time", "setup_stop")
+                evidence = {"producer_operation_id": payload["producer_operation_id"],
+                            "pause_id": previous["pause_id"], "paused_lifecycle_head": digest(previous)}
+            else:
+                require(payload["stage"] == "attempt_active" and
+                        len(records) > value["event_index"], "a05_active_time", "attempt_stage")
+                following = records[value["event_index"]]
+                require(following["record_type"] == "attempt" and following["event"] == "finished" and
+                        following["attempt_id"] == payload["attempt_id"] and
+                        following["artifact_head"] == value["artifact_head"],
+                        "a05_active_time", "attempt_stop")
+                evidence = {"status": following["status"], "artifact_head": value["artifact_head"]}
+                if digest(evidence) != payload["evidence_digest"]:
+                    delivery = [head for head, kind in declared_kinds.items() if kind == "delivery" and
+                                digest({"delivery_digest": head, "artifact_head": value["artifact_head"]}) ==
+                                payload["evidence_digest"]]
+                    require(len(delivery) == 1, "a05_active_time", "delivery_source")
+                    evidence = {"delivery_digest": delivery[0], "artifact_head": value["artifact_head"]}
+            require(digest(evidence) == payload["evidence_digest"] and
+                    payload["evidence_digest"] in sources and
+                    sources[payload["evidence_digest"]]["value"] == evidence,
+                    "a05_active_time", "evidence_source", "invalid_evidence")
 
         def walk(item, path=()):
             if type(item) is list:
@@ -270,12 +418,12 @@ def _project(events, proof, binding):
             elif type(item) is dict:
                 embedded = digest(item)
                 if embedded in typed and embedded != head:
-                    _same_owner(identity(value), identity(item))
+                    _same_owner(source_identity(head), source_identity(embedded))
                     inline_refs[head, path] = embedded
                     return
                 if item.get("slot") == "code" and item.get("attempt_kind") == "code_agent" and "members" in item:
                     candidates = [h for (run, artifact), h in bundles.items() if artifact == item.get("artifact_id") and
-                                  (identity(value).get("run_id") is None or run == identity(value)["run_id"])]
+                                  (source_identity(head).get("run_id") is None or run == source_identity(head)["run_id"])]
                     require(len(candidates) == 1, "a05_bundle", "pointer_source")
                     target = candidates[0]
                     require(item == sources[target]["value"].get("pointer"), "a05_bundle", "pointer_binding")
@@ -294,14 +442,22 @@ def _project(events, proof, binding):
                         elif row["kind"] == "canonical_json":
                             accepted = EVENT_REFS.get(key, accepted)
                         if budget and key == "evidence_digest":
-                            accepted = {"external_final", "verification", "failure_evidence", "failure_identity", "interrupt_evidence"}
+                            accepted = ({"canonical_json"} if value["event"] == "active_interval_settled" else
+                                        {"external_final", "verification", "failure_evidence", "failure_identity", "interrupt_evidence"})
                         if budget and key == "input_digest" and value["event"] == "resource_reserved":
                             accepted = {"task", "verification", "material", "canonical_json"}
                     if (kind == "code_bundle" or typed_object) and key == "sha256" and "members" in path:
                         accepted = set(CHECKSUMS) | {"tool_audit", "material"}
+                    if (pause and value.get("event") == "pause_opened" and
+                            child_path == ("proof", "active_time", "settlement_execution_head")):
+                        accepted = {"execution_0_4"}
+                        require(child == value["previous_execution_head"] and
+                                sources[child]["value"].get("event") == "active_interval_settled" and
+                                sources[child]["value"]["payload"]["stage"] == "host_setup",
+                                "a05_active_time", "pause_settlement", "invalid_evidence")
                     if accepted is not None:
                         require(type(child) is str, "a05_reference", "scalar", "invalid_evidence")
-                        result[child_path] = resolve(child, accepted, head, member=key == "sha256")
+                        result[child_path] = resolve(child, accepted, head, member=key == "sha256", field=key)
                     else:
                         walk(child, child_path)
         walk(value)
@@ -361,6 +517,14 @@ def _project(events, proof, binding):
                         code_result.get("workspace_seal_digest") is None and code_result.get("patch_digest") is None,
                         "a05_bundle", "timeout_shape")
             require(set(member_sources) == required, "a05_bundle", "member_set")
+            pointer_paths = value["pointer"].get("state_paths")
+            require(type(pointer_paths) is dict and set(pointer_paths) == CODE_PATH_KEYS and
+                    pointer_paths["code_change_summary_path"] is None and
+                    pointer_paths["tests_status_path"] is None,
+                    "a05_path", "pointer_shape")
+            for field, name in CANONICAL_CODE_PATHS.items():
+                require(name in member_sources, "a05_path", "member_set")
+                code_path(head, ("pointer", "state_paths", field), field, value["pointer"], member_sources[name])
             links = {"task_digest": "code_agent_task.json", "workspace_manifest_digest": "workspace_manifest.json",
                      "change_manifest_digest": "change_manifest.json", "verification_results_digest": "verification_results.json",
                      "dispatch_receipt_digest": "backend_dispatch_receipt.json", "workspace_seal_digest": "workspace_seal.json",
@@ -368,6 +532,33 @@ def _project(events, proof, binding):
             for field, name in links.items():
                 if code_result.get(field) is not None:
                     require(name in member_sources and aliases[code_result[field]] == member_sources[name], "a05_bundle", "result_member_binding")
+        if kind == "delivery" and "member_contents" in value:
+            owner = source_identity(head)
+            bundle_head = bundles.get((owner["run_id"], owner["attempt_id"] + ":code"))
+            require(bundle_head is not None, "a05_delivery", "bundle")
+            bundle = sources[bundle_head]["value"]
+            members = {Path(item["canonical_path"]).name: item for item in bundle["members"]}
+            require(set(value["member_contents"]) == set(members) and
+                    value["artifact_status"] == bundle["pointer"]["status"],
+                    "a05_delivery", "member_set")
+            for name, content in value["member_contents"].items():
+                require(type(content) is str and sha256(content.encode()).hexdigest() == members[name]["sha256"],
+                        "a05_delivery", "member_bytes")
+                if name.endswith(".json"):
+                    target = aliases[members[name]["sha256"]]
+                    require(content.encode() == canonical_bytes(sources[target]["value"]),
+                            "a05_delivery", "canonical_member")
+                    result[("member_contents", name)] = target
+            require(value["state_members"] == {field: None if path is None else Path(path).name
+                    for field, path in bundle["pointer"]["state_paths"].items()},
+                    "a05_delivery", "state_paths")
+        if (row["kind"] == "canonical_json" and value.get("schema_version") == "0.4" and
+                "current_artifacts" in value):
+            projection_paths(head, value, ())
+        if (row["kind"] == "canonical_json" and type(value.get("channel_values")) is dict and
+                type(value["channel_values"].get("control")) is dict and
+                value["channel_values"]["control"].get("schema_version") == "0.4"):
+            projection_paths(head, value["channel_values"]["control"], ("channel_values", "control"))
         return result
 
     refs = {head: references(head) for head in sources}
@@ -383,17 +574,26 @@ def _project(events, proof, binding):
         kind = kinds[head]
         row = sources.get(head) or material[head]
         value = row["value"]
-        owner = identity(value) if head in sources else material[head]["owner"]
+        owner = source_identity(head) if head in sources else material[head]["owner"]
 
         def encode(item, path=()):
             if (head, path) in inline_refs:
                 return ["bound_code_pointer", project_source(inline_refs[head, path])]
             if path in refs.get(head, {}):
                 return ["digest_reference", project_source(refs[head][path])]
+            if (head, path) in canonical_paths:
+                run, attempt, field, source = canonical_paths[head, path]
+                return ["canonical_code_path", list(run), attempt, field, project_source(source)]
             if kind == "code_bundle" and len(path) >= 3 and path[-3] == "members" and path[-1] == "size_bytes":
                 return ["validated_member_size", project_source(refs[head][(*path[:-1], "sha256")])]
             if path == (checksums.get(head),) or (row["kind"] in ("checkpoint_manifest", "historical_checkpoint_manifest_0_3") and path == ("checkpoint_head",)):
                 return ["validated_self_digest"]
+            if (kind == "execution_0_4" and value.get("record_type") == "pause" and
+                    value.get("event") in ("pause_claimed", "pause_consumed") and path == ("proof", "input_digest")):
+                return ["validated_input_snapshot_digest"]
+            if (row["kind"] == "canonical_json" and value.get("operation_type") == "resume_run" and
+                    path == ("request", "input_digest")):
+                return ["validated_input_snapshot_digest"]
             if row["kind"] in ("execution_0_4", "historical_execution_0_3") and path in (("created_at",), ("committed_at",)):
                 return ["validated_clock", item["source"]]
             if clock_path(kind, path):
@@ -445,18 +645,18 @@ def _project(events, proof, binding):
         for field, expected in base.EVENT_HEADS.items():
             if value[field] is not None:
                 head = resolve(value[field], {expected, {"execution_0_4": "historical_execution_0_3", "checkpoint_manifest": "historical_checkpoint_manifest_0_3"}.get(expected, expected), "budget_decision", "budget_reservation"} if field == "execution_head" else {expected})
-                _same_owner({"run_id": value["run_id"]}, identity(sources[head]["value"]))
+                _same_owner({"run_id": value["run_id"]}, source_identity(head))
                 value[field] = project_source(head)
         for field, accepted in EVENT_REFS.items():
             if value[field] is not None:
                 head = resolve(value[field], accepted)
-                _same_owner({k: value.get({"producer_operation_id": "external_operation_id"}.get(k, k)) for k in IDENTITIES}, identity(sources[head]["value"]))
+                _same_owner({k: value.get({"producer_operation_id": "external_operation_id"}.get(k, k)) for k in IDENTITIES}, source_identity(head))
                 value[field] = project_source(head)
         artifacts = []
         for artifact in value["artifacts"]:
             head = resolve(artifact["digest"], {"code_bundle", "canonical_json"})
             require(all(artifact[k] == sources[head]["value"].get(k) for k in ("artifact_id", "slot")), "a05_event", "artifact_binding")
-            _same_owner({"run_id": value["run_id"]}, identity(sources[head]["value"]))
+            _same_owner({"run_id": value["run_id"]}, source_identity(head))
             artifacts.append(dict(artifact, digest=project_source(head)))
         value["artifacts"] = artifacts
         result.append(value)

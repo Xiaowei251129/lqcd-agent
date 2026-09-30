@@ -15,42 +15,44 @@ from test_external_control import SyntheticExternalStop, external_pause_request,
 from test_bootstrap_control import start
 from test_invocation_artifacts import ArtifactTarget
 from lqcd_agent.control.interfaces import ActorContext
+from helpers.canonical_code import timeout_prestart_source
+from lqcd_agent.code_agent.artifacts import timeout_bundle
+from lqcd_agent.code_agent.schemas import validate_manifest, validate_task
+from lqcd_agent.control.coordinator import read_regular
 
 
 class DomainTimeout(SyntheticExternalStop):
-    def __init__(self, **kwargs):
+    def __init__(self, coordinator=None, **kwargs):
         super().__init__(**kwargs)
+        self.coordinator = coordinator
         self.deliveries = 0
 
     def prepare_timeout_delivery(self, view):
         self.deliveries += 1
         assert view["external"]["resolution_owner"] == "interrupt"
-        return TimeoutDelivery({"timeout_summary.md": "external/domain adapter timeout\n", "timeout_status.json": '{"evidence_class":"external/domain adapter"}'},
-            {"code_change_summary_path": "timeout_summary.md", "tests_status_path": "timeout_status.json"}, "external/domain adapter",
+        value = view["external"]
+        root = self.coordinator.root / value["run_locator"]["case_id"] / value["run_locator"]["run_id"]
+        directory = root / "code_agent_control" / value["attempt_id"]
+        task = validate_task(read_regular(directory / "code_agent_task.json")).value
+        manifest = validate_manifest(read_regular(directory / "workspace_manifest.json"), task).value
+        members, result = timeout_bundle(task, manifest, value, view["final"],
+                                         dispatch_phase=view["original_dispatch"]["external_phase"])
+        return TimeoutDelivery({name: content.decode() for name, content in members.items()},
+            {"code_change_summary_path": None, "tests_status_path": None,
+             "code_agent_task_path": "code_agent_task.json", "code_agent_result_path": "code_agent_result.json",
+             "code_change_manifest_path": "change_manifest.json",
+             "code_verification_results_path": "verification_results.json"}, result["status"],
             dict(PROTOCOL["state_machines"]["control_operation"]["recoverable_code_consumption_contract"]["result"]))
 
 
 @pytest.fixture
 def timeout_source():
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b02-timeout-", dir="/private/tmp"))
-    coordinator, plane, source = start(output)
-    locator = source["result"]["run_locator"]
-    actor = ActorContext("operator", "human", ("cancel", "control.internal", "resume", "start"))
-    leases = InvocationLeases(coordinator)
-    capability = source["result"]["capability_id"]
-    leases.acquire(capability, "planner", expected_epoch=0, lease_seconds=30)
-    leases.invoke(capability, "planner", 1, ArtifactTarget("plan", output / locator["case_id"] / locator["run_id"]))
-    external_source((coordinator, plane, actor, locator))
-    plane.publish_pause(external_pause_request(locator), actor=actor)
-    with coordinator.transaction() as db:
-        value = ExternalControl(coordinator).read(db, "producer_code")
-        value.update(operation_phase="dispatch_authorized", operation_status="active", phase_revision=value["phase_revision"] + 1)
-        db.execute("UPDATE external_operations SET revision=?,value=? WHERE external_operation_id=?", (value["phase_revision"], canonical_bytes(value), "producer_code"))
-    root = coordinator.root / locator["case_id"] / locator["run_id"]
-    trigger = {"run_locator": locator, "producer_operation_id": "producer_code", "reason": "operation_timeout"}
+    coordinator, plane, actor, locator, root, task, manifest = timeout_prestart_source()
+    producer = task["producer_operation_id"]
+    trigger = {"run_locator": locator, "producer_operation_id": producer, "reason": "operation_timeout"}
     (root / "timeout_trigger.json").write_bytes(canonical_bytes(trigger))
-    request = ResolveExternalInterruptRequest(locator, "producer_code", "operation_timeout", "timeout_trigger.json", digest(trigger))
-    plane.external_adapter = DomainTimeout()
+    request = ResolveExternalInterruptRequest(locator, producer, "operation_timeout", "timeout_trigger.json", digest(trigger))
+    plane.external_adapter = DomainTimeout(coordinator)
     try:
         yield coordinator, plane, actor, locator, root, request
     finally:
@@ -58,6 +60,8 @@ def timeout_source():
 
 
 def test_safe_timeout_consumes_same_failed_attempt_before_outbound(timeout_source):
+    from harness import pytest_evidence
+    from harness.pytest_evidence import observe
     coordinator, plane, actor, locator, root, request = timeout_source
     result = plane.resolve_external_interrupt(request, actor=actor)
     assert result["operation_status"] == "committed" and result["run_status"] == "running" and result["domain_status"] == "failed", result
@@ -74,6 +78,10 @@ def test_safe_timeout_consumes_same_failed_attempt_before_outbound(timeout_sourc
     assert capability["state"] == "finished" and capability["authorization"]["scope"] == "deterministic_failed_result_consumption_only"
     plane.route_adapter = SyntheticDomainRoute("decision_coordinator")
     assert plane.advance_run(AdvanceRunRequest(locator, "attempt_000002", "after-timeout"), actor=actor)["operation_status"] == "committed"
+    if pytest_evidence.ACTIVE is None or pytest_evidence.ACTIVE.nodeid == (
+            "tests/phase_b/test_timeout_consumption_control.py::test_safe_timeout_consumes_same_failed_attempt_before_outbound"):
+        observe("b03-construction-timeout-consumer", {"kind": "boolean", "value": True},
+                sorted(["independent_failed_result_consumer", "same_resolution_tuple", "outbound_after_consumption"]))
 
 
 TIMEOUT_BOUNDARIES = [("control.resolve_external_interrupt.recoverable_timeout." + phase, side)
@@ -120,7 +128,7 @@ def test_safe_timeout_process_restart_materializes_only_original_suffix(timeout_
 @pytest.mark.parametrize("safe,violation", [(True, True), (False, False)])
 def test_timeout_classification_closes_without_failed_delivery(timeout_source, safe, violation):
     coordinator, plane, actor, locator, root, request = timeout_source
-    plane.external_adapter = DomainTimeout(safe=safe, violation=violation)
+    plane.external_adapter = DomainTimeout(coordinator, safe=safe, violation=violation)
     result = plane.resolve_external_interrupt(request, actor=actor)
     assert result["operation_status"] == ("committed" if safe else "recovery_required"), result
     assert result["run_status"] == ("failed" if safe else None)
@@ -141,9 +149,9 @@ def test_invalid_timeout_delivery_never_starts_target(timeout_source, fault):
             if fault == "promotion":
                 return replace(value, result_semantics={**value.result_semantics, "change_promotion": "allowed"})
             if fault == "missing_member":
-                return replace(value, state_members={**value.state_members, "tests_status_path": "missing.json"})
+                return replace(value, state_members={**value.state_members, "code_agent_result_path": "missing.json"})
             return replace(value, member_contents={**value.member_contents, "../escaped.json": "{}"})
-    plane.external_adapter = BadDelivery()
+    plane.external_adapter = BadDelivery(coordinator)
     result = plane.resolve_external_interrupt(request, actor=actor)
     assert result["operation_status"] == "recovery_required" and result["terminal_closure"] == "unavailable", result
     records = parse_ledger((root / "execution_history.jsonl").read_bytes()).values

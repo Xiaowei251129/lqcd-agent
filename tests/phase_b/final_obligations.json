@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.3",
+  "schema_version": "0.4",
   "control_protocol_sha256": "7447087f73caae2668a8e71e12fc40e426ebefee5864e3499a3f9cbd1a9322b8",
   "requirement_catalog_sha256": "ed39a0b35feb3372e7647436ee588699c16b7c05555a03c791f69760626a9726",
   "runtime_obligations": [
@@ -5646,8 +5646,8 @@
       "case_ids": [
         "post_claim.pause_claimed_recorded.safe_stop.appendable",
         "post_claim.pause_claimed_recorded.safe_stop.unavailable",
-        "post_claim.pause_claimed_recorded.unavailable.appendable",
-        "post_claim.pause_claimed_recorded.unavailable.unavailable"
+        "post_claim.pause_claimed_recorded.unstarted_recovery.appendable",
+        "post_claim.pause_claimed_recorded.unstarted_recovery.unavailable"
       ],
       "failpoint_ids": [
         "post_claim.pause_claimed_recorded"
@@ -5663,8 +5663,8 @@
       "case_ids": [
         "post_claim.pause_consumed_recorded.safe_stop.appendable",
         "post_claim.pause_consumed_recorded.safe_stop.unavailable",
-        "post_claim.pause_consumed_recorded.unavailable.appendable",
-        "post_claim.pause_consumed_recorded.unavailable.unavailable"
+        "post_claim.pause_consumed_recorded.unstarted_recovery.appendable",
+        "post_claim.pause_consumed_recorded.unstarted_recovery.unavailable"
       ],
       "failpoint_ids": [
         "post_claim.pause_consumed_recorded"
@@ -5680,8 +5680,8 @@
       "case_ids": [
         "post_claim.pause_ownership_reserved.safe_stop.appendable",
         "post_claim.pause_ownership_reserved.safe_stop.unavailable",
-        "post_claim.pause_ownership_reserved.unavailable.appendable",
-        "post_claim.pause_ownership_reserved.unavailable.unavailable"
+        "post_claim.pause_ownership_reserved.unstarted_recovery.appendable",
+        "post_claim.pause_ownership_reserved.unstarted_recovery.unavailable"
       ],
       "failpoint_ids": [
         "post_claim.pause_ownership_reserved"
@@ -5697,8 +5697,8 @@
       "case_ids": [
         "post_claim.prestart_records_committed.safe_stop.appendable",
         "post_claim.prestart_records_committed.safe_stop.unavailable",
-        "post_claim.prestart_records_committed.unavailable.appendable",
-        "post_claim.prestart_records_committed.unavailable.unavailable"
+        "post_claim.prestart_records_committed.unstarted_recovery.appendable",
+        "post_claim.prestart_records_committed.unstarted_recovery.unavailable"
       ],
       "failpoint_ids": [
         "post_claim.prestart_records_committed"
@@ -5714,8 +5714,8 @@
       "case_ids": [
         "post_claim.resume_checkpoint_committed.safe_stop.appendable",
         "post_claim.resume_checkpoint_committed.safe_stop.unavailable",
-        "post_claim.resume_checkpoint_committed.unavailable.appendable",
-        "post_claim.resume_checkpoint_committed.unavailable.unavailable"
+        "post_claim.resume_checkpoint_committed.unstarted_recovery.appendable",
+        "post_claim.resume_checkpoint_committed.unstarted_recovery.unavailable"
       ],
       "failpoint_ids": [
         "post_claim.resume_checkpoint_committed"
@@ -5731,8 +5731,8 @@
       "case_ids": [
         "post_claim.running_lifecycle_recorded.safe_stop.appendable",
         "post_claim.running_lifecycle_recorded.safe_stop.unavailable",
-        "post_claim.running_lifecycle_recorded.unavailable.appendable",
-        "post_claim.running_lifecycle_recorded.unavailable.unavailable"
+        "post_claim.running_lifecycle_recorded.unstarted_recovery.appendable",
+        "post_claim.running_lifecycle_recorded.unstarted_recovery.unavailable"
       ],
       "failpoint_ids": [
         "post_claim.running_lifecycle_recorded"

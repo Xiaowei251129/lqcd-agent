@@ -22,16 +22,20 @@ TRAJECTORIES = {
 def source_trace(name):
     original_init, original_close = Coordinator.__init__, Coordinator.close
     captures, completed = {}, []
-    identities = count(1)
+    identities = count(4 if name == "timeout" else 1)
     def initialize(coordinator, *args, **kwargs):
         original_init(coordinator, *args, **kwargs)
         assert coordinator.observer is None
-        capture = ControlTrace(coordinator.root, version="0.4")
+        capture = ControlTrace(coordinator.root, version="0.5" if name == "timeout" else "0.4")
         captures[id(coordinator)] = capture
         coordinator.observer = capture.observer
     def close(coordinator):
         capture = captures.pop(id(coordinator))
         coordinator.observer = None
+        if name == "timeout" and completed:
+            prefix = completed[0]["events"]
+            last_index = max(row["index"] for row in prefix if row["index"] is not None)
+            capture.events = prefix + [row for row in capture.events if row["index"] is None or row["index"] > last_index]
         completed.append(capture.finish(coordinator))
         original_close(coordinator)
     _, spec = TRAJECTORIES[name]
@@ -40,5 +44,5 @@ def source_trace(name):
         if spec["fixture"]:
             arguments[spec["fixture"]] = fixture_value(spec["fixture"], stack)
         getattr(importlib.import_module(spec["module"]), spec["function"])(**arguments)
-    assert len(completed) == 1 and not captures
-    return completed[0]
+    assert len(completed) == (2 if name == "timeout" else 1) and not captures
+    return completed[-1]

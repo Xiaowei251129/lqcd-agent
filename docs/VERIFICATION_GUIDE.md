@@ -540,3 +540,33 @@ B00C06最终集成已完成：181项定向、2677项全量及同Session B02-owne
 在相同源版本下运行 `pytest -q tests/phase_b/test_b03_active_time_boundary.py tests/phase_b/test_b00c09_active_time_ledger.py`，再执行冻结票列出的 prestart、reservation、verification、Pause、Phase B 与全仓回归。先用两个 fresh 根比较每个受影响 A05/B02 source-bound outcome 的完整 normalized trace；只有事件形状/identity不变且差异逐项限于 runtime `application_build` 派生的semantic digest/head时，才可在验收运行之前更新相应expected。该次旧/新路径及摘要清单保存在 `/private/tmp/lqcd-agent-b00c09-golden-review.json` 和 `/private/tmp/lqcd-agent-b00c09-b02-golden-review/`。B02旧fixture输入、expected排版、trace版本、case owner/outcome不变。
 
 定向判据包括：setup 3 秒+未结算Backend maximum10得到Run13/Attempt10；setup3+Backend actual6+Attempt5（其中两个verifier各实测1秒）得到Run14/Attempt11且command count2；无调用Attempt6另增加Run/Attempt各6。检查首次stub COMMIT前回滚、COMMIT后setup exact续写、Pause部分前缀、same-owner normal/timeout/failure settlement、跨epoch maximum、过期恢复lease旧epoch拒绝和可信overage的`recovery_required`/unavailable收尾。只有独立reader与live projection相同且完整回归通过，才可完成B00C09；B03完整Backend/Bundle/Analysis和28/645仍按原票执行。
+
+## B03 当前construction与局部runtime复核（2026-09-25）
+
+当前matrix包含B03的28项owned construction映射，累计covered为84/131、remaining47；真实66个nodeid分布于26个construction场景。使用`python scripts/validate_phase_b_acceptance.py --mode construction --ticket B03`在新的外部evidence目录验证，报告必须为owned required/covered/passed **28/28/28**、global `phase_b_complete=false`。受限sandbox阻止Unix-domain socket负例创建测试对象；该节点及包含它的construction须在允许本地socket的执行环境运行，不能跳过或改成pass标记。
+
+当前B03只绑定7/645个独立case：3个初始producer reservation rollback，4个ExternalOperation termination/final-evidence进程故障与结果回放。每个case须由同一fresh Session的passing pytest node、production `coordinator.boundary`子进程回执、恢复断言和固定exact trace共同证明；单独运行`pytest -q tests/phase_b/test_b03_runtime_cases.py`不替代`harness.failpoints.validate_runtime`。局部七项报告位于`/private/tmp/lqcd-agent-b03-runtime-seven-knrbyjp9/session/report.json`，完整645项与B02 1410项仍须在最终固定输入的同一fresh Session分批重验。
+
+旧A05/B02/external来源golden的raw旧值、两个fresh新根、逐事件字段差异及normalized结果位于`/private/tmp/b03-golden-audit-current/`；10份expected在来源与事件序列审定后固定，原trace版本与各文件排版保留。当前final负向预检只有47个coverage、782个runtime binding、15个exit adapter缺口，不能把construction通过或7个局部runtime case解释为B03整票或Phase B完成。
+
+随后又审定B00的`trace_source_bound.json`、`historical_trace_fork.json`及B02的`b02_recovery_control.json`。各自保存旧源码raw、当前两fresh根raw、逐字段差异与exact normalized结果，证据分别位于`/private/tmp/b03-b00-golden-audit/`和`/private/tmp/b03-recovery-golden-audit/`；当前累计13份来源expected。recovery轨迹43条事件只变更6个派生`execution_head`、3个`result_digest`，没有改变route、outcome、owner或事件顺序；trace0.5的真实member摘要虽跨根变化，但完整来源标准化必须相同，篡改仍拒绝。B03独立runtime仍仅7/645，不因来源修正而计为完成。
+
+本轮固定输入全量回归为Phase B **2531 passed**、全仓 **2856 passed**；fresh同Session证据在`/private/tmp/lqcd-agent-b03-partial-session-xxm_nv_w/session/report.json`，construction **15/11/30/28**、B02 runtime **1410/1410**、B03已绑定 **7/7**。最终负向预检在`/private/tmp/lqcd-agent-b03-final-preflight-current-rcT33s/report.json`，仅有47 coverage、782 runtime binding（B03 638 + B04 144）、15 exit缺口，全局标志false。B03C01已completed；B03因12项不可达post-claim冻结case而blocked。[B03C02待审](tickets/phase-b-graph-harness/B03C02_POST_CLAIM_UNSTARTED_CASE_SEMANTICS.md)不改变当前case0.3测试方法；获批准前不得据其候选case0.4计通过。
+
+## B03C02 case0.4 独立验证（2026-09-28）
+
+现行case0.4仅替换六个未启动consumer阶段的12项旧`consumer_stop=unavailable` case。`tests/phase_b/post_claim_case_dispositions.json`逐项固定旧/新ID及新outcome；`case_0_3_failpoint_registry.json`与`case_0_3_final_obligations.json`保留旧0.3原始字节和seal。`test_post_claim_case_semantics.py`验证12 replaced、2187 retained、六项outcome变化、旧版本reader和篡改拒绝；`test_external_reservation_case_semantics.py`的0.2→0.3反例仍以旧0.3为终点。
+
+12项新case各由原进程在故障owner的`consumption_failure_ownership_reserved` phase `after`武装，并只在紧随该事务的`coordinator.database_commit.after`产生真实production hook回执后退出；新进程重读原owner及冻结`started_intent=null`，验证`not_dispatched`、零stop adapter调用、Run authority与唯一terminal收尾。直接在phase `after`退出的六项反例会回滚failure owner，不能计为提交后case。两个独立fresh Session分别见`/private/tmp/lqcd-agent-b03c02-evidence-kd6qnv27/session`与`/private/tmp/lqcd-agent-b03c02-evidence-4xfwzgk_/session`，各有12/12 hook、passing nodeid、outcome及exact trace，trace快照digest一致。既有`invocation_authorized`四格回归另行运行，不计这12项；B03其余626项须继续按原645/645门槛完成。
+
+当前输入的B00/B01/B02/B03 construction报告分别在`/private/tmp/lqcd-agent-b03c02-construction-wmqpdbu5/`，通过 **15/11/30/28**；B03已绑定19项的同Session核验在`/private/tmp/lqcd-agent-b03c02-runtime-nineteen-bzd0aos3/session`通过 **19/19**。B02的1410项独立case在`/private/tmp/lqcd-agent-b03c02-b02-runtime-0ovv07l5/session`同一token与冻结输入下通过 **1410/1410**；一次100-node批次触及300秒上限后，已重新核验前11批原始request/输出并将剩余312个nodeid分为25项批次，最终对全部1412节点执行完整合并验证。Final负向报告`/private/tmp/lqcd-agent-b03c02-final-preflight-1a78wjkb/report.json`仅含 **47 coverage / 770 runtime binding / 15 exit** 缺口；Phase B全局完成标志仍false。
+
+2026-09-29最终全量回归：当前输入的Phase B `python -m pytest -q tests/phase_b` **2552 passed**、全仓`python -m pytest -q` **2877 passed**，均退出0；两次均设置`RUN_LIVE_LLM_TESTS=0`、`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`及`PYTHONPATH=tests/phase_b:src`。原始日志分别为`/private/tmp/b03c02-phase-b-full.log`和`/private/tmp/b03c02-full-repo.log`。B03C02已completed，但B03其余626项独立runtime仍须绑定，global final仍为负向。
+
+2026-09-29最新B03复核：当前219/645项静态绑定且同一fresh Session严格通过，报告为`/private/tmp/lqcd-agent-b03-runtime-twohundrednineteen-8kil56x6/session/report.json`；construction28/28，余426项。新增38项containment stop case两fresh根exact相同，原Backend cancel六项仍通过。current final预检`/private/tmp/lqcd-agent-b03-final-containment-219-report.json`只报告47 coverage、570 runtime binding与15 exit adapter缺口；全局runtime未执行。重复Code旧raw preimage已按原binding验证并还原expected，但六项current golden仍失败，production稳定前不覆盖；完整645项、B02 1410及Phase B/全仓最终验收仍须执行。
+
+
+2026-09-29 B03最终验收输入准备：B03已有 **645/645** 静态runtime绑定及新增family的双fresh根exact审计。最终同一fresh Session的B03 645项/B02 1410项、construction 15/11/30/28及全仓回归仍待完成；B03保持in_progress，mapped84/131、remaining47，global `phase_b_complete=false`，B04/B05仍draft。详见[B03执行记录](tickets/completions/B03_COMPLETION.md)。早期219/379等条目是历史输入的检查点。
+
+
+2026-09-29 B03完成：canonical Fake Backend、Host stop/unavailable、trusted Code消费/资源结算/Bundle、按producer/version的0.4状态投影和fresh Analysis交接通过验收。最终construction **15/11/30/28**，同一fresh Session的B03 **645/645**、B02 **1410/1410**，全仓 **3514 passed**（Phase B **3189 passed**）。Mapped **84/131、remaining47**；全局 `phase_b_complete=false`，B04/B05仍draft，默认产品runtime仍schema0.2。协议/catalog、case/owner/exit门槛与legacy合同保持。详见[B03完成记录](tickets/completions/B03_COMPLETION.md)；较早in_progress及219/379等条目保留为历史事实。未提交或推送。

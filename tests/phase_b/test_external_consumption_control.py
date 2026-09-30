@@ -9,6 +9,8 @@ import tempfile
 
 import pytest
 
+from harness import pytest_evidence
+from harness.pytest_evidence import observe
 from lqcd_agent.control.capabilities import ArtifactOutput, CodeConsumptionProof, InvocationLeases, TargetOutcome
 from lqcd_agent.control.execution import parse_ledger
 from lqcd_agent.control.interfaces import ActorContext
@@ -19,6 +21,8 @@ from test_advance_control import SyntheticDomainRoute
 from test_bootstrap_control import start
 from test_external_control import SyntheticExternalStop, external_pause_request, external_source
 from test_invocation_artifacts import ArtifactTarget
+from helpers.canonical_code import needs_input_source, success_source
+from lqcd_agent.code_agent.subgraph import CodeAgentSubgraph
 
 
 class ExternalDomainConsumer:
@@ -66,28 +70,39 @@ class ExternalDomainFailure(ExternalDomainConsumer):
             "verify_empty": self.safe, "bounded_drain": True, "post_stop_stability": True}, {})
 
 
+class CanonicalDomainConsumer(CodeAgentSubgraph):
+    """Count canonical consumption while preserving B02 ordering assertions."""
+
+    def __init__(self, coordinator, repository):
+        super().__init__(coordinator, repository)
+        self.calls = 0
+
+    def consume_external(self, identity, binding, port):
+        self.calls += 1
+        records = parse_ledger((self.coordinator.root / identity["case_id"] / identity["run_id"] /
+                                "execution_history.jsonl").read_bytes()).values
+        assert records[-1]["record_type"] == "attempt" and records[-1]["event"] == "started"
+        settled = [row for row in records if row["record_type"] == "budget" and row["event"] == "resource_settled"]
+        assert len(settled) == 1 and settled[0]["payload"]["evidence_digest"] == binding["value"]["terminal_evidence_digest"]
+        return super().consume_external(identity, binding, port)
+
+
 @pytest.fixture
 def normal_external():
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b02-consumption-", dir="/private/tmp"))
-    coordinator, plane, source = start(output)
-    locator = source["result"]["run_locator"]
-    root = output / locator["case_id"] / locator["run_id"]
-    actor = ActorContext("operator", "human", ("cancel", "control.internal", "resume", "start"))
-    leases = InvocationLeases(coordinator)
+    coordinator, plane, actor, locator, request, repository = needs_input_source()
     try:
-        capability = source["result"]["capability_id"]
-        leases.acquire(capability, "planner", expected_epoch=0, lease_seconds=30)
-        leases.invoke(capability, "planner", 1, ArtifactTarget("plan", root))
-        external_source((coordinator, plane, actor, locator))
-        paused = plane.publish_pause(external_pause_request(locator), actor=actor)
-        with coordinator.transaction() as db:
-            value = ExternalControl(coordinator).read(db, "producer_code")
-            value["resolution_owner"] = "normal"
-            SyntheticExternalStop().publish(coordinator, db, value)
-        value = ExternalControl(coordinator).read(coordinator.connection, "producer_code")
-        payload = {"producer_operation_id": "producer_code", "external_final_digest": value["terminal_evidence_digest"]}
-        request = ResumeRunRequest(locator, paused["result"]["pause_id"], "consume-normal", "external_result", payload, digest(payload))
-        adapter = ExternalDomainConsumer(root)
+        adapter = CanonicalDomainConsumer(coordinator, repository)
+        plane.resume_target_adapter = plane.external_adapter = adapter
+        yield coordinator, plane, actor, locator, request, adapter
+    finally:
+        coordinator.close()
+
+
+@pytest.fixture
+def success_external():
+    coordinator, plane, actor, locator, request, repository = success_source()
+    try:
+        adapter = CanonicalDomainConsumer(coordinator, repository)
         plane.resume_target_adapter = plane.external_adapter = adapter
         yield coordinator, plane, actor, locator, request, adapter
     finally:
@@ -101,7 +116,7 @@ def test_normal_external_consumption_releases_before_final_checkpoint(normal_ext
 
     def observer(name, side, value):
         if name == "control.resume_run.continue_execution.external_consumption_released" and side == "after":
-            released = ExternalControl(coordinator).read(coordinator.connection, "producer_code")
+            released = ExternalControl(coordinator).read(coordinator.connection, request.input_snapshot["producer_operation_id"])
             assert released["active_binding_status"] == "released"
             assert not (root / "checkpoints" / (released["consumption_release"]["consumption_operation_id"] + "_external_consumed.json")).exists()
             observed.append(released["consumption_release"])
@@ -110,6 +125,17 @@ def test_normal_external_consumption_releases_before_final_checkpoint(normal_ext
     result = plane.resume_run(request, actor=actor)
     assert result["operation_status"] == "committed" and result["domain_status"] == "succeeded", result
     assert result["run_status"] == "running" and adapter.calls == 1 and len(observed) == 1
+    from lqcd_agent.code_agent.artifacts import validate_code_result
+    from lqcd_agent.code_agent.schemas import validate_task
+    pointer = loads((root / "artifact_index.json").read_bytes())["current"]["code"]
+    task = validate_task((root / "attempts" / "attempt_000002" / "code_agent_task.json").read_bytes()).value
+    outcome = validate_code_result((root / "attempts" / "attempt_000002" / "code_agent_result.json").read_bytes(), task).value
+    assert pointer["status"] == outcome["status"] == "needs_input" and outcome["usable"] is False
+    assert set(pointer["state_paths"]) == {"code_change_summary_path", "tests_status_path",
+        "code_agent_task_path", "code_agent_result_path", "code_change_manifest_path",
+        "code_verification_results_path"}
+    assert pointer["state_paths"]["code_change_summary_path"] is None
+    assert pointer["state_paths"]["tests_status_path"] is None
     assert (root / "checkpoints" / (result["operation_id"] + "_external_consumed.json")).is_file()
     assert not (root / "checkpoints" / ("capability_" + result["operation_id"] + "_finished.json")).exists()
     assert plane.resume_run(request, actor=actor) == result and adapter.calls == 1
@@ -120,6 +146,10 @@ def test_normal_external_consumption_releases_before_final_checkpoint(normal_ext
     advanced = plane.advance_run(AdvanceRunRequest(locator, "attempt_000002", "after-consumption"), actor=actor)
     assert advanced["operation_status"] == "committed"
     assert ExternalControl(coordinator).attached(coordinator.connection, locator) == []
+    if pytest_evidence.ACTIVE is None or pytest_evidence.ACTIVE.nodeid.startswith(
+            "tests/phase_b/test_external_consumption_control.py::test_normal_external_consumption_releases_before_final_checkpoint"):
+        observe("b03-construction-code-consumption", {"kind": "boolean", "value": True},
+                sorted(["same_resume_owner", "one_attempt_and_bundle", "release_before_final_checkpoint"]))
 
 
 CONSUMPTION_BOUNDARIES = [("control.resume_run.continue_execution." + phase, side)
@@ -170,6 +200,10 @@ def test_normal_consumption_fresh_process_continues_without_redispatch(normal_ex
     if crash_boundary[0] in ("invocation.completion_intent", "invocation.attempt_finished.file_sync") or crash_boundary[0].endswith(
             ("external_consumption_released", "stable_boundary_committed", "result_committed")):
         assert calls == 0
+    if pytest_evidence.ACTIVE is None or pytest_evidence.ACTIVE.nodeid.startswith(
+            "tests/phase_b/test_external_consumption_control.py::test_normal_consumption_fresh_process_continues_without_redispatch["):
+        observe("b03-construction-delivery-restart", {"kind": "boolean", "value": True},
+                sorted(["one_attempt_start", "one_pause_consumption", "one_settlement", "same_operation_after_restart"]))
 
 
 @pytest.mark.parametrize("safe,appendable", [(True, True), (True, False), (False, True), (False, False)])
@@ -178,7 +212,7 @@ def test_post_claim_consumer_failure_preserves_normal_final_and_original_owner(n
     from lqcd_agent.control.strict_json import ControlIntegrityError
     coordinator, plane, actor, locator, request, adapter = normal_external
     root = coordinator.root / locator["case_id"] / locator["run_id"]
-    original = ExternalControl(coordinator).read(coordinator.connection, "producer_code")
+    original = ExternalControl(coordinator).read(coordinator.connection, request.input_snapshot["producer_operation_id"])
     final_bytes = (root / original["terminal_evidence_reference"]).read_bytes()
 
     class FailingConsumer(ExternalDomainConsumer):
@@ -201,7 +235,7 @@ def test_post_claim_consumer_failure_preserves_normal_final_and_original_owner(n
     closure = loads(coordinator.connection.execute("SELECT value FROM run_terminal_closure").fetchone()[0])
     assert closure["terminal_closure_owner_operation_id"] == result["operation_id"]
     assert (root / original["terminal_evidence_reference"]).read_bytes() == final_bytes
-    external = ExternalControl(coordinator).read(coordinator.connection, "producer_code")
+    external = ExternalControl(coordinator).read(coordinator.connection, request.input_snapshot["producer_operation_id"])
     assert external["resolution_owner"] == "normal" and external["terminal_evidence_digest"] == original["terminal_evidence_digest"]
     assert external["consumption_release"] is None
     rows = parse_ledger((root / "execution_history.jsonl").read_bytes()).values
@@ -301,7 +335,7 @@ def test_normal_final_system_stop_detaches_without_consuming(normal_external):
     from lqcd_agent.control.operations import CloseRunRequest
     coordinator, plane, actor, locator, request, adapter = normal_external
     root = coordinator.root / locator["case_id"] / locator["run_id"]
-    original = ExternalControl(coordinator).read(coordinator.connection, "producer_code")
+    original = ExternalControl(coordinator).read(coordinator.connection, request.input_snapshot["producer_operation_id"])
     final = (root / original["terminal_evidence_reference"]).read_bytes()
     records = parse_ledger((root / "execution_history.jsonl").read_bytes()).values
     stop = CloseRunRequest(locator, digest(records[-1]), "terminal_operator_stop")
@@ -309,7 +343,7 @@ def test_normal_final_system_stop_detaches_without_consuming(normal_external):
     assert result["operation_status"] == "committed" and result["run_status"] == "halted", result
     assert adapter.calls == 0
     assert plane.close_run(stop, actor=actor) == result
-    changed = ExternalControl(coordinator).read(coordinator.connection, "producer_code")
+    changed = ExternalControl(coordinator).read(coordinator.connection, request.input_snapshot["producer_operation_id"])
     assert {k: v for k, v in changed.items() if k not in ("active_binding_status", "close_disposition")} == {
         k: v for k, v in original.items() if k not in ("active_binding_status", "close_disposition")}
     assert (root / original["terminal_evidence_reference"]).read_bytes() == final

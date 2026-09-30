@@ -42,10 +42,10 @@ def immutable_base():
             "base_tree_digest": digest({"sample.py": hashlib.sha256(content).hexdigest()})}
 
 
-def task_trace_witness(base, *, requirement="Return the fixture value"):
+def task_trace_witness(base, *, requirement="Return the fixture value", control_worker_id="host"):
     identities = count(1)
     with patch("uuid.uuid4", side_effect=lambda: uuid.UUID(int=next(identities))):
-        coordinator, locator, advanced = make_code_target()
+        coordinator, locator, advanced = make_code_target(worker_id=control_worker_id)
         try:
             root = coordinator.root / locator["case_id"] / locator["run_id"]
             captured = ControlTrace(coordinator.root, version="0.4")

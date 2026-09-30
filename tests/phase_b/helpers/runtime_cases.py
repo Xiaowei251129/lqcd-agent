@@ -12,7 +12,7 @@ from harness.inventory import case_specs
 from harness.pytest_evidence import consume_process_hook, process_hook_request, production_hook
 from harness.trace import event
 from lqcd_agent.control.clock import FakeClock
-from lqcd_agent.control.coordinator import Coordinator
+from lqcd_agent.control.coordinator import Coordinator, read_regular
 from lqcd_agent.control.execution import parse_ledger
 from lqcd_agent.control.interfaces import ActorContext, ControlPlane
 from lqcd_agent.control.operations import AdvanceRunRequest, CloseRunRequest
@@ -31,7 +31,7 @@ def run_files(root):
 
 
 @contextmanager
-def phase_fixture(case_id, *, recovery_target=None):
+def phase_fixture(case_id, *, recovery_target=None, canonical_advance=None, canonical_resume=None, canonical_backend_stop=False):
     from test_bootstrap_control import request as start_request
     from test_child_control import child_control
     from test_external_consumption_control import normal_external
@@ -45,7 +45,47 @@ def phase_fixture(case_id, *, recovery_target=None):
     _, kind, variant, phase, side, outcome = case_id.split(".")
     generator = None
     observer_only = phase == "resolution_winner_observed"
-    if kind == "start_run":
+    if canonical_backend_stop:
+        from test_external_operation_recovery import _running_stop_source
+        assert kind in ("cancel_pause", "resolve_external_interrupt")
+        coordinator, root, producer = _running_stop_source(containment_fault=None)
+        value = loads(coordinator.connection.execute("SELECT value FROM external_operations").fetchone()[0])
+        locator = value["run_locator"]
+        actor = ActorContext("operator", "human", ("cancel", "control.internal"))
+        if kind == "cancel_pause":
+            request = CancelPauseRequest(locator, value["pause_id"], "cancel", "operator_cancel")
+        else:
+            trigger = {"run_locator": locator, "producer_operation_id": producer, "reason": "operation_timeout"}
+            (root / "runtime_timeout_trigger.json").write_bytes(canonical_bytes(trigger))
+            request = ResolveExternalInterruptRequest(locator, producer, trigger["reason"],
+                "runtime_timeout_trigger.json", digest(trigger))
+    elif canonical_advance is not None:
+        from test_external_consumption_control import success_external
+        assert kind in ("advance_run", "close_run")
+        generator = (success_external if canonical_advance == "success" else normal_external).__wrapped__()
+        coordinator, plane, actor, locator, resume, _ = next(generator)
+        assert plane.resume_run(resume, actor=actor)["operation_status"] == "committed"
+        attempt = "attempt_000002"
+        if kind == "advance_run" and phase == "terminal_transition_committed":
+            from test_advance_control import SyntheticDomainRoute
+            plane.route_adapter = SyntheticDomainRoute("memory_report")
+            prepared = plane.advance_run(AdvanceRunRequest(locator, attempt, "prepare-end"), actor=actor)
+            leases = InvocationLeases(coordinator)
+            cap = prepared["result"]["capability_id"]
+            leases.acquire(cap, "consumer", expected_epoch=0, lease_seconds=10)
+
+            class Report:
+                def invoke(self, identity):
+                    return TargetOutcome("pending", {"current_artifact_ids": {}})
+
+            attempt = leases.invoke(cap, "consumer", 1, Report())["attempt_id"]
+        if kind == "close_run":
+            root = coordinator.root / locator["case_id"] / locator["run_id"]
+            request = CloseRunRequest(locator, digest(parse_ledger(read_regular(root / "execution_history.jsonl")).values[-1]),
+                                      "terminal_operator_stop")
+        else:
+            request = AdvanceRunRequest(locator, attempt, "advance")
+    elif kind == "start_run":
         root = Path(tempfile.mkdtemp(prefix="lqcd-agent-b02-runtime-", dir="/private/tmp"))
         coordinator = Coordinator(root, clock=FakeClock(100, 0))
         actor = ActorContext("operator", "human", ("start",))
@@ -67,7 +107,11 @@ def phase_fixture(case_id, *, recovery_target=None):
         else:
             request = ReplayRunRequest(locator, "child", coordinator.get(source["operation_id"])["request"]["root_inputs_digest"])
     elif kind == "resume_run" and variant == "continue_execution" and recovery_target is None:
-        generator = normal_external.__wrapped__()
+        if canonical_resume == "success":
+            from test_external_consumption_control import success_external
+            generator = success_external.__wrapped__()
+        else:
+            generator = normal_external.__wrapped__()
         coordinator, plane, actor, locator, request, _ = next(generator)
     elif kind == "resolve_external_interrupt" and variant == "recoverable_timeout":
         generator = timeout_source.__wrapped__()
@@ -142,7 +186,7 @@ def phase_client(pipe, config, *, elapsed, fault=None, hook_request=None):
     from lqcd_agent.control import children, interfaces, operations, pause
     from test_advance_control import SyntheticDomainRoute
     from test_external_control import SyntheticExternalStop
-    from test_external_consumption_control import ExternalDomainConsumer, ExternalDomainFailure
+    from test_external_consumption_control import CanonicalDomainConsumer, ExternalDomainConsumer, ExternalDomainFailure
     from test_timeout_consumption_control import DomainTimeout
 
     seen = 0
@@ -163,12 +207,17 @@ def phase_client(pipe, config, *, elapsed, fault=None, hook_request=None):
             pipe.send({"kind": "fault", "name": name, "side": side, "operation": identity})
             os._exit(97)
     observer.production_hooks = hooks if armed and config.get("fault_occurrence", 1) == 1 else {}
-    coordinator = Coordinator(config["root"], clock=FakeClock(100 + elapsed, elapsed), observer=observer)
+    coordinator = Coordinator(config["root"], clock=FakeClock(100 + elapsed, elapsed,
+        epoch_id="runtime_process_epoch_" + str(elapsed + 2)), observer=observer)
     try:
         cls = next(getattr(module, config["request_class"]) for module in (children, interfaces, operations, pause) if hasattr(module, config["request_class"]))
         request = cls(**config["request"])
         actor = ActorContext(**{**config["actor"], "scopes": tuple(config["actor"]["scopes"])})
-        plane = ControlPlane(coordinator, worker_id="worker", route_adapter=SyntheticDomainRoute(config["route"]))
+        route = SyntheticDomainRoute(config["route"])
+        if config.get("preparation_reason") is not None:
+            from .b03_analysis_execution_cases import NotApplicableRoute
+            route = NotApplicableRoute(config["route"], config["preparation_reason"])
+        plane = ControlPlane(coordinator, worker_id=config.get("worker_id", "worker"), route_adapter=route)
         kind = config["method"]
         adapter = None
         if config.get("guard") == "stale_epoch":
@@ -191,14 +240,29 @@ def phase_client(pipe, config, *, elapsed, fault=None, hook_request=None):
         elif kind == "resume_run" and config["variant"] == "continue_execution":
             locator = request.run_locator
             run = coordinator.root / locator["case_id"] / locator["run_id"]
-            adapter = ExternalDomainFailure(run, safe=config["safe"]) if config["failure"] else ExternalDomainConsumer(run)
+            adapter = (ExternalDomainFailure(run, safe=config["safe"]) if config["failure"] else
+                       CanonicalDomainConsumer(coordinator, coordinator.root / "base_repository")
+                       if (coordinator.root / "base_repository").exists() else ExternalDomainConsumer(run))
+            if config.get("canonical_consumer_stop") is not None:
+                from .b03_uncertain_consumer_cases import CanonicalConsumerHost
+                adapter = CanonicalConsumerHost(coordinator, coordinator.root / "base_repository",
+                                                **config["canonical_consumer_stop"])
             plane.external_adapter = plane.resume_target_adapter = adapter
         elif kind in ("resolve_external_interrupt", "cancel_pause"):
             cls = DomainTimeout if config["variant"] == "recoverable_timeout" else SyntheticExternalStop
-            adapter = cls(safe=config["safe"], violation=config["violation"])
+            adapter = cls(coordinator, safe=config["safe"], violation=config["violation"]) if cls is DomainTimeout else cls(
+                safe=config["safe"], violation=config["violation"])
+            plane.external_adapter = adapter
+        if config.get("canonical_backend_stop"):
+            from lqcd_agent.code_agent.containment import DeterministicContainment
+            from lqcd_agent.code_agent.external_operation import CodeExternalStop
+            from test_external_operation_recovery import RefuseRedispatch
+            backend = RefuseRedispatch(coordinator.root / "fake_backend", clock=lambda: 100 + elapsed)
+            adapter = CodeExternalStop(coordinator, backend, DeterministicContainment(coordinator.root / "containment"),
+                                       backend.read_receipt)
             plane.external_adapter = adapter
         result = getattr(plane, kind)(request, actor=actor)
-        pipe.send({"kind": "result", "result": result, "calls": adapter.calls if adapter is not None else 0})
+        pipe.send({"kind": "result", "result": result, "calls": getattr(adapter, "calls", 0)})
     except Exception as error:
         from lqcd_agent.control.strict_json import ControlIntegrityError
         if config.get("expect_rejection") and isinstance(error, ControlIntegrityError):
@@ -232,12 +296,65 @@ def run_client(config, elapsed, *, fault=None, hook_request=None):
         parent.close()
 
 
-def exercise_phase_case(case_id, *, fixture_case=None, fault_point=None, occurrence=1, arm_after=None, recovery_target=None, takeover=False, competition=None):
+def _race_client(pipe, config, elapsed, barrier):
+    barrier.wait(timeout=30)
+    phase_client(pipe, config, elapsed=elapsed)
+
+
+def race_clients(config, elapsed):
+    from copy import deepcopy
+    context = multiprocessing.get_context("spawn")
+    barrier = context.Barrier(3)
+    running = []
+    try:
+        for index in range(2):
+            candidate = deepcopy(config)
+            candidate["worker_id"] = "racer-" + str(index)
+            candidate["expect_rejection"] = True
+            parent, child = context.Pipe()
+            process = context.Process(target=_race_client, args=(child, candidate, elapsed, barrier))
+            process.start()
+            child.close()
+            running.append((process, parent))
+        barrier.wait(timeout=30)
+        results = []
+        for process, parent in running:
+            assert parent.poll(30), "Competing control worker did not return"
+            result = parent.recv()
+            process.join(20)
+            assert process.exitcode == 0 and result["kind"] == "result", result
+            value = result["result"]
+            if value.get("rejected"):
+                assert value["error"] in ("Operation already leased", "Foreign failed operation context",
+                                          "Stale or terminal operation fence"), value
+            else:
+                results.append(value)
+        assert results
+        assert len({result["operation_id"] for result in results}) == 1
+        terminal = [result for result in results if result["operation_status"] != "in_progress"]
+        assert terminal and all(value == terminal[0] for value in terminal)
+        return terminal[0]
+    finally:
+        for process, parent in running:
+            if process.is_alive():
+                process.kill()
+                process.join()
+            parent.close()
+
+
+def exercise_phase_case(case_id, *, fixture_case=None, fault_point=None, occurrence=1, arm_after=None, recovery_target=None, takeover=False, competition=None, evidence_check=None, canonical_advance=None, canonical_resume=None, canonical_consumer_stop=None, canonical_backend_stop=False, route_target=None, preparation_reason=None):
     spec = SPECS[case_id]
     boundary, side, outcome = case_id.rsplit(".", 2)
-    with phase_fixture(fixture_case or case_id, recovery_target=recovery_target) as (coordinator, config):
+    with phase_fixture(fixture_case or case_id, recovery_target=recovery_target, canonical_advance=canonical_advance, canonical_resume=canonical_resume, canonical_backend_stop=canonical_backend_stop) as (coordinator, config):
         boundary = fault_point or boundary
         config.update(fault_occurrence=occurrence, arm_after=arm_after)
+        if canonical_consumer_stop is not None:
+            config["canonical_consumer_stop"] = canonical_consumer_stop
+        config["canonical_backend_stop"] = canonical_backend_stop
+        if route_target is not None:
+            config["route"] = route_target
+        if preparation_reason is not None:
+            config["preparation_reason"] = preparation_reason
         existing_operation = None
         contender = None
         if competition in ("same_key", "double_claim", "terminal_owner"):
@@ -265,6 +382,17 @@ def exercise_phase_case(case_id, *, fixture_case=None, fault_point=None, occurre
         request = process_hook_request(case_id, receipt_dir)
         fault = run_client(config, 40 if takeover else 0, fault=(boundary, side), hook_request=request)
         assert fault["name"] == boundary and fault["side"] == side
+        if competition == "post_claim_system_stop":
+            from copy import deepcopy
+            candidate = deepcopy(config)
+            locator = config["request"]["run_locator"]
+            root = coordinator.root / locator["case_id"] / locator["run_id"]
+            head = digest(parse_ledger(read_regular(root / "execution_history.jsonl")).values[-1])
+            candidate.update(method="close_run", request_class="CloseRunRequest", variant="not_applicable", expect_rejection=True)
+            candidate["request"] = asdict(CloseRunRequest(locator, head, "terminal_operator_stop"))
+            saved = run_files(coordinator.root)
+            stopped = run_client(candidate, 0)["result"]
+            assert stopped.get("rejected") is True and run_files(coordinator.root) == saved
         new = [coordinator.get(row[0]) for row in coordinator.connection.execute("SELECT operation_id FROM control_operations") if row[0] not in before_ids]
         if outcome == "reservation_rolled_back":
             assert new == [] and run_files(coordinator.root) == before_files
@@ -295,7 +423,8 @@ def exercise_phase_case(case_id, *, fixture_case=None, fault_point=None, occurre
                 else:
                     with coordinator.transaction() as db:
                         db.execute("UPDATE control_snapshots SET value=? WHERE operation_id=?", (b"{}", operation["operation_id"]))
-            recovered = run_client(config, 80 if takeover else 40)["result"]
+            recovered = (race_clients(config, 40) if competition == "failure_worker_race" else
+                         run_client(config, 80 if takeover else 40)["result"])
             assert recovered["operation_id"] == operation["operation_id"] and recovered["lease_epoch"] == 2
             assert recovered["operation_status"] != "in_progress", recovered
             if outcome == "non_materializable_domain_gap":
@@ -337,6 +466,8 @@ def exercise_phase_case(case_id, *, fixture_case=None, fault_point=None, occurre
             started = [r["attempt_id"] for r in records if r["record_type"] == "attempt" and r["event"] == "started"]
             settled = [r["payload"]["resource_operation_id"] for r in records if r["record_type"] == "budget" and r["event"] == "resource_settled"]
             assert len(started) == len(set(started)) and len(settled) == len(set(settled))
+        if evidence_check is not None:
+            evidence_check(coordinator, config, before_rows, recovered)
         events = [event("fault", phase=boundary, stage=side, outcome=outcome)]
         for row in coordinator.history(owner):
             events.append(event("durable_phase", source=config["method"], target=config["variant"], phase=row["phase"], phase_revision=row["revision"], lease_epoch=row["lease_epoch"]))
@@ -391,4 +522,8 @@ def exercise_phase_case(case_id, *, fixture_case=None, fault_point=None, occurre
             assert result.get("rejected") is True
             assert run_files(coordinator.root) == before
             events.append(event("prior_capability_rejected", outcome="integrity_conflict"))
+        elif competition in ("failure_worker_race", "post_claim_system_stop"):
+            events.append(event("failure_owner_worker_race_resolved" if competition == "failure_worker_race" else
+                                "post_claim_system_stop_rejected", accepted=True, owner="original_resume",
+                                guard="one_owner_no_second_stop_no_redispatch"))
         return {"schema_version": "0.1", "events": events}

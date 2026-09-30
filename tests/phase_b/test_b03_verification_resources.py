@@ -13,12 +13,20 @@ from lqcd_agent.control.interfaces import ActorContext, ControlPlane
 from lqcd_agent.control.pause import ConsumerStopObservation, ResumeRunRequest
 from lqcd_agent.control.strict_json import ControlIntegrityError, digest, loads
 from test_external_consumption_control import ExternalDomainConsumer, normal_external
+from lqcd_agent.code_agent.subgraph import CodeAgentSubgraph
 
 
 class VerificationConsumer(ExternalDomainConsumer):
     def __init__(self, root, coordinator, *, fault=None):
         super().__init__(root)
         self.coordinator, self.fault = coordinator, fault
+        self.canonical = CodeAgentSubgraph(coordinator, coordinator.root / "base_repository")
+
+    def preflight_delivery(self, binding):
+        return self.canonical.preflight_delivery(binding)
+
+    def verify_consumption(self, identity, binding, outcome):
+        return self.canonical.verify_consumption(identity, binding, outcome)
 
     def consume_external(self, identity, binding, port):
         assert not self.coordinator.connection.in_transaction
@@ -59,16 +67,7 @@ class VerificationConsumer(ExternalDomainConsumer):
             with pytest.raises(ControlIntegrityError, match="twice"):
                 port.run_verification(spec_id="check", input_digest=digest("input"), config_digest=digest("config"),
                                       timeout_seconds=1, effect=effect)
-        # The original control-half assertion expects the aggregate settlement
-        # to be the only one. Build the same A03 output after checking both.
-        from lqcd_agent.control.capabilities import ArtifactOutput, TargetOutcome
-        paths = (port.write_member("control_domain_summary.md", b"verified control fixture\n"),
-                 port.write_member("control_domain_status.json", b'{"evidence_class":"external/domain adapter"}'))
-        current = loads((self.root / "artifact_index.json").read_bytes())["current"]
-        refs = {slot: pointer["artifact_id"] for slot, pointer in current.items() if pointer is not None}
-        refs["code"] = identity["attempt_id"] + ":code"
-        return TargetOutcome("succeeded", {"current_artifact_ids": refs}, artifact=ArtifactOutput("code", paths,
-            {"code_change_summary_path": str(paths[0]), "tests_status_path": str(paths[1])}, "external/domain adapter"))
+        return self.canonical.consume_external(identity, binding, port)
 
     def stop_consumption(self, coordinator, intent):
         return ConsumerStopObservation({"termination_or_not_dispatched": "confirmed", "write_lease_revocation": True,
@@ -127,15 +126,19 @@ def test_expired_verification_worker_cannot_settle_or_publish(normal_external):
     rows = parse_ledger((root / "execution_history.jsonl").read_bytes()).values
     assert rows[-1]["event"] == "resource_reserved"
     result = plane.resume_run(request, actor=actor)
-    assert result["operation_status"] == "committed" and result["run_status"] == "failed", result
+    assert result["operation_status"] == "recovery_required" and result["terminal_closure"] == "unavailable" and result["run_status"] is None, result
     rows = parse_ledger((root / "execution_history.jsonl").read_bytes()).values
-    settled = [r for r in rows if r["record_type"] == "budget" and r["event"] == "resource_settled"]
-    assert len(settled) == 2 and settled[-1]["payload"]["actual"] is None
+    reservation = next(r for r in rows if r["record_type"] == "budget" and r["event"] == "resource_reserved" and
+                       r["payload"]["resource_kind"] == "verification_command")
+    settled = [r for r in rows if r["record_type"] == "budget" and r["event"] == "resource_settled" and
+               r["payload"]["resource_operation_id"] == reservation["payload"]["resource_operation_id"]]
+    assert not settled
     assert (coordinator.root / "verification-effect.txt").read_text() == "executed\n"
 
 
 def verification_client(pipe, output, request, crash_boundary, elapsed, effect_crash):
-    coordinator = Coordinator(Path(output), clock=FakeClock(100 + elapsed, elapsed))
+    coordinator = Coordinator(Path(output), clock=FakeClock(100 + elapsed, elapsed,
+        epoch_id="fake_clock_epoch_2" if elapsed else "fake_clock_epoch_1"))
     locator = request["run_locator"]
     root = coordinator.root / locator["case_id"] / locator["run_id"]
     adapter = VerificationConsumer(root, coordinator, fault="crash" if effect_crash else None)
@@ -184,18 +187,23 @@ def test_verification_crash_materializes_owned_suffix_without_redispatch(normal_
                 process.join(5)
             parent.close()
     result = results[0]
-    assert result["operation_status"] == "committed", result
+    uncertain_effect = boundary in (("invocation.verification_resource_reserved", "after"),
+                                    ("invocation.verification_ledger.file_sync", "after")) or effect_crash
+    assert result["operation_status"] == ("recovery_required" if uncertain_effect else "committed"), result
     materialized = boundary in (("invocation.completion_intent", "after"),
                                 ("control.resume_run.continue_execution.invocation_authorized", "after"))
-    assert result["run_status"] == ("running" if materialized else "failed"), result
+    assert result["run_status"] == (None if uncertain_effect else "running" if materialized else "failed"), result
+    if uncertain_effect:
+        assert result["terminal_closure"] == "unavailable", result
     root = coordinator.root / locator["case_id"] / locator["run_id"]
     records = parse_ledger((root / "execution_history.jsonl").read_bytes()).values
     reservations = [r for r in records if r["record_type"] == "budget" and r["event"] == "resource_reserved" and r["payload"]["resource_kind"] == "verification_command"]
     assert len(reservations) == 1
     settlements = [r for r in records if r["record_type"] == "budget" and r["event"] == "resource_settled" and
                    r["payload"]["resource_operation_id"] == reservations[0]["payload"]["resource_operation_id"]]
-    assert len(settlements) == 1
-    assert settlements[0]["payload"]["operation_id"] == result["operation_id"]
+    assert len(settlements) == (0 if uncertain_effect else 1)
+    if settlements:
+        assert settlements[0]["payload"]["operation_id"] == result["operation_id"]
     marker = coordinator.root / "verification-effect.txt"
     assert marker.exists() == ran
     if ran:

@@ -1,5 +1,5 @@
 """Bounded projections and explicit checkpoint manifests, never authorities."""
-from lqcd_agent.artifacts.registry import ARTIFACT_SLOTS, STATE_FIELDS_BY_SLOT
+from lqcd_agent.artifacts.registry import ARTIFACT_SLOTS, STATE_FIELDS_BY_SLOT, _code_scalar_projection, state_fields_for_slot
 
 from .execution import ExecutionReplay
 from .strict_json import ValidatedValue, canonical_bytes, closed, digest, digest_value, number, require, text
@@ -33,11 +33,14 @@ def bounded_projection(execution, *, artifact_index, artifact_head, artifact_eve
             "Projection belongs to another Run")
     value.update(artifact_head=artifact_head, artifact_event_index=artifact_event_index,
                  current_artifacts=artifact_index["current"])
-    for slot, fields in STATE_FIELDS_BY_SLOT.items():
+    for slot in STATE_FIELDS_BY_SLOT:
+        fields = state_fields_for_slot(slot, value.get("schema_version"))
         pointer = artifact_index["current"][slot]
         paths = pointer["state_paths"] if pointer is not None else {}
         for field in fields:
             value[field] = paths.get(field)
+    value.update(_code_scalar_projection(value, artifact_index,
+                                         run_root=execution.values[0]["canonical_output_root"]))
     return ValidatedValue.from_value(value)
 
 

@@ -25,7 +25,6 @@ from lqcd_agent.control.integrity import validate_run_root
 from lqcd_agent.control.pause import ResumeRunRequest
 from lqcd_agent.control.pause import ResolveExternalInterruptRequest
 from lqcd_agent.control.pause import ConsumerStopObservation
-from lqcd_agent.control.capabilities import ArtifactOutput, TargetOutcome
 from lqcd_agent.control.strict_json import canonical_bytes
 from test_timeout_consumption_control import DomainTimeout
 
@@ -63,7 +62,7 @@ def crash_timeout_after_start_intent(output, request):
         if (name, side) == ("invocation.started_intent", "after"):
             os._exit(96)
     coordinator.observer = observer
-    plane = ControlPlane(coordinator, worker_id="host", external_adapter=DomainTimeout())
+    plane = ControlPlane(coordinator, worker_id="host", external_adapter=DomainTimeout(coordinator))
     plane.resolve_external_interrupt(ResolveExternalInterruptRequest(**request),
         actor=ActorContext("operator", "human", ("control.internal",)))
     raise AssertionError("Timeout did not reach its frozen start intent")
@@ -182,20 +181,17 @@ def test_canonical_attempt_charges_its_whole_active_interval(verification_count)
                                           config_digest=digest("config"), timeout_seconds=1, effect=effect)
                 elapsed = 6 if verification_count == 0 else 5
                 coordinator.clock.advance(elapsed - verification_count)
-                if not verification_count:
-                    return super().consume_external(identity, binding, port)
-                paths = (port.write_member("control_domain_summary.md", b"verified control fixture\n"),
-                         port.write_member("control_domain_status.json", b'{"evidence_class":"external/domain adapter"}'))
-                current = loads((root / "artifact_index.json").read_bytes())["current"]
-                refs = {slot: pointer["artifact_id"] for slot, pointer in current.items() if pointer is not None}
-                refs["code"] = identity["attempt_id"] + ":code"
-                return TargetOutcome("succeeded", {"current_artifact_ids": refs}, artifact=ArtifactOutput("code", paths,
-                    {"code_change_summary_path": str(paths[0]), "tests_status_path": str(paths[1])}, "external/domain adapter"))
+                raise ControlIntegrityError("Controlled post-verification failure")
+
+            def stop_consumption(self, coordinator, intent):
+                return ConsumerStopObservation({"termination_or_not_dispatched": "confirmed",
+                    "write_lease_revocation": True, "verify_empty": True, "bounded_drain": True,
+                    "post_stop_stability": True}, {})
 
         adapter = ElapsedConsumer(root)
         plane = ControlPlane(coordinator, worker_id="host", resume_target_adapter=adapter, external_adapter=adapter)
         result = plane.resume_run(request, actor=ActorContext("operator", "human", ("control.internal", "resume")))
-        assert result["operation_status"] == "committed", result
+        assert result["operation_status"] == "committed" and result["run_status"] == "failed", result
         rows = parse_ledger((root / "execution_history.jsonl").read_bytes()).values
         intervals = [row for row in rows if row["record_type"] == "budget" and row["event"] == "active_interval_settled"]
         elapsed = 6 if verification_count == 0 else 5
@@ -239,7 +235,7 @@ def test_canonical_recoverable_timeout_settles_the_original_attempt_interval():
         trigger = {"run_locator": locator, "producer_operation_id": producer, "reason": "operation_timeout"}
         (root / "timeout_trigger.json").write_bytes(canonical_bytes(trigger))
         request = ResolveExternalInterruptRequest(locator, producer, "operation_timeout", "timeout_trigger.json", digest(trigger))
-        plane = ControlPlane(coordinator, worker_id="host", external_adapter=DomainTimeout())
+        plane = ControlPlane(coordinator, worker_id="host", external_adapter=DomainTimeout(coordinator))
 
         def observer(name, side, value):
             if name.endswith("interrupted_code_attempt_started") and side == "after":
@@ -282,7 +278,7 @@ def test_canonical_timeout_restart_uses_frozen_attempt_and_cross_epoch_maximum()
     assert process.exitcode == 96
     restarted = Coordinator(root.parent.parent, clock=FakeClock(143, 43, epoch_id="fake_clock_epoch_2"))
     try:
-        result = ControlPlane(restarted, worker_id="host", external_adapter=DomainTimeout()).resolve_external_interrupt(
+        result = ControlPlane(restarted, worker_id="host", external_adapter=DomainTimeout(restarted)).resolve_external_interrupt(
             request, actor=ActorContext("operator", "human", ("control.internal",)))
         assert result["operation_status"] == "committed" and result["domain_status"] == "failed", result
         rows = parse_ledger((root / "execution_history.jsonl").read_bytes()).values
