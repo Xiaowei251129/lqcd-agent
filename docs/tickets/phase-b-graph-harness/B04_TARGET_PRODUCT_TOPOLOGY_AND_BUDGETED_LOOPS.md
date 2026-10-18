@@ -1,7 +1,7 @@
 ---
 ticket_id: B04
 phase: phase-b-graph-harness
-status: draft
+status: completed
 type: implementation
 depends_on: [B00, B01, B02, B03]
 ---
@@ -47,7 +47,9 @@ B04是最后一张拥有catalog IDs的subsystem ticket。它必须用production 
 - `docs/tickets/phase-a-control-contracts/CONTROL_PROTOCOL_0_4.json`
 - `docs/tickets/phase-a-control-contracts/PHASE_B_REQUIREMENT_CATALOG.json`
 - B00–B03 ticket与completion records
-- B00C01–B00C04、B02C01 corrective tickets及其completion records；现行依据见[B00–B05审查记录](../corrections/B00_B05_READINESS_REVIEW.md)
+- B00C01–B00C09、B02C01、B03C01/B03C02 corrective tickets及其独立completion records；[B00–B05审查记录](../corrections/B00_B05_READINESS_REVIEW.md)仅保留2026-09-22的审查事实，现行输入以[B03完成记录](../completions/B03_COMPLETION.md)和后续已批准纠偏为准
+- [B00C05 case0.3](B00C05_EXTERNAL_RESERVATION_FAULT_CASE_SEMANTICS.md)、[B00C06 trace0.5/proof0.2](B00C06_A05_SOURCE_BOUND_DIGEST_TRACES.md)、[B00C07状态投影](B00C07_A05_STATE_PROJECTION_GOLDEN_HANDOFF.md)、[B00C08 canonical来源交接](B00C08_B02_CANONICAL_EVIDENCE_TRACE_HANDOFF.md)
+- [B00C09活动时间交接](B00C09_ACTIVE_TIME_LEDGER_HANDOFF.md)及其[独立账本合同](../corrections/B00C09_ACTIVE_TIME_LEDGER_CONTRACT.md)、[B03C01重复Code失效来源](B03C01_REPEAT_CODE_ATTEMPT_INVALIDATION.md)、[B03C02 case0.4](B03C02_POST_CLAIM_UNSTARTED_CASE_SEMANTICS.md)
 - `src/lqcd_agent/graph/state.py`
 - `src/lqcd_agent/graph/routing.py`
 - `src/lqcd_agent/graph/analysis_graph.py`
@@ -60,19 +62,20 @@ B04是最后一张拥有catalog IDs的subsystem ticket。它必须用production 
 
 ## Frozen Inputs and Entry Conditions
 
-- B00–B03必须为`completed`；B03 report必须exact显示28 owned passed、累计84 covered和47 remaining。
+- B00–B03、B00C01–B00C09、B02C01及B03C01/B03C02必须为`completed`；B03 report必须exact显示28 owned passed、累计84 covered和47 remaining，独立runtime证据必须可复核B03 645/645及B02 1410/1410。
 - Protocol/catalog exact versions/digests不变；remaining ordered set必须exact等于本ticket 47项owned set。
 - B02 public/internal interfaces与B03 subgraph必须已经通过restart/fault/concurrency evidence；B04不得在graph layer复制其operation/ExternalOperation authority。
 - Existing A02/A03 implementation是identity/invalidation唯一primitive；target graph必须复用而非fork。
-- 执行前记录full legacy suite、B00–B03 construction reports和B03 final expected-failure基线。
-- 验收沿用corrective冻结的case语义`0.2`、source-bound trace `0.4`和旧trace版本各自语义；从独立规则核对case集合，不能沿用修正前计数或忽略材料摘要。
+- 执行前记录full legacy suite及fresh B00–B03 construction reports，分别为15/15、11/11、30/30、28/28；global final入口负向基线的错误集合必须exact为本票47项`coverage_gap`、本票144项`runtime_evidence_gap`（`binding`）和15项`exit_evidence_gap`（`adapter`），没有额外错误。按独立catalog/case/exit规则核对具体IDs，不能只比较数量。
+- 现行独立case语义为B03C02冻结的`0.4`：共2199项，B02/B03/B04分别为1410/645/144，324 boundaries和28个post-claim路径保持。依赖canonical A05成员的source-bound证据沿用B00C06/C07/C08批准的trace `0.5` / proof `0.2`；既有trace `0.1`–`0.4`、旧case版本及sealed历史输入保留各自语义，不隐式升级phase-only证据。从独立规则核对case集合、dispositions和seals，不能沿用修正前计数或忽略材料摘要。
+- 复用B00C07/C08已实现的producer/version状态投影、完整canonical来源与独立success/usable Analysis前置，B00C09活动时间账本，以及B03C01失效前来源绑定。上述交接是已完成前置，不授权本票再次改变旧格式、normalizer、账本合同或case分类。
 
 ## Scope
 
 - 建立并编译A01 canonical target graph，使用canonical Attempt kinds与B02 project-owned operation入口；
 - 实现A01全部17条positive route、9类forbidden behavior及guard negative/escalation路径；
 - 把B03 `CodeAgentSubgraph + FakeCodingBackend`接入Planner gap与Coordinator code-fix入口；
-- 实现Coordinator re-review、analysis rerun、code fix、replan四层fallback与Cycle/Attempt semantics；
+- 实现Coordinator re-review、analysis rerun、code fix、replan四层fallback与Cycle/Attempt semantics，以及A01 typed remediation packet和scoped context边界；
 - 实现Human Gate null-target Pause、valid response回Coordinator、single-use authorization/grant与invalid-response repause/halt；
 - 在每个ordinary Transition内复用A03 target-layer invalidation、artifact dependency/protection与cross-head checks；
 - 复用B01基础和B02已实现的start/replay/fork bootstrap admission，实现后续产品route/resource/grant/stop admission、policy replay、resource reservation/settlement、fingerprint repetition、route ceilings、terminal reserve、BudgetGrant和统一stop/outcome matrix；
@@ -212,6 +215,9 @@ A06-BUDGET-021
 - Initial/replan创建new Cycle；re-review/rerun/code-fix保持Cycle并创建fresh Attempt。所有Transition/Attempt identities与A02/A03 heads exact。
 - Reviewer/Analysis/Planner/Code合法non-success都先进入Coordinator；只有唯一low/medium diagnosis且budget可用才automatic fallback。
 - High/critical、ambiguous、second exact fingerprint、route/resource exhaustion、clarification/approval/external action必须Human Gate或typed terminal stop，不能继续automatic loop。
+- Work Agent diagnostic必须结构化表达status/问题类别、受影响层级、证据引用、retryability、candidate remediation、diagnosis confidence、failure fingerprint和是否需要补充输入/批准/外部动作；自由文本不能代替这些guard输入。
+- Coordinator每次派发四层fallback都形成typed remediation packet，至少绑定目标、问题、证据、约束、成功条件、相关父Attempt、预算状态与nullable Human authorization reference。Packet复用现有identity、per-Attempt artifact namespace和输入证据引用，不新增domain slot或control authority；target只执行packet授权的工作，不能自行扩大scope或选择其他Transition。
+- Coordinator只读取bounded global execution summary；Work Agent只读取scoped current context、typed packet、直接父Attempt和与当前fingerprint/目标相关的bounded history。完整event log、route trace和checkpoint state不能直接注入Agent prompt；跨Agent历史只有经Coordinator选为证据引用后才能进入target context。
 - Memory/report是terminal sink，不能发起loop；normal domain pending/held/rejected仍可`run_status=completed`，control failure/halt保持`failed|halted`。
 
 ### 3. Human Gate, Authorization and Grant
@@ -229,7 +235,8 @@ A06-BUDGET-021
 - Code success只有在B03 usable bundle current后，才能由new `advance_run`分配Analysis target、commit Transition、完成Analysis preparation并激活capability。
 - Schema-valid、Attempt-attributable且经B03 Host验证的canonical code non-success（包括合法`failed`/`result_invalid` bundle）完成原consume、release和checkpoint后，由new `advance_run`进入Coordinator；claim前invalid ingress不产生产品Transition。
 - Claim后snapshot/identity/path/digest/policy完整性失败进入原resume的ConsumptionFailure tail；只有consumer safe-stop且Run authority可信才发布failed，否则same-owner unavailable/recovery_required。此路径保留原external final，不伪造Code failed bundle、不给Coordinator发Transition、不创建第二close/interrupt；仅有预授权且可证明的无副作用publication suffix可由原operation继续。
-- Fresh Analysis必须使用B03 spec/workspace/subprocess；不能复用coding workspace或current control repo。
+- 选中current canonical `success + usable` Code Bundle的Analysis（包括后续rerun）必须使用B03 `AnalysisExecutionSpec`、fresh workspace和subprocess；不能复用coding workspace或current control repo。
+- 无current Code Bundle的no-code forward或rerun沿用B02 `TargetPreparationSnapshot.preparation_kind=not_applicable`及明确reason，并在same `advance_run` committed result后激活Analysis capability；不伪造Code Bundle或空Code spec来满足fresh preparation。存在Code Bundle却非success/usable时不能退回no-code分支，必须按A01 guards拒绝该Analysis target。
 
 ### 5. Budget Admission, Reservation and Stop
 
@@ -253,14 +260,15 @@ A06-BUDGET-021
 
 - 47项owned requirements全部使用production target graph/selector/control/subgraph/registry/budget入口；test fixture只注入structured outcomes、clock、failpoint和Fake external result。
 - Route/trajectory/recovery/interface scenario全部有exact normalized trace；forbidden scenarios保留no-side-effect invariants。
+- 四层fallback分别验证typed packet与target context的来源/授权；错误target或父Attempt、篡改证据、越scope、无效Human authorization和完整audit内容直接进入prompt的负例必须在target副作用前拒绝。No-code `not_applicable`与verified-Code `analysis_fresh`各有production正向及错误分支反例。
 - B00 registry中归属B04的budget/grant/transition/invalidation/bundle-to-route/Analysis/terminal boundaries全部绑定真实hook。
-- 全部B04 owned独立case必须在冻结输入、同一fresh Session内使用C04有界分批机制实际通过，复用既有observation/runtime验证器校验完整无重复/遗漏集合及同session/case/nodeid的生产进程回执。Construction或expected-fail final均不能替代owned runtime evidence。
+- 全部B04 owned独立case必须在冻结输入、同一fresh Session内使用C04有界分批机制实际通过，独立核验18个B04 boundaries对应的144/144 case；复用既有observation/runtime验证器校验完整无重复/遗漏集合及同session/case/nodeid的生产进程回执。Construction或expected-fail final均不能替代owned runtime evidence。
 - Construction report使用B00的`PhaseBAcceptanceReport 0.1`：`construction.required/covered/passed=47`，`requirements.required=131`、`requirements.covered=131`、`requirements.remaining=0`、`requirements.passed/passed_ids=null`、`requirements_zero_gap=false`、`phase_b_complete=false`。累计covered只表示映射，不能从前置ticket历史结果推断本次全局passed。
 
 ## Deliverables
 
 - compiled canonical Phase B target graph与stable Python entrypoint；
-- A01 routes、four-level fallback、Human Gate return和terminal topology；
+- A01 routes、four-level fallback及其typed remediation/scoped context、Human Gate return和terminal topology；
 - A03 invalidation/protection与B03 Code/fresh Analysis integration；
 - A06 admission/reservation/settlement/fingerprint/grant/stop implementation；
 - B04 47项matrix slice、exact trajectories、forbidden/fault evidence；
@@ -271,11 +279,14 @@ A06-BUDGET-021
 
 - A01 17条positive rows、guard negatives、9类forbidden和required trajectory classes全部在同一compiled canonical graph通过；
 - Four-level fallback的Cycle/Attempt、invalidation、budget和Human escalation exact；
+- A01 structured diagnosis、typed remediation packet、scoped context及bounded history边界通过四层fallback正向和来源/授权/越scope负向验收；
 - Fake Code Agent success/non-success/invalid ingress分别遵守B03 trust、A03 artifact和B02 operation边界；
+- 无Code Bundle的Analysis走`not_applicable` preparation；verified-Code Analysis走B03 fresh spec/workspace/subprocess，错误或不可用Code不能绕过success/usable guard；
 - Budget ceilings/reserve/resource accounting/fingerprint/grant/stop/terminal total function及all trigger routes通过；
 - Target capability activation和Run terminal owner fencing无early start、duplicate start或post-terminal write；
 - B04 construction owned/covered/passed exact为47项，B00–B04 slice union exact等于131项且remaining 0；construction仍`phase_b_complete=false`，没有B05 completion claim；
 - 独立规则生成的全部B04 owned runtime case本次实际通过；B00–B03前置construction/runtime回归仍通过，不能把本票未执行case留给B05；
+- Global final负向探针的错误集合exact为15项B05未交付的exit adapter缺口，coverage与runtime binding缺口均为0且没有额外错误；该探针未执行全局runtime，不能代替上述独立owned runtime证据；
 - Legacy compatibility、full pytest、compileall、links、metadata、scope、stale docs和diff checks通过；
 - 无parallel/live provider/real Backend/raw data/repository outputs/dependency/promotion变化。
 
@@ -292,21 +303,56 @@ python scripts/validate_phase_b_acceptance.py \
   --ticket B04 \
   --evidence-dir "$B04_EVIDENCE_DIR/construction" \
   --report "$B04_EVIDENCE_DIR/construction-report.json"
-! python scripts/validate_phase_b_acceptance.py \
-  --mode final \
-  --evidence-dir "$B04_EVIDENCE_DIR/final" \
-  --report "$B04_EVIDENCE_DIR/final-negative-report.json"
+python - "$B04_EVIDENCE_DIR" <<'PY'
+from pathlib import Path
+import subprocess
+import sys
+
+sys.path.insert(0, str(Path("tests/phase_b").resolve()))
+from harness.contracts import EXIT_CHECKS
+from harness.inputs import load_inputs
+from harness.report import validate_report
+from harness.session import worktree_digest
+from harness.strict_json import read
+
+evidence_root = Path(sys.argv[1])
+report_path = evidence_root / "final-negative-report.json"
+result = subprocess.run([
+    sys.executable, "scripts/validate_phase_b_acceptance.py", "--mode", "final",
+    "--evidence-dir", str(evidence_root / "final"), "--report", str(report_path),
+], check=False)
+assert result.returncode == 1, "Expected the final exit gate to reject incomplete B05 evidence"
+report = read(report_path)
+validate_report(report)
+inputs = load_inputs()
+assert report["digests"] == dict(inputs["digests"], worktree_inputs=worktree_digest(inputs["root"]))
+requirements = report["requirements"]
+assert (requirements["required"], requirements["covered"], requirements["remaining"]) == (131, 131, 0)
+assert requirements["required_ids"] == requirements["covered_ids"] == inputs["required"]
+assert requirements["remaining_ids"] == []
+assert requirements["passed"] is None and requirements["passed_ids"] is None
+actual_errors = {(row["category"], row["object_id"], row["field_path"]) for row in report["errors"]}
+assert actual_errors == {("exit_evidence_gap", check_id, "adapter") for check_id in EXIT_CHECKS}
+assert len(report["exit_checks"]) == 15 and all(row["status"] == "missing" for row in report["exit_checks"])
+runtime = report["runtime_evidence"]
+assert runtime["required_case_ids"] == list(inputs["specs"])
+assert runtime["status"] == "missing" and runtime["passed_case_ids"] is None
+assert runtime["missing_case_ids"] == runtime["required_case_ids"]
+assert report["requirements_zero_gap"] is False and report["phase_b_complete"] is False
+print("B04 final negative probe: exactly 15 exit adapter gaps; global runtime not executed")
+PY
 pytest -q tests/test_execution_identity.py tests/test_artifact_registry.py tests/test_state_schema.py tests/test_routing.py tests/test_graph_smoke.py tests/test_approval_packet.py tests/test_memory.py tests/test_report.py tests/test_run_graph_with_codex_handoff.py
 pytest -q
 python -m compileall -q src tests scripts/generate_phase_b_protocol.py scripts/validate_phase_b_acceptance.py
 git diff --check
 ```
 
-B04必须调用B00 final作负向探针：虽`requirements.remaining=0`，缺失runtime或exit证据仍须非零，报告分别列出缺口，`phase_b_complete=false`。不得用禁止提前运行final来代替机器门槛。还必须审计：
+B04完成时必须调用B00 final作负向探针并验证完整report及当前输入摘要：错误集合exact为15项`exit_evidence_gap`（`adapter`），`coverage_gap`和`runtime_evidence_gap`（`binding`）均不存在；任何额外错误或非预期退出码均使本票验收失败，不能仅用shell `!`接受任意非零退出。B05 exit adapters尚未接入时，B00 driver不会执行全局runtime，故report的`runtime_evidence.status=missing`、`passed_case_ids=null`且`missing_case_ids`仍为全部2199项；这表示本次全局final未执行，不撤销独立owned Session通过证据，也不能据此宣称全局passed。Construction和此负向探针均保持`requirements.passed/passed_ids=null`、`requirements_zero_gap=false`、`phase_b_complete=false`。不得用禁止提前运行final来代替机器门槛。还必须审计：
 
 - B04 construction exact 47 owned/covered/passed set、全部slice互斥union 131和0 remaining；
 - 17 positive edge traces、每个guard negative、9 forbidden no-side-effect traces及完整trajectory classes；
 - route/budget/fingerprint/grant/stop/terminal trigger matrix；
+- A01 structured diagnosis、每层fallback的typed remediation packet与scoped/bounded context正负证据，以及no-code/verified-Code两类Analysis preparation分支；
 - all B04 failpoint registry hook bindings；
 - 按`docs/VERIFICATION_GUIDE.md`同session分批机制保存本票全部owned case的独立选择、production hook回执、batch/merged envelopes、fixed traces及逐case验证报告；原始来源与前置golden派生变化须离线审定；
 - canonical/legacy入口隔离、no-migration/no-parallel/no-network/no-raw/no-promotion；
@@ -346,11 +392,13 @@ B04必须调用B00 final作负向探针：虽`requirements.remaining=0`，缺失
 
 - 确认本票maintenance路径和corrections index追加在Allowed Files内，已有历史不可改写；缺失前置功能或任何架构/schema/public contract/Allowed Files/验收边界变化必须停止并经corrective ticket批准；
 - 确认B04 exact owned set为47项，B00–B04 union为131且无duplicate；
-- 确认B04 construction的0 remaining仅为映射齐全；final缺runtime/CLI/benchmark/legacy证据时必须失败；
+- 确认已完成纠偏输入为case0.4的2199项（1410/645/144）、324 boundaries和28 post-claim路径，canonical source trace0.5/proof0.2与旧版本各自隔离；
+- 确认B04 construction的0 remaining仅为映射齐全；完成负向final只允许15项exit adapter缺口，未执行全局runtime与本票144/144独立owned通过证据分别记录；
 - 确认B02 bootstrap admission先于本票存在，本票只接后续产品route/resource/grant/stop admission；
 - 确认START/ordinary/END/Human external各自owner明确，canonical领域non-success与消费完整性失败不会进入同一路由；全部owned runtime case有真实执行门槛；
 - 确认canonical/legacy入口、CLI切换、migration、A03 slots与code promotion边界清楚；
 - 确认全部route/forbidden/budget/stop证据使用production入口；
+- 确认typed remediation/scoped context验收及no-code `not_applicable`与verified-Code `analysis_fresh`边界明确，不新增public schema或借packet扩大route authority；
 - 确认Allowed Files、Do Not Touch和verification没有未决placeholder。
 
 只有用户完成review并明确批准后，才能把B04 YAML提升为`ready`；起草本文件不授权执行。

@@ -1320,3 +1320,134 @@ B00C06最终验证完成后关闭。新版本与旧版本隔离，原required/ow
 ## 2026-09-28 — B03C02未启动consumer的post-claim runtime语义
 
 用户批准[B03C02](tickets/phase-b-graph-harness/B03C02_POST_CLAIM_UNSTARTED_CASE_SEMANTICS.md)后，case0.4仅将`invocation_authorized`前六个entry phase各两项无法触发的`consumer_stop=unavailable` runtime case替换为同phase、同Run authority的`unstarted_recovery` case。未启动时冻结的`started_intent=null`给出可信`not_dispatched`，不调用stop adapter；appendable对应`failed_closure`，unavailable对应`unavailable_closure`。同一原owner的failure intent必须先在SQLite事务提交，再由新进程恢复；事务内phase `after`本身不构成持久化证据。旧case0.3、A07设计时7×4分类、全部其他2187项case、协议/catalog/required IDs/owners/exit门槛保持原义；case0.4仍为2199/B03 645/post-claim 28。B03C02不替代B03其余626项独立runtime验收，Phase B完成条件不变。审定与双fresh根证据见[独立记录](tickets/completions/B03C02_COMPLETION.md)。
+
+## 2026-09-30 — B04执行中的来源类型阻塞
+
+用户批准B04为ready并执行，依本票不commit约束在工作树冻结ready正文。原ControlPlane持有全部durable progression，新增compiled canonical graph、scoped context、纯选择器和ordinary resource基础；本轮19项局部与325项legacy通过。两fresh实际no-code Run各有3项成功LLM settlement，补齐actual request/outcome preimages后B00 trace0.5仍因A05-only evidence kind拒绝。根据B04冻结Stop Conditions暂停，不把成功结果伪装成failure/verification，不扩大trace exclusions，不修改B00 validator或旧goldens。
+
+[B00C10](tickets/phase-b-graph-harness/B00C10_ORDINARY_RESOURCE_TRACE_HANDOFF.md)仅为待审的新版本来源交接方案，未批准或实施，不是已确认的新合同。B04当前blocked，47/144及当前源码最终回归仍待交付，mapped84/remaining47、Phase B未完成。
+
+## 2026-10-01 — B00C10显式来源版本与窄identity fixture批准
+
+用户要求执行修订版B00C10，视为批准；ready正文冻结SHA-256 `de8bbed3af668486ac33c6cfe9b3dbc0efeb63d3941027dfa272b2e22ea48bea`，之后仅改YAML lifecycle。允许新增trace0.6/proof0.3来源版本和仅四模块UUID提供对象的test fixture；不扩大旧source union、ephemeral、runtime authority或B04 patch范围。来源合同见[B00C10合同](tickets/corrections/B00C10_ORDINARY_RESOURCE_TRACE_CONTRACT.md)，状态/证据见[执行记录](tickets/completions/B00C10_COMPLETION.md)。当前in_progress，完整验收待闭合。B04冻结正文不回写，三项局部runtime修复仍归原票；C10完成后按原授权接续，若方案改变public contract仍另行纠偏。
+
+2026-10-01 B00C10完成决定：按用户明确执行授权，ready正文冻结后仅更新lifecycle；trace0.6/proof0.3及closed ordinary来源合同已通过全仓3586、Phase B3261、同Session B02 1410/B03 645和fresh construction15/11/30/28。四模块Host identity fixture窄例外现对新exact来源测试及B04生效，未改变production allocator、identity exclusion或旧trace。12份旧golden仅离线审定fingerprint/derived摘要；Phase A、case/owner/required和验收边界保持。B04依原授权恢复ready，三项缺陷及47/144未完成；C10 contract-only fixture不计runtime，B05仍draft。见[完成记录](tickets/completions/B00C10_COMPLETION.md)，不回写冻结B04正文，不提交或推送。
+
+## 2026-10-02：C11/C12 test-owned来源合同交付
+
+经用户分别批准，显式trace0.7/proof0.4新增closed maximum observation来源并补足Human snapshot/grant关联；C12将原typed请求packet的独立requester/publisher、注册member/真实bytes/Invocation published completion纳入限定绑定，Host receipt只承载原真实callee异常并经原port实际结算。没有新runtime/wire字段、profile、authority、计费理由或旧格式重解释。
+
+依据为[C12逐项实际验收](tickets/completions/B00C12_COMPLETION.md)：双fresh/fixed、三类四消费者、正式matrix、当前Session全仓3742及owned1410/645和construction15/11/30/28。新的[C11基础](tickets/corrections/B00C11_ORDINARY_MAXIMUM_SETTLEMENT_TRACE_CONTRACT.md)/[C12补充](tickets/corrections/B00C12_HUMAN_REQUEST_PACKET_TRACE_CONTRACT.md)仅来源证明，不将maximum等同停止、snapshot等同消费、meta等同B04/B05产品通过。交付合同后重新固定输入作所需文档/来源校验，C12 completed之后才交接C11独立完成及B04入口。
+
+2026-10-02完成交接：C12已completed；独立逐项复核C11全部冻结Requirements/Acceptance Criteria后，C11按原授权completed。B04入口复核确认当前已知maximum/Human/packet/receipt来源Stop已解除，按原授权恢复ready；本轮未实施B04产品修复。B04仍0/144、47 construction/144 runtime未完成，131/84/47、2199 cases、324 boundaries、28 post-claim、15 exit及原owner保持，B05 draft、全局Phase B未完成。来源合同正文及已验收源码/expected/matrix保持；新增状态/索引仅记录事实，不声称原full Session覆盖收尾文档输入。见[C12完成记录](tickets/completions/B00C12_COMPLETION.md)、[C11独立交接](tickets/completions/B00C11_COMPLETION.md)及[B04入口复核](tickets/completions/B04_COMPLETION.md)。先前收尾中/blocked条目保留为当时事实。
+
+
+2026-10-05，C13 已批准执行并冻结：Human 来源现在区分原 publication completion 的 materialization_pending 与真实 started/no-completion recovery_required；相同 Coordinator diagnostic bytes 按独立注册 owner 解析，真实 satisfied packet locator 绑定原 consumed response。最小 Human 接续、committed duplicate 只读及原 terminal tail reserve/停止链修复见[C13来源补充合同](tickets/corrections/B00C13_HUMAN_CONTINUATION_SOURCE_CONTRACT.md)。完整当前输入验收进行中，B04 保持 blocked、0/144；历史 C11/C12 条目不倒改。
+
+
+2026-10-05状态补记：C13来源/最小Human实现和29项专项通过，完整当前输入为3791 passed/1 failed；单项旧C10 Host提前拒绝断言交接超出其冻结范围，C13/B04继续blocked。C14仅review，原合同、inventory/owners和B04未完成状态保持。见[C13阻塞记录](tickets/completions/B00C13_COMPLETION.md)及[C14待审票](tickets/phase-b-graph-harness/B00C14_HOST_IDENTITY_REJECTION_ASSERTION_HANDOFF.md)。
+
+
+2026-10-05 C13合同验收闭合：已批准的独立member owner、Human实际接续、exact publication pending/started recovery区分及原停止链/terminal reserve修复现通过原全部验收，见[C13完成记录](tickets/completions/B00C13_COMPLETION.md)及[来源补充合同](tickets/corrections/B00C13_HUMAN_CONTINUATION_SOURCE_CONTRACT.md)。C14完成后稳定源码的正式同Session3792/3792与owned1410/645、fresh construction15/11/30/28和具体final47/144/15通过；当前源码/测试与该验证输入一致，本轮fresh C13另29/29通过，新增交付文档单独审计。C13 completed后独立入口复核恢复B04 ready，仅其生命周期变更；Planner dependency、ordinary收尾、Code/fallback/grant及原47/144未完成，B04仍0/144、Phase B false。没有新增版本、schema、owner、预算算法、authority或验收边界，旧C11/C12合同/expected与历史状态保持；以上早前blocked条目为原检查点。
+
+
+2026-10-07 B04执行边界：普通产品Host在原同步callee已返回或实际抛出且原authority有效时，复用原reservation/capability最多结算一次maximum，Invocation原publication后由close_run收尾；typed token/cost unknown不触发maximum。Primitive和真实unsettled不改。Host因果Plan投影必须排除execution identity；两fresh真实候选被原0.7 failure_member_source拒绝，故依冻结B04停止。新的[C15来源/前置meta交接](tickets/phase-b-graph-harness/B00C15_PRODUCT_FAILURE_FINGERPRINT_AND_GRANT_SOURCE_HANDOFF.md)只review，0.8与新预算前缀尚未批准/实施，原来源解释保持。
+
+## 2026-10-07 — B00C16 explicit canonical audit provenance
+
+经用户批准的B00C16只为trace0.8/proof0.5补充canonical_tool_audit与独立owner来源。复用原A05/Task/Manifest、原producer/final/seal与实际注册bytes，保持旧版本和production wire/预算/authority不变；所有科学内容共享必须逐来源绑定，不以SHA覆盖owner。当前实现/合同仍在验收，未宣布completed。见[C16来源合同](tickets/corrections/B00C16_CANONICAL_CODE_AUDIT_SOURCE_CONTRACT.md)与[执行记录](tickets/completions/B00C16_COMPLETION.md)。
+
+2026-10-07 C16验收停止：原C13 terminal场景在C15重复失败升级后出现ordinary Human容量不足，无stop_sequence；C16不允许production修复，已blocked。B00C17仅review提议原admission/terminal reserve接续；未变更生产路由、预算/authority或通过状态。较早candidate实施记录保留。
+
+2026-10-07 C17执行停止：修订版按用户授权冻结并执行，原terminal admission候选及5项专项通过。双fresh普通invalid repause产生不可消费Pause，修复需超出C17允许的production文件；terminal invalid→纠正另有原repause proposal raw-head来源导致55处派生normalized差异。依冻结Stop标记C17blocked，C18仅review，未批准/实施，原Resume/预算/authority/public wire及旧expected保持。C16/C15/B04仍blocked，无整票/full Session通过或恢复ready声明。
+
+## 2026-10-07 — C18 candidate and pending capacity acceptance clarification
+
+用户明确执行修订版C18；原普通/terminal repause内部来源和容量修复、0.8原proposal来源绑定形成候选，专项2＋3通过。原policy/计数不变，独立transition临界点不可由合法Run到达，C18依冻结可达性/Stop条款blocked。C19仍review，仅提出以原计数证明联合明确contract-only谓词测试补充该不可达项，未批准验收变更或实现；C15/C16/C17/B04不自动恢复。参见[C18实际记录](tickets/completions/B00C18_COMPLETION.md)与[C19待审](tickets/phase-b-graph-harness/B00C19_HUMAN_CAPACITY_REACHABILITY_ACCEPTANCE.md)。
+
+
+## 2026-10-07 — C19 不可达容量边界按证明与合同测试验收
+
+用户授权执行C19。原固定policy和Transition/Attempt单射决定独立transition阈值不可达；以[独立补充](tickets/corrections/B00C19_HUMAN_CAPACITY_REACHABILITY_ACCEPTANCE.md)闭合这部分方法要求，保持生产、限额和全部实际路径验收。8项证明、72项contract-only和7项原端口/回归通过后完成C19；C18按既有授权接续其余H1–V2，C15–C17/B04不自动完成，不回写冻结正文。
+
+## 2026-10-08 — C18 接续验收与 C10 入口范围缺口
+
+C19已完成；C18执行输入的完整native扫描已补齐，而不是仅按首个失败停止收集。C13/FP/Grant/Code/Human/真实publication专项、同Sessionowned1410/645与construction15/11/30/28通过。实际全仓两项C10失败中，mixed runtime fingerprint expected按原许可审定同步；当前structured failure入口仍显式0.6，只有C11–C13被列入此前版本交接范围。保持旧来源拒绝并按冻结文件范围停止，新增[C20 review](tickets/phase-b-graph-harness/B00C20_C10_CURRENT_FAILURE_SOURCE_VERSION_HANDOFF.md)请求已有0.8的显式测试入口交接；未批准新生产/预算/科学规则，也未把专项当整票完成。C18/C15–C17/B04保持blocked。
+
+## 2026-10-08 — C20显式当前入口交接与C15–C18验收闭环
+
+用户批准执行C20后，仅为C10当前structured failure显式选用已批准0.8/ProductFailureSources，默认0.6、旧0.6/0.7来源拒绝及所有production保持。新meta验证同材料旧版本精确拒绝、真实返回/actual结算/单次effect、合法科学变化及四消费者。当前完整4139/4139与独立owned/construction/final验收通过，C15/C16/C17/C18各自按原要求复核完成，共用同一最终输入证据，没有把C18状态当作其他票通过的替代。B04独立检查前置及原具体缺口后依原授权恢复ready，B04原47/144责任和Phase B未完成状态保持。无新版本/预算/authority/科学规则、case/owner更改或commit/push。
+
+## 2026-10-08 — C21 explicit historical Code evidence provenance
+
+用户批准执行冻结C21。采用既有C15 Code科学preimage作为真实同Run已消费Code主结果的Task evidence leaf，独立核验original packet/snapshot/producer/consumption与protected Human reference。只显式0.9/proof0.6表达新增来源；不改A05 wire、A06 primitive、旧版本含义、authority/预算或case/owner集合。实现候选及当前验收见[C21记录](tickets/completions/B00C21_COMPLETION.md)与[来源合同](tickets/corrections/B00C21_PRIOR_CODE_EVIDENCE_SOURCE_CONTRACT.md)。完整当前Session尚待通过，C21 in_progress、B04 blocked。
+
+## 2026-10-08 — C21 resource gate before final acceptance
+
+C21既有授权来源修正/source-meta49项通过；最终完整输入4191仅通过475后因可用磁盘约401MiB停止。原native300、schema/预算/authority/科学recipe边界未扩大，源码候选保留，C21blocked/B04blocked。不得以局部来源通过或前一输入完整失败清单替代当前A6/full/owned；资源充足后按原授权接续fresh当前输入验收，不需为磁盘资源新建纠偏票。原raw、所有失败与旧sealed evidence保留；仅本轮已关闭临时材料透明无损压缩，当前未commit/push。见[C21记录](tickets/completions/B00C21_COMPLETION.md)。
+
+## 2026-10-11 — C21 source acceptance and independent B04 entry
+
+原C21已批准的历史Code科学leaf与Task protected Human来源交接通过完整固定当前Session验收，显式0.9/proof0.6现为已实现合同；旧0.1–0.8、A05 wire、A06 primitive/预算/authority保持。full4191、legacy325、同Session owned1410/645、fresh15/11/30/28及final具体47/144/15通过，见[C21记录](tickets/completions/B00C21_COMPLETION.md)。仅经独立入口审查按原授权恢复B04 ready，其generic unsafe recovery、产品集成和47/144未完成；不将meta算作owned、不改变owners/验收边界/B05 draft/PhaseB false。verified输入与文档交付区别保存，无新设计扩展、无commit/push。
+
+2026-10-12 B04执行停止：普通actual settlement完成不等于domain registration或Invocation completion；旧0.9要求已注册diagnostic，无法表达真实settled/no-domain prefix。按冻结Stop保存双fresh原进程反例并创建C22 review，拟显式trace0.10/proof0.7来源交接；本次未改变任何架构/public contract/旧规则，未实施新版本。原null active_pause及completion suffix的局部维护已验证，B04仍blocked，owned0/144及原验收集合保持。
+
+
+## 2026-10-12 — C22 explicit settled-publication-prefix provenance
+
+用户“执行C22”批准原review正文并授权执行；ready摘要及执行前快照已保存，仅YAML进入in_progress。新显式trace0.10/proof0.7闭合实际ordinary settlement与未完成domain publication的来源，分开原frozen plan和真实public prefix；被动collector不授予恢复权限，不改production/public wire/旧版本。61项专项通过，整票当前native验收尚在进行，B04仍blocked。旧golden只按冻结允许范围审定实际runtime fingerprint与完整preimage派生变化；不改变科学材料、owner、分类或验收集合。见[C22执行记录](tickets/completions/B00C22_COMPLETION.md)。
+
+
+## 2026-10-13 — C22 acceptance and independent B04 entry
+
+显式0.10/0.7仅扩展harness对实际settled/no-domain与frozen/partial publication来源的表达；原public runtime、wire/hash、预算/authority和0.1–0.9/default不变。C22完整当前验收full4273/legacy325、source-meta61、同Session owned1410/645、fresh15/11/30/28及具体final47/144/15通过后标completed。独立B04入口通过后依原用户授权恢复ready，不代计B04 owned或宣布Phase B完成；验证输入/后续文档交付分别保存。见[C22完成记录](tickets/completions/B00C22_COMPLETION.md)。
+
+
+## 2026-10-13 — C23 source implementation stopped at original ConsumptionFailure
+
+C23 新版本局部通过七类产品停止检查，但 Resume-first 的原 failure-owned active-time 摘要超出现有 projector 扩展点，原存储也没有旧 failure_identity 的 cause preimage。按冻结 scope 停止，C23/B04 保持 blocked；[C24 review](tickets/phase-b-graph-harness/B00C24_CONSUMPTION_FAILURE_SOURCE_HANDOFF.md) 提议受限新版本接线及 durable failure snapshot 来源，未批准或实施。不修改生产持久化/旧 profile，不把局部 meta 当作整票完成。证据及未完成项见 [C23 执行记录](tickets/completions/B00C23_COMPLETION.md)。
+
+## 2026-10-13 — 批准修订并执行 C24
+
+用户授权按审查建议修订并执行。冻结 C24 允许旧 A05 增加仅新版本启用的 active-time 来源扩展点，并明确真实 Backend claim preimage 的被动采集与规范化。原错误 preimage 不存在时保持绑定的不透明 failure identity；external 与 consumer 停止独立验证。只扩尚未交付的0.11/proof0.8 harness，不改 production/旧规则/owners。当前 in_progress，完整验收及 C23 独立入口待完成。见[冻结票](tickets/phase-b-graph-harness/B00C24_CONSUMPTION_FAILURE_SOURCE_HANDOFF.md)。
+
+## 2026-10-13 C24 候选验收状态
+
+C24来源候选的90项原生专项、16类双fresh和8个native四消费者已验证；完整集合发现既存B04 spawn child Session接线问题，C24/C23/B04保持blocked，C25仅review。没有production/schema/authority变更或整票交付声明；旧版本/default和原验收集合保持。当前完整验收及同Session独立owned未完成，不能以早前unit-only工厂通过替代。见[C24实际记录](tickets/completions/B00C24_COMPLETION.md)和[C25待审](tickets/phase-b-graph-harness/B00C25_B04_PROCESS_SESSION_BINDING_HANDOFF.md)。
+
+## 2026-10-14 C25：显式 child Session 交接与诊断隔离
+
+用户授权修订并执行C25。原request携带的native binding通过作用域受限上下文交给四类spawn child；原父ACTIVE、process hook nonce/PID/exit校验继续负责真实性。原144未正式绑定的case在独立fresh native Session诊断，实际hooks完整保留并由原validator作测试局部校验，不混入正式外层验收、不生成B04ownership。完整4578及144双fresh验收通过；C25completed，C24仅独立恢复ready，C23/B04blocked。未改变production、schema、旧validator或正式registry。见[完成记录](tickets/completions/B00C25_COMPLETION.md)。
+
+## 2026-10-14 C24 独立交付与 C23 接续
+
+C24接续执行完成，来源候选无需新增代码修改；原10项要求与C23 A1–A5/A4b按共同冻结代码输入独立核验通过。依据已批准C25 Requirements 12保留原Session，单列文档/lifecycle交付manifest；没有放宽旧版本、生产authority、来源字段或验收集合。C24/C25 completed，独立恢复C23 ready；B04保持blocked，等待C23 A6入口。见[C24实际记录](tickets/completions/B00C24_COMPLETION.md)。
+
+## 2026-10-14 C23 独立完成并恢复 B04 入口
+
+C23 A1–A6全部通过；已复现source Stop和native child binding问题由已批准C23/C24/C25实现及独立证据闭合。本轮没有新增架构/schema/来源语义变更，复用共同冻结代码输入须保留原Session并单列文档交付manifest。独立B04入口核对原47/144/15具体集合后，依原授权仅恢复ready。C23 meta和144双fresh诊断不计B04owned；完整B04产品/source-bound runtime验收仍待执行。见[C23实际记录](tickets/completions/B00C23_COMPLETION.md)。
+
+## 2026-10-14 B04 正式来源与 meta 接续待审
+
+B04接续在三组双fresh native探针中复现故障后来源可重验性及C25未绑定meta的生命周期缺口。原生产动作和strict拒绝保持，按冻结Stop转blocked，新增[C26 review](tickets/phase-b-graph-harness/B00C26_B04_FAULT_SOURCE_AND_OWNED_ACTIVATION_HANDOFF.md)。显式0.12/proof0.9及受限取证resolver只是待审方案，没有批准或实施；C23/C24/C25完成事实保持。前次入口未覆盖这两项正式接线关系，当前状态以[B04追加记录](tickets/completions/B04_COMPLETION.md)为准，不能继续沿用ready或把诊断当owned。
+
+
+## 2026-10-14 C26冻结边界停止记录
+
+C26原生双fresh证明publication重复CAS revision增长，以及Human父恢复后续Pause身份差异。继续保留原production/0.1–0.11/Session/hook含义，不将业务revision归为SQLite噪声，不抹除真实Host身份。C26登记blocked，未发布0.12；[C27待审](tickets/phase-b-graph-harness/B00C27_B04_RECOVERY_BOOKKEEPING_AND_HOST_IDENTITY_FIXTURE_HANDOFF.md)提出窄记账分类和显式测试Host UUID作用域并承接C26全部验收。该补充未批准，当前无新政策生效；详见[实际记录](tickets/completions/B00C26_COMPLETION.md)。
+
+## 2026-10-14: C27 Approved Native Recovery Evidence Supplement
+
+用户批准执行C27，补充C26原恢复source合同：显式0.12/proof0.9保留四阶段完整bytes与原调用，严格分类原同payload CAS，并仅在原native parent恢复中作用域安装既有Host UUID fixture。原normalizer/Session/production/default与owners保持。损坏ledger的生产parser拒绝和旧partial trace接受分别记录；新证据不授予恢复authority。执行和完整验收分开记录，C27当前in_progress，C26/B04仍blocked。见[补充合同](tickets/corrections/B00C27_RECOVERY_BOOKKEEPING_AND_HOST_IDENTITY_CONTRACT.md)。
+
+## 2026-10-16 Deliver C26/C27 explicit native fault-source evidence
+
+采用经用户批准的C27补充合同，保留原重复publication的真实同payload CAS revision与实际调用次数；仅显式native探针父恢复使用既有HostIdentities，真实UUID及分配来源保持。完整文件/SQLite快照以无损XZ保存、raw以gzip保存，原bytes摘要和独立重读仍为依据；旧0.1–0.11、生产authority/预算、Session/hook/case/owner规则保持。C26原条款独立复核通过后completed，B04入口独立复核后ready，Phase B仍false。
+
+验证：full4674/4674（legacy325、新增96）、原18/144双fresh共288native、同Session独立B02 1410/B03 645、fresh15/11/30/28、final原具体47/144/15；131/84/47、2199/324/28、15exit与原owners保持。原失败和反例完整保留，无commit/push。证据：`/private/tmp/lqcd-agent-b00c27-execution-20261014-4tnw5c0n/acceptance-v6`；Session `d2d6bb33792d3bebbc2753543210efc7b5ff4fbe6869356b38949a103903d187`，固定输入 `ffb712c5f3acdeda20302de658ed18689a26bf8ab8f93678d844dbbfa146ec89`。文档/lifecycle交付另存manifest，不声明修改文档后重跑全量。
+
+## 2026-10-17: Deliver canonical B04 product graph within frozen contracts
+
+B04完成canonical schema0.4产品图及其原47construction/144owned验收；17产品edges、四层fallback、Human/Grant、Fake Code/fresh Analysis和预算/停止/terminal authority均复用Phase A与B01–B03 primitives。稳定Python入口为`lqcd_agent.graph.run_graph.run_canonical_graph`，默认legacy0.2 CLI继续保留，new Run与legacy隔离。原协议/schema/case/owner/预算算法/安全政策不改变。
+
+固定输入full4749、同Session独立1410/645/144与fresh15/11/30/28/47通过，131mapped/0remaining；B05仍draft且15exit adapters未交付，Phase B complete=false。原失败、来源与验证/交付manifests分开保存，不重标Session。见[B04完成记录](tickets/completions/B04_COMPLETION.md)。

@@ -22,9 +22,10 @@ from helpers.trace_sources import current_binding
 
 
 class ControlTrace:
-    def __init__(self, output, *, version="0.2"):
+    def __init__(self, output, *, version="0.2", ordinary_sources=None):
         self.output, self.events, self.observed_records = output, [], set()
         self.version = version
+        self.ordinary_sources = ordinary_sources
 
     def observer(self, name, side, value):
         if side != "after":
@@ -47,7 +48,7 @@ class ControlTrace:
                     operation_id=record.get("operation_id"), pause_id=record.get("pause_id"), physical_node=record.get("node_name"),
                     attempt_kind=record.get("attempt_kind"), index=record["event_index"], execution_head=head,
                     artifact_head=record["artifact_head"], run_status=run_status, outcome="durable_record",
-                    owner="historical_source" if self.version in ("0.3", "0.4", "0.5") and record["schema_version"] == "0.3" else "production_control",
+                    owner="historical_source" if self.version in ("0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "0.10", "0.11") and record["schema_version"] == "0.3" else "production_control",
                     ephemeral={"output_root": str(path.parent)}))
         if name.startswith("control."):
             self.events.append(event(name, operation_id=value["operation_id"], phase=value["phase"],
@@ -56,8 +57,35 @@ class ControlTrace:
                 outcome="committed_phase"))
 
     def finish(self, coordinator):
+        if self.version in ("0.6", "0.7", "0.8", "0.9", "0.10", "0.11"):
+            self.observer("invocation.attempt_source_prefix", "after", {})
+        events = self.events
+        if self.version in ("0.8", "0.9", "0.10", "0.11"):
+            # An after callback runs before its enclosing transaction commits.
+            # Keep all observations, but attest only durable journal phases.
+            phases, latest = {}, {}
+            for position, observed in enumerate(self.events):
+                if not observed["event"].startswith("control."):
+                    continue
+                identity = observed["operation_id"]
+                if identity not in phases:
+                    phases[identity] = {row["revision"]: row for row in coordinator.history(identity)}
+                durable = phases[identity].get(observed["phase_revision"])
+                if durable is None:
+                    assert observed["phase_revision"] > coordinator.get(identity)["phase_revision"]
+                    continue
+                assert durable["phase"] == observed["phase"] and durable["lease_epoch"] == observed["lease_epoch"]
+                if observed["result_digest"] is not None:
+                    assert digest(durable["evidence"]["exact_public_or_internal_result"]) == observed["result_digest"]
+                key = identity, observed["phase_revision"], observed["lease_epoch"]
+                if key in latest:
+                    assert self.events[latest[key]] == observed
+                latest[key] = position
+            retained = set(latest.values())
+            events = [observed for position, observed in enumerate(self.events)
+                      if not observed["event"].startswith("control.") or position in retained]
         candidates, sources = {}, {}
-        source_version = "0.4" if self.version == "0.5" else self.version
+        source_version = "0.4" if self.version in ("0.5", "0.6", "0.7", "0.8", "0.9", "0.10", "0.11") else self.version
         def collect(value):
             if type(value) is dict:
                 candidates[digest(value)] = value
@@ -72,7 +100,7 @@ class ControlTrace:
             for row in coordinator.connection.execute(f"SELECT {column} FROM {table}"):
                 if row[0] is not None:
                     collect(loads(row[0]))
-        if self.version in ("0.3", "0.4", "0.5"):
+        if self.version in ("0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "0.10", "0.11"):
             for row in coordinator.connection.execute("SELECT operation_type,operation_variant,request FROM control_operations"):
                 collect({"operation_type": row[0], "operation_variant": row[1], "request": loads(row[2])})
         roots = []
@@ -84,11 +112,11 @@ class ControlTrace:
             if artifact_history.exists():
                 for line in artifact_history.read_bytes().splitlines():
                     collect(loads(line))
-            historical = self.version in ("0.3", "0.4", "0.5") and records[0]["schema_version"] == "0.3"
+            historical = self.version in ("0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "0.10", "0.11") and records[0]["schema_version"] == "0.3"
             for record in records:
                 item = source_object("historical_execution_0_3" if historical else "execution_0_4", record, version=source_version)
                 sources[item["sha256"]] = item
-                if self.version in ("0.3", "0.4", "0.5") and record["record_type"] == "lineage":
+                if self.version in ("0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "0.10", "0.11") and record["record_type"] == "lineage":
                     proof = record["source_snapshot_proof"]
                     collect(proof)
                     if proof["source_snapshot_kind"] == "fork_head":
@@ -112,6 +140,15 @@ class ControlTrace:
                         collect(loads(row[0]))
                 finally:
                     connection.close()
+        failure_sources = []
+        if self.version == "0.11":
+            from harness.unconsumed_code_final_trace import read_consumption_failure
+            for row in coordinator.connection.execute("SELECT value FROM external_operations"):
+                failure = read_consumption_failure(coordinator, loads(row[0]))
+                if failure is not None:
+                    wrapper = {"durable_consumption_failure": failure}
+                    collect(wrapper)
+                    failure_sources.append(digest(wrapper))
         used = {}
         def use(head):
             if head in used:
@@ -123,12 +160,14 @@ class ControlTrace:
             used[head] = row
             for ref in row["references"]:
                 use(ref["sha256"])
-        for observed in self.events:
+        for head in failure_sources:
+            use(head)
+        for observed in events:
             for field in ("execution_head", "artifact_head", "checkpoint_head", "result_digest"):
                 if observed[field] is not None:
                     use(observed[field])
         proof = {"schema_version": "0.1", "binding": current_binding(), "objects": list(used.values()), "output_roots": roots}
-        if self.version == "0.5":
+        if self.version in ("0.5", "0.6", "0.7", "0.8", "0.9", "0.10", "0.11"):
             proof.update(schema_version="0.2", typed_sources=[], material_sources=[], workspace_roots=[])
             executions = {}
             for row in used.values():
@@ -140,6 +179,13 @@ class ControlTrace:
                     if value["record_type"] != "budget" or value["event"] != "active_interval_settled":
                         continue
                     payload = value["payload"]
+                    if self.version == "0.11" and payload["stage"] == "attempt_active":
+                        from harness.unconsumed_code_final_trace import read_consumption_failure
+                        row = coordinator.connection.execute("SELECT value FROM external_operations WHERE external_operation_id=?",
+                                                             (payload["producer_operation_id"],)).fetchone()
+                        failure = read_consumption_failure(coordinator, loads(row[0])) if row else None
+                        if failure is not None and value in failure["active_settlements"]:
+                            continue
                     if payload["stage"] == "host_setup":
                         previous = run[position - 1]
                         evidence = {"producer_operation_id": payload["producer_operation_id"],
@@ -194,10 +240,41 @@ class ControlTrace:
                     assert sha256(raw).hexdigest() == member["sha256"] and len(raw) == member["size_bytes"]
                     kind = BUNDLE_MEMBERS[path.name]
                     if kind in ("material", "tool_audit"):
-                        proof["material_sources"].append(material_source(kind, raw, owner))
+                        if self.version in ("0.8", "0.9", "0.10", "0.11") and kind == "tool_audit":
+                            proof["material_sources"].append({"kind": "canonical_tool_audit", "sha256": sha256(raw).hexdigest(),
+                                                              "content": raw.decode("utf-8"), "owner": dict(owner)})
+                        else:
+                            proof["material_sources"].append(material_source(kind, raw, owner))
                     else:
                         add_json(kind, raw)
                 add_json("code_context", canonical_bytes(task_context(task)))
+                if self.version in ("0.6", "0.7", "0.8", "0.9", "0.10", "0.11"):
+                    from lqcd_agent.code_agent.workspace import scan_tree
+                    verification_path = root / "attempts" / value["attempt_id"] / "verification_results.json"
+                    verification = loads(verification_path.read_bytes())
+                    commands = {spec["spec_id"]: spec for spec in task["verification_specs"]}
+                    run_records = executions[value["case_id"], value["run_id"]].values()
+                    reserved_commands = [record for record in run_records if record.get("event") == "resource_reserved" and
+                                         record["payload"]["resource_kind"] == "verification_command" and
+                                         record["payload"]["attempt_id"] == value["attempt_id"]]
+                    if reserved_commands:
+                        tree = scan_tree(coordinator.root / "verification_workspaces" / (value["attempt_id"] + "_verification"))
+                        tree_preimage = {name: sha256(raw).hexdigest() for name, raw in sorted(tree.items())}
+                        item = source_object("canonical_json", tree_preimage, version="0.4")
+                        if item["sha256"] not in used:
+                            used[item["sha256"]] = item
+                            proof["objects"].append(item)
+                        for reservation in reserved_commands:
+                            assert reservation["payload"]["input_digest"] == digest(tree_preimage)
+                            name = reservation["payload"]["resource_operation_id"].rsplit(":", 1)[1]
+                            spec = commands[name]
+                            assert reservation["payload"]["config_digest"] == digest(spec)
+                            item = source_object("canonical_json", spec, version="0.4")
+                            if item["sha256"] not in used:
+                                used[item["sha256"]] = item
+                                proof["objects"].append(item)
+                            result = next(result for result in verification["spec_results"] if result["spec_id"] == name)
+                            add_json("verification", canonical_bytes(result))
                 for candidate in candidates.values():
                     if (candidate.get("schema_version") == "0.1" and
                             candidate.get("operation_contract_digest") == digest({
@@ -222,8 +299,36 @@ class ControlTrace:
                         content = path.read_bytes()
                         assert sha256(content).hexdigest() == operation["terminal_evidence_digest"]
                         add_json("external_final", content)
-        return {"schema_version": self.version, "representation": "raw_with_proof", "events": self.events,
-            "proof": proof}
+        if self.version in ("0.9", "0.10", "0.11"):
+            registered_tasks = {row["source_sha256"] for row in proof["typed_sources"] if row["kind"] == "task"}
+            for (stored,) in coordinator.connection.execute("SELECT value FROM external_operations"):
+                producer = loads(stored)
+                prestart = producer.get("prestart", {})
+                if "task" not in prestart or digest(prestart["task"]) in registered_tasks:
+                    continue
+                def prepared_source(kind, value):
+                    item = source_object("canonical_json", value, version="0.4")
+                    if item["sha256"] not in used:
+                        used[item["sha256"]] = item
+                        proof["objects"].append(item)
+                    declaration = typed_source(kind, value)
+                    if declaration not in proof["typed_sources"]:
+                        proof["typed_sources"].append(declaration)
+                for kind in ("task", "manifest", "core"):
+                    if kind in prestart:
+                        prepared_source(kind, prestart[kind])
+                prepared_source("code_context", task_context(prestart["task"]))
+                if producer["terminal_evidence_reference"] is not None:
+                    root = coordinator.root / producer["run_locator"]["case_id"] / producer["run_locator"]["run_id"]
+                    raw = (root / producer["terminal_evidence_reference"]).read_bytes()
+                    assert sha256(raw).hexdigest() == producer["terminal_evidence_digest"]
+                    prepared_source("external_final", loads(raw))
+        trace = {"schema_version": self.version, "representation": "raw_with_proof", "events": events,
+                 "proof": proof}
+        if self.version in ("0.6", "0.7", "0.8", "0.9", "0.10", "0.11"):
+            assert self.ordinary_sources is not None
+            self.ordinary_sources.finish(trace)
+        return trace
 
 
 def fresh_recovery_trace():

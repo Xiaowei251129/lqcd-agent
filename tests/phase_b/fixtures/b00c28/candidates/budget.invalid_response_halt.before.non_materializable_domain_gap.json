@@ -1,0 +1,1 @@
+{"entrypoint":"src/lqcd_agent/control/coordinator.py:boundary","expected_result":{"kind":"boolean","value":true},"fixture_id":"tests/phase_b/fixtures/b00c28/candidates/budget.invalid_response_halt.before.non_materializable_domain_gap.json","required_invariants":["frozen_outcome_classification","publication_side:before"],"schema_version":"0.1"}

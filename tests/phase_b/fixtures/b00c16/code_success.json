@@ -1,0 +1,16 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b00c16/code_success.json",
+  "entrypoint": "tests/phase_b/test_b00c16_canonical_code_audit_sources.py:test_dual_fresh_canonical_sources",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "B04_owned_false",
+    "canonical_audit_profile",
+    "exact_owner_bindings",
+    "original_B03_ports",
+    "single_effect"
+  ]
+}

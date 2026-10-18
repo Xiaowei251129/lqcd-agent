@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b04_construction/B04-CONSTRUCT-FORBID-old_result.json",
+  "entrypoint": "src/lqcd_agent/graph/analysis_graph.py:CanonicalProductRuntime.run",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "actual_production_path",
+    "current_source",
+    "exact_trace"
+  ]
+}

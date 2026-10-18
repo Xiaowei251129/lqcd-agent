@@ -1,5 +1,19 @@
 # Architecture
 
+2026-10-17 B04完成：`run_canonical_graph`经原ControlPlane start/advance入口运行compiled canonical0.4图；Code parent组合原B03 dispatch/Pause/final/consume/release/checkpoint，之后由new advance接续。Human validator控制Transition与Human→Coordinator产品edge分别记账；停止只能由原cancel/interrupt/close owner完成，无法证明停止/authority则保留recovery_required。默认legacy0.2入口保留。 见[完成记录](tickets/completions/B04_COMPLETION.md)。以下日期条目为历史记录。
+
+2026-10-11最新：**C21 completed；B04 ready**。历史Code科学leaf、Task protected Human reference与显式trace0.9/proof0.6原整票验收通过：固定输入full **4191/4191**（PhaseB3866、legacy325）、source/meta **49/49**、同Session独立owned **B02 1410/B03 645**、fresh原CLI construction **15/11/30/28**及final具体 **47/144/15**。独立B04入口审查后依原授权恢复ready，非自动整票完成；generic unsafe recovery及剩余产品集成/47 construction/144 owned仍待B04执行，owned0/144保持。原0.1–0.8/default/wire/预算/authority、131/84/47、2199/324/28/15与owners保持，B05draft、PhaseBfalse。验收输入与随后文档/YAML交付分别保存，不retag旧Session。见[完成与接续记录](tickets/completions/B00C21_COMPLETION.md)。无commit/push；以下日期条目保留历史。
+
+2026-10-08当前资源停止：**C21 blocked；B04 blocked**。C21来源/产品接缝已实施，最终固定输入source/meta **49/49**、fresh construction **15/11/30/28**及final具体 **47/144/15**通过；完整4191仅通过 **475**，当前full/独立owned1410/645尚未完成。磁盘剩余约401MiB，已保存全部原始证据和资源停止记录，等待至少10GiB额外空间或其他可写路径后接续A6。不是整票completed，B04owned0/144、131/84/47、2199/324/28/15及owners、B05draft/PhaseBfalse保持；无commit/push。见[实际记录](tickets/completions/B00C21_COMPLETION.md)。以下日期条目保留历史。
+
+2026-10-08当前：**C21 in_progress；B04 blocked**。显式trace0.9/proof0.6候选闭合历史Code科学leaf及Task Human reference，保留原wire/hash、完整owner和0.1–0.8规则；[来源合同](tickets/corrections/B00C21_PRIOR_CODE_EVIDENCE_SOURCE_CONTRACT.md)、[实际记录](tickets/completions/B00C21_COMPLETION.md)。真实产品重试/Grant/timeout/unsafe及publication专项已有部分通过，当前完整Session、owned与construction尚待验收。B04 generic unsafe recovery及47/144仍归B04；原131/84/47、2199/324/28/15与owners、B05draft/PhaseBfalse保持。以下日期记录保留历史。
+
+2026-10-08 B04接续候选：显式canonical产品runtime新增既有B03端口的ProductCodeHost parent组合，成功Code使用原fresh Analysis，非成功经Coordinator/Human；当前Code parent/prestart27项通过。真实Human批准的Code重试仍因历史Code科学leaf缺失被Host拒绝，且Task Human scope的0.8投影保留未绑定raw SHA；[C21待审](tickets/phase-b-graph-harness/B00C21_PRIOR_CODE_EVIDENCE_CAUSAL_SOURCE_HANDOFF.md)未实施。B04 blocked，整票47/144/full/owned未验收，不能把局部候选称为完整产品交付；默认legacy CLI保持。见[B04结果](tickets/completions/B04_COMPLETION.md)。下列记录保留历史。
+
+2026-10-08当前交接：C15–C18及C20均已独立completed，C19验收补充保持。显式trace0.8/proof0.5验证真实Host因果FP、validated Human Grant、canonical Code独立owner及ordinary/terminal repause；C20只补当前C10失败入口，不改旧来源规则或production。完整固定Session4139/4139、独立owned1410/645、construction15/11/30/28通过；B04经独立入口复核恢复ready，仍owned0/144、remaining47及B05的15exit缺口，Phase B false。见[C15来源合同](tickets/corrections/B00C15_PRODUCT_FAILURE_SOURCE_CONTRACT.md)、[C18来源合同](tickets/corrections/B00C18_ORDINARY_REPAUSE_SOURCE_CONTRACT.md)与[C20完成记录](tickets/completions/B00C20_COMPLETION.md)。下列日期条目保留历史。
+
+2026-10-07当前交接：C15按授权已执行部分Host fingerprint/Grant与0.8来源，部分18项专项通过；canonical Code audit/fresh Analysis来源触发未列profile的冻结Stop，**C15 blocked、C16 review、B04 blocked**。候选来源profile已撤回，整票当前Session/owned/construction尚未完成，B04owned0/144及131/84/47/15exit保持。见[C15实际记录](tickets/completions/B00C15_COMPLETION.md)；以下历史检查点保留。
+
 ## 文档用途
 
 本文只描述当前代码已经实现的架构，并把尚未执行的 `route intent` 和第二阶段缺口单独标明。未来方向不能被理解为已经存在的 graph edge。
@@ -274,3 +288,33 @@ B02的child入口按source schema分派只读reader，现新增真实0.2 root re
 
 
 2026-09-29 B03完成：canonical Fake Backend、Host stop/unavailable、trusted Code消费/资源结算/Bundle、按producer/version的0.4状态投影和fresh Analysis交接通过验收。最终construction **15/11/30/28**，同一fresh Session的B03 **645/645**、B02 **1410/1410**，全仓 **3514 passed**（Phase B **3189 passed**）。Mapped **84/131、remaining47**；全局 `phase_b_complete=false`，B04/B05仍draft，默认产品runtime仍schema0.2。协议/catalog、case/owner/exit门槛与legacy合同保持。详见[B03完成记录](tickets/completions/B03_COMPLETION.md)；较早in_progress及219/379等条目保留为历史事实。未提交或推送。
+
+2026-09-30 B04局部实现：`run_graph.run_canonical_graph`是独立的新Run Python入口，使用17-edge compiled StateGraph和原B02 ControlPlane；内部cursor从已提交Transition只读重放，checkpoint/ledger authority仍由B02持有。Agent只得到scoped context，返回structured domain facts；Host持有effect fence和预算账本。No-code completed、re-review与Human null-target Pause通过局部测试；Code/Human Resume/完整budget stop及47/144验收未完成。普通成功resource来源被B00 trace0.5拒绝后，B04依冻结边界blocked，[B00C10](tickets/phase-b-graph-harness/B00C10_ORDINARY_RESOURCE_TRACE_HANDOFF.md)仅待审。默认0.2 graph/CLI不变，新入口不能视为已完成的canonical合同交付。
+
+2026-10-01审查补充：上述scoped/Host边界是局部实现目标，当前仍有Human validator输出与registration不一致、ordinary overrun未完成typed收尾、Agent content覆盖Host成员identity三项已复现缺陷。B00C10待审修订只提出来源版本与测试identity窄例外，不修改production authority；这些缺陷须在B04恢复后按原合同修复并独立验收，见[B04接续审查](tickets/corrections/B04_CONTINUATION_READINESS_REVIEW.md)。
+
+2026-10-01 C10实施：新增test-owned显式trace0.6/proof0.3，ordinary request/outcome/member及fingerprint/grant/stop依原authority闭合。实际port wrapper只采集，不改变production runtime。新exact fixture仅替换四模块UUID提供对象并正常/异常恢复，Host原身份仍保留。真实compiled no-code及同Run原B03 ports的mixed来源meta已实现，完整当前输入回归尚待验收。详见[来源合同](tickets/corrections/B00C10_ORDINARY_RESOURCE_TRACE_CONTRACT.md)。B04三项runtime缺陷及47/144仍未修复或通过。
+
+2026-10-01 C10验收完成：显式trace0.6/proof0.3的ordinary request/outcome/member、causal fingerprint/grant/stop来源闭包及四条消费者已验证，旧版本解释保持。被动collector读取原capability和committed producer的完整SQLite canonical row，不获得结算或恢复authority；科学路径、嵌套identity与report保持material。Host identity fixture只替换四模块UUID提供对象、恢复原对象且重启延续ordinal。B04来源阻塞解除并恢复ready；Human、资源收尾、Host字段隔离及47/144仍待其原范围修复验收，B05未交付。详见[C10完成记录](tickets/completions/B00C10_COMPLETION.md)及[来源合同](tickets/corrections/B00C10_ORDINARY_RESOURCE_TRACE_CONTRACT.md)。
+
+2026-10-02：显式trace0.7/proof0.4已在C11/C12来源验收中验证：普通actual-null maximum、真实Host exception receipt、Human protected snapshot与原request packet分别绑定原producer/owner/publication和完整DAG。最大记账不提供stop/closure authority；实际Human仍recovery_required，grant/remediation仅closed contract-only。旧0.1–0.6不变，无production改动。 见[C12完成记录](tickets/completions/B00C12_COMPLETION.md)、[C11基础合同](tickets/corrections/B00C11_ORDINARY_MAXIMUM_SETTLEMENT_TRACE_CONTRACT.md)与[C12补充](tickets/corrections/B00C12_HUMAN_REQUEST_PACKET_TRACE_CONTRACT.md)。C12文档/lifecycle收尾中，C11/B04仍blocked，其产品问题与47/144未完成。
+
+2026-10-02完成交接：C12已completed；独立逐项复核C11全部冻结Requirements/Acceptance Criteria后，C11按原授权completed。B04入口复核确认当前已知maximum/Human/packet/receipt来源Stop已解除，按原授权恢复ready；本轮未实施B04产品修复。B04仍0/144、47 construction/144 runtime未完成，131/84/47、2199 cases、324 boundaries、28 post-claim、15 exit及原owner保持，B05 draft、全局Phase B未完成。来源合同正文及已验收源码/expected/matrix保持；新增状态/索引仅记录事实，不声称原full Session覆盖收尾文档输入。见[C12完成记录](tickets/completions/B00C12_COMPLETION.md)、[C11独立交接](tickets/completions/B00C11_COMPLETION.md)及[B04入口复核](tickets/completions/B04_COMPLETION.md)。先前收尾中/blocked条目保留为当时事实。
+
+
+2026-10-05，C13 已批准执行并冻结：Human 来源现在区分原 publication completion 的 materialization_pending 与真实 started/no-completion recovery_required；相同 Coordinator diagnostic bytes 按独立注册 owner 解析，真实 satisfied packet locator 绑定原 consumed response。最小 Human 接续、committed duplicate 只读及原 terminal tail reserve/停止链修复见[C13来源补充合同](tickets/corrections/B00C13_HUMAN_CONTINUATION_SOURCE_CONTRACT.md)。完整当前输入验收进行中，B04 保持 blocked、0/144；历史 C11/C12 条目不倒改。
+
+
+2026-10-05状态补记：C13来源/最小Human实现和29项专项通过，完整当前输入为3791 passed/1 failed；单项旧C10 Host提前拒绝断言交接超出其冻结范围，C13/B04继续blocked。C14仅review，原合同、inventory/owners和B04未完成状态保持。见[C13阻塞记录](tickets/completions/B00C13_COMPLETION.md)及[C14待审票](tickets/phase-b-graph-harness/B00C14_HOST_IDENTITY_REJECTION_ASSERTION_HANDOFF.md)。
+
+
+2026-10-05 C13合同验收闭合：已批准的独立member owner、Human实际接续、exact publication pending/started recovery区分及原停止链/terminal reserve修复现通过原全部验收，见[C13完成记录](tickets/completions/B00C13_COMPLETION.md)及[来源补充合同](tickets/corrections/B00C13_HUMAN_CONTINUATION_SOURCE_CONTRACT.md)。C14完成后稳定源码的正式同Session3792/3792与owned1410/645、fresh construction15/11/30/28和具体final47/144/15通过；当前源码/测试与该验证输入一致，本轮fresh C13另29/29通过，新增交付文档单独审计。C13 completed后独立入口复核恢复B04 ready，仅其生命周期变更；Planner dependency、ordinary收尾、Code/fallback/grant及原47/144未完成，B04仍0/144、Phase B false。没有新增版本、schema、owner、预算算法、authority或验收边界，旧C11/C12合同/expected与历史状态保持；以上早前blocked条目为原检查点。
+
+
+2026-10-07实际局部实现：schema0.4的早期Coordinator按真实存在的upstream prefix绑定decision依赖，preflight/history replay一致；正常科学接受仍要求成功current Analysis和Reviewer。产品Host保守处理已结束ordinary调用的实际exception/overrun/clock错误，保留Agent实际返回与原receipt区别，以原fence/唯一settlement和原close_run安全收尾；无法证明owner的真实unsettled不改。底层primitive/legacy不变。合法稳定因果Plan投影的0.7来源被拒绝，B04因此blocked；[C15](tickets/phase-b-graph-harness/B00C15_PRODUCT_FAILURE_FINGERPRINT_AND_GRANT_SOURCE_HANDOFF.md)仅待审，Code/fallback/grant与47/144未完成。
+
+## 2026-10-08 C15–C18/C20实际来源与最小Host集成交接
+
+产品Host仅对真实路由诊断从完整科学材料生成A06因果fingerprint，按原ledger记录occurrence；Coordinator在真实validated/consumed Human响应和完整授权/预算preflight之后发行Grant，由原advance单次消费。普通/terminal Human容量lookahead及repause前缀来源已闭合，原limits/reserve、计数/authority和科学接受规则保持。实际原owner的冻结publication后缀与不确定recovery分别验收；通用graph自动接续仍由B04完成。
+
+仅显式0.8启用新来源验证，canonical Code audit材料以完整owner tuple绑定，科学内容与派生preimage保持material。C20原C10失败入口明确选择此既有版本，默认0.6与旧0.1–0.7解释不变。原B03端口组合的Code/fresh Analysis来源meta不等于产品Code parent已完成；B04仍需四层fallback产品接入及47/144。默认legacy边界不变。

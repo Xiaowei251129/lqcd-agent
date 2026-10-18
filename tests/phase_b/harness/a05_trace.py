@@ -6,10 +6,13 @@ an alias. Unlisted fields remain material, including arbitrary hex strings.
 """
 from pathlib import Path
 from hashlib import sha256
+from contextlib import closing
+import sqlite3
 
 from lqcd_agent.control.strict_json import canonical_bytes, digest, loads
 from lqcd_agent.artifacts.registry import STATE_FIELDS_BY_SLOT
 
+from .fault_source_trace import source_path
 from .strict_json import Invalid, keys, require, text
 from . import trace_proof as base
 
@@ -144,7 +147,7 @@ def project(events, proof, binding):
         raise Invalid("a05_trace", "provenance", "invalid_evidence") from error
 
 
-def _project(events, proof, binding):
+def _project(events, proof, binding, *, ordinary=None):
     keys(proof, {"schema_version", "binding", "objects", "output_roots", "typed_sources", "material_sources", "workspace_roots"}, "a05_proof")
     require(proof["schema_version"] == "0.2", "a05_proof", "schema_version")
     base._binding(proof["binding"], binding)
@@ -153,10 +156,14 @@ def _project(events, proof, binding):
     base._checkpoint_sources(sources, executions)
     base._historical_source_files(sources, executions, roots)
     require(all(type(proof[k]) is list for k in ("typed_sources", "material_sources", "workspace_roots")), "a05_proof", "arrays")
+    if ordinary is not None:
+        ordinary.validate(sources, executions, roots, events)
     kinds = {head: source_kind(row) for head, row in sources.items()}
     aliases = {head: head for head in sources}
     declared_kinds = {row["source_sha256"]: row["kind"] for row in proof["typed_sources"] if
                       type(row) is dict and "source_sha256" in row and "kind" in row}
+    product = ordinary is not None and getattr(ordinary, "product_sources", False)
+    member_bindings, code_owners = {}, {}
     member_owners, producer_owners = {}, {}
     for row in sources.values():
         if source_kind(row) != "code_bundle":
@@ -174,18 +181,38 @@ def _project(events, proof, binding):
                 all(bundle.get(k) == task_owner.get(k) for k in ("case_id", "run_id", "attempt_id")),
                 "a05_bundle", "owner_identity")
         owner = {**task_owner, "workspace_id": manifest_owner["workspace_id"]}
+        if product:
+            owner_key = tuple(owner[k] for k in IDENTITIES)
+            require(owner_key not in code_owners, "a05_bundle", "duplicate_owner")
+            code_owners[owner_key] = (bundle, sources[task_head]["value"], sources[manifest_head]["value"])
         producer = owner["producer_operation_id"]
         require(producer not in producer_owners or producer_owners[producer] == owner,
                 "a05_bundle", "producer_owner_conflict")
         producer_owners[producer] = owner
         for member in bundle["members"]:
             member_head = member["sha256"]
-            require(member_head not in member_owners or member_owners[member_head] == owner,
-                    "a05_bundle", "member_owner_conflict")
-            member_owners[member_head] = owner
+            if product:
+                owners = member_bindings.setdefault(member_head, [])
+                require(owner not in owners, "a05_bundle", "duplicate_member_owner")
+                owners.append(owner)
+                member_owners[member_head] = {k: v for k, v in owners[0].items()
+                                              if all(candidate.get(k) == v for candidate in owners)}
+            else:
+                require(member_head not in member_owners or member_owners[member_head] == owner,
+                        "a05_bundle", "member_owner_conflict")
+                member_owners[member_head] = owner
 
     def source_identity(head):
+        if ordinary is not None and head in ordinary.owners:
+            return ordinary.owners[head]
         actual = identity(sources[head]["value"])
+        if product:
+            control = sources[head]["value"].get("channel_values", {}).get("control")
+            if type(control) is dict and control.get("schema_version") == "0.4":
+                nested = identity(control)
+                require((nested.get("case_id"), nested.get("run_id")) in roots, "a05_source", "checkpoint_owner")
+                _same_owner(actual, nested)
+                actual.update(nested)
         inherited = member_owners.get(head)
         if inherited is None and declared_kinds.get(head) == "external_final":
             final = sources[head]["value"]
@@ -217,11 +244,13 @@ def _project(events, proof, binding):
             require(all(type(value[k]) is int and value[k] >= 0 for k in ("source_revision", "epoch")), "a05_failure_identity", "revision")
         if kind not in ("code_context", "analysis_context", "failure_identity"):
             owner = source_identity(head)
-            require(all(type(owner.get(k)) is str and owner[k] for k in ("case_id", "run_id", "attempt_id")), "a05_source", "identity")
-            require((owner["case_id"], owner["run_id"]) in roots, "a05_source", "run")
-            require(all(type(owner.get(k)) is str and owner[k] for k in
-                        (("producer_operation_id",) if kind == "task" else ("producer_operation_id", "workspace_id"))) or
-                    kind == "analysis_spec", "a05_source", "producer_workspace")
+            owners = (ordinary.owner_bindings.get(head) or member_bindings.get(head) or [owner]) if product else [owner]
+            for candidate in owners:
+                require(all(type(candidate.get(k)) is str and candidate[k] for k in ("case_id", "run_id", "attempt_id")), "a05_source", "identity")
+                require((candidate["case_id"], candidate["run_id"]) in roots, "a05_source", "run")
+                require(all(type(candidate.get(k)) is str and candidate[k] for k in
+                            (("producer_operation_id",) if kind == "task" else ("producer_operation_id", "workspace_id"))) or
+                        kind == "analysis_spec", "a05_source", "producer_workspace")
         checksum = CHECKSUMS[kind]
         if kind in ("change_manifest", "verification", "interrupt_evidence"):
             optional = {"change_manifest": "change_manifest_digest",
@@ -251,32 +280,118 @@ def _project(events, proof, binding):
         if row["kind"] == "canonical_json" and row["value"].get("schema_version") == "0.1":
             require(not any(k in row["value"] for k in CHECKSUMS.values() if k is not None) or head in typed,
                     "a05_source", "missing_profile")
-    material = {}
+    if ordinary is not None:
+        for head, row in ordinary.sources.items():
+            require(head not in sources, "ordinary_source", "duplicate_base_source", "invalid_evidence")
+            sources[head] = row
+            aliases[head], kinds[head] = head, "ordinary"
+    material, material_bindings, declared_materials = {}, {}, set()
     for row in proof["material_sources"]:
         keys(row, {"kind", "sha256", "content", "owner"}, "a05_material")
-        require(row["kind"] in ("material", "tool_audit") and type(row["content"]) is str, "a05_material", "encoding")
+        require(row["kind"] in (("material", "tool_audit", "canonical_tool_audit") if product else
+                                ("material", "tool_audit")) and type(row["content"]) is str, "a05_material", "encoding")
         raw, head = row["content"].encode(), row["sha256"]
-        require(sha256(raw).hexdigest() == head and head not in aliases, "a05_material", "raw_bytes", "invalid_evidence")
+        require(sha256(raw).hexdigest() == head and (head not in aliases or product and head in material),
+                "a05_material", "raw_bytes", "invalid_evidence")
         _owner(row["owner"])
         require((row["owner"]["case_id"], row["owner"]["run_id"]) in roots, "a05_material", "run")
+        if product:
+            owner_key = tuple(row["owner"][k] for k in IDENTITIES)
+            key = row["kind"], head, owner_key
+            require(key not in declared_materials and owner_key in code_owners, "a05_material", "owner_binding")
+            declared_materials.add(key)
+            bundle, task, manifest = code_owners[owner_key]
+            name = "tool_audit.jsonl" if row["kind"] in ("tool_audit", "canonical_tool_audit") else "changes.patch"
+            members = [m for m in bundle["members"] if Path(m["canonical_path"]).name == name]
+            require(len(members) == 1 and members[0]["sha256"] == head and members[0]["size_bytes"] == len(raw),
+                    "a05_material", "registered_bytes", "invalid_evidence")
+            physical = roots[row["owner"]["case_id"], row["owner"]["run_id"]] / members[0]["canonical_path"]
+            require(source_path(physical).is_file() and not source_path(physical).is_symlink() and physical.resolve() == physical and
+                    source_path(physical).read_bytes() == raw, "a05_material", "original_bytes", "invalid_evidence")
+            material_bindings.setdefault(head, []).append(dict(row["owner"]))
         value = None
-        if row["kind"] == "tool_audit":
+        if row["kind"] in ("tool_audit", "canonical_tool_audit"):
             value = [loads(line) for line in raw.splitlines()]
             require(raw == b"".join(canonical_bytes(v) + b"\n" for v in value), "a05_material", "canonical_jsonl")
-            for i, entry in enumerate(value, 1):
-                require(entry["tool_event_index"] == i, "a05_material", "audit_order")
-                _same_owner(row["owner"], identity(entry))
-                require(all(identity(entry).get(k) == row["owner"][k] for k in IDENTITIES), "a05_material", "audit_owner")
-                require(type(entry.get("started_at")) in (int, float) and type(entry.get("finished_at")) in (int, float) and
-                        0 <= entry["started_at"] <= entry["finished_at"], "a05_clock", "audit_order")
-        material[head] = {**row, "value": value}
+            if row["kind"] == "canonical_tool_audit":
+                from lqcd_agent.code_agent.schemas import validate_task, validate_manifest
+                from lqcd_agent.code_agent.workspace import validate_tool_audit
+                task = validate_task(task).value
+                manifest = validate_manifest(manifest, task).value
+                validate_tool_audit(raw, task, manifest)
+                commands = {spec["spec_id"]: spec for spec in task["tool_policy"]}
+                require(all(entry["argv_digest"] == digest(commands[entry["tool_id"]]["argv"]) and
+                            entry["cwd"] == commands[entry["tool_id"]]["cwd"] for entry in value),
+                        "a05_material", "audit_command", "invalid_evidence")
+                root = roots[row["owner"]["case_id"], row["owner"]["run_id"]]
+                database = root.parent.parent / ".lqcd/control_operations.sqlite"
+                require(source_path(database).is_file() and not source_path(database).is_symlink(), "a05_material", "producer_database")
+                with closing(sqlite3.connect(source_path(database).as_uri() + "?mode=ro", uri=True)) as connection:
+                    stored = connection.execute("SELECT revision,value FROM external_operations WHERE external_operation_id=?",
+                                                (row["owner"]["producer_operation_id"],)).fetchone()
+                require(stored is not None, "a05_material", "original_producer", "invalid_evidence")
+                producer = loads(stored[1])
+                require(producer["phase_revision"] == stored[0] and producer["producer_operation_id"] == task["producer_operation_id"] and
+                        producer["attempt_id"] == task["attempt_id"] and producer["workspace_id"] == manifest["workspace_id"] and
+                        producer["run_locator"] == {k: task[k] for k in ("case_id", "run_id")} and
+                        producer["task_digest"] == task["task_digest"] and producer["workspace_manifest_digest"] == manifest["manifest_digest"] and
+                        producer["resolution_owner"] == "normal" and producer["proof_kind"] == "safe_stop",
+                        "a05_material", "producer_owner", "invalid_evidence")
+                final_path = root / producer["terminal_evidence_reference"]
+                require(source_path(final_path).is_file() and not source_path(final_path).is_symlink() and final_path.resolve() == final_path and
+                        final_path.is_relative_to(root), "a05_material", "final_path")
+                final_raw = source_path(final_path).read_bytes()
+                require(sha256(final_raw).hexdigest() == producer["terminal_evidence_digest"] and
+                        producer["terminal_evidence_digest"] in sources and
+                        sources[producer["terminal_evidence_digest"]]["value"] == loads(final_raw),
+                        "a05_material", "original_final", "invalid_evidence")
+                final = loads(final_raw)
+                require(all(final[k] == producer[k] for k in ("producer_operation_id", "run_locator", "attempt_id", "cycle_id", "lease_epoch")) and
+                        final["stop_proof"]["termination_or_not_dispatched"] == "confirmed" and
+                        all(v is True for k, v in final["stop_proof"].items() if k != "termination_or_not_dispatched") and
+                        final["resource_actual"]["tool_calls"] == len(value) and
+                        final["resource_actual"]["llm_calls"] == sum(entry["resource_usage"]["llm_calls"] for entry in value),
+                        "a05_material", "original_effect", "invalid_evidence")
+                seal_member, = [m for m in bundle["members"] if Path(m["canonical_path"]).name == "workspace_seal.json"]
+                seal = sources[seal_member["sha256"]]["value"]
+                require(seal["tool_audit_digest"] == head and seal["seal_digest"] == producer["workspace_seal_digest"] == final["workspace_seal_digest"] and
+                        seal["stop_proof_digest"] == digest(final["stop_proof"]), "a05_material", "original_seal", "invalid_evidence")
+            else:
+                for i, entry in enumerate(value, 1):
+                    require(entry["tool_event_index"] == i, "a05_material", "audit_order")
+                    _same_owner(row["owner"], identity(entry))
+                    require(all(identity(entry).get(k) == row["owner"][k] for k in IDENTITIES), "a05_material", "audit_owner")
+                    require(type(entry.get("started_at")) in (int, float) and type(entry.get("finished_at")) in (int, float) and
+                            0 <= entry["started_at"] <= entry["finished_at"], "a05_clock", "audit_order")
+        if head in material:
+            require(material[head]["kind"] == row["kind"] and material[head]["content"] == row["content"],
+                    "a05_material", "content_collision", "invalid_evidence")
+        else:
+            material[head] = {**row, "value": value}
         aliases[head], kinds[head] = head, row["kind"]
+
+    if product:
+        required_materials = {(m["sha256"], owner) for owner, (bundle, _, _) in code_owners.items()
+                              for m in bundle["members"] if Path(m["canonical_path"]).name in ("tool_audit.jsonl", "changes.patch")}
+        require({(head, owner) for _, head, owner in declared_materials} == required_materials,
+                "a05_material", "material_source_gap", "invalid_evidence")
+
+    def reference_owner(head, origin, *, analysis=False):
+        candidates = (material_bindings.get(head) or member_bindings.get(head) or
+                      (ordinary.owner_bindings.get(head) if product else None))
+        if not candidates:
+            return source_identity(head) if head in sources else material[head]["owner"]
+        matching = [candidate for candidate in candidates if all(origin.get(k) is None or candidate.get(k) is None or
+                    origin[k] == candidate[k] for k in IDENTITIES if not analysis or k not in ("attempt_id", "workspace_id"))]
+        require(bool(matching), "a05_reference", "source_owner", "invalid_evidence")
+        return {k: v for k, v in matching[0].items() if all(candidate.get(k) == v for candidate in matching)}
 
     def resolve(raw, accepted, origin=None, *, member=False, field=None):
         base.sha_value(raw, "a05_reference")
         require(raw in aliases, "a05_reference", "missing_source", "invalid_evidence")
         head = aliases[raw]
-        require(kinds[head] in accepted, "a05_reference", "kind", "invalid_evidence")
+        require(kinds[head] in accepted or product and kinds[head] == "canonical_tool_audit" and "tool_audit" in accepted,
+                "a05_reference", "kind", "invalid_evidence")
         if head in checksums:
             production_receipt = kinds[head] == "receipt" and "dispatch_status" in sources[head]["value"]
             production_final_result = (origin is not None and kinds[origin] == "external_final" and
@@ -287,6 +402,8 @@ def _project(events, proof, binding):
         target = source_identity(head) if head in sources else material[head]["owner"]
         if origin is not None:
             left = source_identity(origin)
+            if product:
+                target = reference_owner(head, left, analysis=kinds[origin] == "analysis_spec")
             _same_owner(left, target, analysis=kinds[origin] == "analysis_spec")
             if kinds[origin] == "analysis_spec" and target.get("attempt_id") is not None:
                 require(sources[origin]["value"].get("source_code_attempt_id") == target["attempt_id"], "a05_reference", "analysis_source")
@@ -365,6 +482,8 @@ def _project(events, proof, binding):
                       (owner["case_id"], owner["run_id"]))
 
     def references(head):
+        if ordinary is not None and head in ordinary.sources:
+            return ordinary.refs.get(head, {})
         row, kind = sources[head], kinds[head]
         value = row["value"]
         result = {tuple(r["path"]): aliases[r["sha256"]] for r in row["references"]}
@@ -379,7 +498,9 @@ def _project(events, proof, binding):
             request = value["request"]
             require(request.get("input_digest") == digest(request["input_snapshot"]),
                     "a05_request", "input_snapshot_digest", "invalid_evidence")
-        if budget and value.get("event") == "active_interval_settled":
+        active_extension = (getattr(ordinary, "active_interval_source", None)
+                            if budget and value.get("event") == "active_interval_settled" else None)
+        if budget and value.get("event") == "active_interval_settled" and not (active_extension and active_extension(value)):
             payload = value["payload"]
             run = value["case_id"], value["run_id"]
             records = executions[run]
@@ -412,6 +533,9 @@ def _project(events, proof, binding):
                     "a05_active_time", "evidence_source", "invalid_evidence")
 
         def walk(item, path=()):
+            if ordinary is not None and (head, path) in ordinary.refs_at:
+                result[path] = ordinary.refs_at[head, path]
+                return
             if type(item) is list:
                 for i, child in enumerate(item):
                     walk(child, path + (i,))
@@ -432,6 +556,9 @@ def _project(events, proof, binding):
                         return
                 for key, child in item.items():
                     child_path = path + (key,)
+                    if ordinary is not None and (head, child_path) in ordinary.refs_at:
+                        result[child_path] = ordinary.refs_at[head, child_path]
+                        continue
                     if child_path in result or child is None or child_path == (checksums.get(head),):
                         continue
                     accepted = None
@@ -494,7 +621,9 @@ def _project(events, proof, binding):
                         ".." not in path.parts and path.parts[:2] == ("attempts", value["attempt_id"]) and path not in paths,
                         "a05_bundle", "member_namespace")
                 paths.add(path)
-                require(path.name in BUNDLE_MEMBERS and kinds[target] == BUNDLE_MEMBERS[path.name], "a05_bundle", "member_kind")
+                expected_kind = BUNDLE_MEMBERS.get(path.name)
+                require(expected_kind is not None and (kinds[target] == expected_kind or
+                        product and expected_kind == "tool_audit" and kinds[target] == "canonical_tool_audit"), "a05_bundle", "member_kind")
                 member_sources[path.name] = target
             require(value.get("artifact_id") == value["attempt_id"] + ":code" and "code_agent_result.json" in member_sources,
                     "a05_bundle", "identity")
@@ -577,6 +706,10 @@ def _project(events, proof, binding):
         owner = source_identity(head) if head in sources else material[head]["owner"]
 
         def encode(item, path=()):
+            if ordinary is not None:
+                derived = ordinary.encode(head, path, project_source)
+                if derived is not None:
+                    return derived
             if (head, path) in inline_refs:
                 return ["bound_code_pointer", project_source(inline_refs[head, path])]
             if path in refs.get(head, {}):
@@ -599,6 +732,8 @@ def _project(events, proof, binding):
             if clock_path(kind, path):
                 require(type(item) in (int, float) and item >= 0, "a05_clock", "number")
                 return ["validated_clock", path[-1]]
+            if kind == "canonical_tool_audit" and len(path) == 2 and path[-1] in ("start_at", "end_at"):
+                return ["validated_clock", path[-1]]
             if len(path) == 1 and path[-1] in OPAQUE and kind in ("receipt", "external_result") and item is not None:
                 text(item, "a05_opaque", "value")
                 binding_key = tuple(owner.get(k) for k in IDENTITIES if k != "workspace_id")
@@ -615,11 +750,15 @@ def _project(events, proof, binding):
                 return ["array", [encode(v, path + (i,)) for i, v in enumerate(item)]]
             if type(item) is str:
                 for run_identity, root in roots.items():
-                    if path and path[-1] in RUN_PATH_FIELDS and kind not in CHECKSUMS and (item == str(root) or item.startswith(str(root) + "/")):
+                    if (path and path[-1] in RUN_PATH_FIELDS and kind not in CHECKSUMS and
+                            not (ordinary is not None and head in ordinary.sources) and
+                            (item == str(root) or item.startswith(str(root) + "/"))):
                         physical = Path(item)
                         require(str(physical) == item and physical.resolve() == physical, "a05_path", "canonical")
                         return ["physical_path", list(run_identity), physical.relative_to(root).as_posix()]
                 for root, (evidence, workspace_owner) in workspace_roots.items():
+                    if ordinary is not None and head in ordinary.sources:
+                        continue
                     if item == str(root) or item.startswith(str(root) + "/"):
                         allowed_path = ((kind == "workspace_evidence" and path == ("workspace_path",)) or
                                         (kind == "verification" and len(path) == 3 and path[0] == "results" and path[-1] == "cwd") or
@@ -633,7 +772,9 @@ def _project(events, proof, binding):
             return ["literal", item]
 
         content = ["material_sha256", head] if kind == "material" else encode(value)
-        result = base.SEMANTIC_PREFIX + digest({"projection_version": "0.5", "source_kind": kind, "content": content})
+        if ordinary is not None:
+            content = ordinary.finish_content(head, content, project_source)
+        result = base.SEMANTIC_PREFIX + digest({"projection_version": "0.6" if ordinary is not None else "0.5", "source_kind": kind, "content": content})
         projected[head] = result
         visiting.remove(head)
         visited.add(head)

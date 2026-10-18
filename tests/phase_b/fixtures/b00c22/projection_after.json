@@ -1,0 +1,17 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b00c22/projection_after.json",
+  "entrypoint": "src/lqcd_agent/control/capabilities.py:InvocationLeases.publish_completion",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "B04_owned_false",
+    "actual_original_process",
+    "bound_publication_stage",
+    "no_effect_reexecution",
+    "original_frozen_journal",
+    "unknown_usage_preserved"
+  ]
+}

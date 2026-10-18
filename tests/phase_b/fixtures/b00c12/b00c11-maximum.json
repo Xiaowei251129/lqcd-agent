@@ -1,0 +1,14 @@
+{
+  "fixture_id": "tests/phase_b/fixtures/b00c12/b00c11-maximum.json",
+  "entrypoint": "tests/phase_b/test_b00c11_ordinary_maximum.py:test_maximum_two_fresh_roots",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "exact_maximum_sources",
+    "original_port_closure",
+    "session_bound_proof"
+  ],
+  "schema_version": "0.1"
+}

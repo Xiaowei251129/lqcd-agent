@@ -1,5 +1,6 @@
 """Fresh, validated B01 source snapshots for B00C01 semantic trace tests."""
 from copy import deepcopy
+from contextvars import ContextVar
 from pathlib import Path
 import tempfile
 
@@ -16,10 +17,15 @@ from harness.trace_proof import source_object
 from test_execution_0_4_foundation import bootstrap, POLICY, rechain
 
 
+PROCESS_BINDING = ContextVar("phase_b_process_binding", default=None)
+
+
 def current_binding():
     if pytest_evidence.ACTIVE:
         value = pytest_evidence.ACTIVE.value
         return {"invocation_token": value["invocation_token"], "digests": dict(value["digests"])}
+    if PROCESS_BINDING.get() is not None:
+        return deepcopy(PROCESS_BINDING.get())
     # This binding supports local unit checks only; a fresh acceptance Session
     # always rejects it, even if a caller copies these source objects verbatim.
     return {"invocation_token": "unit-only-not-acceptance", "digests": dict.fromkeys(DIGEST_KEYS, "0" * 64)}

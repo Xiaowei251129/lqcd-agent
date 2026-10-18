@@ -718,8 +718,57 @@
         "A07-META-006",
         "A07-META-015"
       ],
-      "hook_ref": null,
-      "case_bindings": []
+      "hook_ref": "src/lqcd_agent/control/coordinator.py:boundary",
+      "case_bindings": [
+        {
+          "case_id": "artifact.bounded_state_sync.after.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-artifact.bounded_state_sync.after.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "artifact.bounded_state_sync.after.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-artifact.bounded_state_sync.after.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "artifact.bounded_state_sync.after.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-artifact.bounded_state_sync.after.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "artifact.bounded_state_sync.after.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-artifact.bounded_state_sync.after.non_materializable_domain_gap"
+          ]
+        },
+        {
+          "case_id": "artifact.bounded_state_sync.before.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-artifact.bounded_state_sync.before.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "artifact.bounded_state_sync.before.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-artifact.bounded_state_sync.before.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "artifact.bounded_state_sync.before.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-artifact.bounded_state_sync.before.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "artifact.bounded_state_sync.before.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-artifact.bounded_state_sync.before.non_materializable_domain_gap"
+          ]
+        }
+      ]
     },
     {
       "failpoint_id": "artifact.bundle_before_analysis_transition",
@@ -738,8 +787,57 @@
         "A07-META-006",
         "A07-META-015"
       ],
-      "hook_ref": null,
-      "case_bindings": []
+      "hook_ref": "src/lqcd_agent/control/coordinator.py:boundary",
+      "case_bindings": [
+        {
+          "case_id": "artifact.bundle_before_analysis_transition.after.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-artifact.bundle_before_analysis_transition.after.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "artifact.bundle_before_analysis_transition.after.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-artifact.bundle_before_analysis_transition.after.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "artifact.bundle_before_analysis_transition.after.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-artifact.bundle_before_analysis_transition.after.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "artifact.bundle_before_analysis_transition.after.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-artifact.bundle_before_analysis_transition.after.non_materializable_domain_gap"
+          ]
+        },
+        {
+          "case_id": "artifact.bundle_before_analysis_transition.before.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-artifact.bundle_before_analysis_transition.before.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "artifact.bundle_before_analysis_transition.before.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-artifact.bundle_before_analysis_transition.before.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "artifact.bundle_before_analysis_transition.before.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-artifact.bundle_before_analysis_transition.before.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "artifact.bundle_before_analysis_transition.before.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-artifact.bundle_before_analysis_transition.before.non_materializable_domain_gap"
+          ]
+        }
+      ]
     },
     {
       "failpoint_id": "artifact.history_publication",
@@ -758,8 +856,57 @@
         "A07-META-006",
         "A07-META-015"
       ],
-      "hook_ref": null,
-      "case_bindings": []
+      "hook_ref": "src/lqcd_agent/control/coordinator.py:boundary",
+      "case_bindings": [
+        {
+          "case_id": "artifact.history_publication.after.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-artifact.history_publication.after.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "artifact.history_publication.after.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-artifact.history_publication.after.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "artifact.history_publication.after.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-artifact.history_publication.after.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "artifact.history_publication.after.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-artifact.history_publication.after.non_materializable_domain_gap"
+          ]
+        },
+        {
+          "case_id": "artifact.history_publication.before.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-artifact.history_publication.before.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "artifact.history_publication.before.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-artifact.history_publication.before.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "artifact.history_publication.before.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-artifact.history_publication.before.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "artifact.history_publication.before.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-artifact.history_publication.before.non_materializable_domain_gap"
+          ]
+        }
+      ]
     },
     {
       "failpoint_id": "artifact.index_publication",
@@ -778,8 +925,57 @@
         "A07-META-006",
         "A07-META-015"
       ],
-      "hook_ref": null,
-      "case_bindings": []
+      "hook_ref": "src/lqcd_agent/control/coordinator.py:boundary",
+      "case_bindings": [
+        {
+          "case_id": "artifact.index_publication.after.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-artifact.index_publication.after.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "artifact.index_publication.after.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-artifact.index_publication.after.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "artifact.index_publication.after.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-artifact.index_publication.after.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "artifact.index_publication.after.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-artifact.index_publication.after.non_materializable_domain_gap"
+          ]
+        },
+        {
+          "case_id": "artifact.index_publication.before.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-artifact.index_publication.before.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "artifact.index_publication.before.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-artifact.index_publication.before.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "artifact.index_publication.before.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-artifact.index_publication.before.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "artifact.index_publication.before.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-artifact.index_publication.before.non_materializable_domain_gap"
+          ]
+        }
+      ]
     },
     {
       "failpoint_id": "artifact.projection_publication",
@@ -798,8 +994,57 @@
         "A07-META-006",
         "A07-META-015"
       ],
-      "hook_ref": null,
-      "case_bindings": []
+      "hook_ref": "src/lqcd_agent/control/coordinator.py:boundary",
+      "case_bindings": [
+        {
+          "case_id": "artifact.projection_publication.after.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-artifact.projection_publication.after.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "artifact.projection_publication.after.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-artifact.projection_publication.after.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "artifact.projection_publication.after.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-artifact.projection_publication.after.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "artifact.projection_publication.after.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-artifact.projection_publication.after.non_materializable_domain_gap"
+          ]
+        },
+        {
+          "case_id": "artifact.projection_publication.before.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-artifact.projection_publication.before.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "artifact.projection_publication.before.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-artifact.projection_publication.before.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "artifact.projection_publication.before.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-artifact.projection_publication.before.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "artifact.projection_publication.before.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-artifact.projection_publication.before.non_materializable_domain_gap"
+          ]
+        }
+      ]
     },
     {
       "failpoint_id": "artifact.transition_before_target_started",
@@ -818,8 +1063,57 @@
         "A07-META-006",
         "A07-META-015"
       ],
-      "hook_ref": null,
-      "case_bindings": []
+      "hook_ref": "src/lqcd_agent/control/coordinator.py:boundary",
+      "case_bindings": [
+        {
+          "case_id": "artifact.transition_before_target_started.after.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-artifact.transition_before_target_started.after.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "artifact.transition_before_target_started.after.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-artifact.transition_before_target_started.after.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "artifact.transition_before_target_started.after.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-artifact.transition_before_target_started.after.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "artifact.transition_before_target_started.after.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-artifact.transition_before_target_started.after.non_materializable_domain_gap"
+          ]
+        },
+        {
+          "case_id": "artifact.transition_before_target_started.before.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-artifact.transition_before_target_started.before.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "artifact.transition_before_target_started.before.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-artifact.transition_before_target_started.before.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "artifact.transition_before_target_started.before.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-artifact.transition_before_target_started.before.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "artifact.transition_before_target_started.before.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-artifact.transition_before_target_started.before.non_materializable_domain_gap"
+          ]
+        }
+      ]
     },
     {
       "failpoint_id": "bootstrap.bootstrap_admission",
@@ -1834,8 +2128,57 @@
         "A07-META-006",
         "A07-META-015"
       ],
-      "hook_ref": null,
-      "case_bindings": []
+      "hook_ref": "src/lqcd_agent/control/coordinator.py:boundary",
+      "case_bindings": [
+        {
+          "case_id": "budget.decision_before_resource.after.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.decision_before_resource.after.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.decision_before_resource.after.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.decision_before_resource.after.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.decision_before_resource.after.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.decision_before_resource.after.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.decision_before_resource.after.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.decision_before_resource.after.non_materializable_domain_gap"
+          ]
+        },
+        {
+          "case_id": "budget.decision_before_resource.before.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.decision_before_resource.before.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.decision_before_resource.before.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.decision_before_resource.before.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.decision_before_resource.before.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.decision_before_resource.before.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.decision_before_resource.before.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.decision_before_resource.before.non_materializable_domain_gap"
+          ]
+        }
+      ]
     },
     {
       "failpoint_id": "budget.decision_before_transition",
@@ -1854,8 +2197,57 @@
         "A07-META-006",
         "A07-META-015"
       ],
-      "hook_ref": null,
-      "case_bindings": []
+      "hook_ref": "src/lqcd_agent/control/coordinator.py:boundary",
+      "case_bindings": [
+        {
+          "case_id": "budget.decision_before_transition.after.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.decision_before_transition.after.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.decision_before_transition.after.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.decision_before_transition.after.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.decision_before_transition.after.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.decision_before_transition.after.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.decision_before_transition.after.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.decision_before_transition.after.non_materializable_domain_gap"
+          ]
+        },
+        {
+          "case_id": "budget.decision_before_transition.before.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.decision_before_transition.before.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.decision_before_transition.before.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.decision_before_transition.before.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.decision_before_transition.before.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.decision_before_transition.before.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.decision_before_transition.before.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.decision_before_transition.before.non_materializable_domain_gap"
+          ]
+        }
+      ]
     },
     {
       "failpoint_id": "budget.grant_consumed",
@@ -1874,8 +2266,57 @@
         "A07-META-006",
         "A07-META-015"
       ],
-      "hook_ref": null,
-      "case_bindings": []
+      "hook_ref": "src/lqcd_agent/control/coordinator.py:boundary",
+      "case_bindings": [
+        {
+          "case_id": "budget.grant_consumed.after.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_consumed.after.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.grant_consumed.after.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_consumed.after.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.grant_consumed.after.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_consumed.after.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.grant_consumed.after.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_consumed.after.non_materializable_domain_gap"
+          ]
+        },
+        {
+          "case_id": "budget.grant_consumed.before.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_consumed.before.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.grant_consumed.before.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_consumed.before.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.grant_consumed.before.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_consumed.before.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.grant_consumed.before.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_consumed.before.non_materializable_domain_gap"
+          ]
+        }
+      ]
     },
     {
       "failpoint_id": "budget.grant_invalidation",
@@ -1894,8 +2335,57 @@
         "A07-META-006",
         "A07-META-015"
       ],
-      "hook_ref": null,
-      "case_bindings": []
+      "hook_ref": "src/lqcd_agent/control/coordinator.py:boundary",
+      "case_bindings": [
+        {
+          "case_id": "budget.grant_invalidation.after.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_invalidation.after.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.grant_invalidation.after.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_invalidation.after.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.grant_invalidation.after.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_invalidation.after.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.grant_invalidation.after.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_invalidation.after.non_materializable_domain_gap"
+          ]
+        },
+        {
+          "case_id": "budget.grant_invalidation.before.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_invalidation.before.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.grant_invalidation.before.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_invalidation.before.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.grant_invalidation.before.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_invalidation.before.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.grant_invalidation.before.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_invalidation.before.non_materializable_domain_gap"
+          ]
+        }
+      ]
     },
     {
       "failpoint_id": "budget.grant_owner_race",
@@ -1914,8 +2404,57 @@
         "A07-META-006",
         "A07-META-015"
       ],
-      "hook_ref": null,
-      "case_bindings": []
+      "hook_ref": "src/lqcd_agent/control/coordinator.py:boundary",
+      "case_bindings": [
+        {
+          "case_id": "budget.grant_owner_race.after.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_owner_race.after.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.grant_owner_race.after.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_owner_race.after.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.grant_owner_race.after.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_owner_race.after.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.grant_owner_race.after.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_owner_race.after.non_materializable_domain_gap"
+          ]
+        },
+        {
+          "case_id": "budget.grant_owner_race.before.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_owner_race.before.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.grant_owner_race.before.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_owner_race.before.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.grant_owner_race.before.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_owner_race.before.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.grant_owner_race.before.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_owner_race.before.non_materializable_domain_gap"
+          ]
+        }
+      ]
     },
     {
       "failpoint_id": "budget.grant_target_allocation",
@@ -1934,8 +2473,57 @@
         "A07-META-006",
         "A07-META-015"
       ],
-      "hook_ref": null,
-      "case_bindings": []
+      "hook_ref": "src/lqcd_agent/control/coordinator.py:boundary",
+      "case_bindings": [
+        {
+          "case_id": "budget.grant_target_allocation.after.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_target_allocation.after.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.grant_target_allocation.after.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_target_allocation.after.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.grant_target_allocation.after.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_target_allocation.after.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.grant_target_allocation.after.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_target_allocation.after.non_materializable_domain_gap"
+          ]
+        },
+        {
+          "case_id": "budget.grant_target_allocation.before.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_target_allocation.before.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.grant_target_allocation.before.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_target_allocation.before.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.grant_target_allocation.before.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_target_allocation.before.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.grant_target_allocation.before.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_target_allocation.before.non_materializable_domain_gap"
+          ]
+        }
+      ]
     },
     {
       "failpoint_id": "budget.grant_transition",
@@ -1954,8 +2542,57 @@
         "A07-META-006",
         "A07-META-015"
       ],
-      "hook_ref": null,
-      "case_bindings": []
+      "hook_ref": "src/lqcd_agent/control/coordinator.py:boundary",
+      "case_bindings": [
+        {
+          "case_id": "budget.grant_transition.after.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_transition.after.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.grant_transition.after.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_transition.after.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.grant_transition.after.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_transition.after.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.grant_transition.after.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_transition.after.non_materializable_domain_gap"
+          ]
+        },
+        {
+          "case_id": "budget.grant_transition.before.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_transition.before.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.grant_transition.before.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_transition.before.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.grant_transition.before.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_transition.before.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.grant_transition.before.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.grant_transition.before.non_materializable_domain_gap"
+          ]
+        }
+      ]
     },
     {
       "failpoint_id": "budget.invalid_response_allow",
@@ -1974,8 +2611,57 @@
         "A07-META-006",
         "A07-META-015"
       ],
-      "hook_ref": null,
-      "case_bindings": []
+      "hook_ref": "src/lqcd_agent/control/coordinator.py:boundary",
+      "case_bindings": [
+        {
+          "case_id": "budget.invalid_response_allow.after.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.invalid_response_allow.after.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.invalid_response_allow.after.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.invalid_response_allow.after.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.invalid_response_allow.after.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.invalid_response_allow.after.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.invalid_response_allow.after.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.invalid_response_allow.after.non_materializable_domain_gap"
+          ]
+        },
+        {
+          "case_id": "budget.invalid_response_allow.before.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.invalid_response_allow.before.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.invalid_response_allow.before.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.invalid_response_allow.before.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.invalid_response_allow.before.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.invalid_response_allow.before.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.invalid_response_allow.before.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.invalid_response_allow.before.non_materializable_domain_gap"
+          ]
+        }
+      ]
     },
     {
       "failpoint_id": "budget.invalid_response_halt",
@@ -1994,8 +2680,57 @@
         "A07-META-006",
         "A07-META-015"
       ],
-      "hook_ref": null,
-      "case_bindings": []
+      "hook_ref": "src/lqcd_agent/control/coordinator.py:boundary",
+      "case_bindings": [
+        {
+          "case_id": "budget.invalid_response_halt.after.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.invalid_response_halt.after.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.invalid_response_halt.after.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.invalid_response_halt.after.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.invalid_response_halt.after.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.invalid_response_halt.after.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.invalid_response_halt.after.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.invalid_response_halt.after.non_materializable_domain_gap"
+          ]
+        },
+        {
+          "case_id": "budget.invalid_response_halt.before.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.invalid_response_halt.before.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.invalid_response_halt.before.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.invalid_response_halt.before.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.invalid_response_halt.before.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.invalid_response_halt.before.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.invalid_response_halt.before.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.invalid_response_halt.before.non_materializable_domain_gap"
+          ]
+        }
+      ]
     },
     {
       "failpoint_id": "budget.resource_reserved",
@@ -2014,8 +2749,57 @@
         "A07-META-006",
         "A07-META-015"
       ],
-      "hook_ref": null,
-      "case_bindings": []
+      "hook_ref": "src/lqcd_agent/control/coordinator.py:boundary",
+      "case_bindings": [
+        {
+          "case_id": "budget.resource_reserved.after.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.resource_reserved.after.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.resource_reserved.after.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.resource_reserved.after.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.resource_reserved.after.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.resource_reserved.after.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.resource_reserved.after.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.resource_reserved.after.non_materializable_domain_gap"
+          ]
+        },
+        {
+          "case_id": "budget.resource_reserved.before.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.resource_reserved.before.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.resource_reserved.before.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.resource_reserved.before.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.resource_reserved.before.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.resource_reserved.before.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.resource_reserved.before.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.resource_reserved.before.non_materializable_domain_gap"
+          ]
+        }
+      ]
     },
     {
       "failpoint_id": "budget.resource_settled",
@@ -2034,8 +2818,57 @@
         "A07-META-006",
         "A07-META-015"
       ],
-      "hook_ref": null,
-      "case_bindings": []
+      "hook_ref": "src/lqcd_agent/control/coordinator.py:boundary",
+      "case_bindings": [
+        {
+          "case_id": "budget.resource_settled.after.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.resource_settled.after.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.resource_settled.after.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.resource_settled.after.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.resource_settled.after.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.resource_settled.after.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.resource_settled.after.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.resource_settled.after.non_materializable_domain_gap"
+          ]
+        },
+        {
+          "case_id": "budget.resource_settled.before.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.resource_settled.before.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.resource_settled.before.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.resource_settled.before.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.resource_settled.before.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.resource_settled.before.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.resource_settled.before.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.resource_settled.before.non_materializable_domain_gap"
+          ]
+        }
+      ]
     },
     {
       "failpoint_id": "budget.terminal_reserve",
@@ -2054,8 +2887,57 @@
         "A07-META-006",
         "A07-META-015"
       ],
-      "hook_ref": null,
-      "case_bindings": []
+      "hook_ref": "src/lqcd_agent/control/coordinator.py:boundary",
+      "case_bindings": [
+        {
+          "case_id": "budget.terminal_reserve.after.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.terminal_reserve.after.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.terminal_reserve.after.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.terminal_reserve.after.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.terminal_reserve.after.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.terminal_reserve.after.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.terminal_reserve.after.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.terminal_reserve.after.non_materializable_domain_gap"
+          ]
+        },
+        {
+          "case_id": "budget.terminal_reserve.before.committed_result_replay",
+          "scenario_ids": [
+            "b04-runtime-budget.terminal_reserve.before.committed_result_replay"
+          ]
+        },
+        {
+          "case_id": "budget.terminal_reserve.before.integrity_conflict",
+          "scenario_ids": [
+            "b04-runtime-budget.terminal_reserve.before.integrity_conflict"
+          ]
+        },
+        {
+          "case_id": "budget.terminal_reserve.before.materializable_publication_prefix",
+          "scenario_ids": [
+            "b04-runtime-budget.terminal_reserve.before.materializable_publication_prefix"
+          ]
+        },
+        {
+          "case_id": "budget.terminal_reserve.before.non_materializable_domain_gap",
+          "scenario_ids": [
+            "b04-runtime-budget.terminal_reserve.before.non_materializable_domain_gap"
+          ]
+        }
+      ]
     },
     {
       "failpoint_id": "capability.initial_commit_activation",

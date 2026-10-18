@@ -1,7 +1,7 @@
 """Immutable bootstrap authorization and independently fenced invocation starts.
 
-This implements the start boundary, not product node completion or resource
-admission. A started intent can never be taken over to reexecute a consumer.
+Host target completion and ordinary resource publication retain the original
+invocation authority. A started intent can never be taken over to reexecute.
 """
 from dataclasses import asdict, dataclass
 from hashlib import sha256
@@ -12,10 +12,43 @@ from .execution import append_record_bytes, parse_ledger, replay
 from .integrity import validate_advanced_run_root, validate_run_root
 from .protocol import PROTOCOL, operation_variant
 from .records import FIELDS, build_record
-from .strict_json import canonical_bytes, digest, loads, number, require, text
+from .strict_json import canonical_bytes, closed, digest, loads, number, require, text
 
 
 CONTRACT = PROTOCOL["state_machines"]["control_operation"]["invocation_capability_contract"]
+
+
+def invocation_prefix(value, *, published=True):
+    """Validate a Host budget suffix without changing its invocation authority."""
+    from lqcd_agent.code_agent.verification_resources import owned_prefix
+    previous = owned_prefix(value, published=published)
+    entries = value.get("budget_intents", [])
+    require(not entries or not value.get("verification_intents"), "Mixed invocation publication owners")
+    require(type(entries) is list, "Invalid invocation budget journal")
+    authorization = value["authorization"]
+    for entry in entries:
+        closed(entry, ("record", "previous", "previous_index", "content", "index", "intent_digest", "published"))
+        require(type(entry["published"]) is bool and (entry["published"] or not published), "Unpublished budget prefix")
+        require(entry["intent_digest"] == digest({k: v for k, v in entry.items() if k not in ("intent_digest", "published")}) and
+                entry["previous"] == previous["content"] and entry["previous_index"] == previous["index"],
+                "Budget journal lost its original invocation prefix")
+        record = entry["record"]
+        require(record["record_type"] == "budget" and record["event"] in
+                ("resource_reserved", "resource_settled", "failure_observed", "grant_issued", "decision_recorded"),
+                "Invocation cannot publish control transitions")
+        require(all(record[k] == authorization["identity"][k] for k in ("case_id", "run_id")), "Foreign budget Run")
+        if record["event"] == "resource_reserved":
+            require(record["payload"]["attempt_id"] == authorization["identity"]["attempt_id"] and
+                    record["payload"]["resource_kind"] in ("llm_call", "tool_call"), "Foreign ordinary resource")
+        if record["event"] == "resource_settled":
+            require(record["payload"]["operation_id"] == authorization["producer_operation_id"], "Foreign settlement owner")
+        require(append_record_bytes(entry["previous"].encode(), record).decode() == entry["content"],
+                "Budget ledger differs from its frozen intent")
+        index = loads(entry["previous_index"])
+        require(canonical_bytes({**index, "execution_head": digest(record)}).decode() == entry["index"],
+                "Budget suffix changed artifact authority")
+        previous = entry
+    return previous
 
 
 @dataclass(frozen=True)
@@ -28,6 +61,7 @@ class TargetOutcome:
     artifact: "ArtifactOutput | None" = None
     human_request_packet: str | None = None
     human_response_verdict: "HumanResponseVerdict | None" = None
+    terminal_decision: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -94,6 +128,61 @@ class ArtifactEffectPort:
         from lqcd_agent.code_agent.verification_resources import run_verification
         return run_verification(self, spec_id=spec_id, input_digest=input_digest, config_digest=config_digest,
                                 timeout_seconds=timeout_seconds, effect=effect)
+
+    def append_budget(self, event, payload):
+        """Freeze and publish one Host event before granting a resource effect."""
+        require(self.db is None, "Budget publication needs an independent writer boundary")
+        coordinator = self.leases.coordinator
+        with coordinator.transaction() as db:
+            self.leases._effect_authority(db, self.capability_id, self.worker, self.epoch)
+            revision, value, root, now = self.leases._fence(db, self.capability_id, self.worker, self.epoch)
+            require("external_consumption" not in value["authorization"], "Code uses its original verification owner")
+            previous = invocation_prefix(value)
+            execution = parse_ledger(previous["content"].encode())
+            state = execution.projection.value
+            index = loads(previous["index"])
+            position = state["budget"]["budget_event_index"] + 1
+            record = build_record("budget", event, case_id=state["case_id"], run_id=state["run_id"],
+                event_index=len(execution.records) + 1, previous_execution_head=state["execution_head"],
+                artifact_head=index["artifact_head"], artifact_event_index=index["revision"], timestamp=now,
+                budget_event_id=f"budget_event_{position:06d}", budget_event_index=position,
+                policy_version="0.1", policy_digest=state["budget"]["policy_digest"], payload=payload).value
+            content = append_record_bytes(previous["content"].encode(), record)
+            parse_ledger(content)
+            entry = {"record": record, "previous": previous["content"], "previous_index": previous["index"],
+                     "content": content.decode(), "index": canonical_bytes({**index, "execution_head": digest(record)}).decode()}
+            entry.update(intent_digest=digest(entry), published=False)
+            value.setdefault("budget_intents", []).append(entry)
+            invocation_prefix(value, published=False)
+            value["updated_at"] = asdict(now)
+            self.leases._save(db, self.capability_id, revision, value)
+        boundary(coordinator.observer, "budget." + event, "before", entry)
+        self.publish_budget()
+        boundary(coordinator.observer, "budget." + event, "after", entry)
+        return record
+
+    def publish_budget(self):
+        """Materialize exact frozen bytes; never execute a pending resource."""
+        coordinator = self.leases.coordinator
+        with coordinator.transaction() as db:
+            revision, value, root, _ = self.leases._fence(db, self.capability_id, self.worker, self.epoch)
+            invocation_prefix(value, published=False)
+            for entry in value.get("budget_intents", []):
+                if entry["published"]:
+                    continue
+                self.leases._fence(db, self.capability_id, self.worker, self.epoch)
+                publish_exact(root / "execution_history.jsonl", entry["content"].encode(), previous=entry["previous"].encode(),
+                              observer=coordinator.observer, name="invocation.budget_ledger")
+                self.leases._fence(db, self.capability_id, self.worker, self.epoch)
+                replace_projection(root / "artifact_index.json", entry["previous_index"].encode(), entry["index"].encode(),
+                                   observer=coordinator.observer)
+                entry["published"] = True
+            self.leases._save(db, self.capability_id, revision, value)
+            self.leases._effect_authority(db, self.capability_id, self.worker, self.epoch)
+
+    def run_resource(self, **request):
+        from .budget import run_resource
+        return run_resource(self, **request)
 
 
 def prepare_capability(coordinator, db, operation, run_root, manifest, projection, *, advanced=False):
@@ -471,8 +560,7 @@ class InvocationLeases:
         intent = value["started_intent"]
         require(value["state"] == "started" and intent is not None and intent["published"],
                 "Effect precedes durable Attempt started")
-        from lqcd_agent.code_agent.verification_resources import owned_prefix
-        intent = owned_prefix(value)
+        intent = invocation_prefix(value)
         require(read_regular(root / "execution_history.jsonl") == intent["content"].encode(), "Foreign invocation head progression")
         require(read_regular(root / "artifact_index.json") == intent["index"].encode(), "Foreign artifact projection")
         authorization = value["authorization"]
@@ -509,12 +597,20 @@ class InvocationLeases:
             require(hasattr(target_port, "consume_external"), "Code consumer requires a trusted materialization-only port")
             outcome = target_port.consume_external(dict(current["authorization"]["identity"]),
                 loads(canonical_bytes(external)), ArtifactEffectPort(self, None, capability_id, worker_id, epoch))
+        elif hasattr(target_port, "invoke_scoped"):
+            try:
+                outcome = target_port.invoke_scoped(dict(current["authorization"]["identity"]),
+                    ArtifactEffectPort(self, None, capability_id, worker_id, epoch))
+            except Exception as error:
+                target_error = error
+                outcome = TargetOutcome("failed", {"current_artifact_ids": {}},
+                                        {"type": type(error).__name__, "message": str(error) or type(error).__name__})
         with self.coordinator.transaction() as db:
             self._effect_authority(db, capability_id, worker_id, epoch)
             revision, value, root, _ = self._fence(db, capability_id, worker_id, epoch)
             authorization = value["authorization"]
             try:
-                if external is None:
+                if external is None and not hasattr(target_port, "invoke_scoped"):
                     if hasattr(target_port, "invoke_with_artifacts"):
                         outcome = target_port.invoke_with_artifacts(dict(authorization["identity"]),
                             ArtifactEffectPort(self, db, capability_id, worker_id, epoch))
@@ -528,8 +624,7 @@ class InvocationLeases:
             require(outcome.status in ("succeeded", "failed", "pending"), "Invalid target disposition")
             self._effect_authority(db, capability_id, worker_id, epoch)
             _, _, _, now = self._fence(db, capability_id, worker_id, epoch)
-            from lqcd_agent.code_agent.verification_resources import owned_prefix
-            prefix = owned_prefix(value)
+            prefix = invocation_prefix(value)
             previous = prefix["content"].encode()
             execution = parse_ledger(previous)
             started = value["started_intent"]["record"]
@@ -590,6 +685,23 @@ class InvocationLeases:
                                     timestamp=now, **fields).value
             execution = replay([*execution.values, finished])
             invalid_decision = None
+            if outcome.terminal_decision is not None:
+                from .budget import validate_budget_payload
+                payload = outcome.terminal_decision
+                validate_budget_payload("decision_recorded", payload)
+                budget = execution.projection.value["budget"]
+                require(payload["decision"] == "halt" and payload["next_control_action"] == "close_run" and
+                        payload["proposed_action"] == "route" and set(payload["dimensions"]) == set(budget["dimensions"]),
+                        "Target cannot grant budget or publish a route")
+                require(all(payload["dimensions"][key]["used"] == value["used"] and
+                            payload["dimensions"][key]["remaining"] == value["remaining"]
+                            for key, value in budget["dimensions"].items()), "Terminal decision lost replayed counters")
+                position = budget["budget_event_index"] + 1
+                decision = build_record("budget", "decision_recorded", **{key: started[key] for key in ("case_id", "run_id")},
+                    event_index=len(execution.records) + 1, previous_execution_head=digest(finished), artifact_head=index["artifact_head"],
+                    artifact_event_index=index["revision"], timestamp=now, budget_event_id=f"budget_event_{position:06d}",
+                    budget_event_index=position, policy_version="0.1", policy_digest=budget["policy_digest"], payload=payload).value
+                execution = replay([*execution.values, decision])
             if outcome.human_response_verdict is not None and execution.projection.value["human_response_status"] == "invalid":
                 from .operations import invalid_response_admission
                 payload, binding = invalid_response_admission(execution, self.decision_adapter)
@@ -738,8 +850,7 @@ class InvocationLeases:
             require(intent is not None, "Missing frozen invocation completion")
             authorization = value["authorization"]
             self._publish_artifact_plan(root, intent, lambda: self._fence(db, capability_id, worker_id, epoch))
-            from lqcd_agent.code_agent.verification_resources import owned_prefix
-            prefix = owned_prefix(value)
+            prefix = invocation_prefix(value)
             publish_exact(root / "execution_history.jsonl", intent["content"].encode(), previous=prefix["content"].encode(),
                           observer=self.coordinator.observer, name="invocation.attempt_finished")
             replace_projection(root / "artifact_index.json", prefix["index"].encode(), intent["index"].encode(),
@@ -776,14 +887,47 @@ class InvocationLeases:
                 verify_checkpoint(root, authorization["manifest"])
                 self._validate_anchor(root, authorization)
             else:
-                from lqcd_agent.code_agent.verification_resources import owned_prefix
-                intent = owned_prefix(value)
+                intent = invocation_prefix(value)
                 actual = read_regular(root / "execution_history.jsonl")
                 require(actual in (intent["previous"].encode(), intent["content"].encode()), "Foreign owned head progression")
             revision, value, _, now = self._fence(db, capability_id, worker_id, epoch)
             value.update(expires_at=min(now.monotonic_seconds + lease_seconds, value["deadline"]), updated_at=asdict(now))
             self._save(db, capability_id, revision, value)
             return value
+
+    def verify_human_completion_prefix(self, capability_id, operation_id, worker_id, epoch):
+        """Verify a frozen Human suffix without publishing it or invoking its target."""
+        from .projections import attach_checkpoint, bounded_projection, checkpoint_manifest
+
+        with self.coordinator.transaction() as db:
+            operation = self.coordinator.get(operation_id, db=db)
+            self.coordinator.fence(db, operation_id, worker_id, epoch, operation["phase_revision"])
+            require(operation["operation_type"] == "resume_run" and operation["request"]["input_kind"] == "human_response" and
+                    operation["phase"] == "invocation_authorized", "Wrong Human completion owner")
+            _, value = self.get(capability_id, db=db)
+            root = self._activation(db, capability_id, value)
+            require(value["authorization"]["producer_operation_id"] == operation_id and
+                    value["authorization"]["identity"]["attempt_kind"] == "human_gate", "Foreign Human completion")
+            intent = value["completion_intent"]
+            require(intent is not None and intent["artifact_publication"] is None, "Human validator has no frozen completion")
+            prefix = invocation_prefix(value)
+            require(intent["content"].startswith(prefix["content"]) and
+                    read_regular(root / "execution_history.jsonl") in (prefix["content"].encode(), intent["content"].encode()) and
+                    read_regular(root / "artifact_index.json") in (prefix["index"].encode(), intent["index"].encode()),
+                    "Human publication prefix changed")
+            require(sha256(read_regular(root / "artifact_history.jsonl")).hexdigest() ==
+                    value["authorization"]["artifact_history_digest"], "Human artifact authority changed")
+            execution = parse_ledger(intent["content"].encode())
+            index = loads(intent["index"])
+            expected_index = {**loads(prefix["index"]), "execution_head": execution.projection.value["execution_head"]}
+            require(index == expected_index, "Human completion changed artifact projection")
+            projection = bounded_projection(execution, artifact_index=index, artifact_head=index["artifact_head"],
+                                            artifact_event_index=index["revision"])
+            checkpoint = intent["checkpoint"]
+            manifest = checkpoint_manifest(execution, artifact_head=index["artifact_head"], artifact_event_index=index["revision"],
+                checkpoint_id=checkpoint["id"], checkpoint_digest=digest(checkpoint), state_digest=projection.digest).value
+            require(intent["manifest"] == manifest and intent["projection"] == attach_checkpoint(projection, execution, manifest).value and
+                    checkpoint["channel_values"]["control"] == projection.value, "Human frozen completion heads changed")
 
     def recover_completion(self, capability_id, operation_id, worker_id, epoch):
         """A current resume owner may finish exact bytes, never reclaim execution."""
@@ -802,8 +946,7 @@ class InvocationLeases:
             if value["state"] == "finished":
                 return intent["projection"]
             self._publish_artifact_plan(root, intent, lambda: self.coordinator.fence(db, operation_id, worker_id, epoch, operation["phase_revision"]))
-            from lqcd_agent.code_agent.verification_resources import owned_prefix
-            prefix = owned_prefix(value)
+            prefix = invocation_prefix(value)
             publish_exact(root / "execution_history.jsonl", intent["content"].encode(), previous=prefix["content"].encode(),
                           observer=self.coordinator.observer, name="invocation.attempt_finished")
             replace_projection(root / "artifact_index.json", prefix["index"].encode(), intent["index"].encode(), observer=self.coordinator.observer)

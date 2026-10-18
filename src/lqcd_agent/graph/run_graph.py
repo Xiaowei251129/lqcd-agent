@@ -23,6 +23,23 @@ PROTECTED_RUN_ARTIFACTS = {
 }
 
 
+def run_canonical_graph(*, coordinator, request, actor, agent_port, worker_id="product-host",
+                        analysis_handoff=None, code_host=None, external_adapter=None):
+    """Start a new 0.4 Run through the compiled canonical product graph."""
+    from lqcd_agent.control.interfaces import StartRunRequest
+    from lqcd_agent.control.strict_json import require
+    from lqcd_agent.graph.analysis_graph import CanonicalProductRuntime
+    require(type(request) is StartRunRequest, "Canonical entry requires a typed new-Run request")
+    runtime = CanonicalProductRuntime(coordinator, worker_id=worker_id, actor=actor, agent_port=agent_port,
+        analysis_handoff=analysis_handoff, code_host=code_host, external_adapter=external_adapter)
+    started = runtime.plane.start_run(request, actor=actor)
+    require(started["operation_status"] == "committed", "Bootstrap did not commit")
+    locator = started["result"]["run_locator"]
+    runtime.run(locator)
+    _, execution = runtime._records(locator)
+    return {"run_locator": locator, "state": execution.projection.value, "runtime": runtime}
+
+
 def _read_mock_case(path: Path) -> dict[str, Any]:
     if path.suffix == ".json":
         payload = json.loads(path.read_text(encoding="utf-8"))

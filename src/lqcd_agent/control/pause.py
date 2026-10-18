@@ -329,8 +329,18 @@ class PauseOperations:
                             request.input_snapshot["human_request_id"] == state["active_human_request_id"] == opened["input_contract"]["human_request_id"] and
                             state["human_request_status"] == "open", "Human response request mismatch")
                     selected = next(r["payload"]["policy"] for r in records if r["record_type"] == "budget" and r["event"] == "policy_initialized")
+                    gate_inbound = next(r for r in records if r["record_type"] == "transition" and
+                                        r["target_attempt_id"] == state["attempt_id"])
+                    sequence = gate_inbound["fields"].get("stop_sequence_id")
+                    if sequence is not None:
+                        require(gate_inbound["target_attempt_kind"] == "human_gate" and
+                                any(r["record_type"] == "transition" and r["trigger_reason"] == "budget_stop" and
+                                    r["fields"].get("stop_sequence_id") == sequence and
+                                    sequence == digest({"run_id": state["run_id"], "source_attempt_id": r["source_attempt_id"],
+                                                        "reason": "budget_stop"}) for r in records), "Unproven Human terminal sequence")
                     for dimension, reserve_key in (("control_attempts_per_run", "control_attempts"), ("transitions_per_run", "transitions")):
-                        require(state["budget"]["dimensions"][dimension]["remaining"] >= 1 + selected["terminal_reserve"][reserve_key],
+                        needed = (3 if reserve_key == "control_attempts" else 4) if sequence is not None else 1 + selected["terminal_reserve"][reserve_key]
+                        require(state["budget"]["dimensions"][dimension]["remaining"] >= needed,
                                 "Human validation lacks reserved terminal capacity")
                     target = {**request.run_locator, "attempt_id": f"attempt_{state['attempt_index'] + 1:06d}", "attempt_kind": "human_gate",
                               "inbound_transition_id": f"transition_{state['transition_index'] + 1:06d}"}
@@ -543,7 +553,10 @@ class PauseOperations:
                     source="HUMAN_RESPONSE", source_node="HUMAN_RESPONSE", source_cycle_id=state["cycle_id"], source_attempt_id=None,
                     route="human_approval_gate", target_node="human_approval_gate", target_cycle_id=state["cycle_id"], target_attempt_id=target["attempt_id"],
                     target_attempt_kind="human_gate", human_request_id=state["active_human_request_id"], human_response_id=response_id,
-                    trigger_reason="human_response", reason="identity_bound_human_response", fields={"pause_id": opened["pause_id"]},
+                    trigger_reason="human_response", reason="identity_bound_human_response", fields={"pause_id": opened["pause_id"],
+                        **next(({"stop_sequence_id": r["fields"]["stop_sequence_id"]} for r in plan.records
+                                if r["record_type"] == "transition" and r["target_attempt_id"] == state["attempt_id"] and
+                                r["fields"].get("stop_sequence_id") is not None), {})},
                     evidence_references={}, applied_state_update_keys=[], applied_state_updates_sha256=digest({}),
                     status="committed", committed_at=asdict(plan.timestamp))
         plan.index["execution_head"] = digest(plan.records[-1])
@@ -586,6 +599,9 @@ class PauseOperations:
                 except Exception as error:
                     _, durable = leases.get(capability)
                     if durable["state"] != "finished":
+                        if operation["request"]["input_kind"] == "human_response" and durable.get("completion_intent") is not None:
+                            leases.verify_human_completion_prefix(capability, operation["operation_id"], self.worker_id, operation["lease_epoch"])
+                            return operation
                         if operation["request"]["input_kind"] == "external_result":
                             return failure.start(operation, error)
                         with coordinator.transaction() as db:

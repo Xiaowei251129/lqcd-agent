@@ -1,5 +1,7 @@
 # Agent Roles and Boundaries
 
+2026-10-17 B04完成：canonical0.4的Coordinator四层fallback已验证typed remediation及scoped/bounded context；Host复核route/risk/budget、因果fingerprint和validated single-use Human Grant。Work Agent不能选择Transition、注入完整audit或扩大packet范围；Human批准不等于科学接受。四层28个真实member篡改负例在target effect前拒绝。 见[完成记录](tickets/completions/B04_COMPLETION.md)。以下日期条目为历史记录。
+
 ## 全局硬边界
 
 Agent 可以支持规划、执行受限分析、检查、报告与风险分类，但不得：

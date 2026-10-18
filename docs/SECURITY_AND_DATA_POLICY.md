@@ -1,5 +1,7 @@
 # Security and Data Policy
 
+2026-10-17 B04完成：canonical产品路径以Fake Agent/Backend及合成数据验收；该canonical路径的真实provider/Backend、raw data和code promotion继续deferred。风险优先于budget，Human授权/grant绑定原scope并单次消费；不会绕过absolute ceilings/terminal reserve。原authority无法证明时保留recovery_required，不重执行不确定effect、不伪造terminal。 见[完成记录](tickets/completions/B04_COMPLETION.md)。以下日期条目为历史记录。
+
 ## 政策权威
 
 本文记录当前持续有效的数据、安全、执行与审批边界。普通 ticket 可以在这些边界内实现功能，但不能静默放宽边界。若 ticket 与本文、根目录 `AGENTS.md` 或现有 schema 冲突，执行者必须停止并请求明确决策；政策变化还必须写入 [Decision Log](DECISION_LOG.md)。

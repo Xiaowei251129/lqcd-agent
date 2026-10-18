@@ -1,0 +1,1 @@
+{"entrypoint":"tests/phase_b/test_b00c27_recovery_fixture_contract.py:test_original_recovery_contract","expected_result":{"kind":"boolean","value":true},"fixture_id":"tests/phase_b/fixtures/b00c27/human_allow.json","required_invariants":["exact_recovery_bookkeeping","original_host_identity","source_bound_trace"],"schema_version":"0.1"}

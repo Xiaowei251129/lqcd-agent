@@ -1,7 +1,7 @@
 """A06 0.1 policy, semantic failure identity and ledger-derived budget facts.
 
-This module does not select routes, authorize callers, settle external effects,
-issue grants, or persist records. Those authorities belong to B02--B04.
+Policy and semantic helpers are pure. Ordinary Host calls use the original
+invocation fence to reserve and settle resources; Agents receive no authority.
 """
 from .protocol import PROTOCOL
 from .strict_json import (ValidatedValue, canonical_bytes, closed, digest, digest_value,
@@ -56,6 +56,83 @@ def validate_policy(value):
     expected = policy(value.get("profile_id"))
     require(canonical_bytes(value) == expected.canonical, "Policy bytes, version or digest changed")
     return expected
+
+
+class BudgetExhausted(ValueError):
+    """An ordinary resource cannot fit its immutable invocation window."""
+
+
+def run_resource(port, *, resource_kind, resource_id, input_digest, config_digest, timeout_seconds, effect):
+    """Reserve one Host-controlled call before effects and settle it once."""
+    from .capabilities import invocation_prefix
+    from .coordinator import boundary, read_regular
+    from .execution import parse_ledger
+    from .strict_json import loads
+
+    coordinator, leases = port.leases.coordinator, port.leases
+    require(port.db is None and not coordinator.connection.in_transaction, "Resource requires an independent writer")
+    require(resource_kind in ("llm_call", "tool_call"), "Unknown ordinary resource kind")
+    text(resource_id)
+    digest_value(input_digest)
+    digest_value(config_digest)
+    number(timeout_seconds)
+    require(timeout_seconds > 0, "Resource timeout must be positive")
+    with coordinator.transaction() as db:
+        leases._effect_authority(db, port.capability_id, port.worker, port.epoch)
+        _, value, root, now = leases._fence(db, port.capability_id, port.worker, port.epoch)
+        require(value["authorization"]["identity"]["attempt_kind"] != "code_agent", "Code resources use their original owner")
+        execution = parse_ledger(invocation_prefix(value)["content"].encode())
+        records, state = execution.values, execution.projection.value
+        selected = validate_policy(loads(read_regular(root / "budget_policy.json"))).value["limits"]
+        reservations = [r["payload"] for r in records if r["record_type"] == "budget" and r["event"] == "resource_reserved"]
+        stable_id = port.capability_id + ":" + resource_id
+        require(all(r["resource_operation_id"] != stable_id for r in reservations), "Resource cannot be redispatched")
+        settled = {r["payload"]["resource_operation_id"] for r in records if
+                   r["record_type"] == "budget" and r["event"] == "resource_settled"}
+        require(all(r["resource_operation_id"] in settled for r in reservations if r["attempt_id"] == state["attempt_id"]),
+                "Uncertain resource cannot be replaced")
+        dimensions = state["budget"]["dimensions"]
+        applicable, remaining = {}, {}
+        for dimension in RESOURCE_DIMENSIONS:
+            if dimension == "verification_commands":
+                applicable[dimension] = remaining[dimension] = 0
+            else:
+                keys = (dimension + "_per_attempt", dimension + "_per_run")
+                applicable[dimension] = min(selected[k] for k in keys)
+                remaining[dimension] = min(dimensions[k]["remaining"] for k in keys)
+        charge = dict.fromkeys(RESOURCE_DIMENSIONS, 0)
+        charge["llm_calls" if resource_kind == "llm_call" else "tool_calls"] = 1
+        charge["active_seconds"] = timeout_seconds
+        if any(charge[k] > remaining[k] for k in charge) or now.monotonic_seconds + timeout_seconds > min(value["deadline"], value["expires_at"]):
+            raise BudgetExhausted("Resource exceeds its remaining budget or invocation lease")
+        payload = {"resource_operation_id": stable_id, "resource_kind": resource_kind, "attempt_id": state["attempt_id"],
+            "ordinal": 1 + sum(r["attempt_id"] == state["attempt_id"] for r in reservations),
+            "maximum_charge": charge, "applicable_limits": applicable, "remaining_before": remaining,
+            "timeout_seconds": timeout_seconds, "input_digest": input_digest, "task_digest": None,
+            "config_digest": config_digest, "producer_operation_id": None, "workspace_id": None}
+    decision_body = {"schema_version": "0.1", "proposal_id": digest(payload), "proposed_action": "resource",
+        "target_kind": state["attempt_kind"], "risk": "low", "fingerprint_digest": None, "occurrence": 0,
+        "dimensions": {k: {**v, "projected_after": v["used"] + (charge[k.removesuffix("_per_run").removesuffix("_per_attempt")]
+            if k.removesuffix("_per_run").removesuffix("_per_attempt") in charge else 0)} for k,v in dimensions.items()},
+        "budget_grant_id": None, "decision": "allow", "reason_code": "bounded_host_resource", "next_control_action": "resource"}
+    port.append_budget("decision_recorded", {**decision_body, "decision_digest": digest(decision_body)})
+    boundary(coordinator.observer, "budget.decision_before_resource", "before", payload)
+    port.append_budget("resource_reserved", payload)
+    boundary(coordinator.observer, "budget.decision_before_resource", "after", payload)
+    leases.require_effect_authority(port.capability_id, port.worker, port.epoch)
+    start = coordinator._time()
+    clock_epoch = coordinator.clock.epoch_id
+    result = effect()
+    end = coordinator._time()
+    require(coordinator.clock.epoch_id == clock_epoch and end.source == start.source and
+            end.wall_seconds >= start.wall_seconds and 0 <= end.monotonic_seconds - start.monotonic_seconds <= timeout_seconds,
+            "Resource duration is untrusted or exceeds its admitted maximum")
+    operation = coordinator.get(value["authorization"]["producer_operation_id"])
+    actual = {**charge, "active_seconds": end.monotonic_seconds - start.monotonic_seconds}
+    port.append_budget("resource_settled", {"resource_operation_id": stable_id, "actual": actual,
+        "tokens": usage(), "cost": usage(), "evidence_digest": digest(result), "operation_id": operation["operation_id"],
+        "lease_epoch": operation["lease_epoch"], "phase_revision": operation["phase_revision"]})
+    return result
 
 
 def usage(value=None):

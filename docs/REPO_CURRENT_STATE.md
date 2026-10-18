@@ -1,15 +1,138 @@
 # Repository Current State
 
+2026-10-17 当前：**B04 completed；B00–B04已完成；B05仍draft，Phase B未完成**。固定输入全仓 **4749/4749**（legacy325）、同Session独立owned **B02 1410／B03 645／B04 144**、fresh construction **15/11/30/28/47**通过；131 required／131 mapped／0 remaining。Final具体仅剩B05 **15个exit adapter**，全局passed仍null、phase_b_complete=false。正式144来自本轮真实production source/hook/case result，旧288份诊断仅作golden溯源。原超时/环境失败及重试保留，验证与文档交付manifest分别存档。见[完成记录](tickets/completions/B04_COMPLETION.md)。以下日期记录保留历史，无commit/push。
+
+2026-10-17 当前：**B04 in_progress；C28及前置completed保持**。容量32.25GiB、C28交付5240输入与原47/144入口核对通过，执行前快照及冻结正文保存。原18/144正式hook/observation/case result接线及47construction映射已准备；代表case双fresh、7组stop和同批次正式case通过。本轮完整suite、同Session独立1410/645/144、construction15/11/30/28/47及final仅15exit尚待验收，不把映射当通过；B05draft/PhaseBfalse保持。见[记录](tickets/completions/B04_COMPLETION.md)。下方日期条目保留历史，无commit/push。
+
+
+2026-10-16 当前：**C28 completed；B04独立入口通过，恢复ready；C26/C27 completed保持**。当前固定输入full **4678/4678**（legacy325）、同Session独立B02 **1410**／B03 **645**、fresh construction **15/11/30/28**及final原具体 **47/144/15**通过。仅修订一项旧meta生命周期假设；实际registry/owners不变。原144双fresh按原绑定只读验证source/诊断，不能证明正式144owned；B04仍owned **0/144**，原47construction/144owned待执行。原失败和重试保留，验证与文档交付输入分开存档。见[完成记录](tickets/completions/B00C28_COMPLETION.md)。以下日期条目保留历史，无commit/push。
+
+2026-10-16 C28执行：**修订版C28经用户批准进入in_progress；B04仍blocked；C26/C27 completed保持**。两处证据边界已冻结；原C26七项和新增C28四项专项11/11通过，当前完整4678、同Session独立owned1410/645、fresh15/11/30/28及具体final47/144/15尚待完成。原144双fresh只读复核只证明来源/诊断，不代计B04 owned；正式47/144仍待B04。见[实际记录](tickets/completions/B00C28_COMPLETION.md)。以下日期条目保留历史，无commit/push。
+
+2026-10-16 B04接续停止：**B04 blocked；[C28待审](tickets/phase-b-graph-harness/B00C28_B04_OWNED_BINDING_LIFECYCLE_META_HANDOFF.md) review；C26/C27 completed保持**。容量门槛通过、执行前4944文件快照及45份冻结正文保存后启动；双fresh正式绑定候选确认C26一项meta仍无条件要求canonical未绑定，合法真实case结果被原validator接受后旧`pytest.raises(Invalid)`报`DID NOT RAISE`。无case_result诊断仍为空owned，原六类拒绝各两份通过；实际matrix/registry/production/harness未改。C28仅待审测试生命周期修正，未实施；B04原47construction/144owned仍未完成，owned0/144、131/84/47、2199cases/324boundaries/28post-claim、原owners、B05draft与PhaseBfalse保持，无commit/push。以下日期记录保留历史。
+
+2026-10-16 当前：**C27 completed；C26 经逐项独立复核 completed；B04 经独立入口复核恢复 ready**。显式 trace 0.12/proof 0.9 的四阶段故障来源、窄 CAS 记账和父恢复 Host fixture 已交付。固定输入完整 **4674/4674**（legacy325、新增96）、原 **18 boundaries/144 cases 各两份 fresh**、同 Session 独立 owned **B02 1410/B03 645**、fresh construction **15/11/30/28** 通过；final 原具体缺口仍为 **47/144/15**。B04 owned **0/144**，仍须原产品集成和正式47/144验收。131/84/47、2199cases/324boundaries/28post-claim、原owners、B05 draft与Phase B false保持。交付文档与实际验收输入分别存档，不重标Session，无commit/push。以下日期条目保留历史。 见[完成记录](tickets/completions/B00C27_COMPLETION.md)与[来源合同](tickets/corrections/B00C27_RECOVERY_BOOKKEEPING_AND_HOST_IDENTITY_CONTRACT.md)。
+
+2026-10-15 C27恢复执行：**C27 in_progress；C26/B04仍blocked**。清理后容量与当前输入重新核验通过，冻结正文、执行前4944文件快照及manifest已保存；按原授权先恢复ready再启动。第五轮重新固定输入，验收完整4674（原4578+96新增）、原144双fresh、同Session独立owned1410/645、fresh construction15/11/30/28及具体final47/144/15。尚无本轮整票通过声明；B04 owned0/144、131/84/47及原owners保持。下方记录保留历史。
+
+2026-10-15 磁盘清理后：99份旧临时fixture备份经无损重压缩和完整tar字节校验，删除冗余旧压缩副本；另清理7个编译缓存，合计减少约5.17GiB（未扣审计记录少量占用）。当前可用约15.14GiB，已满足C27原10.75GiB容量门槛。旧native/sealed/反例及归档恢复能力保留，仓库实现未变。C27/C26/B04仍保持blocked；下一步为C27重新入口核验及完整4674/144双fresh/owned验收，清理不代表整票通过。下方容量不足记录为清理前历史。 见[清理记录](tickets/completions/B00C27_COMPLETION.md)。
+
+2026-10-15 当前：**C27 blocked（完整验收容量不足）；C26/B04保持blocked**。第四轮原生来源验收133通过、1失败后停止；首次C22 prefix必要父目录的校验遗漏已在批准范围内修复，补跑12/12、C25–C27专项125/125通过。当前精确收集4674项（原4578+96新增），尚无修复后全量/同Session owned/全部144双fresh通过声明。可用约5.75GiB，完整重跑预估至少10.75GiB；3285候选临时目录无可安全清理项，全部旧native/sealed/反例保留。B04 owned0/144、原47construction/144owned/15exit、131/84/47及2199cases与owners保持。C27完成后仍须C26独立审计及B04入口；无需因本次局部修复新增纠偏票。下方日期条目保留历史。 见[本轮记录](tickets/completions/B00C27_COMPLETION.md)。
+
+2026-10-14 C27实施接续：**C27 in_progress；C26/B04仍blocked**。显式trace0.12/proof0.9、原生四阶段/原调用来源、窄CAS记账和有界Host fixture已进入专项验证；原9组18份fresh来源及119项专项通过，补充control拒绝分支已复核。原144双fresh、完整当前输入full/独立owned/construction及交接尚待完成，不提前声明整票通过。B04 owned0/144、47construction、131/84/47、2199 cases、18/144与15exit及原owners保持。下方日期记录保留历史。 见[来源补充合同](tickets/corrections/B00C27_RECOVERY_BOOKKEEPING_AND_HOST_IDENTITY_CONTRACT.md)与[执行记录](tickets/completions/B00C27_COMPLETION.md)。
+
+2026-10-14：**C27 in_progress；C26/B04 blocked**。用户已批准执行C27，正文worktree冻结；容量入口通过，正在接续两项补充与C26全部验收。B04 owned0/144、47construction、131/84/47和原owners保持。见[执行记录](tickets/completions/B00C27_COMPLETION.md)。以下为历史状态。
+
+2026-10-14 C26执行停止：**C26 blocked；[C27合并补充待审](tickets/phase-b-graph-harness/B00C27_B04_RECOVERY_BOOKKEEPING_AND_HOST_IDENTITY_FIXTURE_HANDOFF.md) review；B04仍blocked；C23/C24/C25 completed保持**。已保留S0–S3捕获/私有来源候选并通过C25原29项回归，但原重复publication使capability revision真实增加，Human父恢复创建的后续Pause identity在双fresh不同；当前冻结“无新增业务写入”和旧identity规则不足以直接交付。新0.12尚未启用，完整144 source-bound/full/owned/construction未完成，不能声明C26已解决B04阻塞。C27拟合并窄CAS记账分类、显式测试Host fixture接续及C26全部剩余验收，尚未批准或实施；B04 owned0/144、47construction、131/84/47及2199/324/28/144/15与原owners保持，无commit/push。见[C26实际记录](tickets/completions/B00C26_COMPLETION.md)。下方日期条目保留历史。
+
+2026-10-14 C26 修订与临时目录清理：**[C26 修订版](tickets/phase-b-graph-harness/B00C26_B04_FAULT_SOURCE_AND_OWNED_ACTIVATION_HANDOFF.md)仍为 review；B04 blocked；C23/C24/C25 completed保持**。修订明确独立原生capture anchor、S0–S3四阶段及故障/合法恢复/重复调用差异、SQLite完整持久单元、重算candidate hash的拒绝验收和容量preflight；正式反例入口改为confirmed-probes。无引用且关闭的1073个生成目录经19批无损归档、79406成员校验后移除展开副本，净释放约7.54GiB，可用约11.47GiB；163个当前反例文件及保留根完整。仅修订文档，尚未批准或实施0.12，不创建C26完成声明；B04仍owned0/144、47construction待完成，原131/84/47、2199/324/28/144/15和owners保持，无commit/push。下方记录保留历史。
+
+2026-10-14 B04正式接线探针停止：**B04 blocked；C26 review；C23/C24/C25 completed保持**。原故障工厂双fresh诊断通过，但删除capability／损坏canonical member后，故障前Run来源在0.10与显式0.11重验仍严格拒绝；正式B04绑定还会使C25“必须未绑定”的meta断言失败。两类缺口已保存原生反例并合并待审，未改production/harness/registry/expected，未实施0.12。B04仍owned0/144、47construction未完成，131/84/47、2199/324/28/144/15和owners保持。当前没有新full/owned完成声明；下方日期条目保留历史。见[C26待审票](tickets/phase-b-graph-harness/B00C26_B04_FAULT_SOURCE_AND_OWNED_ACTIVATION_HANDOFF.md)。
+
+2026-10-14 C23 接续完成：**C23/C24/C25 completed；B04 经 C23 A6 独立入口复核恢复 ready**。原未消费 normal final、ConsumptionFailure 来源和 child Session 接线阻塞已消除。C23 A1–A6 全部通过；本轮在已批准的共同冻结代码输入上重新执行原验证器与只读来源审计，未重跑全部测试、未重标 Session。B04 仍须完成原 47 construction／144 owned 及剩余产品验收，当前 owned 0/144、131 required/84 mapped/47 remaining，B05 draft、Phase B false。下方原日期记录保留历史。见[C23 独立完成记录](tickets/completions/B00C23_COMPLETION.md)。
+
+2026-10-14 C24 接续完成：**C24/C25 completed；C23 经独立入口复核恢复 ready；B04 保持 blocked**。C24 原10项要求及C23 A1–A5/A4b均已独立核验：共同冻结输入的完整4578（legacy325）、同Session独立owned B02 1410/B03 645、90来源测试、16类双fresh、8个native四消费者188组拒绝、七类停止路由，以及fresh construction15/11/30/28与final具体47/144/15均通过。依据已批准C25 Requirements 12复核原始证据，不重标Session；本轮重新执行原validators和只读来源审计，未重跑effect或修改实现。C23尚须独立A6/B04入口与整票交付；B04owned0/144、131/84/47、2199/324/28/144/15、原owners、B05draft及PhaseBfalse保持。无commit/push。见[独立完成记录](tickets/completions/B00C24_COMPLETION.md)。以下日期条目保留历史。
+
+2026-10-14 当前：**C25 completed；C24 经独立入口复核恢复 ready；C23/B04 保持 blocked**。四类原 spawn 入口使用真实 request 的 Session；144 个原用例各完成两份 fresh native 诊断，原 hook/receipt/raw 全部保留，正式 B04 owned 仍 0/144。共同固定输入完整 **4578/4578**（含 legacy325、新 C25 29）、同 Session 独立 owned **B02 1410/B03 645**、来源90项/16类双 fresh/8个四消费者188组拒绝、停止路由7项、fresh construction **15/11/30/28** 通过；final 精确仍 **47/144/15**。C24/C23 原整票交接及 B04 入口仍须独立完成；Phase B false。验收代码与随后文档/lifecycle交付分别存档，无 commit/push。见[完成与交接记录](tickets/completions/B00C25_COMPLETION.md)。以下日期条目保留历史。
+
+2026-10-14：**修订版C25获用户批准并进入in_progress；C24/C23/B04保持blocked**。本次同时处理真实child Session交接和独立native诊断hook隔离，原registry/validator/owners保持；专项与完整验收正在执行，尚无整票通过声明。见[执行记录](tickets/completions/B00C25_COMPLETION.md)。无commit/push，以下历史保留。
+
+2026-10-13 当前：**C24 blocked；C23/B04 blocked；[C25 待审](tickets/phase-b-graph-harness/B00C25_B04_PROCESS_SESSION_BINDING_HANDOFF.md) review**。C24 来源专用90项、16类双fresh和8个native四消费者通过；完整4549集合已验证4261（含legacy325），B04 spawned child使用unit-only来源导致原生父子binding断言失败，两类工厂已独立复现。修复超出C24冻结清单，按Stop保存反例并停止；尚无完整full/独立owned通过声明。construction15/11/30/28和final原47/144/15已核验，B04仍owned0/144。见[实际记录](tickets/completions/B00C24_COMPLETION.md)。C25未批准或实施；无commit/push，以下历史保留。
+
+2026-10-13：**C24 修订获用户批准并进入 in_progress；C23/B04 保持 blocked**。补齐真实 ConsumptionFailure、未接纳 Backend claim 来源和分离的停止验收；尚无本轮完整通过声明。见[执行记录](tickets/completions/B00C24_COMPLETION.md)。以下历史保留。
+
+2026-10-13 C23 执行停止：**C23 blocked；B04 blocked；[C24 待审](tickets/phase-b-graph-harness/B00C24_CONSUMPTION_FAILURE_SOURCE_HANDOFF.md) review**。新 0.11 来源及七类 B04 停止路由双 fresh 局部检查 7/7 通过；Resume-first ConsumptionFailure 的 active-time/失败身份来源另有真实阻塞，C23 整票及最终 Session 验收未完成。131/84/47、2199 cases、B04 owned0/144 保持；新版本尚未完成交付，旧合同不变，无 commit/push。见[实际记录](tickets/completions/B00C23_COMPLETION.md)。以下为保留的历史记录。
+
+2026-10-13 执行 C23：**C23 in_progress；B04 blocked**。入口和冻结正文已核对，正在实施显式0.11/0.8来源及原整票验收；当前未声明专项/full通过，B04 owned0/144及47construction保持。见[执行记录](tickets/completions/B00C23_COMPLETION.md)。以下历史保留，无commit/push。
+
+2026-10-13 清理与批准：**[修订版 C23](tickets/phase-b-graph-harness/B00C23_UNCONSUMED_CODE_FINAL_STOP_SOURCE_HANDOFF.md) ready；B04 blocked**。用户已批准三个 B04 测试文件的显式 0.11 接线范围，正文及摘要已在 worktree 冻结；新版本尚未实施。无引用旧测试目录经无损归档校验后清理，反例和验收来源保留。B04 仍 owned 0/144、47 construction 未完成；C23 完成及独立入口复核后才恢复 B04 ready。见[批准及清理记录](tickets/completions/B04_COMPLETION.md)。以下条目保留历史，无 commit/push。
+
+2026-10-13最新接续停止：**B04 blocked；[C23待审](tickets/phase-b-graph-harness/B00C23_UNCONSUMED_CODE_FINAL_STOP_SOURCE_HANDOFF.md) review；C22及前置completed保持**。本轮144个独立case工厂双fresh局部复核通过，原registry/matrix/native owned仍未绑定，B04owned0/144、131/84/47保持。新增七类产品停止检查中六类双fresh局部通过；normal safe-stop final未消费时原close_run安全halted/重复readonly，但显式0.10缺真实receipt来源，仅加入真实旧receipt profile仍因无Code registration/full owner被拒绝。双fresh原生产反例已保存，按B04冻结Stop创建新显式来源review，未批准/实施新版本，未改production/旧validator/旧expected/owners；47construction/144owned/full尚未完成，B05draft/PhaseBfalse，无commit/push。见[实际记录](tickets/completions/B04_COMPLETION.md)。以下条目保留历史。
+
+2026-10-13 B04接续执行：用户授权“继续执行B04”，C22 completed交付输入及原full4273/legacy325、同Session owned1410/645、fresh15/11/30/28、具体final47/144/15已独立核对。执行前快照/manifest和31份冻结正文保存后，仅B04 YAML进入 **in_progress**。先显式消费已批准0.10/0.7来源，再继续全部产品集成、47construction/144owned；目前owned0/144、131/84/47及原case/owners、B05draft/PhaseBfalse保持，尚未声明本轮整票通过，无commit/push。见[实际记录](tickets/completions/B04_COMPLETION.md)。以下条目保留历史。
+
+2026-10-13最新：**C22 completed；B04 ready**。显式trace0.10/proof0.7普通已结算publication prefix来源交接完成，固定输入full **4273/4273**（Phase B 3948、legacy 325）、C22专用 **61/61**、同Session独立owned **B02 1410/B03 645**、fresh原CLI construction **15/11/30/28**及final具体 **47/144/15**通过。独立B04入口审查通过后依原授权恢复ready；B04原47 construction/144 owned及剩余产品集成未完成，owned0/144保持。原0.1–0.9/default/production/wire/预算/authority、131/84/47、2199/324/28/144/15及owners保持，B05 draft、Phase B false。验证输入和随后文档/YAML交付分别保存，不retag旧Session，无commit/push。见[完成与交接记录](tickets/completions/B00C22_COMPLETION.md)。以下条目保留历史。
+
+2026-10-12 C22执行：用户明确授权“执行C22”，ready正文已冻结，现 **C22 in_progress；B04 blocked**。仅显式trace0.10/proof0.7来源、被动collector与专用meta交接；[执行记录](tickets/completions/B00C22_COMPLETION.md)。新版本及完整当前Session验收正在实施，未声明completed、未代计B04 owned；原131/84/47、2199/324/28/144/15、owners、B05draft/PhaseBfalse保持，无commit/push。以下条目保留历史。
+
+2026-10-12当前停止：**B04 blocked；[C22待审](tickets/phase-b-graph-harness/B00C22_ORDINARY_SETTLED_PUBLICATION_PREFIX_SOURCE_HANDOFF.md) review；C21 completed**。null active_pause及原completion publication两项B04局部修复共同37/37通过；12种产品轨迹各双fresh严格0.9相等。原进程actual settlement已发布但domain registration未完成的合法prefix被旧agent_registered_diagnostic规则拒绝，双fresh已保存，按冻结Stop提出新显式来源交接，未批准/实施新版本、未改旧expected/owners。见[实际记录](tickets/completions/B04_COMPLETION.md)。本轮full/owned/construction未完成，B04owned0/144、131/84/47、2199/324/28/15及owners、B05draft、PhaseBfalse保持；C21历史不retag，以下条目保留历史，无commit/push。
+
+2026-10-12接续：**B04 in_progress；C21 completed**。用户授权继续整票；当前C21交付输入与前置4191/325、owned1410/645、construction15/11/30/28、具体final47/144/15入口已核对。generic unsafe recovery的active_pause=null已在B04原范围局部修复，真实三种unsafe Code路径及原产品专项19/19通过，见[B04维护记录](tickets/corrections/B04_MAINTENANCE.md)。剩余路由/故障绑定与47/144继续执行，尚无本轮整票验收通过声明，131/84/47、2199/324/28/15及owners、B05draft、PhaseBfalse保持；历史保留，无commit/push。
+
+2026-10-11最新：**C21 completed；B04 ready**。历史Code科学leaf、Task protected Human reference与显式trace0.9/proof0.6原整票验收通过：固定输入full **4191/4191**（PhaseB3866、legacy325）、source/meta **49/49**、同Session独立owned **B02 1410/B03 645**、fresh原CLI construction **15/11/30/28**及final具体 **47/144/15**。独立B04入口审查后依原授权恢复ready，非自动整票完成；generic unsafe recovery及剩余产品集成/47 construction/144 owned仍待B04执行，owned0/144保持。原0.1–0.8/default/wire/预算/authority、131/84/47、2199/324/28/15与owners保持，B05draft、PhaseBfalse。验收输入与随后文档/YAML交付分别保存，不retag旧Session。见[完成与接续记录](tickets/completions/B00C21_COMPLETION.md)。无commit/push；以下日期条目保留历史。
+
+2026-10-11接续：磁盘空间已恢复，当前输入和冻结正文核对一致，依用户授权恢复 **C21 in_progress；B04 blocked**。源码候选及0.9/0.6来源保持；新的完整当前Session、owned1410/645、construction15/11/30/28与final具体47/144/15验收正在执行，旧partial不retag。B04owned0/144、原131/84/47和2199/324/28/15/owners、B05draft、PhaseBfalse保持。见[实际记录](tickets/completions/B00C21_COMPLETION.md)。以下记录保留历史。
+
+2026-10-08当前资源停止：**C21 blocked；B04 blocked**。C21来源/产品接缝已实施，最终固定输入source/meta **49/49**、fresh construction **15/11/30/28**及final具体 **47/144/15**通过；完整4191仅通过 **475**，当前full/独立owned1410/645尚未完成。磁盘剩余约401MiB，已保存全部原始证据和资源停止记录，等待至少10GiB额外空间或其他可写路径后接续A6。不是整票completed，B04owned0/144、131/84/47、2199/324/28/15及owners、B05draft/PhaseBfalse保持；无commit/push。见[实际记录](tickets/completions/B00C21_COMPLETION.md)。以下日期条目保留历史。
+
+2026-10-08最新：**C21 in_progress；B04 blocked**。用户批准“执行C21”，已冻结原正文并保存当前输入快照。历史Code evidence与Task Human scope来源修复及原接缝/四消费者/同Session最终验收正在执行；尚无本轮整票通过声明，原131/84/47、2199/15/owners保持。见[C21记录](tickets/completions/B00C21_COMPLETION.md)，无commit/push；下列条目保留历史。
+
+2026-10-08最新接续结果：**B04 blocked；C21 review；C15–C20保持completed**。产品Code parent候选已组合原B03端口，success/needs_input/failed三项和原prestart合计**27 passed**；此前三条0.8来源各双fresh接受且normalized相等。真实Code失败经Human批准后再次Code的两fresh路径，在第二次消费后被Host拒绝`Code evidence lacks a scientific profile`：当前Task科学leaf/0.8 recipe未覆盖packet必带的前次Code结果。按冻结Stop保存反例并创建[C21待审](tickets/phase-b-graph-harness/B00C21_PRIOR_CODE_EVIDENCE_CAUSAL_SOURCE_HANDOFF.md)，未实施新规则。见[B04结果](tickets/completions/B04_COMPLETION.md)与[maintenance](tickets/corrections/B04_MAINTENANCE.md)。本轮full Session/owned/construction未完成，前置4139结果仅证明原固定输入；B04owned0/144、131/84/47、2199/324/28/15及原owners保持，B05draft、PhaseBfalse，无commit/push。下列条目保留历史。
+
+2026-10-08最新执行：**B04 in_progress**。C15–C20已完成，当前交付输入及独立入口复核通过后，按用户“继续执行B04”保存快照并接续Code/fallback/fresh Analysis/publication及原47/144；尚未声明本轮完成。见[B04完成记录](tickets/completions/B04_COMPLETION.md)。下列条目保留历史。
+
+2026-10-08最新：**C15/C16/C17/C18/C19/C20 completed；B04 ready**。C20补齐C10当前failure显式0.8入口，保留旧版本拒绝；C18与C15–C17各自原要求已独立复核，共同固定Session完整**4139/4139**、legacy325、同Sessionowned**B02 1410/B03 645**、construction**15/11/30/28**及final具体**47/144/15**通过。见[C20完成记录](tickets/completions/B00C20_COMPLETION.md)、[C18完成记录](tickets/completions/B00C18_COMPLETION.md)和[B04独立入口](tickets/completions/B04_COMPLETION.md)。B04按原授权经独立入口核对恢复ready，尚未completed/owned0-of-144；Code parent/fallback/fresh Analysis/publication及47/144仍待执行，B05draft、PhaseBfalse、131/84/47、2199/15/owners保持。验证输入与随后文档交付manifest分开，无commit/push。下列日期条目保留历史。
+
+2026-10-08当前接续：**C20/C18 in_progress；C15/C16/C17/B04 blocked**。C10显式来源入口修复及原测试/新专项通过，C18依原授权恢复最终验收；[C20记录](tickets/completions/B00C20_COMPLETION.md)。尚未声明完整当前Session通过，旧版本/production/131/84/47/2199/15/owners保持，未commit/push；下列条目保留历史。
+
+2026-10-08当前：用户批准执行[C20](tickets/phase-b-graph-harness/B00C20_C10_CURRENT_FAILURE_SOURCE_VERSION_HANDOFF.md)，ready正文已冻结，现**in_progress**。仅交接C10当前failure显式来源入口，原0.6/0.7规则和production保持；实际结果见[C20记录](tickets/completions/B00C20_COMPLETION.md)。C18/C17/C16/C15/B04仍blocked，C19completed；完整固定Session尚未重验，未commit/push。下列条目保留历史。
+
+2026-10-08当前：**C19 completed；C18/C17/C16/C15/B04 blocked；C20 review**。C19可达性验收已交付，C18按原授权补齐专项；同Session实跑4122项，4120 passed、2项C10失败。mixed派生expected已审计同步并fresh复验；剩余C10当前失败入口仍走0.6，显式交接超出冻结清单，见[C20待审](tickets/phase-b-graph-harness/B00C20_C10_CURRENT_FAILURE_SOURCE_VERSION_HANDOFF.md)与[C18实际记录](tickets/completions/B00C18_COMPLETION.md)。owned B02 1410/B03 645、construction15/11/30/28及final具体47/144/15已在该执行输入核验；未声明新交付输入full通过。B04 owned0/144、131/84/47、2199/15/owners保持，未commit/push。下列条目保留历史。
+
+2026-10-07当前接续：**C19 completed，C18 in_progress**。C19交付输入/原冻结摘要已复核，依原授权恢复C18其余H1–V2；原生产候选保持，先补预算publication故障表及来源核验。见[C18记录](tickets/completions/B00C18_COMPLETION.md)。C15/C16/C17/B04仍blocked，尚无当前完整Session/owned通过声明，B04 owned0/144及131/84/47、2199/15/owners保持；未commit/push。下列条目保留历史。
+
+2026-10-07当前：**C19 completed**。不可达 Human transition 阈值的窄验收补充已交付：8项证明、72项 contract-only 及7项原端口/回归通过（含C18三组双fresh、六份新ledger见证）。生产/冻结正文/原验收集合保持。见[C19记录](tickets/completions/B00C19_COMPLETION.md)。C18原授权可在输入复核后接续；C15/C16/C17/B04仍blocked，C18其余H1–V2及最终full Session尚未完成，B04 owned0/144、131/84/47、2199/15/owners保持。未commit/push；下列较早条目保留历史。
+
+2026-10-07当前：**C18/C17/C16/C15/B04 blocked，C19 review**。C18 两项候选修复的三组双 fresh 和原 C13 两项通过；原固定 policy 下独立 transition 容量阈值不可达，冻结原端口验收条款需窄补充。见[C18记录](tickets/completions/B00C18_COMPLETION.md)与[C19待审](tickets/phase-b-graph-harness/B00C19_HUMAN_CAPACITY_REACHABILITY_ACCEPTANCE.md)；C19 未批准/实施。完整 C15–C17 验收及当前 full Session/owned 尚未完成，B04 owned0/144、131/84/47、2199/15/owners 保持，未 commit/push。下列较早条目保留历史。
+
+2026-10-07 C18执行：用户授权修订版 C18，ready 正文冻结后进入 **in_progress**。普通/terminal repause 修复及 C15–C17 全部逐项验收正在执行；**C15/C16/C17/B04 仍 blocked**，尚无当前整票/full Session 通过声明，B04 owned0/144、131/84/47、2199/15/owners 保持。见[C18执行记录](tickets/completions/B00C18_COMPLETION.md)。未 commit/push；下列较早条目保留历史。
+
+2026-10-07当前：**C17/C16/C15/B04 blocked，C18 review**。C17原terminal路由修复及5项专项通过；普通invalid response后repause错用terminal容量，合法纠正被原Resume拒绝；terminal invalid→纠正双fresh另暴露repause proposal raw-head来源未规范绑定。越界修复依冻结Stop停止，反例见[C17记录](tickets/completions/B00C17_COMPLETION.md)；[C18 修订待审](tickets/phase-b-graph-harness/B00C18_ORDINARY_REPAUSE_CAPACITY_SOURCE_HANDOFF.md)现承接 C15–C17 全部冻结验收：补齐 Human 全链、FP/Grant、完整预算故障表与四消费者逐项证据，区分预期 recovery/拒绝与真正 Stop，使用稳定候选的同一最终 Session。此次仅文档修订，未批准/实施；C15–C17 冻结正文不改。无完整当前Session/owned验收通过声明，B04owned0/144、131/84/47、2199/15及owners保持，未commit/push。下列较早状态保留历史。
+
+2026-10-07当前：用户授权修订并执行C17，已明确合法幂等重试与非法重复消费边界，ready正文冻结后进入 **in_progress**。原Human容量/terminal接续及C16全部验收正在执行；**C16/C15/B04仍blocked**，B04 owned0/144及131/84/47、2199/15/原owners保持，未commit/push。见[C17执行记录](tickets/completions/B00C17_COMPLETION.md)；以下较早状态保留历史。
+
+2026-10-07当前：**C16 blocked、C17 review、C15/B04 blocked**。C16来源候选与七组双fresh fixed expected已保存，生产源码保持；C13三项terminal收尾因重复失败先进入普通Human、control=5无sequence而被原Resume拒绝，需生产路由修复，超出C16冻结范围。[C17待审](tickets/phase-b-graph-harness/B00C17_REPEAT_ESCALATION_TERMINAL_RESERVE_HANDOFF.md)未批准/实施，见[C16反例记录](tickets/completions/B00C16_COMPLETION.md)。无完整当前Session/owned验收通过声明；B04 owned0/144、131/84/47、2199cases/15exit及原owners保持，未commit/push。下列较早状态保留历史。
+
+2026-10-07 C16当前：**in_progress**，显式0.8 canonical audit/独立owner来源及当前Human入口交接已形成候选，双fresh七组固定expected与前置摘要审计已完成；当前四消费者、完整固定Session及owned/construction/final验收仍在进行。见[C16执行记录](tickets/completions/B00C16_COMPLETION.md)与[候选来源合同](tickets/corrections/B00C16_CANONICAL_CODE_AUDIT_SOURCE_CONTRACT.md)。**C15/B04仍blocked**，B04 owned0/144、131/84/47、2199cases/15exit及原owners保持，未commit/push。较早条目保留历史。
+
+2026-10-07 C16执行：用户授权“执行C16”，ready正文摘要核对后进入 **in_progress**；当前来源与验收进行中，C15/B04仍blocked，B04 owned0/144及131/84/47/2199/15保持。见[C16](tickets/phase-b-graph-harness/B00C16_CANONICAL_CODE_AUDIT_SOURCE_HANDOFF.md)与独立completion，较早批准/待审状态保留历史，未commit/push。
+
+2026-10-07 C16批准登记：用户明确“批准C16”，[C16](tickets/phase-b-graph-harness/B00C16_CANONICAL_CODE_AUDIT_SOURCE_HANDOFF.md)由review提升为 **ready**，正文冻结SHA256=`e7c10364d4dae3a982f36724f19c4db9cc57d2334d033a1473e259de8c8c7fc6`。本次仅登记批准，尚未启动实施；**C15/B04保持blocked**，来源缺口及整票验收尚未解除，B04 owned0/144、131/84/47、2199cases及15exit保持。冻结仅在当前worktree及私有审计副本，无committed snapshot，未commit/push；下列早前状态保留为历史检查点。
+
+2026-10-07最新：**C15 blocked、C16 review、B04 blocked**。C15部分18项专项通过；实际Code/fresh Analysis来源因canonical audit与既有A05 profile不符而audit_owner拒绝，新增解释按冻结Stop待单独批准；候选分支已撤回，Human/matrix未验收接线已恢复，旧expected保持。[C16待审](tickets/phase-b-graph-harness/B00C16_CANONICAL_CODE_AUDIT_SOURCE_HANDOFF.md)未批准实施。无C15整票/full Session/owned1410/645当前通过声明；131/84/47、2199cases、B04owned0/144和15exit不变，历史条目保留。
+
+2026-10-07 C15执行中：用户授权执行修订版，ready正文冻结后仅YAML进入**in_progress**。部分Host/来源及18项专项已通过；Code/fresh Analysis探针已通过新来源，完整交接与验收仍在进行。B04保持**blocked**、owned0/144，131/84/47、2199cases、15exit不变。旧完整Session不能覆盖当前实现。见[C15实际记录](tickets/completions/B00C15_COMPLETION.md)；历史条目保留。
+
+2026-10-07 C15修订待审：按用户指令补齐0.8/proof0.5闭合字段、逐failure/Grant owner与固定科学投影规则、Coordinator阶段发行/认证actor绑定及预算publication before/after故障验收。[当前待审状态](tickets/phase-b-graph-harness/B00C15_PRODUCT_FAILURE_FINGERPRINT_AND_GRANT_SOURCE_HANDOFF.md)仍 **review**，本次只修订文档；新版本/生产集成/合同交付尚未实施，B04继续 **blocked**、owned0/144，131/84/47及原case/owners不变。
+
+2026-10-07最新：B04 接续执行已保留 Planner 早期控制依赖、科学接受 guard 和 ordinary exception/overrun/clock 主路径收尾修复；C13 审定后三份固定 expected 仅同步实际 runtime fingerprint/派生摘要，29项回归通过，legacy325通过。两个 fresh 原生产候选的合法 Host 因果 fingerprint 被原0.7拒绝 `failure_member_source`，触发冻结 Stop Conditions，B04现 **blocked**。新增 [C15待审](tickets/phase-b-graph-harness/B00C15_PRODUCT_FAILURE_FINGERPRINT_AND_GRANT_SOURCE_HANDOFF.md) 仅review、未批准实施，原源码未纳入fingerprint候选；Code/fallback/fresh Analysis/fingerprint/grant和47/144仍待完成，owned0/144、131/84/47及B05 draft/Phase B false保持。当前完整suite/同Session owned1410/645尚未重跑，执行前基线不能冒称覆盖本轮源码。收尾另审定12组旧golden的同类摘要，fresh construction15/11/30/28及final具体47/144/15负向集合通过；全仓collect3806仅为collection。验证输入与后续交付文档分开。以下日期条目保留历史。
+
 ## 状态摘要
 
-- **更新时间**：2026-09-29
+2026-10-17现行摘要：B04 completed、B05 draft；full4749、owned1410/645/144及construction15/11/30/28/47通过，131mapped/0remaining，Phase B false。本节下方2026-10-05至10-07的状态及列表保留为历史检查点，以文首与B04完成记录为当前依据。
+
+2026-10-07最新：用户批准实施B04接续计划，B04由ready进入in_progress，先修Planner早期控制依赖及ordinary异常收尾。执行前输入与2026-10-06 fresh完整3792/3792、owned1410/645及construction15/11/30/28基线exact一致。原票正文冻结，B04 owned仍0/144、47/144未完成；见[B04执行记录](tickets/completions/B04_COMPLETION.md)。以下条目保留之前检查点。
+
+当前状态（2026-10-05 C13原验收完成）：C13 **completed**；C14单项范围纠偏已完成。原稳定源码正式Session全仓3792/3792、同Session B02 owned1410/B03 owned645、legacy325、fresh construction15/11/30/28及final具体47/144/15均经独立原始证据审计；本轮fresh C13专项另29/29通过。C13完成后独立B04入口复核通过，依原授权仅恢复**B04 ready**。B04仍owned0/144，Planner dependency、ordinary收尾及Code/fallback/Analysis/fingerprint/grant等原47/144责任待执行；131/84/47、2199 cases、324 boundaries、28 post-claim、15 exit/owners及B05 draft/Phase B false保持。正式验证输入与后续文档交付分开，无commit/push。见[C13完成记录](tickets/completions/B00C13_COMPLETION.md)与[B04入口记录](tickets/completions/B04_COMPLETION.md)。
+
+以下既有摘要和日期条目保留历史检查点；早前C13 in_progress/blocked与B04 blocked状态由本次完成/入口复核接续。
+
+- **更新时间**：2026-10-05
 - **当前分支**：`codex/phase-11-agent-harness-upgrade`（已快进包含`xgao`的Phase A设计冻结提交`d0f108a`）
-- **当前阶段**：Phase A、B00–B03及相关已批准纠偏票已completed；B04/B05仍draft，Phase B全局未完成。
-- **活动 ticket**：B03完成，见[B03完成记录](tickets/completions/B03_COMPLETION.md)；没有启动B04/B05。
+- **当前阶段**：Phase A、B00–B03和C10/C11/C12/C14已completed；C14解除C13单项C10范围阻塞后，C13按原授权恢复in_progress以复核原全部验收。B04仍blocked、owned0/144；B05 draft，Phase B未完成。
+- **活动 ticket**：[C13](tickets/phase-b-graph-harness/B00C13_HUMAN_CONTINUATION_SOURCE_AND_PREFIX_HANDOFF.md)恢复in_progress，原source/Human/prefix修复及双fresh/golden审计保留；须独立复核原Acceptance Criteria全部项并完成交接。[C14](tickets/phase-b-graph-harness/B00C14_HOST_IDENTITY_REJECTION_ASSERTION_HANDOFF.md)已completed：原端口提前拒绝、一次effect/actual settlement/无domain发布/后继Work与独立member身份拒绝均通过。见[C14记录](tickets/completions/B00C14_COMPLETION.md)和[C13交接](tickets/completions/B00C13_COMPLETION.md)。B04 Planner dependency、ordinary收尾、Code/fallback/Analysis/fingerprint/grant及47/144仍待修。
 - **稳定基线**：[`v0.2-demo`](milestones/V0_2_DEMO_BASELINE.md)
-- **本轮范围**：Canonical Fake Backend、public Pause/Resume外部操作、Host安全停止/unavailable、trusted Code消费、资源结算、canonical Bundle、0.4状态投影与fresh Analysis交接已完成B03验收。最终fresh construction **15/11/30/28**；同一冻结输入Session的B03 **645/645**、B02 **1410/1410**通过，完整全仓 **3514 passed**（Phase B **3189 passed**），legacy/A03定向119 passed。Case0.4仍2199（1410/645/144）、post-claim28、boundary324；mapped **84/131、remaining47**，global `phase_b_complete=false`。B04产品route未接入，默认产品runtime仍schema0.2。协议/生成字节、golden raw来源、编译、链接、范围与冻结正文检查通过；发布前原始证据复核及关键功能100项复测通过，用户已授权commit/push。历史检查点不代替最终完成记录。
+- **验证输入**：C14正式固定Session全仓3792/3792（Phase B3467、legacy325）、C13专项29/29、同Session owned B02 1410/1410与B03 645/645、fresh15/11/30/28通过；final仅原47 coverage/144 binding/15 adapter且具体ID集合exact。131/84/47、2199 cases、324 boundaries、28 post-claim、15 exit与owners保持，B04 owned0/144、global Phase B false。完成后的文档/lifecycle输入单独审计，不冒称固定Session覆盖新增交付输入。默认CLI仍schema0.2；无commit/push。
+
+- **C10完成时最终验收（C11源码变动前）**：全仓 **3586 passed**（Phase B **3261**、legacy **325**），fresh construction **15/11/30/28**，同Session B02 **1410/1410**、B03 **645/645**；B04仍 **0/144**。证据见[B00C10完成记录](tickets/completions/B00C10_COMPLETION.md)。
+
+下述接续核验为C10批准实施前的历史检查点；当前状态以上述摘要和最终完成记录为准。
+
+2026-10-01接续核验：B04仍blocked，B00C10补强后仍review、未实施；Host identity fixture例外只是待审设计。当前前置专项**132 passed、5 golden failed**，五份双根normalized一致但expected尚待离线同步；Human validator出版、ordinary overrun收尾及Agent覆盖Host identity三项真实缺陷未修复。详见[B04接续审查](tickets/corrections/B04_CONTINUATION_READINESS_REVIEW.md)，其47/144及当前完整回归仍待完成。
 
 ## 当前稳定实现
+
+2026-10-17新增稳定实现：显式canonical0.4入口及B04全部产品集成/47construction/144owned已完成，默认legacy0.2 CLI保留。下方既有实现列表是此前检查点；其中B04未完成描述已由本次交付接续。
 
 `v0.2-demo` 已经提供一个可独立演示的科研多 Agent MVP：
 
@@ -42,7 +165,7 @@ A01 已确认：
 - Coordinator 的四层回退目标是 Reviewer、Analysis、Code 和 Planner；
 - Human Gate 统一处理 clarification、approval 和 external action，进出只连接 Coordinator；
 - 完整 event log 不直接进入 Agent prompt；Agent 使用 scoped context 和相关 attempt history；
-- target route contract 尚未接入 runtime；identity 已由 A02 确认，invalidation 已由 A03 实现，A04已确认resume目标合同，A05已确认Code Agent目标合同，A06已确认budget/fingerprint/stop目标合同。
+- target route contract 在B04新canonical入口中部分接入，但完整fallback/Human/Code/grant/stop及47/144验收仍待完成；identity、invalidation及A04/A05/A06冻结合同保持，默认legacy入口不变。
 
 A02 corrective implementation 已完成实现与整体验收：
 
@@ -95,6 +218,8 @@ A03没有实现PAUSE/resume、partial-commit recovery、Fake/real Code Agent、b
 第二阶段文档迁移此前已通过 scope check、Markdown link check、ticket metadata、tag、`git diff --check` 与完整 `pytest -q` 验收。
 
 ## 当前验证状态
+
+2026-10-17当前固定输入：full4749（legacy325）、同Session owned1410/645/144、construction15/11/30/28/47与final具体仅15exit通过；global passed null、Phase B false。验证与随后文档交付manifest分开保存。以下较早验证结果保持原输入/日期，不作为当前整票结果。
 
 B00/B01/B02 construction分别为 **15/15、11/11、30/30**，累计映射 **56/131、remaining75**。B02的 **205个boundary、1410个独立case** 全部具有同一冻结输入、同一fresh session的通过证据；完整suite **2599 passed**。全局final仍仅报告 **75 coverage / 798 runtime / 15 exit** 缺口，`requirements.passed=null`、`requirements_zero_gap=false`、`phase_b_complete=false`。详见[B02完成记录](tickets/completions/B02_COMPLETION.md)。完整运行之后仅更新文档和lifecycle，代码、测试、fixtures及验收输入不变；最终文档差异审计和fresh construction/final报告单独留存。
 
@@ -238,3 +363,32 @@ B02与C04现均in_progress：C04独立语义/来源/进程修正已通过定向�
 2026-09-28 B03当前工作树：B03C01重复Code prior IDs与B03 canonical Backend、消费、Bundle、状态和fresh Analysis基础已实现；fresh construction为B00/B01/B02/B03 **15/11/30/28**，累计映射 **84/131、remaining47**。B03独立runtime仅 **7/645** 有本次子进程production hook、passing nodeid和exact trace，另638未绑定；B02 1410项同Session重验待执行。前次Phase B探索性全量为2527 passed、4 failed；其中canonical fixture恢复actor、trace0.5旧反例已按maintenance修复，第十三份B02 recovery expected经旧源码raw及当前双fresh根审定后只同步9个派生字段，相关定向22 passed，Phase B复验运行中。`phase_b_complete=false`，B03/B03C01仍in_progress，未提交或推送。见[B03执行记录](tickets/completions/B03_COMPLETION.md)。
 
 2026-09-28固定输入复核：Phase B **2531 passed**、全仓 **2856 passed**，同一fresh Session的construction **15/11/30/28**、B02独立runtime **1410/1410** 与B03已绑定 **7/7** 通过；累计mapped **84/131、remaining47**，final仅 **47 coverage、782 runtime binding、15 exit** 缺口，`phase_b_complete=false`。B03C01重复Code纠偏已completed。B03冻结case0.3的六个未启动post-claim阶段共有12项`consumer_stop=unavailable`不可达，按原Stop Conditions转为blocked；[B03C02](tickets/phase-b-graph-harness/B03C02_POST_CLAIM_UNSTARTED_CASE_SEMANTICS.md)为review、未改case文件。B03仍缺638项独立runtime绑定；无提交或推送。详见[B03完成记录](tickets/completions/B03_COMPLETION.md)。
+
+2026-10-01最终更新：B00C10 completed，B04来源类型阻塞解除并恢复ready。当前固定输入全仓 **3586 passed**（Phase B **3261**、legacy **325**），fresh construction **15/11/30/28**，同一Session B02 **1410/1410**、B03 **645/645**；12份前置golden仅离线审定指纹/派生值。Production/Phase A字节保持，B04三项已复现缺陷、47 construction/144 runtime仍未修复或验收。Mapped **84/131、remaining47**，B05仍draft、`phase_b_complete=false`；较早review/blocked及5 golden failed是历史检查点。证据见[B00C10完成记录](tickets/completions/B00C10_COMPLETION.md)。未提交或推送。
+
+2026-10-01 C10后执行核验：fresh construction **15/11/30/28**、同Session定向 **17**与legacy **325**通过；final负向exact为 **47 coverage / 144 binding / 15 exit**，无额外错误。实际Planner critical/Analysis high+approval或Planner ambiguous仍会accepted；Human Resume、overrun/exception与Host字段问题未修复。原生产primitives的真实exception最大结算后已由原close_run提交failed，但trace0.6报`exception_settlement`；因B04不能修改B00 validator或放宽来源合同，当前改为blocked，待独立纠偏。见[B04最新核验](tickets/completions/B04_COMPLETION.md)。本轮仅审查与文档/lifecycle，无production或tests改动；C10仍completed，之前ready条目为历史检查点。
+
+2026-10-01 B00C11创建：用户确认“来源纠偏＋B04接续”后，已创建[B00C11](tickets/phase-b-graph-harness/B00C11_ORDINARY_MAXIMUM_SETTLEMENT_TRACE_HANDOFF.md) review票及待审入口。拟议0.7/0.4、closed maximum来源、真实观测/原owner、四消费者与双fresh验收尚未实施；本轮只完成文档、metadata/links、范围和冻结检查，不复跑runtime或创建C11完成记录。B04保持blocked，原执行授权和47/144责任保持；C11经另行批准、执行、completed及入口复核后才可恢复B04 ready。C10继续completed，production/tests/验收输入及冻结历史保持，未commit/push。
+
+2026-10-01 B00C11待审修订：用户要求按审查意见修订，票据现以clock_read_state区分原读取完成、callee异常导致end未执行及实际读失败；expected null不自动归clock_untrusted，真实异常可达callee_exception。Hard usage未知保留为异常/clock场景的material属性，取消独立usage-unknown原因/正向路径；补清只委托原读取的被动FakeClock port wrapper、禁止补读/跨阶段借用时间及对应正负验收。本轮仅修改待审票、当前状态及B04记录，0.7/0.4未实现、未新跑runtime/full suite；C11仍review、B04仍blocked、C10仍completed，原131/84/47、2199/144/15及owner集合保持，无commit/push。
+
+2026-10-01 B00C11 Human来源补充修订：双fresh审查确认原resume绝对payload_reference与注册相对member确为同一文件/bytes/SHA/snapshot，trace0.6仍因字面路径比较报human_owner；实际resume保持recovery_required，不证明Human产品流程成功。用户要求按建议修改C11，现将严格locator/原owner绑定、限定来源字段投影、grant_source/human_scope关联、双fresh/四消费者/路径负例及两项来源缺口分别解除的恢复门槛纳入review票。Grant/remediation合同级meta与真实dispatch明确分开，原0.1–0.6语义及B04产品责任保持。本轮仅待审文档与索引同步，未实施新版本、未新跑runtime/full suite、未创建C11完成记录或commit/push；B04继续blocked。
+
+2026-10-01：用户明确批准执行C11，ready正文冻结后进入in_progress；新来源与完整验收进行中，B04仍blocked，未将审批等同缺口解除。结果另记C11 completion，冻结正文不回写。
+
+2026-10-01 C11执行停止：用户批准后冻结ready正文并实施新0.7/0.4来源候选；原maximum异常结算/closure及Human snapshot入口单根可读取，但两个原resume fresh根的Human请求packet_reference为不同绝对路径，normalized从human_request:packet_written（原event_index31）起不一致，exact失败。冻结Requirement 4仅允许response/grant locator投影，不能直接去根或扩范围。因此C11 blocked、B04继续blocked；新候选未完成双根/四消费者及当前全量验收，旧C10 3586与B02/B03证据不代替本轮。见[C11执行记录](tickets/completions/B00C11_COMPLETION.md)。
+
+2026-10-01补充纠偏创建：用户同意后新增[B00C12](tickets/phase-b-graph-harness/B00C12_HUMAN_REQUEST_PACKET_TRACE_HANDOFF.md)，status=review，目标是原Human请求packet的独立requesting/producer owner、原注册member/bytes及Invocation publication绑定；仅新增0.7/0.4限定来源规则，不改旧版本、C11冻结正文或product。创建阶段仅文档核对，无新实现、验收完成或Git publication。C11/B04仍blocked，C12未ready；131/84/47、2199 cases、324 boundaries、28 post-claim和15 exits保持。
+
+2026-10-02 C12待审扩充：独立审查确认原packet_written为Human轨迹唯一残留根路径来源；另有真实Host exception receipt原端口结算/failed closure成功却被maximum_actual_error拒绝，C11 maximum/Human尚未正式登记matrix。用户要求由C12覆盖C11全部已知剩余阻塞，现已将closed receipt、正式meta、C11逐项全部来源验收及当前Session前置/完整回归纳入[B00C12](tickets/phase-b-graph-harness/B00C12_HUMAN_REQUEST_PACKET_TRACE_HANDOFF.md)完成门禁，不留下交还C11补修/补验收项。当前仅文档修订，C12 review、C11/B04 blocked；没有实施、正式交付合同或新的完成记录，未commit/push。C12 completed之后只交接C11独立证据复核/lifecycle，C11 completed后再复核B04入口；B04 Human、Host/风险guard、ordinary收尾、Code/fallback/grant及47/144问题保持，原131/84/47、2199/324/28/15与owner集合不变。
+
+2026-10-02 C12批准登记：用户明确“批准修订版 C12”，已将[B00C12](tickets/phase-b-graph-harness/B00C12_HUMAN_REQUEST_PACKET_TRACE_HANDOFF.md)由review提升ready，正文冻结摘要`d41821f4df19acf765ff8932e70f9861cb290261eed52194ebdabf0c0822e2f8`；除YAML status外正文未改。冻结在当前worktree及私有审计副本，未commit/push，不声称存在committed snapshot。当前只批准登记、未启动实施，C11/B04仍blocked，0.7/0.4候选未交付；须完成C12全部来源/当前验收，再作C11独立完成交接与B04入口复核。原131/84/47、2199/324/28/15及B04 0/144保持。
+
+2026-10-02完成交接：C12已completed；独立逐项复核C11全部冻结Requirements/Acceptance Criteria后，C11按原授权completed。B04入口复核确认当前已知maximum/Human/packet/receipt来源Stop已解除，按原授权恢复ready；本轮未实施B04产品修复。B04仍0/144、47 construction/144 runtime未完成，131/84/47、2199 cases、324 boundaries、28 post-claim、15 exit及原owner保持，B05 draft、全局Phase B未完成。来源合同正文及已验收源码/expected/matrix保持；新增状态/索引仅记录事实，不声称原full Session覆盖收尾文档输入。见[C12完成记录](tickets/completions/B00C12_COMPLETION.md)、[C11独立交接](tickets/completions/B00C11_COMPLETION.md)及[B04入口复核](tickets/completions/B04_COMPLETION.md)。先前收尾中/blocked条目保留为当时事实。
+
+2026-10-05 C13 修订并获用户授权执行：已按独立审查区分 exact completion 的 in_progress/materialization_pending 与 started/no-completion 的 recovery_required，补清最小 Human control、停止链与 reserve 交接及 committed duplicate 边界。C13 ready 正文冻结后进入 in_progress；B04 仍 blocked，未宣称来源或完整回归已通过。执行见 [C13 completion](tickets/completions/B00C13_COMPLETION.md)；原 owner、131/84/47、2199 cases、15 exit 与 B04 0/144 保持。
+
+
+2026-10-05 C13执行收尾：Human最小接续/来源修复和29项专项通过；固定同Session全仓3791 passed/1 failed，B02 owned1410/1410、B03 owned645/645、legacy325及fresh construction15/11/30/28通过，final原47/144/15 exact缺口保持。唯一失败为C10旧Host identity测试仍要求completed后normalizer拒绝，而生产端口已在publication前拒绝；修改该测试不在冻结C13范围，故C13 **blocked，未completed**，B04继续blocked/0-of-144。新增C14仅review，创建不代表批准或实施。见 [C13执行记录](tickets/completions/B00C13_COMPLETION.md) / [C14待审票](tickets/phase-b-graph-harness/B00C14_HOST_IDENTITY_REJECTION_ASSERTION_HANDOFF.md)。原131/84/47、2199 cases、324 boundaries、28 post-claim、15 exit与owners保持；Planner dependency、ordinary收尾、Code/fallback/Analysis/fingerprint/grant及B04 47/144仍待修。文档/lifecycle交付与固定验证输入分开，未commit/push。
+
+2026-10-05 C14完成：正式固定输入3792/3792、独立owned1410/645及fresh15/11/30/28、final具体47/144/15和scope审核通过；C13恢复in_progress、B04仍blocked。仅旧Host身份负向测试与文档改变，原source/harness/helper/expected/matrix/owners保持；原B03 socket sandbox失败和首个full batch超时保存，新fresh原样/更小有界批次重跑通过。详见[C14完成记录](tickets/completions/B00C14_COMPLETION.md)。

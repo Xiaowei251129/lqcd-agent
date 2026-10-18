@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b04_runtime/budget.decision_before_transition.before.committed_result_replay.json",
+  "entrypoint": "src/lqcd_agent/graph/analysis_graph.py:CanonicalProductRuntime.run",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "frozen_outcome_classification",
+    "publication_side:before"
+  ]
+}

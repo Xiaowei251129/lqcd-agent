@@ -1,0 +1,1 @@
+{"entrypoint":"src/lqcd_agent/control/coordinator.py:boundary","expected_result":{"kind":"boolean","value":true},"fixture_id":"tests/phase_b/fixtures/b00c28/candidates/artifact.history_publication.after.committed_result_replay.json","required_invariants":["frozen_outcome_classification","publication_side:after"],"schema_version":"0.1"}

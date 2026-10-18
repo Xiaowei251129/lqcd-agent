@@ -1,5 +1,7 @@
 # 项目规范
 
+2026-10-17 B04完成：显式schema0.4 canonical Python产品入口已完成17条产品edge、四层fallback、Human return、Fake Code/fresh Analysis及预算/停止集成。仅接受new Run；默认legacy0.2 CLI及旧outputs保留。131项映射齐全和B04独立47/144通过不代表B05退出门槛已完成。 见[完成记录](tickets/completions/B04_COMPLETION.md)。以下日期条目为历史记录。
+
 ## 项目目标
 
 本项目构建一个面向 lattice QCD pion quasi-DA 分析支持的、可审计的 LangGraph 多 Agent 工作流。系统负责把用户目标转成结构化方法计划，执行允许的分析流程，检查结构化证据，评估风险，并产出可复现的 artifacts、报告和审计记录。

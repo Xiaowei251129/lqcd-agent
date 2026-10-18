@@ -1198,10 +1198,43 @@ def invalid_response_admission(execution, adapter):
     validator = records[-1]
     require(pause["status"] == "consumed" and response["status"] == "invalid" and validator["record_type"] == "attempt" and
             validator["event"] == "finished" and response["validator_attempt_id"] == validator["attempt_id"], "Invalid response lacks finished consumption closure")
+    inbound = [r for r in records if r["record_type"] == "transition" and r["target_attempt_id"] == validator["attempt_id"]]
+    require(len(inbound) == 1, "Invalid response lacks unique validator transition")
+    inbound = inbound[0]
+    require(inbound["source"] == "HUMAN_RESPONSE" and inbound["target_attempt_kind"] == "human_gate" and
+            inbound["transition_id"] == validator["inbound_transition_id"] and
+            inbound["human_response_id"] == response["human_response_id"] and
+            inbound["human_request_id"] == response["human_request_id"] == state["active_human_request_id"] ==
+            pause["input_contract"]["human_request_id"] and inbound["fields"]["pause_id"] == pause["pause_id"] and
+            all((r["case_id"], r["run_id"]) == (state["case_id"], state["run_id"]) for r in (inbound, pause, response, validator)) and
+            inbound["event_index"] < pause["event_index"] < response["event_index"] < validator["event_index"],
+            "Invalid response has foreign continuation source")
+    sequence = inbound["fields"].get("stop_sequence_id")
+    stop = None
+    if sequence is not None:
+        stops = [r for r in records[:inbound["event_index"] - 1] if r["record_type"] == "transition" and
+                 r["trigger_reason"] == "budget_stop" and r["fields"].get("stop_sequence_id") == sequence]
+        require(len(stops) == 1, "Invalid response lacks original budget stop")
+        stop = stops[0]
+        require(sequence == digest({"run_id": state["run_id"], "source_attempt_id": stop["source_attempt_id"],
+                                    "reason": "budget_stop"}), "Invalid response has foreign stop sequence")
+        previous = stop
+        for transition in records[stop["event_index"]:inbound["event_index"]]:
+            if transition["record_type"] != "transition":
+                continue
+            require(transition["fields"].get("stop_sequence_id") == sequence and
+                    transition["target_attempt_kind"] in ("human_gate", "decision_coordinator", "memory_report"),
+                    "Invalid response lost terminal continuation")
+            require((transition["source"] == "HUMAN_RESPONSE" and previous["target_attempt_kind"] == "human_gate" and
+                     transition["target_attempt_kind"] == "human_gate" and transition["human_request_id"] == previous["human_request_id"]) or
+                    transition["source_attempt_id"] == previous["target_attempt_id"], "Invalid response has discontinuous stop sequence")
+            previous = transition
+    continuation = {"mode": "terminal" if sequence is not None else "ordinary", "validator_transition_head": digest(inbound),
+                    "stop_sequence_id": sequence, "budget_stop_transition_head": digest(stop) if stop is not None else None}
     source = {"consumed_old_pause": digest(pause), "finished_validator_attempt": digest(validator),
               "open_human_request": state["active_human_request_id"], "derived_next_pause_identity": f"pause_{state['pause_index'] + 1:06d}"}
     require(adapter is not None, "Missing trusted repause decision adapter")
-    admitted = adapter.repause({"binding": source, "policy": selected, "budget": state["budget"]})
+    admitted = adapter.repause({"binding": source, "policy": selected, "budget": state["budget"], "human_continuation": continuation})
     require(type(admitted) is RepauseAdmission, "Untyped repause admission")
     matches = [row for row in PROTOCOL["budget_decision_contract"]["invalid_response_cases"] if row["capacity"] == admitted.capacity]
     require(len(matches) == 1, "Unknown repause capacity classification")
@@ -1237,6 +1270,7 @@ class RouteAdmission:
     budget_decision: dict
     target_preparation: dict
     human_request: dict | None = None
+    transition_fields: dict | None = None
 
 
 def route_grant_consumption(records, state, admitted):
@@ -1407,7 +1441,7 @@ class AdvanceOperations:
         from datetime import datetime, timezone
         from lqcd_agent.artifacts import registry
         from lqcd_agent.graph.state import canonical_attempt_kind, stable_attempt_id, stable_cycle_id, stable_transition_id
-        from .budget import WORK_KINDS, validate_budget_payload
+        from .budget import ROUTE_DIMENSIONS, WORK_KINDS, validate_budget_payload
         from .execution import replay
         from .integrity import artifact_binding
         from .projections import bounded_projection
@@ -1453,9 +1487,20 @@ class AdvanceOperations:
             ceiling = selected["limits"][name]
             if grant is not None and name == state["budget"]["active_grant"]["route_dimension"]:
                 ceiling = max(ceiling, before["used"] + 1)
+            historical_grant_usage = False
+            if name in ROUTE_DIMENSIONS and before["used"] > ceiling and amounts["projected_after"] == before["used"]:
+                issued = {r["payload"]["budget_grant_id"]: r["payload"] for r in records if r.get("event") == "grant_issued"}
+                consumed = {r["payload"]["budget_grant_id"] for r in records if r.get("event") == "grant_consumed"}
+                allocations = {r["attempt_id"]: r for r in records if r["record_type"] == "attempt" and r["event"] == "scheduled"}
+                transitions = {r["transition_id"]: r for r in records if r["record_type"] == "transition" and r["event"] == "committed"}
+                opportunities = sum(1 for key in consumed if issued[key]["route_dimension"] == name and
+                    issued[key]["target_attempt_id"] in allocations and issued[key]["transition_id"] in transitions and
+                    transitions[issued[key]["transition_id"]]["target_attempt_id"] == issued[key]["target_attempt_id"] and
+                    (name == "automatic_replan_per_run" or allocations[issued[key]["target_attempt_id"]]["cycle_id"] == state["cycle_id"]))
+                historical_grant_usage = before["used"] <= ceiling + opportunities
             require(amounts["used"] == before["used"] and amounts["remaining"] == before["remaining"] and
                     amounts["projected_after"] >= before["used"] + charges.get(name, 0) and
-                    amounts["projected_after"] <= ceiling, "Route decision disagrees with replayed capacity")
+                    (amounts["projected_after"] <= ceiling or historical_grant_usage), "Route decision disagrees with replayed capacity")
         preparation = admitted.target_preparation
         validate_target_preparation(preparation, locator, target_kind, stable_attempt_id(state["attempt_index"] + 1),
                                     stable_transition_id(state["transition_index"] + 1), index["current"]["code"])
@@ -1483,9 +1528,7 @@ class AdvanceOperations:
         cycle_id = stable_cycle_id(cycle_index)
         slots = registry._slots_for_target(target_kind, new_human_request=admitted.human_request is not None) if target_kind is not None else ()
         invalidation = [{"slot": slot, "artifact_id": index["current"][slot]["artifact_id"]} for slot in slots if index["current"][slot] is not None]
-        prior_ids = ({item["slot"]: item["artifact_id"] for item in invalidation}
-                     if state["schema_version"] == "0.4" and target_kind == "code_agent" and
-                     isinstance(index["current"]["code"], dict) and index["current"]["code"].get("attempt_kind") == "code_agent" else {})
+        prior_ids = {item["slot"]: item["artifact_id"] for item in invalidation}
         plan.step("transition_target_classified", {"transition_target_kind": branch,
                                                   "precomputed_transition_identity_and_digest": {"transition_id": transition_id}})
         target = {"tag": "null"}
@@ -1539,7 +1582,7 @@ class AdvanceOperations:
                                  target_attempt_id=attempt_id, target_attempt_kind=target_kind,
                                  human_request_id=response["human_request_id"] if response is not None else human_request.get("human_request_id"),
                                  human_response_id=response["human_response_id"] if response is not None else None,
-                                 trigger_reason=admitted.trigger_reason, reason=admitted.reason, fields={}, evidence_references={},
+                                 trigger_reason=admitted.trigger_reason, reason=admitted.reason, fields=admitted.transition_fields or {}, evidence_references={},
                                  applied_state_update_keys=[], applied_state_updates_sha256=digest({}), status="committed", committed_at=asdict(plan.timestamp))
         if response is not None:
             from .records import FIELDS

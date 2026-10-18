@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b04_construction/B04-PACKET-analysis_engineer-human_authorization.json",
+  "entrypoint": "src/lqcd_agent/graph/analysis_graph.py:CanonicalProductRuntime.run",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "actual_production_path",
+    "no_new_effect",
+    "original_authority_rejected"
+  ]
+}

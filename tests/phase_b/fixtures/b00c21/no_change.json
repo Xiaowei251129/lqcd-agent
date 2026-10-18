@@ -1,0 +1,16 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b00c21/no_change.json",
+  "entrypoint": "tests/phase_b/test_b00c21_prior_code_evidence.py:test_product_retry_has_exact_sources",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "B04_owned_false",
+    "bound_human_scope",
+    "exact_code_origins",
+    "original_ports",
+    "single_consumption"
+  ]
+}

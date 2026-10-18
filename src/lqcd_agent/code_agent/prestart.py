@@ -167,7 +167,7 @@ class CodePrestart:
                 if task["task_origin"] == "coordinator_code_fix":
                     prior = self.coordinator.snapshot(value["parent_control_operation_id"], db=db)["original_index"]
                     members.update((pointer["artifact_id"], member["canonical_path"], member["sha256"])
-                        for slot, pointer in prior["current"].items() if slot in ("analysis", "review", "decision") and pointer is not None
+                        for slot, pointer in prior["current"].items() if slot in ("code", "analysis", "review", "decision") and pointer is not None
                         for member in pointer["members"])
                 plan = index["current"]["plan"]
                 require(plan is not None and any(e["artifact_id"] == plan["artifact_id"] for e in task["evidence"]), "Task lacks current plan")

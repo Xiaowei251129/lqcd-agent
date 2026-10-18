@@ -1235,7 +1235,9 @@ def _validate_history(
                 raise ValueError(f"Artifact history registers an artifact twice: {artifact_id}")
             pointer = _validate_registered_pointer(state, record)
             dependencies = pointer["dependencies"]
-            base_dependencies = _dependency_ids_from_current(replayed_current, str(slot))
+            base_dependencies = _dependency_ids_from_current(
+                replayed_current, str(slot), schema_version=state.get("schema_version")
+            )
             extra_dependencies = dependencies[len(base_dependencies) :]
             if (
                 dependencies[: len(base_dependencies)] != base_dependencies
@@ -1666,6 +1668,8 @@ def _registered_artifact_ids(history: list[dict[str, Any]]) -> set[str]:
 def _dependency_ids_from_current(
     current: dict[str, dict[str, Any] | None],
     slot: str,
+    *,
+    schema_version: str | None = None,
 ) -> list[str]:
     if slot == "plan":
         dependency_slots: tuple[str, ...] = ()
@@ -1690,14 +1694,16 @@ def _dependency_ids_from_current(
         "approval": ("decision",),
         "terminal": ("decision",),
     }.get(slot, ())
+    if slot == "decision" and schema_version == "0.4" and current.get("review") is None:
+        required = ("plan",)
     missing = [name for name in required if not isinstance(current.get(name), dict)]
     if missing:
         raise ValueError(f"Artifact slot {slot} is missing current dependencies: {missing}")
     return dependencies
 
 
-def _dependency_ids(index: dict[str, Any], slot: str) -> list[str]:
-    return _dependency_ids_from_current(index["current"], slot)
+def _dependency_ids(index: dict[str, Any], slot: str, *, schema_version: str | None = None) -> list[str]:
+    return _dependency_ids_from_current(index["current"], slot, schema_version=schema_version)
 
 
 def _projection_target(run_root: Path, relative_path: str) -> Path:
@@ -1822,7 +1828,7 @@ def preflight_control_registration(
     if set(state_paths) != set(state_fields_for_slot(slot, state.get("schema_version"))):
         raise ValueError("Control registration has incomplete state paths.")
     members = _member_records(state, member_paths)
-    dependencies = _dependency_ids(index, slot)
+    dependencies = _dependency_ids(index, slot, schema_version=state.get("schema_version"))
     pointer = {"artifact_id": artifact_id, "slot": slot, "cycle_id": state["cycle_id"],
                "attempt_id": state["attempt_id"], "attempt_kind": state["attempt_kind"], "status": status,
                "dependencies": dependencies, "members": members, "state_paths": dict(state_paths)}

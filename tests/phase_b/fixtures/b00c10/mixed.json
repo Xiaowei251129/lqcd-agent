@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "fixture_id": "tests/phase_b/fixtures/b00c10/mixed.json",
+  "entrypoint": "tests/phase_b/test_b00c10_ordinary_trace.py:test_same_run_mixed_uses_original_b03_ports_with_fresh_analysis",
+  "expected_result": {
+    "kind": "boolean",
+    "value": true
+  },
+  "required_invariants": [
+    "exact_mixed_sources",
+    "original_b03_ports",
+    "session_bound_proof"
+  ]
+}

@@ -12,6 +12,7 @@ from lqcd_agent.control.projections import checkpoint_manifest
 from lqcd_agent.control.strict_json import digest as raw_digest
 
 from .session import validate_digests
+from .fault_source_trace import source_path
 from .strict_json import Invalid, keys, require, text
 
 
@@ -466,10 +467,10 @@ def _historical_source_files(sources, executions, roots):
             from .strict_json import path_in
             path = path_in(root, relative)
             require(path.resolve() == path, 'historical_file', 'symlink')
-            return read_regular(path)
+            return read_regular(source_path(path))
         raw = content('execution_history.jsonl')
         require(raw == b''.join(canonical_bytes(row) + b'\n' for row in records), 'historical_file', 'execution_bytes', 'invalid_evidence')
-        require(not (root / 'budget_policy.json').exists() and not (root / 'budget_policy.json').is_symlink(), 'historical_file', 'pre_a06')
+        require(not (source_path(root / 'budget_policy.json')).exists() and not (source_path(root / 'budget_policy.json')).is_symlink(), 'historical_file', 'pre_a06')
         for name in ('root_goal', 'input_snapshot'):
             ref = records[0][name + '_reference']
             keys(ref, {'reference', 'sha256'}, 'historical_input')
@@ -492,21 +493,21 @@ def _historical_source_files(sources, executions, roots):
             manifest = sources[proof['source_latest_heads']['checkpoint_head']]['value']
             require(loads(content('checkpoints/' + manifest['checkpoint_id'] + '.json')) == manifest, 'historical_file', 'manifest', 'invalid_evidence')
             names = ('graph_checkpoints.sqlite', 'graph_checkpoints.sqlite-wal', 'graph_checkpoints.sqlite-shm')
-            unit = {name: content('checkpoints/' + name) if (root / 'checkpoints' / name).exists() else None for name in names}
+            unit = {name: content('checkpoints/' + name) if (source_path(root / 'checkpoints' / name)).exists() else None for name in names}
             with TemporaryDirectory(prefix='lqcd-agent-historical-proof-', dir='/private/tmp') as directory:
                 temporary = Path(directory)
                 (temporary / 'checkpoints').mkdir()
                 for name, raw_file in unit.items():
                     if raw_file is not None:
                         (temporary / 'checkpoints' / name).write_bytes(raw_file)
-                require(verify_checkpoint(temporary, manifest) == sources[manifest['state_digest']]['value'], 'historical_file', 'checkpoint', 'invalid_evidence')
-            require(unit == {name: content('checkpoints/' + name) if (root / 'checkpoints' / name).exists() else None for name in names},
+                require(verify_checkpoint(source_path(temporary), manifest) == sources[manifest['state_digest']]['value'], 'historical_file', 'checkpoint', 'invalid_evidence')
+            require(unit == {name: content('checkpoints/' + name) if (source_path(root / 'checkpoints' / name)).exists() else None for name in names},
                     'historical_file', 'changed_during_read', 'invalid_evidence')
             child_root = roots[lineage['case_id'], lineage['run_id']]
             require(child_root.parent.parent == root.parent.parent, 'historical_file', 'coordinator_domain')
             database = root.parent.parent / '.lqcd/control_operations.sqlite'
-            require(database.resolve() == database and database.is_file(), 'historical_file', 'coordinator_path')
-            connection = sqlite3.connect(database.as_uri() + '?mode=ro', uri=True)
+            require(database.resolve() == database and source_path(database).is_file(), 'historical_file', 'coordinator_path')
+            connection = sqlite3.connect(source_path(database).as_uri() + '?mode=ro', uri=True)
             try:
                 operation = connection.execute('SELECT operation_type,operation_variant,request,reservation FROM control_operations WHERE operation_id=?', (lineage['parent_operation_id'],)).fetchone()
                 require(operation is not None and operation[0] == 'fork_run', 'historical_file', 'fork_operation', 'invalid_evidence')
