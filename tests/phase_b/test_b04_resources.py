@@ -1,6 +1,6 @@
 """Ordinary calls use the invocation fence and the authoritative budget ledger."""
+from harness.temporary import mkdtemp
 from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -13,7 +13,7 @@ from test_bootstrap_control import start
 
 @pytest.mark.parametrize("kind", ["llm_call", "tool_call"])
 def test_resource_reserves_before_effect_and_settles_trusted_duration(kind):
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b04-resource-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b04-resource-", dir="/private/tmp"))
     coordinator, _, source = start(output)
     locator = source["result"]["run_locator"]
     root = output / locator["case_id"] / locator["run_id"]
@@ -52,7 +52,7 @@ def test_resource_reserves_before_effect_and_settles_trusted_duration(kind):
 
 
 def test_resource_reuse_exhaustion_and_foreign_suffix_have_no_new_effect():
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b04-resource-negative-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b04-resource-negative-", dir="/private/tmp"))
     coordinator, _, source = start(output)
     capability = source["result"]["capability_id"]
     leases = InvocationLeases(coordinator)
@@ -82,7 +82,7 @@ def test_resource_reuse_exhaustion_and_foreign_suffix_have_no_new_effect():
 
 
 def test_uncertain_resource_retains_maximum_and_cannot_reexecute():
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b04-resource-uncertain-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b04-resource-uncertain-", dir="/private/tmp"))
     coordinator, _, source = start(output)
     leases = InvocationLeases(coordinator)
     capability = source["result"]["capability_id"]

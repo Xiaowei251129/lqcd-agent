@@ -1,10 +1,10 @@
 """Production initial producer crash probes, without B03 Backend acceptance credit.
 """
+from harness.temporary import mkdtemp
 import multiprocessing
 import os
 import json
 from pathlib import Path
-import tempfile
 from functools import partial
 
 import pytest
@@ -127,7 +127,7 @@ def test_first_external_reservation_durability(cut):
 
 
 def make_code_target(*, worker_id="host"):
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-reservation-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b03-reservation-", dir="/private/tmp"))
     coordinator = Coordinator(output, clock=FakeClock(100, 0))
     actor = ActorContext("operator", "human", ("control.internal", "start"))
     plane = ControlPlane(coordinator, worker_id=worker_id, route_adapter=SyntheticDomainRoute("code_agent"))

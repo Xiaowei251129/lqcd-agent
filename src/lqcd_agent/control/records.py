@@ -67,7 +67,7 @@ def _timestamp(value):
     return Timestamp(**value)
 
 
-def validate_record(record):
+def _validate_record(record):
     require(type(record) is dict, "Record is not an object")
     kind, event = record.get("record_type"), record.get("event")
     require(type(kind) is str and kind in FIELDS, "Unknown record union variant")
@@ -230,7 +230,11 @@ def validate_record(record):
         require(record["policy_version"] == "0.1", "Unknown budget version")
         digest_value(record["policy_digest"])
         validate_budget_payload(event, record["payload"])
-    return ValidatedValue.from_value(record)
+    return record
+
+
+def validate_record(record):
+    return ValidatedValue.from_value(_validate_record(record))
 
 
 def build_record(record_type, event, *, run_id, case_id, event_index, previous_execution_head,

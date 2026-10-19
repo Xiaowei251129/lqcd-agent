@@ -1,8 +1,8 @@
 """Supplemental B02 boundaries mapped to actual production publications and guards."""
+from harness.temporary import mkdtemp
 from contextlib import ExitStack, contextmanager
 from dataclasses import asdict
 from pathlib import Path
-import tempfile
 
 from harness.trace import event
 from harness.pytest_evidence import process_hook_request
@@ -124,7 +124,7 @@ def exercise_rejection(case_id):
     boundary, side, _ = case_id.rsplit(".", 2)
     with rejection_fixture(boundary) as (coordinator, config, hook):
         before, files = rows(coordinator), run_files(coordinator.root)
-        receipt = process_hook_request(case_id, Path(tempfile.mkdtemp(prefix="lqcd-agent-b02-guard-evidence-", dir="/private/tmp")))
+        receipt = process_hook_request(case_id, Path(mkdtemp(prefix="lqcd-agent-b02-guard-evidence-", dir="/private/tmp")))
         run_client(config, 40, fault=(hook, side), hook_request=receipt)
         assert rows(coordinator) == before and run_files(coordinator.root) == files
         result = run_client(config, 40)["result"]

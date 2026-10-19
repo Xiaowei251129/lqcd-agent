@@ -1,6 +1,6 @@
 """Original Human snapshot prefixes produced by scoped publication faults."""
+from harness.temporary import mkdtemp
 from pathlib import Path
-import tempfile
 
 from helpers.control_traces import ControlTrace
 from helpers.host_identity_fixture import HostIdentities
@@ -15,7 +15,7 @@ from test_b04_product_graph import StructuredOutcomes, diagnostic
 
 
 def human_trace(*, reason="Synthetic approved rerun", decision="approve_rerun", risk="low", unpublished=False, fault="publication"):
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b00c11-human-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b00c11-human-", dir="/private/tmp"))
     identities = HostIdentities("b00c11-human")
     with identities.installed():
         coordinator = Coordinator(output, clock=PassiveClock(FakeClock(100, 0)))

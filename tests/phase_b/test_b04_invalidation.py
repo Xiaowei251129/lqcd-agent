@@ -1,7 +1,7 @@
 """Repeated product targets freeze every source cleared by the A03 policy."""
+from harness.temporary import mkdtemp
 from dataclasses import replace
 from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -27,7 +27,7 @@ class ReplanRoute(SyntheticDomainRoute):
 
 @pytest.mark.parametrize("target", ["analysis_engineer", "decision_coordinator", "method_planner"])
 def test_repeat_target_preserves_invalidation_sources_and_history(target):
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b04-repeat-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b04-repeat-", dir="/private/tmp"))
     coordinator, _, source = start(output)
     locator = source["result"]["run_locator"]
     root = output / locator["case_id"] / locator["run_id"]

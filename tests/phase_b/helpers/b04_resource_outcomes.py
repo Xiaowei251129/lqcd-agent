@@ -1,6 +1,6 @@
 """Real product resource failures retain returns and the original settlement owner."""
+from harness.temporary import mkdtemp
 from pathlib import Path
-import tempfile
 
 from helpers.control_traces import ControlTrace
 from helpers.host_identity_fixture import HostIdentities
@@ -20,7 +20,7 @@ MODES = ("exception", "overrun", "epoch", "analysis_exception")
 
 def resource_failure_trace(mode):
     assert mode in MODES
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b04-resource-outcome-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b04-resource-outcome-", dir="/private/tmp"))
     with HostIdentities("b04-resource-outcome-" + mode).installed():
         coordinator = Coordinator(output, clock=PassiveClock(FakeClock(100, 0)))
         try:

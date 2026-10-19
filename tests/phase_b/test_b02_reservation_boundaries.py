@@ -1,4 +1,5 @@
 """Actual reservation rollback and committed replay, without acceptance credit."""
+from harness.temporary import mkdtemp
 import multiprocessing
 
 import pytest
@@ -108,7 +109,6 @@ def test_committed_replay_cannot_be_reclassified_by_lost_materialization_plan(ro
 @pytest.mark.parametrize("side", ["before", "after"])
 def test_fork_source_cas_process_exit_is_still_before_reservation_commit(side):
     from pathlib import Path
-    import tempfile
     from helpers.runtime_cases import phase_fixture, run_client, run_files
     from harness.pytest_evidence import process_hook_request
     from lqcd_agent.control.coordinator import TABLES
@@ -117,7 +117,7 @@ def test_fork_source_cas_process_exit_is_still_before_reservation_commit(side):
     with phase_fixture(setup) as (coordinator, config):
         before = {table: [tuple(row) for row in coordinator.connection.execute("SELECT * FROM " + table)] for table in TABLES}
         source = run_files(coordinator.root)
-        receipts = Path(tempfile.mkdtemp(prefix="lqcd-agent-cas-proof-", dir="/private/tmp"))
+        receipts = Path(mkdtemp(prefix="lqcd-agent-cas-proof-", dir="/private/tmp"))
         receipt = process_hook_request("child.source_revision_cas." + side + ".reservation_rolled_back", receipts)
         fault = run_client(config, 0, fault=("child.source_revision_cas", side), hook_request=receipt)
         assert fault["operation"]["phase"] == "operation_reserved"

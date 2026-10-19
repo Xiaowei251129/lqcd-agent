@@ -1,7 +1,7 @@
 """Contract-level A05 sources on real B02 prefixes, without B03 runtime credit."""
+from harness.temporary import mkdtemp
 from copy import deepcopy
 from pathlib import Path
-import tempfile
 import uuid
 import os
 from unittest.mock import patch
@@ -60,7 +60,7 @@ def full_trace(base=None, *, outcome="normal", clock=100):
     pause_binding = add("pause_binding", pause_id="pause_000001", task_digest=task["task_digest"],
         workspace_manifest_digest=manifest["manifest_digest"], operation_contract_digest=core,
         reservation_digest=digest(witness["reservation"]), status="opened")
-    workspace = Path(tempfile.mkdtemp(prefix="lqcd-agent-a05-workspace-", dir="/private/tmp"))
+    workspace = Path(mkdtemp(prefix="lqcd-agent-a05-workspace-", dir="/private/tmp"))
     workspace_evidence = add("workspace_evidence", workspace_path=str(workspace), manifest_digest=manifest["manifest_digest"],
         managed_root_identity=manifest["managed_root_identity"], created_at=clock)
     trace["proof"]["workspace_roots"].append({"evidence_digest": workspace_evidence, "path": str(workspace)})

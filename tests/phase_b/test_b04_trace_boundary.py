@@ -1,6 +1,6 @@
 """A genuine ordinary resource cannot use an A05-only settlement profile."""
+from harness.temporary import mkdtemp
 from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -19,7 +19,7 @@ from test_b04_product_graph import StructuredOutcomes
 
 @pytest.mark.parametrize("fresh_root", ["first", "second"])
 def test_trace_0_5_rejects_actual_ordinary_success_settlement(fresh_root):
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b04-trace-boundary-" + fresh_root + "-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b04-trace-boundary-" + fresh_root + "-", dir="/private/tmp"))
     captured = ControlTrace(output, version="0.5")
     coordinator = Coordinator(output, clock=FakeClock(100, 0), observer=captured.observer)
     actor = ActorContext("operator", "human", ("control.internal", "resume", "start"))

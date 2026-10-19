@@ -1,6 +1,6 @@
 """Actual A03 bundles flow through the fenced B02 invocation publication port."""
+from harness.temporary import mkdtemp
 from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -37,7 +37,7 @@ class ArtifactTarget:
 
 
 def test_real_registered_outputs_reach_end_then_unique_completed_closure():
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b02-artifacts-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b02-artifacts-", dir="/private/tmp"))
     coordinator, _, source = start(output)
     locator = source["result"]["run_locator"]
     root = output / locator["case_id"] / locator["run_id"]
@@ -67,7 +67,7 @@ def test_real_registered_outputs_reach_end_then_unique_completed_closure():
 
 
 def test_artifact_effect_port_is_fenced_again_after_trusted_clock_expires():
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b02-artifact-expiry-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b02-artifact-expiry-", dir="/private/tmp"))
     coordinator, _, source = start(output)
     leases = InvocationLeases(coordinator)
     capability = source["result"]["capability_id"]

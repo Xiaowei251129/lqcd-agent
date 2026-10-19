@@ -1,8 +1,8 @@
 """C13 original Human ports, independent owners, and bounded terminal tails."""
+from harness.temporary import mkdtemp
 from contextlib import closing, contextmanager
 from copy import deepcopy
 from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -28,7 +28,7 @@ from test_b04_product_graph import StructuredOutcomes, diagnostic
 
 @contextmanager
 def original_source(*, mode="approve_rerun", profile="balanced_v1", outcomes=None):
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b00c13-" + mode + "-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b00c13-" + mode + "-", dir="/private/tmp"))
     with HostIdentities("b00c13-" + mode).installed():
         coordinator = Coordinator(output, clock=PassiveClock(FakeClock(100, 0)))
         sources = ProductFailureSources(coordinator)

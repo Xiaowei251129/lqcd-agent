@@ -1,6 +1,6 @@
 """Frozen normal-final crash cases retain one resolution and immutable bytes."""
+from harness.temporary import mkdtemp
 from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -25,7 +25,7 @@ NORMAL_FINAL_CASES = tuple(cid for cid, spec in SPECS.items() if spec["failpoint
 
 @pytest.mark.parametrize("case_id", NORMAL_FINAL_CASES)
 def test_normal_final_case(case_id):
-    directory = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-normal-final-hook-", dir="/private/tmp"))
+    directory = Path(mkdtemp(prefix="lqcd-agent-b03-normal-final-hook-", dir="/private/tmp"))
     request = process_hook_request(case_id, directory)
     trace = normal_final_recovery(case_id, hook_request=request)
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" / (case_id + ".json")))

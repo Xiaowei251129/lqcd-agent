@@ -1,5 +1,9 @@
 # Phase B：图与 Harness 可靠性
 
+2026-10-19 当前：B05已获用户明确审定为ready，冻结当前维护基线并commit/push后执行；进入条件确认不代替本票fresh final。见[执行记录](../completions/B05_COMPLETION.md)。当前Phase B未完成。
+
+2026-10-19 当前：[C29 pytest时限政策](B00C29_PYTEST_RUNNER_TIMEOUT_450.md)已按用户授权完成，统一runner上限为450秒，正式C21子进程395.88秒通过，现有37项回归及1项拒绝探针通过；B05仍review且未实施，Phase B未完成。以下日期记录保留历史。
+
 2026-10-17 当前：**B04 completed；B00–B04已完成；B05仍draft，Phase B未完成**。固定输入全仓 **4749/4749**（legacy325）、同Session独立owned **B02 1410／B03 645／B04 144**、fresh construction **15/11/30/28/47**通过；131 required／131 mapped／0 remaining。Final具体仅剩B05 **15个exit adapter**，全局passed仍null、phase_b_complete=false。正式144来自本轮真实production source/hook/case result，旧288份诊断仅作golden溯源。原超时/环境失败及重试保留，验证与文档交付manifest分别存档。见[完成记录](../completions/B04_COMPLETION.md)。以下日期记录保留历史，无commit/push。
 
 2026-10-17 当前：**B04 in_progress；C28及前置completed保持**。容量32.25GiB、C28交付5240输入与原47/144入口核对通过，执行前快照及冻结正文保存。原18/144正式hook/observation/case result接线及47construction映射已准备；代表case双fresh、7组stop和同批次正式case通过。本轮完整suite、同Session独立1410/645/144、construction15/11/30/28/47及final仅15exit尚待验收，不把映射当通过；B05draft/PhaseBfalse保持。见[记录](../completions/B04_COMPLETION.md)。下方日期条目保留历史，无commit/push。

@@ -48,6 +48,7 @@ def validate_matrix(matrix, catalog, root):
     require(list(slices) == list(TICKETS[:len(slices)]) and "B00" in slices, "matrix", "slice_order")
     require(type(matrix["scenarios"]) is list, "matrix", "scenarios")
     scenario_ids, covered = [], set()
+    source_cache = {}
     for scenario in matrix["scenarios"]:
         keys(scenario, SCENARIO_FIELDS, "scenario")
         sid = scenario["scenario_id"]
@@ -77,7 +78,7 @@ def validate_matrix(matrix, catalog, root):
         text(scenario["entrypoint"], sid, "entrypoint")
         relative, separator, qualified = scenario["entrypoint"].partition(":")
         require(separator and qualified and relative.endswith(".py"), sid, "entrypoint")
-        callable_ref(root, scenario["entrypoint"])
+        callable_ref(root, scenario["entrypoint"], source_cache=source_cache)
         if tid != "B00":
             require(relative.startswith("src/lqcd_agent/"), sid, "production_entrypoint")
         validate_result(scenario["expected_result"], sid)

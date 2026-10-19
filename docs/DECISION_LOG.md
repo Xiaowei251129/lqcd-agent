@@ -1451,3 +1451,23 @@ C26原生双fresh证明publication重复CAS revision增长，以及Human父恢�
 B04完成canonical schema0.4产品图及其原47construction/144owned验收；17产品edges、四层fallback、Human/Grant、Fake Code/fresh Analysis和预算/停止/terminal authority均复用Phase A与B01–B03 primitives。稳定Python入口为`lqcd_agent.graph.run_graph.run_canonical_graph`，默认legacy0.2 CLI继续保留，new Run与legacy隔离。原协议/schema/case/owner/预算算法/安全政策不改变。
 
 固定输入full4749、同Session独立1410/645/144与fresh15/11/30/28/47通过，131mapped/0remaining；B05仍draft且15exit adapters未交付，Phase B complete=false。原失败、来源与验证/交付manifests分开保存，不重标Session。见[B04完成记录](tickets/completions/B04_COMPLETION.md)。
+
+## 2026-10-18: Separate Development Feedback from Full Acceptance
+
+Use explicit smoke and focused-module runs for development; keep default pytest full selection and all frozen delivery gates. Reuse only AST parsing for identical source bytes within one validation call, preserving fresh reads and per-reference checks. Track newly allocated Phase B test directories by pytest ownership without changing frozen source-root paths; retain formal evidence and failures, and clean only successful ordinary runs after consumers finish. No runtime, evidence schema, requirement ownership or acceptance rule changes. See [the maintenance record](tickets/corrections/TEST_INFRASTRUCTURE_MAINTENANCE.md).
+
+## 2026-10-19: Review B05 against the maintained local baseline
+
+B05 local review incorporates remote `9e7aa18`, specifies one shared minimal historical reader and a capacity-only check point in the existing batch runner, and includes the authorized test maintenance in its pending baseline. These are ticket scope clarifications; neither feature nor the final adapters are implemented. Baseline golden repair preserves actual runtime/configuration material, exact trace comparisons and all existing assertions; environment differences require source review rather than codec exclusions. Verification and delivery manifests are recorded separately in [the maintenance record](tickets/corrections/TEST_INFRASTRUCTURE_MAINTENANCE.md). B05 remains review and Phase B incomplete.
+
+本轮原12项golden失败复测通过；共27份expected经独立fresh来源与实际环境审定固定。完整回归仍未通过：原legacy fit summary缺失，C16 formal repeat-success节点仍受原300秒上限阻断。移除无用fixture未被视为超时已解决；不放宽验收、不实施B05，完整输入与定向结果以维护记录为准。
+
+
+## 2026-10-19 — Pytest runner subprocess timeout: 450 seconds
+
+The user explicitly directed “把300 秒限制改成450秒”. B00C29 records this narrowly approved acceptance-policy change: the shared `run_pytest` subprocess timeout becomes 450 seconds, inherited by its existing batch and collection callers. It supersedes only the historical 300-second outer runner restriction; production budgets/deadlines, other child limits, assertions, source generation, Session authority, validators and full-selection requirements remain unchanged. No per-test override or new knob is introduced. Historical frozen tickets and their actual results retain their original 300-second policy. Formal C21 now passes through the actual 450-second runner (child pytest 395.88 seconds), with unchanged evidence validators and Session checks; 37 existing evidence/process-hook tests and the original real rejection probe also pass. This changes the permitted waiting time, not production performance. Full-repository regression remains pending; B05 remains review and unimplemented.
+
+
+## 2026-10-19 — B05 approval and development baseline
+
+The user explicitly approved B05, authorized committing/pushing the current development baseline to xgao, and instructed execution under the frozen ticket. The two entry prerequisites previously discussed (current-input regression/predecessor review and long-run batch arrangement) are accepted by user confirmation for entry; this is not a new measured passing run or permission to retag earlier evidence. The B05 implementation must still execute its full fresh final checks under the 450-second runner, retain all selections and evidence authority, and perform actual capacity checks. No Phase B completion is claimed at approval.

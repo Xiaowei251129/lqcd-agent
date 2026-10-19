@@ -1,5 +1,11 @@
 # 第二阶段文档索引
 
+2026-10-19 B05审定：用户已明确批准B05为ready，并要求固定当前开发基线commit/push后执行。两项进入条件按用户确认视为满足；这不新增或改写实测通过结果，B05实施后的全部fresh final验收仍必需。冻结正文SHA256为`e8bf02217e2bd405023a6ccf2b8661d5f073eb332aa185b00155a146113bed1c`；实际执行、commit及结果见[独立记录](tickets/completions/B05_COMPLETION.md)。当前尚未实施B05，Phase B未完成；下方日期保留历史。
+
+2026-10-19 当前：按用户明确授权完成C29，统一pytest evidence runner单次子进程时限由300秒改为450秒；真实runner中的C21 triple_success为395.88秒并通过原证据验证，现有evidence/process-hook37项和原拒绝探针1项通过。业务预算、其他child时限、全部既有断言及golden保持；这是等待时限调整，不是新增性能优化。完整4785项仍未在本轮重跑，B05保持review且未实施，Phase B未完成。见[独立完成记录](tickets/completions/B00C29_COMPLETION.md)；先前结果保留各自实际输入。
+
+2026-10-18 测试维护：按用户授权整理开发反馈分层、单次验证 AST 复用和普通测试目录生命周期；原有断言及冻结验收保持，新增12项回归；定向及冒烟通过，但全量尝试受12项基线可复现的golden失败阻断，未获本轮全量通过。维护验证见[独立记录](tickets/corrections/TEST_INFRASTRUCTURE_MAINTENANCE.md)；B05仍draft，Phase B未完成，下面B04全量数字仅证明其原固定输入。
+
 2026-10-17 当前：**B04 completed；B00–B04已完成；B05仍draft，Phase B未完成**。固定输入全仓 **4749/4749**（legacy325）、同Session独立owned **B02 1410／B03 645／B04 144**、fresh construction **15/11/30/28/47**通过；131 required／131 mapped／0 remaining。Final具体仅剩B05 **15个exit adapter**，全局passed仍null、phase_b_complete=false。正式144来自本轮真实production source/hook/case result，旧288份诊断仅作golden溯源。原超时/环境失败及重试保留，验证与文档交付manifest分别存档。见[完成记录](tickets/completions/B04_COMPLETION.md)。以下日期记录保留历史，无commit/push。
 
 2026-10-17 当前：**B04 in_progress；C28及前置completed保持**。容量32.25GiB、C28交付5240输入与原47/144入口核对通过，执行前快照及冻结正文保存。原18/144正式hook/observation/case result接线及47construction映射已准备；代表case双fresh、7组stop和同批次正式case通过。本轮完整suite、同Session独立1410/645/144、construction15/11/30/28/47及final仅15exit尚待验收，不把映射当通过；B05draft/PhaseBfalse保持。见[记录](tickets/completions/B04_COMPLETION.md)。下方日期条目保留历史，无commit/push。

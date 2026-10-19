@@ -1,6 +1,6 @@
 """Product stop contexts delegate to the original typed control operations."""
+from harness.temporary import mkdtemp
 from pathlib import Path
-import tempfile
 
 from helpers.b04_code_product import code_product
 from helpers.control_traces import ControlTrace
@@ -32,7 +32,7 @@ def stop_route_trace(mode, *, trace_version="0.10"):
             producer, = backend.dispatches
             runtime.plane.external_adapter = CodeExternalStop(coordinator, backend, host.containment, backend.read_receipt)
         else:
-            output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b04-stop-", dir="/private/tmp"))
+            output = Path(mkdtemp(prefix="lqcd-agent-b04-stop-", dir="/private/tmp"))
             coordinator = Coordinator(output, clock=PassiveClock(FakeClock(100, 0)))
             if trace_version == "0.11":
                 from helpers.unconsumed_code_final_sources import UnconsumedCodeSources

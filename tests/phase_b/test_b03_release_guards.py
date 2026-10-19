@@ -1,6 +1,6 @@
 """All frozen negative canonical release cases preserve original authority."""
+from harness.temporary import mkdtemp
 from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -19,7 +19,7 @@ CASES = tuple(cid for cid, spec in SPECS.items() if spec["failpoint_id"] in GUAR
 
 @pytest.mark.parametrize("case_id", CASES)
 def test_release_guard(case_id):
-    root = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-release-guard-hook-", dir="/private/tmp"))
+    root = Path(mkdtemp(prefix="lqcd-agent-b03-release-guard-hook-", dir="/private/tmp"))
     trace = release_guard(case_id, hook_request=process_hook_request(case_id, root))
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" / (case_id + ".json")))
     spec = SPECS[case_id]

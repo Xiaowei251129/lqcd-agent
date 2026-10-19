@@ -1,8 +1,8 @@
 """Human response claims allocate one validator and consume the old Pause once."""
+from harness.temporary import mkdtemp
 from dataclasses import asdict, replace
 from pathlib import Path
 import multiprocessing
-import tempfile
 
 import pytest
 
@@ -43,7 +43,7 @@ class GatePacket:
 
 @pytest.fixture(params=["phase_b_test", "balanced_v1"])
 def human_pause(request):
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b02-human-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b02-human-", dir="/private/tmp"))
     coordinator = Coordinator(output, clock=FakeClock(100, 0))
     source = ControlPlane(coordinator, worker_id="worker").start_run(replace(start_request(), profile_id=request.param), actor=ACTOR)
     locator = source["result"]["run_locator"]

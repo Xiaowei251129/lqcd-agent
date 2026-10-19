@@ -1,7 +1,7 @@
 """B02 Pause publication uses the production coordinator and execution records."""
+from harness.temporary import mkdtemp
 from pathlib import Path
 import multiprocessing
-import tempfile
 
 import pytest
 
@@ -22,7 +22,7 @@ from test_advance_control import SyntheticDomainRoute
 
 @pytest.fixture
 def control():
-    root = Path(tempfile.mkdtemp(prefix="lqcd-agent-b02-pause-", dir="/private/tmp"))
+    root = Path(mkdtemp(prefix="lqcd-agent-b02-pause-", dir="/private/tmp"))
     coordinator = Coordinator(root, clock=FakeClock(100, 0))
     actor = ActorContext("operator", "human", ("cancel", "control.internal", "resume", "start"))
     plane = ControlPlane(coordinator, worker_id="worker")

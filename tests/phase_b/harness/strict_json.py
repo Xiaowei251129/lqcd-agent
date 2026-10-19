@@ -97,13 +97,19 @@ def write_new(path, value):
         stream.write(canonical(value))
 
 
-def callable_ref(root, reference):
+def callable_ref(root, reference, *, source_cache=None):
     text(reference, "callable", "reference")
     relative, separator, qualified = reference.partition(":")
     require(separator and qualified and relative.endswith(".py"), "callable", "reference")
     path = path_in(root, relative)
     try:
-        nodes = ast.parse(path.read_bytes()).body
+        raw = path.read_bytes()
+        if source_cache is None:
+            nodes = ast.parse(raw).body
+        else:
+            if raw not in source_cache:
+                source_cache[raw] = ast.parse(raw).body
+            nodes = source_cache[raw]
     except (SyntaxError, UnicodeError) as exc:
         raise Invalid("callable", "source") from exc
     found = None

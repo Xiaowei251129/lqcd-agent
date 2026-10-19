@@ -1,9 +1,9 @@
 """Production foundation probes, distinct from later durable runtime evidence."""
+from harness.temporary import mkdtemp
 from copy import deepcopy
 from dataclasses import asdict, FrozenInstanceError
 import json
 from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -215,7 +215,7 @@ def test_global_head():
 
 @pytest.fixture
 def root_fixture():
-    root = Path(tempfile.mkdtemp(prefix="lqcd-agent-b01-", dir="/private/tmp"))
+    root = Path(mkdtemp(prefix="lqcd-agent-b01-", dir="/private/tmp"))
     ledger = bootstrap(root)
     execution = replay(ledger.records)
     index = {"schema_version": "0.1", "run_id": "run", "case_id": "case", "revision": 0, "last_event_id": None,

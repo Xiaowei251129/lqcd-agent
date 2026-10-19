@@ -1,8 +1,8 @@
 """Fresh, validated B01 source snapshots for B00C01 semantic trace tests."""
+from harness.temporary import mkdtemp
 from copy import deepcopy
 from contextvars import ContextVar
 from pathlib import Path
-import tempfile
 
 from lqcd_agent.artifacts.registry import ARTIFACT_SLOTS
 from lqcd_agent.control.execution import replay
@@ -32,7 +32,7 @@ def current_binding():
 
 
 def fresh_trace(*, time_offset=0, material_digest=None, binding=None):
-    root = Path(tempfile.mkdtemp(prefix="lqcd-agent-b00c01-", dir="/private/tmp"))
+    root = Path(mkdtemp(prefix="lqcd-agent-b00c01-", dir="/private/tmp"))
     records = deepcopy(bootstrap(root).records)
     for row in records:
         for key in ("created_at", "committed_at"):

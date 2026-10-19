@@ -4,12 +4,12 @@ The Run, registered plan, Code target and initial producer are production
 outputs. Task/manifest values are contract-shaped fixtures; the reservation
 uses the production record builder/replayer without publishing a new phase.
 """
+from harness.temporary import mkdtemp
 from copy import deepcopy
 import hashlib
 from itertools import count
 from pathlib import Path
 import subprocess
-import tempfile
 from unittest.mock import patch
 import uuid
 
@@ -29,7 +29,7 @@ from test_b03_reservation_boundaries import make_code_target
 
 
 def immutable_base():
-    root = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-trace-base-", dir="/private/tmp"))
+    root = Path(mkdtemp(prefix="lqcd-agent-b03-trace-base-", dir="/private/tmp"))
     content = b"def value():\n    return 1\n"
     (root / "sample.py").write_bytes(content)
     def git(*args):

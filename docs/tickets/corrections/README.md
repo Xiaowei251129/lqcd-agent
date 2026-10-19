@@ -203,3 +203,5 @@ C19 已完成；C18 仍 in_progress，C15/C16/C17/B04 仍 blocked。独立候选
 
 
 - 2026-10-16 [C28执行验收说明](B00C28_OWNED_BINDING_LIFECYCLE_ACCEPTANCE.md)：用户批准修订版后in_progress；11/11专项通过，完整验收及独立交接尚待完成，B04仍blocked。
+
+- 2026-10-18: [Test infrastructure maintenance](TEST_INFRASTRUCTURE_MAINTENANCE.md): opt-in development smoke, invocation-local AST parsing and ownership-based ordinary-test directory cleanup; frozen acceptance is unchanged.

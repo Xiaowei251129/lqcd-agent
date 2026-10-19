@@ -1,6 +1,6 @@
 """Immutable Coordinator inputs fence every fallback before its next effect."""
+from harness.temporary import mkdtemp
 from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -49,7 +49,7 @@ def test_fallback_packet_tampering_has_no_new_target_effect(target, fault):
         coordinator, actor, agent, backend, host, _, result = code_product(outcomes=outcomes, observer=observer)
         runtime, locator = result["runtime"], result["run_locator"]
     else:
-        output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b04-packet-guard-", dir="/private/tmp"))
+        output = Path(mkdtemp(prefix="lqcd-agent-b04-packet-guard-", dir="/private/tmp"))
         coordinator = Coordinator(output, clock=FakeClock(100, 0), observer=observer)
         actor = ActorContext("operator", "human", ("control.internal", "resume", "start"))
         agent = StructuredOutcomes(outcomes)

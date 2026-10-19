@@ -199,3 +199,5 @@
 ## 2026-10-14 B04 接续停止
 
 [B04实际记录](B04_COMPLETION.md)追加正式Run来源重验及C25绑定meta反例：B04 blocked、owned0/144；C23/C24/C25已完成历史保持。[C26](../phase-b-graph-harness/B00C26_B04_FAULT_SOURCE_AND_OWNED_ACTIVATION_HANDOFF.md)仅review，未实施、无completion。
+
+- [B05 execution record](B05_COMPLETION.md): user-approved baseline freeze and implementation/final acceptance status.

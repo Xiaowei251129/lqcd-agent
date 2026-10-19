@@ -1,9 +1,9 @@
 """B02 bootstrap control tests, not a claim of the complete B02 owned slice."""
+from harness.temporary import mkdtemp
 from dataclasses import replace
 import multiprocessing
 from pathlib import Path
 import sqlite3
-import tempfile
 
 import pytest
 
@@ -27,7 +27,7 @@ ACTOR = ActorContext("operator", "human", ("start",))
 
 @pytest.fixture
 def root():
-    return Path(tempfile.mkdtemp(prefix="lqcd-agent-b02-bootstrap-", dir="/private/tmp"))
+    return Path(mkdtemp(prefix="lqcd-agent-b02-bootstrap-", dir="/private/tmp"))
 
 
 def request():
@@ -99,6 +99,7 @@ def test_fresh_process_rejects_lost_bootstrap_plan_with_terminal_control_outcome
         coordinator.close()
 
 
+@pytest.mark.smoke
 def test_start_bootstrap_produces_real_separate_checkpoint_and_inactive_then_active_capability(root):
     observed = []
 

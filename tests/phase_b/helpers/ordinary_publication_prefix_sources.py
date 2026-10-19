@@ -1,4 +1,5 @@
 """Capture the original ordinary publication journal without runtime authority."""
+from harness.temporary import mkdtemp
 from base64 import b64decode
 from copy import deepcopy
 from hashlib import sha256
@@ -214,7 +215,6 @@ def product_prefix_trace(mode, *, material='validated', clock_time=100, recover=
     """Read a stopped process and optionally publish its original frozen suffix."""
     import multiprocessing
     import os
-    import tempfile
     from pathlib import Path
     from harness.trace import normalize
     from helpers.control_traces import ControlTrace
@@ -225,7 +225,7 @@ def product_prefix_trace(mode, *, material='validated', clock_time=100, recover=
     from lqcd_agent.control.capabilities import ArtifactEffectPort, InvocationLeases
     from lqcd_agent.control.execution import parse_ledger
 
-    output = Path(tempfile.mkdtemp(prefix='lqcd-agent-b00c22-' + mode + '-', dir='/private/tmp'))
+    output = Path(mkdtemp(prefix='lqcd-agent-b00c22-' + mode + '-', dir='/private/tmp'))
     binding = current_binding()
     process = multiprocessing.get_context('spawn').Process(target=interrupted_source, args=(output, mode, binding),
                                                             kwargs={'material': material, 'clock_time': clock_time, 'identity_label': identity_label})

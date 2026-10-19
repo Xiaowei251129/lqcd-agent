@@ -3,12 +3,14 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from harness import pytest_evidence
+from harness import pytest_evidence, temporary
 
 
 def pytest_configure(config):
     if not config.pluginmanager.hasplugin("harness.pytest_evidence"):
         pytest_evidence.pytest_configure(config)
+    if not config.pluginmanager.hasplugin("harness.temporary"):
+        temporary.pytest_configure(config)
 
 
 def pytest_unconfigure(config):

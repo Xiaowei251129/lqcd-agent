@@ -1,7 +1,7 @@
 """Actual compiled product trajectories with passive, versioned source evidence."""
+from harness.temporary import mkdtemp
 from copy import deepcopy
 from pathlib import Path
-import tempfile
 
 from helpers.control_traces import ControlTrace
 from helpers.host_identity_fixture import HostIdentities
@@ -40,7 +40,7 @@ def trajectory(mode, *, trace_version="0.9", observer=None):
                                                     human_need="approval")
     elif mode in ("high_risk", "ambiguous"):
         outcomes["analysis_engineer"] = diagnostic(**({"risk": "high"} if mode == "high_risk" else {"confidence": "ambiguous"}))
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b04-trajectory-" + mode + "-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b04-trajectory-" + mode + "-", dir="/private/tmp"))
     with HostIdentities("b04-trajectory-" + mode).installed():
         coordinator = Coordinator(output, clock=PassiveClock(FakeClock(100, 0)))
         try:

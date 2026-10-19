@@ -1,8 +1,8 @@
 """B02 child source isolation and shared production bootstrap admission."""
+from harness.temporary import mkdtemp
 from pathlib import Path
 from dataclasses import asdict
 import multiprocessing
-import tempfile
 
 import pytest
 
@@ -20,7 +20,7 @@ from helpers.process_client import child_client
 
 @pytest.fixture
 def child_control():
-    root = Path(tempfile.mkdtemp(prefix="lqcd-agent-b02-child-", dir="/private/tmp"))
+    root = Path(mkdtemp(prefix="lqcd-agent-b02-child-", dir="/private/tmp"))
     coordinator = Coordinator(root, clock=FakeClock(100, 0))
     plane = ControlPlane(coordinator, worker_id="worker")
     actor = ActorContext("operator", "human", ("control.internal", "fork", "policy.select", "replay", "resume", "start"))

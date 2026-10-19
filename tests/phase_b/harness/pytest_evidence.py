@@ -177,7 +177,7 @@ def run_pytest(session, selection, *, name="required", extra=()):
                PHASE_B_EVIDENCE_REQUEST=str(request), PHASE_B_EVIDENCE_OUTPUT=str(output))
     env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1]) + os.pathsep + str(session.root / "src")
     process = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "harness.pytest_evidence",
-                              *selection, *extra], cwd=session.root, env=env, capture_output=True, timeout=300)
+                              *selection, *extra], cwd=session.root, env=env, capture_output=True, timeout=450)
     with (session.directory / (name + "-output.txt")).open("xb") as stream:
         stream.write(process.stdout + process.stderr)
     require(output.is_file(), "pytest", "writer_output", "invalid_evidence")

@@ -1,9 +1,9 @@
 """Passive witnesses for actual product Host maximum-settlement evidence."""
+from harness.temporary import mkdtemp
 from contextlib import closing
 from copy import deepcopy
 from pathlib import Path
 import inspect
-import tempfile
 
 from helpers.control_traces import ControlTrace
 from helpers.host_identity_fixture import HostIdentities
@@ -40,7 +40,7 @@ class ProductSources(MaximumSources):
 
 
 def product_trace(mode):
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b04-source-" + mode + "-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b04-source-" + mode + "-", dir="/private/tmp"))
     clock = PassiveClock(FakeClock(100, 0))
     with HostIdentities("b04-source-" + mode).installed(), closing(Coordinator(output, clock=clock)) as coordinator:
         sources = ProductSources(coordinator)

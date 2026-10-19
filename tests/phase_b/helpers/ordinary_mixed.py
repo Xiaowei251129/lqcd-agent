@@ -1,6 +1,6 @@
 """C10 source meta drivers using original production ports."""
+from harness.temporary import mkdtemp
 from pathlib import Path
-import tempfile
 
 from helpers.control_traces import ControlTrace
 from helpers.host_identity_fixture import HostIdentities
@@ -18,7 +18,7 @@ from test_b04_product_graph import StructuredOutcomes
 def no_code_trace(*, scenario="b00c10-no-code", outcomes=None, agent=None, trace_version="0.6"):
     if trace_version not in ("0.6", "0.8"):
         raise ValueError("Unsupported explicit ordinary trace version")
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b00c10-no-code-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b00c10-no-code-", dir="/private/tmp"))
     identities = HostIdentities(scenario)
     with identities.installed():
         coordinator = Coordinator(output, clock=FakeClock(100, 0))
@@ -44,7 +44,7 @@ def no_code_trace(*, scenario="b00c10-no-code", outcomes=None, agent=None, trace
 
 
 def primitive_trace(*, kind="llm_call", failure=None, result=None, scenario="b00c10-primitive"):
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b00c10-primitive-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b00c10-primitive-", dir="/private/tmp"))
     with HostIdentities(scenario).installed():
         coordinator = Coordinator(output, clock=FakeClock(100, 0))
         sources = OrdinarySources(coordinator)
@@ -116,7 +116,7 @@ def mixed_trace(*, scenario="b00c10-mixed"):
     from test_advance_control import SyntheticDomainRoute
     from test_b03_analysis_handoff import CanonicalAnalysisRoute
 
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b00c10-mixed-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b00c10-mixed-", dir="/private/tmp"))
     repository, base_info = immutable_base_repository()
     preserved_base = output / "base_repository"
     shutil.copytree(repository, preserved_base)

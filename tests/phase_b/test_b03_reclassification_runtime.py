@@ -1,6 +1,6 @@
 """Normal-unavailable recovery preserves the original integrity interrupt."""
+from harness.temporary import mkdtemp
 from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -23,7 +23,7 @@ CASES = tuple(cid for cid in SPECS if cid.startswith("external.normal_unavailabl
 
 @pytest.mark.parametrize("case_id", CASES)
 def test_reclassification_case(case_id):
-    root = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-reclassification-hook-", dir="/private/tmp"))
+    root = Path(mkdtemp(prefix="lqcd-agent-b03-reclassification-hook-", dir="/private/tmp"))
     trace = reclassification_recovery(case_id, hook_request=process_hook_request(case_id, root))
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" / (case_id + ".json")))
     spec = SPECS[case_id]

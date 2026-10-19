@@ -1,6 +1,6 @@
 """Product reentry completes frozen publication before admitting another target."""
+from harness.temporary import mkdtemp
 from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -20,7 +20,7 @@ class PublicationInterruption(BaseException):
 @pytest.mark.parametrize("node", ["method_planner", "analysis_engineer", "scientific_reviewer"])
 @pytest.mark.parametrize("fault", [None, "expired", "member"])
 def test_finished_ledger_reentry_uses_original_completion_without_reexecution(side, node, fault):
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b04-publication-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b04-publication-", dir="/private/tmp"))
     clock = FakeClock(100, 0)
     agent = StructuredOutcomes()
     interrupted = []

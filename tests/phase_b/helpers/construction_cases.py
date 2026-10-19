@@ -1,9 +1,9 @@
 """Construction scenarios reuse reviewed production assertions and durable phase facts."""
+from harness.temporary import mkdtemp
 from contextlib import ExitStack
 import importlib
 from itertools import permutations
 from pathlib import Path
-import tempfile
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -64,7 +64,7 @@ FIXTURES = {"control": "test_pause_control", "human_pause": "test_human_control"
 
 def fixture_value(name, stack, *, profile="phase_b_test"):
     if name in ("root", "output_root"):
-        return Path(tempfile.mkdtemp(prefix="lqcd-agent-b02-construction-", dir="/private/tmp"))
+        return Path(mkdtemp(prefix="lqcd-agent-b02-construction-", dir="/private/tmp"))
     function = getattr(importlib.import_module(FIXTURES[name]), name).__wrapped__
     args = (SimpleNamespace(param=profile),) if name == "human_pause" else (fixture_value("normal_external", stack),) if name == "prepared_source" else ()
     generator = function(*args)

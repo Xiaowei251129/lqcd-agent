@@ -1,4 +1,5 @@
 """Capture actual B02 boundaries and their complete raw authority references."""
+from harness.temporary import mkdtemp
 from itertools import count
 from pathlib import Path
 import sqlite3
@@ -332,7 +333,7 @@ class ControlTrace:
 
 
 def fresh_recovery_trace():
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b02-trace-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b02-trace-", dir="/private/tmp"))
     captured = ControlTrace(output)
     identities = count(1)
     with patch("uuid.uuid4", side_effect=lambda: uuid.UUID(int=next(identities))):

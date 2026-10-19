@@ -1,6 +1,6 @@
 """Production work targets cannot replace Host identities or bypass guards."""
+from harness.temporary import mkdtemp
 from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -16,7 +16,7 @@ from test_b04_product_graph import StructuredOutcomes, canonical, diagnostic
 @pytest.mark.parametrize("field", ["run_id", "attempt_id", "producer", "status", "schema_version"])
 @pytest.mark.parametrize("same_value", [False, True])
 def test_agent_reserved_content_is_rejected_before_domain_publication(field, same_value):
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b04-host-boundary-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b04-host-boundary-", dir="/private/tmp"))
     coordinator = Coordinator(output, clock=FakeClock(100, 0))
     actor = ActorContext("operator", "human", ("control.internal", "resume", "start"))
     inputs = {"root_goal": {"goal": "Validate the synthetic observable"}, "input_snapshot": {"data": "synthetic"}}

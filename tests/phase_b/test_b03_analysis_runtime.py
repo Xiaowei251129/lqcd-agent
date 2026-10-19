@@ -1,6 +1,6 @@
 """Frozen runtime cases for canonical fresh Analysis preparation."""
+from harness.temporary import mkdtemp
 from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -20,7 +20,7 @@ PREPARATION_CASES = tuple(case_id for case_id, spec in SPECS.items()
 
 @pytest.mark.parametrize("case_id", PREPARATION_CASES)
 def test_preparation_case(case_id):
-    directory = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-analysis-hook-", dir="/private/tmp"))
+    directory = Path(mkdtemp(prefix="lqcd-agent-b03-analysis-hook-", dir="/private/tmp"))
     request = process_hook_request(case_id, directory)
     trace = preparation_recovery(case_id, hook_request=request)
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" / (case_id + ".json")))

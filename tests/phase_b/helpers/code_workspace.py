@@ -1,14 +1,14 @@
 """Standalone committed synthetic bases; never the control repository."""
+from harness.temporary import mkdtemp
 import os
 from pathlib import Path
 import subprocess
-import tempfile
 
 from lqcd_agent.code_agent.workspace import tree_digest
 
 
 def immutable_base_repository():
-    root = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-base-", dir="/private/tmp"))
+    root = Path(mkdtemp(prefix="lqcd-agent-b03-base-", dir="/private/tmp"))
     files = {"sample.py": b"value = 1\n"}
     for path, content in files.items():
         (root / path).write_bytes(content)

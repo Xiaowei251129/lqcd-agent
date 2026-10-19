@@ -1,8 +1,8 @@
 """Real product graph with deterministic external result and tool fixtures."""
+from harness.temporary import mkdtemp
 from hashlib import sha256
 from pathlib import Path
 import sys
-import tempfile
 
 from helpers.code_workspace import immutable_base_repository
 from lqcd_agent.code_agent.analysis_handoff import AnalysisHandoff
@@ -100,7 +100,7 @@ class ProductFakeBackend(FakeCodingBackend):
 
 def code_product(*, status="success", outcomes=None, observer=None, trace=False, trace_version="0.8",
                  requirement="Compute the approved synthetic observable", first_failure_change=None, stop_fault=None):
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b04-code-product-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b04-code-product-", dir="/private/tmp"))
     repository, base = immutable_base_repository()
     from helpers.ordinary_maximum import PassiveClock
     coordinator = Coordinator(output, clock=PassiveClock(FakeClock(100, 0)) if trace else FakeClock(100, 0), observer=observer)

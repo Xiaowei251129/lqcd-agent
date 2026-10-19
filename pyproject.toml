@@ -21,3 +21,4 @@ lqcd_agent.demo = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["smoke: small canonical workflow checks for local development; not full acceptance"]

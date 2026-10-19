@@ -1,11 +1,11 @@
 """Explicit child provenance and isolated native probes for unbound B04 cases."""
+from harness.temporary import mkdtemp
 from contextlib import contextmanager
 from copy import deepcopy
 from functools import wraps
 import multiprocessing
 import os
 from pathlib import Path
-import tempfile
 from unittest.mock import patch
 
 from harness import pytest_evidence
@@ -130,7 +130,7 @@ def validate_probe(value, session, case_id):
 
 def run_native_case(case_id):
     require(PROBE_MODE not in os.environ, "b04_probe", "unexpected_nested_mode")
-    root = Path(tempfile.mkdtemp(prefix="lqcd-agent-b00c25-native-", dir="/private/tmp"))
+    root = Path(mkdtemp(prefix="lqcd-agent-b00c25-native-", dir="/private/tmp"))
     digests = {key: sha((ROOT / path).read_bytes()) for key, path in PATHS.items()}
     results = []
     for index in range(2):
@@ -154,7 +154,7 @@ def run_fault_case(case_id, *, local_consumers=False, fresh_count=2):
     from harness.strict_json import canonical
     from harness.trace import normalize
     require(PROBE_MODE not in os.environ and fresh_count in (1, 2), "fault_probe", "native_outer")
-    root = Path(tempfile.mkdtemp(prefix="lqcd-agent-b00c26-native-", dir="/private/tmp"))
+    root = Path(mkdtemp(prefix="lqcd-agent-b00c26-native-", dir="/private/tmp"))
     digests = {key: sha((ROOT / path).read_bytes()) for key, path in PATHS.items()}
     results = []
     for index in range(fresh_count):

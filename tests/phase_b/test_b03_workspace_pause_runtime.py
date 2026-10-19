@@ -1,6 +1,6 @@
 """Real workspace materialization and public external Pause binding cuts."""
+from harness.temporary import mkdtemp
 from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -19,7 +19,7 @@ CASES = tuple(cid for cid, spec in SPECS.items() if spec["failpoint_id"] in BOUN
 
 @pytest.mark.parametrize("case_id", CASES)
 def test_workspace_pause_case(case_id):
-    root = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-workspace-pause-hook-", dir="/private/tmp"))
+    root = Path(mkdtemp(prefix="lqcd-agent-b03-workspace-pause-hook-", dir="/private/tmp"))
     driver = workspace_recovery if SPECS[case_id]["failpoint_id"] == "external.workspace_lease" else pause_binding_recovery
     trace = driver(case_id, hook_request=process_hook_request(case_id, root))
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" / (case_id + ".json")))

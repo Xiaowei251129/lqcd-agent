@@ -4,10 +4,10 @@ These archived source inputs are not a new 0.3 runtime or relabelled 0.4 Run.
 They contain no A06 policy/budget/bootstrap records. Only child creation uses
 production 0.4 writers; the historical validator has no mutation interface.
 """
+from harness.temporary import mkdtemp
 from hashlib import sha256
 from pathlib import Path
 import sqlite3
-import tempfile
 
 import pytest
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -113,7 +113,7 @@ def historical_source(coordinator):
 
 @pytest.fixture
 def historical():
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b02-history-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b02-history-", dir="/private/tmp"))
     coordinator = Coordinator(output, clock=FakeClock(100, 0))
     plane = ControlPlane(coordinator, worker_id="child", source_adapter=Archived03Reader())
     actor = ActorContext("operator", "human", ("fork", "policy.select", "replay"))

@@ -1,5 +1,7 @@
 # Verification Guide
 
+2026-10-19 当前政策：[C29](tickets/phase-b-graph-harness/B00C29_PYTEST_RUNNER_TIMEOUT_450.md)按用户明确授权将统一`run_pytest`单次子进程上限从300秒改为450秒；`run_pytest_batches`与collect入口继续共用该runner。原selection、双fresh、Session/证据验证及其他child上限保持。C29已完成：真实runner中C21子进程395.88秒通过，原evidence/process-hook37项及拒绝探针1项通过；完整4785项回归仍待完成，B05仍review且未实施。以下日期记录中的300秒是当时政策，不回写旧结果。
+
 2026-10-17 B04完成：当前验收目录`/private/tmp/lqcd-agent-b04-execution-20261017-vnz2rk_k`保存固定输入manifest、全仓exact4749的原C04有界批次/合并envelope和同Session独立B02 1410/B03 645/B04 144报告。全部原validator实际运行；300秒outer/60秒child不放宽，失败批次保留并拆分原限重跑。Unix socket负例在允许本地socket的正常环境运行。144新golden保持C28批准候选字节及原288份双fresh来源；它们只作溯源，正式owned由本轮144真实case结果证明。Construction15/11/30/28/47与final具体15exit分别留报告；验证和后续文档交付manifest分离，不重标Session。 见[完成记录](tickets/completions/B04_COMPLETION.md)。以下日期条目为历史记录。
 
 2026-10-16 当前：**C28 completed；B04独立入口通过，恢复ready；C26/C27 completed保持**。当前固定输入full **4678/4678**（legacy325）、同Session独立B02 **1410**／B03 **645**、fresh construction **15/11/30/28**及final原具体 **47/144/15**通过。仅修订一项旧meta生命周期假设；实际registry/owners不变。原144双fresh按原绑定只读验证source/诊断，不能证明正式144owned；B04仍owned **0/144**，原47construction/144owned待执行。原失败和重试保留，验证与文档交付输入分开存档。见[完成记录](tickets/completions/B00C28_COMPLETION.md)。以下日期条目保留历史，无commit/push。
@@ -38,13 +40,37 @@
 
 ## 使用原则
 
-验证应与改动风险相匹配。普通文档迁移不运行 live provider；runtime、graph 或 schema 改动必须运行完整 deterministic suite，并按 ticket 增加针对性检查。
+验证应与改动风险相匹配。开发过程中使用下面的分层入口；runtime、graph、schema 或测试基础设施改动在合并/交付前仍须通过完整 deterministic suite，并按 ticket 完成额外验收。分层不改变任何冻结 ticket 的必验集合、断言或完成判定；局部通过不能证明整票或 Phase B 通过。
+
+当前golden基线审定使用Python 3.12.7、`/Users/xiang/.local/python_vev/bin/python`、pytest 9.0.3、LangGraph 1.2.10及`langgraph-checkpoint-sqlite` 3.1.1。执行前记录实际`sys.executable`、`sys.version`和安装版本；这里的`python`须解析到该审定解释器。原expected来自1.1.5/3.1.0环境，mixed及成功Code/C21 trace还绑定真实分析命令与解释器配置；依赖或解释器变化不是normalizer可忽略的字段。不同环境不能直接继承通过声明，也不能只更新golden绕过差异；先按[维护记录](tickets/corrections/TEST_INFRASTRUCTURE_MAINTENANCE.md)复核来源、摘要传播和完整回归。此处记录验收环境，不改变`pyproject.toml`的依赖声明或增加另一套测试入口。
 
 当前执行入口是 [Docs Index](README.md) 与 [Tickets](tickets/README.md)。第一阶段原始计划和 prompt 历史只从 milestone tag 查看，不存在当前执行权威。
 
 ## 快速检查
 
-对所有修改至少运行：
+所有修改先运行 `git diff --check`。纯文档修改检查链接、metadata、scope；涉及协议/目录时另运行 Phase A validator，不因文字编辑重复执行 runtime。
+
+日常开发的三个入口：
+
+| 层级 | 命令 | 用途 |
+| --- | --- | --- |
+| 冒烟 | `python -m pytest -q -m smoke` | 四项现有 canonical 检查：bootstrap/capability、workspace fencing、Fake Backend restart、无 Code 的完整产品图；不是全部控制或科学能力验收 |
+| 定向回归 | `python -m pytest -q tests/phase_b/test_bootstrap_control.py` | 根据实际修改选择完整相关模块，必要时加上下游模块；不使用自动猜测的变更过滤器 |
+| 完整回归 | `RUN_LIVE_LLM_TESTS=0 python -m pytest -q` | 合并/交付前完整收集和执行；默认 pytest 的选择保持全量，包含慢测试与双 fresh 检查 |
+
+需要定位慢项时使用 `--durations=20`。`smoke` 是显式 opt-in marker，不写入默认 `addopts`，不修改 matrix、runtime obligations、exit checks 或 skip/xfail 规则。正式验收继续使用下文原 CLI/Session 及冻结要求；本轮维护不实施 B05。
+
+### 临时测试数据
+
+Phase B 的目录分配统一通过 `harness.temporary.mkdtemp` 登记；原 `/private/tmp` 路径和 prefix 保持不变。每次最外层 pytest 创建自己的 ownership ledger，嵌套 pytest/子进程继承同一清单。只有所有 session-finish hooks 成功、pytest 零退出且没有活动 multiprocessing child 时，才清理本次普通测试登记的目录；删除前逐根核对 device/inode，替换目录或 symlink 保留，不跟随到外部目录。
+
+失败/中断、活动子进程、清理错误及设置了 `PHASE_B_EVIDENCE_REQUEST` 的正式运行保留数据，并打印清单路径。正式运行的绝对 source references 因而仍可在父验证器中使用；不清理旧目录、历史证据或其他运行。`LQCD_PYTEST_TEMP_LEDGER` 是内部子进程交接状态，不是用户配置选项。pytest 外单独调用 helper 时没有 session owner，目录继续由调用者管理。
+
+验收输入校验仅在当前 `validate_matrix`/`validate_inventory` 调用中复用相同源字节的 AST；每次引用仍重新读取源字节并检查路径与 qualified name。没有跨 Session 缓存、证明通过缓存或 worktree digest 豁免。
+
+维护依据和验证结果见[测试基础设施维护记录](tickets/corrections/TEST_INFRASTRUCTURE_MAINTENANCE.md)。
+
+完整回归入口：
 
 ```bash
 git diff --check

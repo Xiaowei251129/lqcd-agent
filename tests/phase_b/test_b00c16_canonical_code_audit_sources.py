@@ -44,9 +44,9 @@ def canonical():
 
 
 @pytest.mark.parametrize("mode", MODES)
-def test_dual_fresh_canonical_sources(mode, canonical):
+def test_dual_fresh_canonical_sources(mode, request):
     success, repeat = MODES[mode]
-    first = canonical if mode == "success" else code_product_trace(success=success, repeat=repeat)
+    first = request.getfixturevalue("canonical") if mode == "success" else code_product_trace(success=success, repeat=repeat)
     second = code_product_trace(success=success, repeat=repeat)
     traces = []
     for trace, output, facts in (first, second):

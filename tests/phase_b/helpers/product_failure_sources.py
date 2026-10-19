@@ -1,4 +1,5 @@
 """Passive C15 witnesses of the original fenced Host derivation and admission."""
+from harness.temporary import mkdtemp
 from copy import deepcopy
 import inspect
 
@@ -81,7 +82,6 @@ def code_product_trace(*, success=False, requirement="Return the fixture value",
     from pathlib import Path
     import shutil
     import sys
-    import tempfile
     from helpers.code_workspace import immutable_base_repository
     from helpers.control_traces import ControlTrace
     from helpers.host_identity_fixture import HostIdentities
@@ -106,7 +106,7 @@ def code_product_trace(*, success=False, requirement="Return the fixture value",
     from lqcd_agent.graph.nodes import ProductNode
     from test_b04_product_graph import StructuredOutcomes, diagnostic
 
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b00c15-code-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b00c15-code-", dir="/private/tmp"))
     base_repository, base_info = immutable_base_repository()
     repository = output / "base_repository"
     shutil.copytree(base_repository, repository)

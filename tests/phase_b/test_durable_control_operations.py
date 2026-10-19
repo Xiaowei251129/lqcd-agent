@@ -1,9 +1,9 @@
 """B02 tests exercise production persistence without claiming product behavior."""
+from harness.temporary import mkdtemp
 from copy import deepcopy
 from pathlib import Path
 import multiprocessing
 import sqlite3
-import tempfile
 
 import pytest
 
@@ -18,7 +18,7 @@ from helpers.process_client import publication_client, reservation_client
 
 @pytest.fixture
 def output_root():
-    return Path(tempfile.mkdtemp(prefix="lqcd-agent-b02-", dir="/private/tmp"))
+    return Path(mkdtemp(prefix="lqcd-agent-b02-", dir="/private/tmp"))
 
 
 def reservation(operation_id, timestamp):

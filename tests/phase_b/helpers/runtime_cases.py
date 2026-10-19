@@ -1,11 +1,11 @@
 """Independent process drivers for frozen B02 control phase fault cases."""
+from harness.temporary import mkdtemp
 from contextlib import contextmanager
 from dataclasses import asdict
 from functools import partial
 import multiprocessing
 import os
 from pathlib import Path
-import tempfile
 import traceback
 
 from harness.inventory import case_specs
@@ -86,7 +86,7 @@ def phase_fixture(case_id, *, recovery_target=None, canonical_advance=None, cano
         else:
             request = AdvanceRunRequest(locator, attempt, "advance")
     elif kind == "start_run":
-        root = Path(tempfile.mkdtemp(prefix="lqcd-agent-b02-runtime-", dir="/private/tmp"))
+        root = Path(mkdtemp(prefix="lqcd-agent-b02-runtime-", dir="/private/tmp"))
         coordinator = Coordinator(root, clock=FakeClock(100, 0))
         actor = ActorContext("operator", "human", ("start",))
         request = start_request()
@@ -378,7 +378,7 @@ def exercise_phase_case(case_id, *, fixture_case=None, fault_point=None, occurre
         tables = ("control_operations", "control_phases", "control_snapshots", "control_publications", "run_controls",
                   "pause_ownership", "run_terminal_closure", "invocation_capabilities", "external_operations")
         before_rows = {table: [tuple(row) for row in coordinator.connection.execute("SELECT * FROM " + table)] for table in tables}
-        receipt_dir = Path(tempfile.mkdtemp(prefix="lqcd-agent-b02-case-evidence-", dir="/private/tmp"))
+        receipt_dir = Path(mkdtemp(prefix="lqcd-agent-b02-case-evidence-", dir="/private/tmp"))
         request = process_hook_request(case_id, receipt_dir)
         fault = run_client(config, 40 if takeover else 0, fault=(boundary, side), hook_request=request)
         assert fault["name"] == boundary and fault["side"] == side

@@ -1,13 +1,15 @@
 """Pure replay of the single execution ledger; no persistence or invocation API."""
 from dataclasses import dataclass
+from hashlib import sha256
+import json
 
 from lqcd_agent.artifacts import registry
 from lqcd_agent.graph.state import stable_cycle_id
 
 from .budget import WORK_KINDS, validate_policy
 from .protocol import PROTOCOL
-from .records import IDENTITIES, parse_record, validate_record
-from .strict_json import ControlIntegrityError, ValidatedValue, canonical_bytes, digest, require
+from .records import IDENTITIES, _validate_record, validate_record
+from .strict_json import ControlIntegrityError, ValidatedValue, digest, loads, require
 
 
 @dataclass(frozen=True)
@@ -17,12 +19,14 @@ class ExecutionReplay:
 
     @property
     def values(self):
-        return [parse_record(record).value for record in self.records]
+        return [_validate_record(loads(record)) for record in self.records]
 
 
 def _checked_replay(records):
     require(type(records) in (list, tuple) and bool(records), "Missing execution ledger")
-    records = [validate_record(record).value for record in records]
+    snapshots = tuple(validate_record(record).canonical for record in records)
+    # Decode only the immutable canonical bytes just produced by validation.
+    records = [json.loads(record) for record in snapshots]
     root = records[0]
     require(root["record_type"] == "run", "Ledger must begin with Run creation")
     run_status = root["status"]
@@ -183,7 +187,7 @@ def _checked_replay(records):
                 registry._human_request_lifecycle_records(records[:index], identity)
             elif kind == "human_response":
                 registry._human_response_lifecycle_records(records[:index], identity)
-        previous = digest(record)
+        previous = sha256(snapshots[index - 1]).hexdigest()
     for kind, (identity, index, _) in IDENTITIES.items():
         registry._validate_execution_index_sequence(
             ((key, life[0][index]) for key, life in seen[kind].items()), label=kind,
@@ -204,7 +208,7 @@ def _checked_replay(records):
                   "checkpoint_thread_id": root["checkpoint_thread_id"], **_identity_projection(seen), "budget": budget}
     from .pause import replay_pauses
     projection.update(replay_pauses(records))
-    return ExecutionReplay(tuple(canonical_bytes(record) for record in records), ValidatedValue.from_value(projection))
+    return ExecutionReplay(snapshots, ValidatedValue.from_value(projection))
 
 
 def replay(records):
@@ -217,12 +221,13 @@ def replay(records):
 
 def parse_ledger(data):
     require(type(data) is bytes and data.endswith(b"\n"), "Partial execution ledger line")
-    return replay([parse_record(line).value for line in data[:-1].split(b"\n")])
+    return replay([loads(line) for line in data[:-1].split(b"\n")])
 
 
 def append_record_bytes(ledger, record):
     """Return validated new bytes. Only a later durable owner may publish them."""
-    prior = [] if ledger == b"" else parse_ledger(ledger).values
+    # Preserve full prefix validation before decoding its validated snapshot.
+    prior = [] if ledger == b"" else [json.loads(row) for row in parse_ledger(ledger).records]
     result = replay([*prior, record])
     return b"\n".join(result.records) + b"\n"
 

@@ -1,11 +1,11 @@
 """Filesystem evidence checks on disposable, committed synthetic repositories."""
+from harness.temporary import mkdtemp
 from copy import deepcopy
 import os
 from pathlib import Path
 import shutil
 import socket
 import subprocess
-import tempfile
 
 import pytest
 
@@ -16,7 +16,7 @@ from lqcd_agent.control.strict_json import ControlIntegrityError, digest
 
 @pytest.fixture
 def workspace():
-    root = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-workspace-", dir="/private/tmp"))
+    root = Path(mkdtemp(prefix="lqcd-agent-b03-workspace-", dir="/private/tmp"))
     base = {"sample.py": b"value = 1\n"}
     manifest = {"workspace_id": "workspace_fixture", "manifest_digest": digest("manifest"),
                 "managed_root_identity": digest("root"), "base_tree_digest": tree_digest(base)}
@@ -40,6 +40,7 @@ def test_workspace_reopens_exact_identity_and_rejects_replacement(workspace):
             sorted(["same_workspace_identity", "replacement_rejected"]))
 
 
+@pytest.mark.smoke
 def test_workspace_fence_runs_before_any_directory_or_file_creation(workspace):
     provider, manifest, witness, base = workspace
     other = {**manifest, "workspace_id": "workspace_unowned"}
@@ -105,7 +106,7 @@ def test_changes_are_derived_from_full_content_and_explicit_scope(workspace):
 
 
 def test_immutable_base_reads_committed_blobs_without_checkout_or_dirty_bytes():
-    root = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-base-", dir="/private/tmp"))
+    root = Path(mkdtemp(prefix="lqcd-agent-b03-base-", dir="/private/tmp"))
     (root / "sample.py").write_bytes(b"value = 1\n")
     def git(*args):
         return subprocess.check_output(["/usr/bin/git", "-C", str(root), *args], stderr=subprocess.DEVNULL).decode().strip()

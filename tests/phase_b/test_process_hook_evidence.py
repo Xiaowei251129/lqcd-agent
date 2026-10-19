@@ -1,8 +1,8 @@
 """Real crash receipts bind production triggers to the parent pytest session."""
+from harness.temporary import mkdtemp
 from copy import deepcopy
 from pathlib import Path
 import multiprocessing
-import tempfile
 
 import pytest
 
@@ -22,7 +22,7 @@ INVARIANTS = ["durable_child_trigger", "fresh_session_binding", "reservation_rol
 
 
 def crash_receipt(side):
-    root = Path(tempfile.mkdtemp(prefix="lqcd-agent-hook-process-", dir="/private/tmp"))
+    root = Path(mkdtemp(prefix="lqcd-agent-hook-process-", dir="/private/tmp"))
     boundary = "control.start_run.not_applicable.operation_reserved"
     request = process_hook_request(boundary + "." + side + ".reservation_rolled_back", root)
     context = multiprocessing.get_context("spawn")
@@ -98,7 +98,7 @@ def test_child_receipt_cannot_be_rebound(fault):
 
 
 def test_test_side_callback_cannot_impersonate_production():
-    root = Path(tempfile.mkdtemp(prefix="lqcd-agent-hook-spoof-", dir="/private/tmp"))
+    root = Path(mkdtemp(prefix="lqcd-agent-hook-spoof-", dir="/private/tmp"))
     request = process_hook_request("test-case", root)
     with pytest.raises(Invalid, match="production_source"):
         production_hook(request["case_id"], process_request=request)

@@ -1,8 +1,8 @@
 """C11 passive Clock/source capture and original-port maximum meta scenarios."""
+from harness.temporary import mkdtemp
 from copy import deepcopy
 from pathlib import Path
 import sys
-import tempfile
 
 from helpers.ordinary_sources import OrdinarySources, captured_source
 from helpers.control_traces import ControlTrace
@@ -104,7 +104,7 @@ class MaximumSources(OrdinarySources):
 
 
 def maximum_trace(*, mode="exception", kind="llm_call", message="Uncertain provider completion", result="bounded", close=True, scoped=False, host_receipt=False):
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b00c11-maximum-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b00c11-maximum-", dir="/private/tmp"))
     clock = PassiveClock(FakeClock(100, 0))
     identities = HostIdentities("b00c11-" + mode + "-" + kind + ("-scoped" if scoped else ""))
     with identities.installed():

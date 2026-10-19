@@ -1,8 +1,8 @@
 """Actual original budget suffixes retain single effects and original ownership."""
+from harness.temporary import mkdtemp
 from contextlib import closing
 from copy import deepcopy
 from pathlib import Path
-import tempfile
 import os
 import multiprocessing
 import shutil
@@ -34,7 +34,7 @@ class BoundaryInterruption(BaseException):
 @pytest.mark.parametrize("side", ["before", "after"])
 def test_budget_suffix_never_reobserves_or_dispatches(event, side):
     for _ in range(2):
-        output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b00c15-budget-", dir="/private/tmp"))
+        output = Path(mkdtemp(prefix="lqcd-agent-b00c15-budget-", dir="/private/tmp"))
         with HostIdentities("b00c15-budget-" + event + "-" + side).installed(), closing(Coordinator(output, clock=PassiveClock(FakeClock(100, 0)))) as coordinator:
             sources = ProductFailureSources(coordinator)
             capture = ControlTrace(output, version="0.8", ordinary_sources=sources)
@@ -209,7 +209,7 @@ def recover_budget_source(output):
 def test_frozen_completion_original_suffix_dual_fresh(event, boundary, side):
     facts = []
     for _ in range(2):
-        output = Path(tempfile.mkdtemp(prefix="lqcd-agent-c18-completion-", dir="/private/tmp"))
+        output = Path(mkdtemp(prefix="lqcd-agent-c18-completion-", dir="/private/tmp"))
         interrupted_budget_source(output, event, boundary, side, "python_base_exception")
         facts.append(recover_budget_source(output))
     assert facts[0] == facts[1]
@@ -224,7 +224,7 @@ def test_real_process_death_preserves_original_budget_prefix(event, boundary_kin
                 "checkpoint": "checkpoint.sqlite_commit"}[boundary_kind]
     facts = []
     for _ in range(2):
-        output = Path(tempfile.mkdtemp(prefix="lqcd-agent-c18-process-", dir="/private/tmp"))
+        output = Path(mkdtemp(prefix="lqcd-agent-c18-process-", dir="/private/tmp"))
         process = multiprocessing.get_context("spawn").Process(target=interrupted_budget_source,
             args=(output, event, boundary, side, "process_exit"))
         process.start()
@@ -326,7 +326,7 @@ def recover_grant_advance(output):
 def test_original_grant_consumption_prefix_dual_fresh(phase, side, interruption):
     facts = []
     for _ in range(2):
-        output = Path(tempfile.mkdtemp(prefix="lqcd-agent-c18-grant-advance-", dir="/private/tmp"))
+        output = Path(mkdtemp(prefix="lqcd-agent-c18-grant-advance-", dir="/private/tmp"))
         boundary = "control.advance_run.not_applicable." + phase
         args = (output, "grant_issued", boundary, side, interruption)
         if interruption == "process_exit":
@@ -349,7 +349,7 @@ def test_original_grant_consumption_prefix_dual_fresh(phase, side, interruption)
                                   "completion_ledger", "completion_checkpoint", "budget_intent", "public_head"])
 def test_budget_completion_rejects_lost_authority_or_tampered_facts(fault):
     for _ in range(2):
-        output = Path(tempfile.mkdtemp(prefix="lqcd-agent-c18-completion-rejection-", dir="/private/tmp"))
+        output = Path(mkdtemp(prefix="lqcd-agent-c18-completion-rejection-", dir="/private/tmp"))
         interrupted_budget_source(output, "grant_issued", "invocation.completion_intent", "after", "python_base_exception")
         receipt = loads((output / "fault-receipt.json").read_bytes())
         clock = PassiveClock(FakeClock(100, 0))
@@ -411,7 +411,7 @@ def test_grant_advance_uncertain_prefix_does_not_activate_work(fault):
     from lqcd_agent.graph.analysis_graph import ProductRouteAdapter
 
     for _ in range(2):
-        output = Path(tempfile.mkdtemp(prefix="lqcd-agent-c18-grant-rejection-", dir="/private/tmp"))
+        output = Path(mkdtemp(prefix="lqcd-agent-c18-grant-rejection-", dir="/private/tmp"))
         interrupted_budget_source(output, "grant_issued", "control.advance_run.not_applicable.budget_decision_committed",
                                   "after", "python_base_exception")
         receipt = loads((output / "fault-receipt.json").read_bytes())

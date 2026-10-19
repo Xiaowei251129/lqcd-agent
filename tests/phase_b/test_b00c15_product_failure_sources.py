@@ -1,8 +1,8 @@
 """C15 original product ports and source rejection checks; no B04 ownership."""
+from harness.temporary import mkdtemp
 from contextlib import closing, contextmanager
 from copy import deepcopy
 from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -28,7 +28,7 @@ from test_b00c13_human_continuation import records, resume_request, files
 
 @contextmanager
 def product_source(*, label="source", outcomes=None, profile="balanced_v1", observer=None, inputs=None, agent=None):
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b00c15-" + label + "-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b00c15-" + label + "-", dir="/private/tmp"))
     with HostIdentities("b00c15-" + label).installed(), closing(Coordinator(output, clock=PassiveClock(FakeClock(100, 0)))) as coordinator:
         sources = ProductFailureSources(coordinator)
         capture = ControlTrace(output, version="0.8", ordinary_sources=sources)

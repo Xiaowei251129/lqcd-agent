@@ -311,6 +311,7 @@ def validate_inventory(registry, obligations, protocol, root, scenarios):
             "inventory", "case_version")
     require(type(registry["entries"]) is list, "registry", "entries")
     fields = set(expected_inventory(protocol)[0])
+    source_cache = {}
     for entry in registry["entries"]:
         keys(entry, fields, "failpoint")
     require(digest(inventory_projection(registry)) == REGISTRY_INVENTORY_SHA256, "registry", "inventory_seal")
@@ -346,7 +347,7 @@ def validate_inventory(registry, obligations, protocol, root, scenarios):
             text(hook, fp, "hook_ref")
             relative, separator, qualname = hook.partition(":")
             require(separator and qualname and relative.startswith("src/lqcd_agent/"), fp, "hook_ref")
-            callable_ref(root, hook)
+            callable_ref(root, hook, source_cache=source_cache)
         require(type(entry["case_bindings"]) is list, fp, "case_bindings")
         seen = []
         for binding in entry["case_bindings"]:

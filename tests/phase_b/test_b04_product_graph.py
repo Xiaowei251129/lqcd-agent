@@ -1,7 +1,8 @@
 """Canonical routes use production selectors and original control publications."""
+import pytest
+from harness.temporary import mkdtemp
 from pathlib import Path
 from copy import deepcopy
-import tempfile
 
 from lqcd_agent.control.clock import FakeClock
 from lqcd_agent.control.coordinator import Coordinator
@@ -41,7 +42,7 @@ class StructuredOutcomes:
 
 
 def canonical(outcomes=None, *, profile="balanced_v1"):
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b04-product-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b04-product-", dir="/private/tmp"))
     coordinator = Coordinator(output, clock=FakeClock(100, 0))
     actor = ActorContext("operator", "human", ("control.internal", "resume", "start"))
     inputs = {"root_goal": {"goal": "Validate the synthetic observable"}, "input_snapshot": {"data": "synthetic"}}
@@ -55,6 +56,7 @@ def canonical(outcomes=None, *, profile="balanced_v1"):
     return coordinator, actor, port, result
 
 
+@pytest.mark.smoke
 def test_no_code_completes_in_the_compiled_product_graph_and_replays_without_calls():
     coordinator, _, port, result = canonical()
     try:

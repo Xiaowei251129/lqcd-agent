@@ -1,11 +1,11 @@
 """B02C01 exercises real legacy bytes through the public child control entry."""
+from harness.temporary import mkdtemp
 from copy import deepcopy
 from dataclasses import asdict, replace
 from hashlib import sha256
 from pathlib import Path
 import json
 import multiprocessing
-import tempfile
 
 import pytest
 
@@ -26,7 +26,7 @@ MISSING = {"availability": "not_recorded", "reason": "legacy_schema_0_2"}
 
 @pytest.fixture
 def legacy_control():
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b02c01-legacy-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b02c01-legacy-", dir="/private/tmp"))
     config = output / "_generated_case_configs/case.json"
     config.parent.mkdir()
     config.write_text(json.dumps({"case_id": "case", "physics_goal": "synthetic", "data": "synthetic"}, indent=2) + "\n")

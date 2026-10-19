@@ -1,10 +1,10 @@
 """Independently observed B03 producer reservation crash cases."""
+from harness.temporary import mkdtemp
 from pathlib import Path
 from dataclasses import asdict
 from functools import partial
 import multiprocessing
 import os
-import tempfile
 
 import pytest
 
@@ -337,7 +337,7 @@ def unstarted_post_claim_recovery(case_id, source_phase, next_phase, authority, 
 
 @pytest.mark.parametrize("case_id,source_phase,next_phase,authority", UNSTARTED_CASES)
 def test_unstarted_post_claim_case(case_id, source_phase, next_phase, authority):
-    directory = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-unstarted-hook-", dir="/private/tmp"))
+    directory = Path(mkdtemp(prefix="lqcd-agent-b03-unstarted-hook-", dir="/private/tmp"))
     request = process_hook_request(case_id, directory)
     trace = unstarted_post_claim_recovery(case_id, source_phase, next_phase, authority, hook_request=request)
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" / (case_id + ".json")))
@@ -508,7 +508,7 @@ def test_unstarted_phase_after_exit_rolls_back_failure_owner(source_phase, next_
 
 @pytest.mark.parametrize("case_id", sorted(INITIAL_CUTS))
 def test_independent_case(case_id):
-    directory = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-runtime-hook-", dir="/private/tmp"))
+    directory = Path(mkdtemp(prefix="lqcd-agent-b03-runtime-hook-", dir="/private/tmp"))
     request = process_hook_request(case_id, directory)
     trace = first_external_reservation_durability(INITIAL_CUTS[case_id], hook_request=request)
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" / (case_id + ".json")))
@@ -580,7 +580,7 @@ def host_final_replay(case_id, *, hook_request=None, with_root=False):
 
 @pytest.mark.parametrize("case_id", HOST_FINAL_CUTS)
 def test_host_final_case(case_id):
-    directory = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-host-final-hook-", dir="/private/tmp"))
+    directory = Path(mkdtemp(prefix="lqcd-agent-b03-host-final-hook-", dir="/private/tmp"))
     request = process_hook_request(case_id, directory)
     trace = host_final_replay(case_id, hook_request=request)
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" / (case_id + ".json")))
@@ -591,7 +591,7 @@ def test_host_final_case(case_id):
 
 
 def test_uncertain_dispatch_case():
-    directory = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-dispatch-hook-", dir="/private/tmp"))
+    directory = Path(mkdtemp(prefix="lqcd-agent-b03-dispatch-hook-", dir="/private/tmp"))
     request = process_hook_request(UNCERTAIN_DISPATCH_CASE, directory)
     trace = uncertain_dispatch_recovery(hook_request=request)
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" /
@@ -604,7 +604,7 @@ def test_uncertain_dispatch_case():
 
 @pytest.mark.parametrize("case_id", BEFORE_DISPATCH_STOP_CASES)
 def test_before_dispatch_stop_case(case_id):
-    directory = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-dispatch-before-hook-", dir="/private/tmp"))
+    directory = Path(mkdtemp(prefix="lqcd-agent-b03-dispatch-before-hook-", dir="/private/tmp"))
     request = process_hook_request(case_id, directory)
     trace = dispatch_watchdog_recovery(case_id, hook_request=request)
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" / (case_id + ".json")))
@@ -616,7 +616,7 @@ def test_before_dispatch_stop_case(case_id):
 
 def test_after_dispatch_gap_case():
     case_id = AFTER_DISPATCH_GAP_CASE
-    directory = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-dispatch-after-gap-hook-", dir="/private/tmp"))
+    directory = Path(mkdtemp(prefix="lqcd-agent-b03-dispatch-after-gap-hook-", dir="/private/tmp"))
     request = process_hook_request(case_id, directory)
     trace = dispatch_watchdog_recovery(case_id, hook_request=request)
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" / (case_id + ".json")))
@@ -628,7 +628,7 @@ def test_after_dispatch_gap_case():
 
 @pytest.mark.parametrize("case_id", DISPATCH_INTEGRITY_CASES)
 def test_dispatch_integrity_case(case_id):
-    directory = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-dispatch-integrity-hook-", dir="/private/tmp"))
+    directory = Path(mkdtemp(prefix="lqcd-agent-b03-dispatch-integrity-hook-", dir="/private/tmp"))
     request = process_hook_request(case_id, directory)
     trace = dispatch_integrity_recovery(case_id, hook_request=request)
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" / (case_id + ".json")))
@@ -640,7 +640,7 @@ def test_dispatch_integrity_case(case_id):
 
 @pytest.mark.parametrize("case_id", DISPATCH_AUTHORIZATION_CASES)
 def test_dispatch_authorization_case(case_id):
-    directory = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-dispatch-authorization-hook-", dir="/private/tmp"))
+    directory = Path(mkdtemp(prefix="lqcd-agent-b03-dispatch-authorization-hook-", dir="/private/tmp"))
     request = process_hook_request(case_id, directory)
     trace = dispatch_authorization_recovery(case_id, hook_request=request)
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" / (case_id + ".json")))
@@ -652,7 +652,7 @@ def test_dispatch_authorization_case(case_id):
 
 @pytest.mark.parametrize("case_id", BACKEND_CANCEL_CASES)
 def test_backend_cancel_case(case_id):
-    directory = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-backend-cancel-hook-", dir="/private/tmp"))
+    directory = Path(mkdtemp(prefix="lqcd-agent-b03-backend-cancel-hook-", dir="/private/tmp"))
     request = process_hook_request(case_id, directory)
     trace = backend_cancel_recovery(case_id, hook_request=request)
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" / (case_id + ".json")))
@@ -664,7 +664,7 @@ def test_backend_cancel_case(case_id):
 
 @pytest.mark.parametrize("case_id", CONTAINMENT_STOP_CASES)
 def test_containment_stop_case(case_id):
-    directory = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-containment-hook-", dir="/private/tmp"))
+    directory = Path(mkdtemp(prefix="lqcd-agent-b03-containment-hook-", dir="/private/tmp"))
     request = process_hook_request(case_id, directory)
     trace = containment_stop_recovery(case_id, hook_request=request)
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" / (case_id + ".json")))
@@ -677,7 +677,7 @@ def test_containment_stop_case(case_id):
 @pytest.mark.parametrize("case_id", REFERENCE_PUBLICATION_CASES + REFERENCE_REPLAY_CASES +
                          REFERENCE_INTEGRITY_CASES + COMPLETION_PUBLICATION_CASES)
 def test_reference_publication_case(case_id):
-    directory = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-reference-hook-", dir="/private/tmp"))
+    directory = Path(mkdtemp(prefix="lqcd-agent-b03-reference-hook-", dir="/private/tmp"))
     request = process_hook_request(case_id, directory)
     trace = reference_publication_recovery(case_id, hook_request=request)
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" / (case_id + ".json")))
@@ -689,7 +689,7 @@ def test_reference_publication_case(case_id):
 
 @pytest.mark.parametrize("case_id", REFERENCE_GAP_CASES + COMPLETION_GAP_CASES)
 def test_reference_domain_gap_case(case_id):
-    directory = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-reference-gap-hook-", dir="/private/tmp"))
+    directory = Path(mkdtemp(prefix="lqcd-agent-b03-reference-gap-hook-", dir="/private/tmp"))
     request = process_hook_request(case_id, directory)
     trace = reference_publication_domain_gap(case_id, hook_request=request)
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" / (case_id + ".json")))
@@ -755,7 +755,7 @@ def stub_setup_recovery(*, hook_request=None):
 
 
 def test_stub_setup_case():
-    directory = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-stub-setup-hook-", dir="/private/tmp"))
+    directory = Path(mkdtemp(prefix="lqcd-agent-b03-stub-setup-hook-", dir="/private/tmp"))
     request = process_hook_request(STUB_SETUP_CASE, directory)
     trace = stub_setup_recovery(hook_request=request)
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" /
@@ -815,7 +815,7 @@ def stub_integrity_rejection(*, hook_request=None):
 
 
 def test_stub_integrity_case():
-    directory = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-stub-integrity-hook-", dir="/private/tmp"))
+    directory = Path(mkdtemp(prefix="lqcd-agent-b03-stub-integrity-hook-", dir="/private/tmp"))
     request = process_hook_request(STUB_INTEGRITY_CASE, directory)
     trace = stub_integrity_rejection(hook_request=request)
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" /
@@ -877,7 +877,7 @@ def stub_domain_gap(*, hook_request=None):
 
 
 def test_stub_domain_gap_case():
-    directory = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-stub-gap-hook-", dir="/private/tmp"))
+    directory = Path(mkdtemp(prefix="lqcd-agent-b03-stub-gap-hook-", dir="/private/tmp"))
     request = process_hook_request(STUB_DOMAIN_GAP_CASE, directory)
     trace = stub_domain_gap(hook_request=request)
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" /
@@ -983,7 +983,7 @@ def prestart_publication_recovery(case_id, *, hook_request=None, fixture_case=No
 
 @pytest.mark.parametrize("case_id", sorted(PRESTART_CASES | PRESTART_COMPLEMENT_CASES))
 def test_prestart_publication_case(case_id):
-    directory = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-prestart-hook-", dir="/private/tmp"))
+    directory = Path(mkdtemp(prefix="lqcd-agent-b03-prestart-hook-", dir="/private/tmp"))
     request = process_hook_request(case_id, directory)
     trace = prestart_publication_recovery(case_id, hook_request=request)
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" / (case_id + ".json")))
@@ -995,7 +995,7 @@ def test_prestart_publication_case(case_id):
 
 @pytest.mark.parametrize("case_id", sorted(PRESTART_INTEGRITY_CASES))
 def test_prestart_integrity_case(case_id):
-    directory = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-prestart-integrity-hook-", dir="/private/tmp"))
+    directory = Path(mkdtemp(prefix="lqcd-agent-b03-prestart-integrity-hook-", dir="/private/tmp"))
     request = process_hook_request(case_id, directory)
     trace = prestart_publication_recovery(case_id, hook_request=request)
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" / (case_id + ".json")))
@@ -1074,7 +1074,7 @@ def prestart_domain_gap(case_id, *, hook_request=None, fixture_case=None):
 
 @pytest.mark.parametrize("case_id", sorted(PRESTART_GAP_CASES))
 def test_prestart_gap_case(case_id):
-    directory = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-prestart-gap-hook-", dir="/private/tmp"))
+    directory = Path(mkdtemp(prefix="lqcd-agent-b03-prestart-gap-hook-", dir="/private/tmp"))
     request = process_hook_request(case_id, directory)
     trace = prestart_domain_gap(case_id, hook_request=request)
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" / (case_id + ".json")))

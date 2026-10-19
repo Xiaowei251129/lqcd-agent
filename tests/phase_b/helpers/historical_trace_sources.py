@@ -1,9 +1,9 @@
 """Fresh original-format 0.3 sources and actual 0.4 Fork trace capture."""
+from harness.temporary import mkdtemp
 from contextlib import contextmanager
 from itertools import count
 from pathlib import Path
 import sqlite3
-import tempfile
 from unittest.mock import patch
 import uuid
 
@@ -29,7 +29,7 @@ def fresh_historical_trace():
 
 @contextmanager
 def historical_trace(*, wal=False, archive_offset=0, revision_offset=0, material=None):
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-historical-trace-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-historical-trace-", dir="/private/tmp"))
     identities = count(1)
     with patch("uuid.uuid4", side_effect=lambda: uuid.UUID(int=next(identities))):
         coordinator = Coordinator(output, clock=FakeClock(100, 0))

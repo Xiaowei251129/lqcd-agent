@@ -1,6 +1,6 @@
 """Forbidden proposals cross the actual product graph, never a patched selector."""
+from harness.temporary import mkdtemp
 from pathlib import Path
-import tempfile
 
 from helpers.b04_trajectories import trajectory
 from helpers.control_traces import ControlTrace
@@ -43,7 +43,7 @@ def forbidden_trace(mode):
         else:
             assert facts["grant_issues"] == facts["grant_consumes"] == 1
         return raw, output, {**facts, "forbidden": mode}
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b04-forbidden-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b04-forbidden-", dir="/private/tmp"))
     with HostIdentities("b04-forbidden-" + mode).installed():
         coordinator = Coordinator(output, clock=PassiveClock(FakeClock(100, 0)))
         try:

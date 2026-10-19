@@ -1,6 +1,6 @@
 """Frozen Analysis authority and execution uncertainty cases."""
+from harness.temporary import mkdtemp
 from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -24,7 +24,7 @@ def test_analysis_execution_case(case_id):
     if boundary in NOT_APPLICABLE:
         trace = not_applicable_recovery(case_id)
     else:
-        directory = Path(tempfile.mkdtemp(prefix="lqcd-agent-b03-analysis-execution-hook-", dir="/private/tmp"))
+        directory = Path(mkdtemp(prefix="lqcd-agent-b03-analysis-execution-hook-", dir="/private/tmp"))
         request = process_hook_request(case_id, directory)
         trace = (analysis_guard if boundary in GUARDS else analysis_execution_recovery)(case_id, hook_request=request)
     compare(trace, read(ROOT / "tests/phase_b/expected_traces/b03_runtime" / (case_id + ".json")))

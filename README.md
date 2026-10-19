@@ -1,5 +1,9 @@
 # LQCD Agent
 
+2026-10-19 B05审定：用户已明确批准B05为ready，并要求固定当前开发基线commit/push后执行。两项进入条件按用户确认视为满足；这不新增或改写实测通过结果，B05实施后的全部fresh final验收仍必需。冻结正文SHA256为`e8bf02217e2bd405023a6ccf2b8661d5f073eb332aa185b00155a146113bed1c`；实际执行、commit及结果见[独立记录](docs/tickets/completions/B05_COMPLETION.md)。当前尚未实施B05，Phase B未完成；下方日期保留历史。
+
+2026-10-19 当前：按用户明确授权完成C29，统一pytest evidence runner单次子进程时限由300秒改为450秒；真实runner中的C21 triple_success为395.88秒并通过原证据验证，现有evidence/process-hook37项和原拒绝探针1项通过。业务预算、其他child时限、全部既有断言及golden保持；这是等待时限调整，不是新增性能优化。完整4785项仍未在本轮重跑，B05保持review且未实施，Phase B未完成。见[独立完成记录](docs/tickets/completions/B00C29_COMPLETION.md)；先前结果保留各自实际输入。
+
 2026-10-17：B04 canonical schema0.4产品图已交付。显式Python入口为`lqcd_agent.graph.run_graph.run_canonical_graph(coordinator=..., request=StartRunRequest(...), actor=..., agent_port=..., analysis_handoff=..., code_host=..., external_adapter=...)`，只创建new Run并返回run_locator/state/runtime；Code路径使用Fake Backend和原Host。原默认legacy0.2 CLI保留。验收full4749、owned1410/645/144及construction15/11/30/28/47通过；B05仍draft，Phase B未完成。见[完成记录](docs/tickets/completions/B04_COMPLETION.md)。以下日期条目保留历史。
 
 2026-10-14 当前：**C25 completed；C24 经独立入口复核恢复 ready；C23/B04 保持 blocked**。四类原 spawn 入口使用真实 request 的 Session；144 个原用例各完成两份 fresh native 诊断，原 hook/receipt/raw 全部保留，正式 B04 owned 仍 0/144。共同固定输入完整 **4578/4578**（含 legacy325、新 C25 29）、同 Session 独立 owned **B02 1410/B03 645**、来源90项/16类双 fresh/8个四消费者188组拒绝、停止路由7项、fresh construction **15/11/30/28** 通过；final 精确仍 **47/144/15**。C24/C23 原整票交接及 B04 入口仍须独立完成；Phase B false。验收代码与随后文档/lifecycle交付分别存档，无 commit/push。见[完成与交接记录](docs/tickets/completions/B00C25_COMPLETION.md)。以下日期条目保留历史。
@@ -109,6 +113,8 @@ The `v0.2-demo` milestone captures the stable demo-ready research MVP. Second-st
 ```
 
 ## Install and Verify
+
+For local canonical development, run `python -m pytest -q -m smoke`, then the modules affected by the change. Before delivery of runtime or test-infrastructure changes, run the complete `RUN_LIVE_LLM_TESTS=0 python -m pytest -q` suite and the applicable ticket acceptance. Default pytest still selects all tests. See the [verification guide](docs/VERIFICATION_GUIDE.md) for evidence retention and the distinction between development feedback and formal acceptance.
 
 ```bash
 pip install -e .

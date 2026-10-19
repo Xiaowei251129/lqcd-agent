@@ -37,6 +37,7 @@ def canonical_inputs():
     return witness["task"], witness["manifest"]
 
 
+@pytest.mark.smoke
 def test_fake_backend_exact_dispatch_restart_lookup_and_immutable_result(tmp_path, canonical_inputs):
     task, manifest = canonical_inputs
     operation_id = task["producer_operation_id"]

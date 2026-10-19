@@ -1,6 +1,6 @@
 """B02 execution diagnostics; these are not acceptance-matrix passing evidence."""
+from harness.temporary import mkdtemp
 from pathlib import Path
-import tempfile
 
 from lqcd_agent.artifacts.registry import ARTIFACT_SLOTS
 from lqcd_agent.control.execution import replay
@@ -13,7 +13,7 @@ from test_execution_0_4_foundation import bootstrap, DIGEST, POLICY
 
 
 def validated_fresh_root():
-    root = Path(tempfile.mkdtemp(prefix="lqcd-agent-b02-trace-", dir="/private/tmp"))
+    root = Path(mkdtemp(prefix="lqcd-agent-b02-trace-", dir="/private/tmp"))
     ledger = bootstrap(root)
     execution = replay(ledger.records)
     index = {"schema_version": "0.1", "run_id": "run", "case_id": "case", "revision": 0, "last_event_id": None,

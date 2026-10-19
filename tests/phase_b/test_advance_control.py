@@ -1,6 +1,6 @@
 """B02 advances deterministic typed domain ports without selecting product routes."""
+from harness.temporary import mkdtemp
 from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -40,7 +40,7 @@ class SyntheticDomainRoute:
 
 @pytest.mark.parametrize("target", ["decision_coordinator", "code_agent", "analysis_engineer", "scientific_reviewer", "memory_report"])
 def test_advance_allocates_then_prepares_and_activates_exact_capability(target):
-    root = Path(tempfile.mkdtemp(prefix="lqcd-agent-b02-advance-", dir="/private/tmp"))
+    root = Path(mkdtemp(prefix="lqcd-agent-b02-advance-", dir="/private/tmp"))
     coordinator = Coordinator(root, clock=FakeClock(100, 0))
     actor = ActorContext("operator", "human", ("control.internal", "start"))
     adapter = SyntheticDomainRoute(target)

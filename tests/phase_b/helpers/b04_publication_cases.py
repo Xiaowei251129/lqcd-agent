@@ -1,10 +1,10 @@
 """Original product process cuts and invocation-owned publication recovery."""
+from harness.temporary import mkdtemp
 from functools import partial
 from pathlib import Path
 import inspect
 import multiprocessing
 import os
-import tempfile
 
 from harness.inventory import case_specs
 from harness.pytest_evidence import consume_process_hook, process_hook_request, production_hook
@@ -129,7 +129,7 @@ def run_bytes(root):
 def exercise_invocation_case(case_id):
     boundary, side, outcome = case_id.rsplit(".", 2)
     assert boundary in PUBLICATIONS
-    output = Path(tempfile.mkdtemp(prefix="lqcd-agent-b04-case-", dir="/private/tmp"))
+    output = Path(mkdtemp(prefix="lqcd-agent-b04-case-", dir="/private/tmp"))
     request = process_hook_request(case_id, output)
     process = multiprocessing.get_context("spawn").Process(target=invocation_cut, args=(output, case_id, request))
     process.start()
