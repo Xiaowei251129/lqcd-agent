@@ -8,7 +8,7 @@ from .failpoints import runtime_gaps, validate_runtime
 from .exit_checks import production_adapters, validate_exit, validate_adapter_targets
 
 
-def execute(inputs, session, mode, ticket=None, *, _adapters=None, _pytest_runner=run_pytest):
+def execute(inputs, session, mode, ticket=None, *, _adapters=None, _pytest_runner=None):
     """Underscored injection points are for isolated tests, never exposed by the project CLI."""
     report = empty_report(mode, ticket)
     report["digests"] = session.digests
@@ -40,12 +40,16 @@ def execute(inputs, session, mode, ticket=None, *, _adapters=None, _pytest_runne
                     row["status"] = "missing"
                     error(report, "exit_evidence_gap", row["check_id"], "adapter")
             if _adapters is None:
+                require(all(adapter.pytest_schema_version == "0.2" for cid, adapter in adapters.items()
+                            if cid not in {"compileall", "full_mock_benchmark"}), "adapters", "scoped_pytest_required")
                 collect_pytest(session, sorted({n for s in scenarios for n in s["pytest_nodeids"]}))
                 validate_adapter_targets(inputs, session, adapters)
         if not report["errors"]:
             selection = sorted({n for s in scenarios for n in s["pytest_nodeids"]})
-            evidence = _pytest_runner(session, selection)
-            validate_pytest(evidence, session, selection)
+            scoped = mode == "final" and _pytest_runner is None
+            evidence = (run_pytest(session, selection, check_id="required") if scoped else
+                        (_pytest_runner or run_pytest)(session, selection))
+            validate_pytest(evidence, session, selection, check_id="required" if scoped else None)
             passing = validate_observations(evidence, scenarios, inputs["root"], all_scenarios=inputs["matrix"]["scenarios"])
             if mode == "construction":
                 passed = [r for r in owned if all(s["scenario_id"] in passing for s in scenarios if r in s["contract_refs"])]

@@ -25,7 +25,7 @@ def test_independent_case(case_id):
         return
     from helpers.b04_fault_sources import SOURCE_MODE
     if formal:
-        with patch.dict(os.environ, {SOURCE_MODE: "0.12"}):
+        with patch.dict(os.environ, {SOURCE_MODE: "0.13" if pytest_evidence.ACTIVE.value["schema_version"] == "0.2" else "0.12"}):
             trace = (exercise_invocation_case if SPECS[case_id]["failpoint_id"] in PUBLICATIONS
                      else exercise_control_case)(case_id)
         from harness.pytest_evidence import observe_case

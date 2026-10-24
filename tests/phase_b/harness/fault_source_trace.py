@@ -70,12 +70,17 @@ def source_path(path):
     raise Invalid("fault_source", "outside_verified_source_view", "invalid_evidence")
 
 
-def anchor_directory(binding, case_id):
+def anchor_directory(binding, case_id, *, pytest_request=None):
     from .trace_proof import _binding, sha_value
     _binding({k: binding[k] for k in ("invocation_token", "digests")}, binding)
     sha_value(binding["invocation_token"], "native_capture_token")
     check(type(case_id) is str and bool(case_id), "case_id")
     path = Path("/private/tmp") / ("lqcd-agent-b00c26-capture-" + binding["invocation_token"]) / sha(case_id.encode())
+    if pytest_request is not None:
+        from .pytest_evidence import execution_request
+        execution_request(pytest_request, binding,
+            nodeid="tests/phase_b/test_b04_runtime_cases.py::test_independent_case[" + case_id + "]", case_id=case_id)
+        path = path.parent / pytest_request["sha256"] / sha(case_id.encode())
     check(path.resolve() == path and not path.is_symlink() and not path.parent.is_symlink(), "anchor_path")
     return path
 
@@ -1127,11 +1132,11 @@ def validate_stage_sources(directory, records, manifests, binding, states):
     return normalized, facts
 
 
-def source_bundle(directory, binding, case_id):
+def source_bundle(directory, binding, case_id, *, pytest_request=None):
     from .inventory import case_specs
     from lqcd_agent.control.protocol import PROTOCOL
     from .trace_proof import _binding
-    check(directory == anchor_directory(binding, case_id), 'fixed_native_anchor')
+    check(directory == anchor_directory(binding, case_id, pytest_request=pytest_request), 'fixed_native_anchor')
     anchor, records, manifests = capture_records(directory, binding, case_id)
     specs = case_specs(PROTOCOL)
     check(case_id in specs, 'original_case')
@@ -1149,13 +1154,16 @@ def source_bundle(directory, binding, case_id):
         ('process_request_sha256', 'process_receipt_sha256', 'process_source_sha256'))), 'process_original_bytes')
     request, receipt, process = [read_value_bytes(raw) for raw in (request_raw, receipt_raw, process_raw)]
     keys(request, {'schema_version', 'invocation_token', 'digests', 'project_root', 'nodeid', 'case_id',
-        'process_token', 'hook_ref', 'receipt_path'}, 'original_request')
+        'process_token', 'hook_ref', 'receipt_path'} | ({'pytest_request'} if pytest_request is not None else set()), 'original_request')
     keys(receipt, {'request', 'process_id', 'hook_ref'}, 'original_receipt')
     from .contracts import ROOT
     from .trace_proof import sha_value
     sha_value(request['process_token'], 'original_process_nonce')
     check(Path(request['receipt_path']).name == request['process_token'] + '.json', 'original_receipt_name')
-    check(request['schema_version'] == '0.1' and request['project_root'] == str(ROOT) and request['nodeid'] == anchor['nodeid'] and
+    if pytest_request is not None:
+        check(request['pytest_request'] == pytest_request and evidence_bytes(directory, 'pytest-request.json') ==
+              Path(pytest_request['path']).read_bytes(), 'original_pytest_bytes')
+    check(request['schema_version'] == ('0.2' if pytest_request is not None else '0.1') and request['project_root'] == str(ROOT) and request['nodeid'] == anchor['nodeid'] and
           request['case_id'] == case_id and request['hook_ref'] == 'src/lqcd_agent/control/coordinator.py:boundary' and
           receipt == {'request': request, 'process_id': process['process_id'], 'hook_ref': request['hook_ref']} and
           process['process_id'] == records[0]['child_pid'] and process['case_id'] == case_id, 'process_origin')
@@ -1215,20 +1223,22 @@ def source_bundle(directory, binding, case_id):
             'spec': spec, 'allocations': allocations}
 
 
-def project(events, proof, binding):
+def project(events, proof, binding, *, scoped=False):
     from .unconsumed_code_final_trace import FIELDS
     from .trace_proof import _binding
     from .trace import event
     from .strict_json import digest
     try:
-        keys(proof, FIELDS | {'fault_sources'}, 'fault_proof')
-        check(proof['schema_version'] == '0.9' and type(proof['fault_sources']) is list and len(proof['fault_sources']) == 1,
+        keys(proof, FIELDS | {'fault_sources'} | ({'pytest_request'} if scoped else set()), 'fault_proof')
+        check(proof['schema_version'] == ('0.10' if scoped else '0.9') and type(proof['fault_sources']) is list and len(proof['fault_sources']) == 1,
               'fault_proof_version')
         _binding(proof['binding'], binding)
         declaration_value = proof['fault_sources'][0]
         keys(declaration_value, DECLARATION_FIELDS, 'fault_declaration')
         case_id = declaration_value['case_id']
-        directory = anchor_directory(binding, case_id)
+        pytest_request = proof['pytest_request'] if scoped else None
+        check(not scoped or (binding is not None and binding.get('schema_version') == '0.2'), 'scoped_outer')
+        directory = anchor_directory(binding, case_id, pytest_request=pytest_request)
         _, records, manifests = capture_records(directory, binding, case_id)
         from .inventory import case_specs
         from lqcd_agent.control.protocol import PROTOCOL
@@ -1237,11 +1247,11 @@ def project(events, proof, binding):
         original_fault = fault_difference(directory, records, manifests, states, case_specs(PROTOCOL)[case_id])
         check(declaration_value == declaration(directory, records, manifests, original_fault), 'original_capture_declaration')
         source = read_value_bytes(evidence_bytes(directory, 'before-raw.json'))
-        base = {key: deepcopy(value) for key, value in proof.items() if key != 'fault_sources'}
+        base = {key: deepcopy(value) for key, value in proof.items() if key not in ('fault_sources', 'pytest_request')}
         base['schema_version'] = '0.8'
         check(base == source['proof'] and events ==
               [{key: value for key, value in row.items() if key != 'ephemeral'} for row in source['events']], 'original_capture_trace')
-        bundle = source_bundle(directory, binding, case_id)
+        bundle = source_bundle(directory, binding, case_id, pytest_request=pytest_request)
         result = list(bundle['stages'][0]['events'])
         for stage, normalized, fact in zip(STAGES, bundle['stages'], bundle['stage_facts']):
             result.append(event('fault_source_stage', target=case_id, stage=stage,

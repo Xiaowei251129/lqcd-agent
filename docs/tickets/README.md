@@ -80,3 +80,28 @@ Codex 应先验证其 `status`，再按 ticket 的完整合同执行。如果状
 - [`phase-e-integrated-benchmark/OVERVIEW.md`](phase-e-integrated-benchmark/OVERVIEW.md)：综合 benchmark 与下一 milestone。
 
 新ticket必须从[`TEMPLATE.md`](TEMPLATE.md)创建；完成记录从[`completions/TEMPLATE.md`](completions/TEMPLATE.md)创建。2026-08-22之前已经把Completion Record内嵌在ticket中的A01/A02作为历史格式保留，不追溯重写；A03因存在持续纠偏问题，已单独拆分。
+
+2026-10-19：B05执行按冻结Stop停止，候选独立保留且代码/expected恢复已推送基线；新增[B00C30来源核验纠偏票](phase-b-graph-harness/B00C30_B04_GOLDEN_BASELINE_PROVENANCE.md)处于review，尚未批准执行。见[B05实际记录](completions/B05_COMPLETION.md)。
+
+
+2026-10-19: [C30](phase-b-graph-harness/B00C30_B04_GOLDEN_BASELINE_PROVENANCE.md) approved and in_progress; B05 blocked pending complete provenance/regression and independent entry verification.
+
+
+2026-10-19 最新：C30 审定执行后触发原来源缺失 Stop，blocked；B05 仍 blocked。见[C30 实际记录](completions/B00C30_COMPLETION.md)。
+
+
+- [B00C31 current actual Host baseline](phase-b-graph-harness/B00C31_CURRENT_HOST_GOLDEN_BASELINE.md): explicitly approved; in_progress, B05 entry pending.
+
+2026-10-21: [C32 bounded grant/setup and execution provenance](phase-b-graph-harness/B00C32_BOUNDED_GRANT_AND_CHECK_EXECUTION_HANDOFF.md) approved under the user's explicit finite-correction authorization; original60/450 and complete acceptance remain. C31 blocked after the retained internal60 failure; B05 blocked pending this replacement baseline gate.
+
+- [B00C33 canonical record pipeline correction](phase-b-graph-harness/B00C33_CANONICAL_EXECUTION_RECORD_PIPELINE.md).
+
+- [C34 validated projection consumers](phase-b-graph-harness/B00C34_VALIDATED_PROJECTION_SNAPSHOT_CONSUMERS.md): approved/in_progress finite stage; complete long-stage capacity pending.
+
+- [B00C35 finite exact scalar/append correction](phase-b-graph-harness/B00C35_EXACT_SCALAR_AND_APPEND_PIPELINE.md) — approved finite scope, in_progress; original60/450 and full acceptance remain.
+
+- 2026-10-22T09:48-04:00 [C36 finite source plan](phase-b-graph-harness/B00C36_FINITE_SOURCE_PLAN_WITHOUT_REDUNDANT_SWEEP.md): cancel redundant standalone144 and mandatory AC; preserve original source/full/entry obligations.
+
+- [C37: complete stop golden coverage and lossless transport](phase-b-graph-harness/B00C37_STOP_GOLDEN_COVERAGE_AND_ARCHIVE_TRANSPORT.md): in_progress; new full and independent entry pending.
+
+C32-C37 common gate completed after the new full and original independent entry; B05 ready pending verified baseline commit/push. Historical blocked/failed audits retain their original identities and results. See the C37 execution and maintenance records.

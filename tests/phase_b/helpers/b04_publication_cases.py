@@ -130,7 +130,7 @@ def exercise_invocation_case(case_id):
     boundary, side, outcome = case_id.rsplit(".", 2)
     assert boundary in PUBLICATIONS
     output = Path(mkdtemp(prefix="lqcd-agent-b04-case-", dir="/private/tmp"))
-    request = process_hook_request(case_id, output)
+    request = process_hook_request(case_id, output, scoped=True)
     process = multiprocessing.get_context("spawn").Process(target=invocation_cut, args=(output, case_id, request))
     process.start()
     process.join(60)

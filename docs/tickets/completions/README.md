@@ -201,3 +201,28 @@
 [B04实际记录](B04_COMPLETION.md)追加正式Run来源重验及C25绑定meta反例：B04 blocked、owned0/144；C23/C24/C25已完成历史保持。[C26](../phase-b-graph-harness/B00C26_B04_FAULT_SOURCE_AND_OWNED_ACTIVATION_HANDOFF.md)仅review，未实施、无completion。
 
 - [B05 execution record](B05_COMPLETION.md): user-approved baseline freeze and implementation/final acceptance status.
+
+2026-10-19：B05为blocked，基线`79c1eb1`已commit/push；其原始B04 exact反例在独立Git基线复现。候选未交付，代码/expected已恢复基线，C30仅review。见[B05实际记录](B05_COMPLETION.md)。
+
+
+- [B00C30 execution record](B00C30_COMPLETION.md): approved baseline-provenance audit, actual results and independent B05 re-entry.
+
+
+2026-10-19 最新：[C30 实际记录](B00C30_COMPLETION.md)为 blocked；旧源码/依赖重建仍有52处缺失历史配置来源，未改expected、未恢复B05。
+
+
+- [B00C31 execution record](B00C31_COMPLETION.md): approved actual Host baseline and full validation before B05 re-entry.
+
+- [B00C32 actual execution](B00C32_COMPLETION.md): finite grant activation and whole-check provenance; no complete baseline/final pass yet.
+
+- [B00C33 canonical record pipeline correction](B00C33_COMPLETION.md).
+
+- [C34 execution](B00C34_COMPLETION.md): finite stage in_progress; no complete baseline or B05 pass.
+
+- [B00C35 execution](B00C35_COMPLETION.md) — in_progress; not a completed gate.
+
+- 2026-10-22T09:48-04:00 [C36 finite source plan](B00C36_COMPLETION.md): cancel redundant standalone144 and mandatory AC; preserve original source/full/entry obligations.
+
+- [B00C37 execution record](B00C37_COMPLETION.md): in_progress; five source omissions fixed, complete gate pending.
+
+C32-C37 common gate completed after the new full and original independent entry; B05 ready pending verified baseline commit/push. Historical blocked/failed audits retain their original identities and results. See the C37 execution and maintenance records.

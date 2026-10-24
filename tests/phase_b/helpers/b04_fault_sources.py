@@ -24,7 +24,8 @@ def before_fault(coordinator, output, request, process, raw, collector):
     """Validate S0 eligibility before introducing the new snapshot resolver."""
     if SOURCE_MODE not in os.environ:
         return
-    require(os.environ[SOURCE_MODE] == "0.12", "fault_capture", "explicit_version")
+    version = "0.13" if request.get("schema_version") == "0.2" else "0.12"
+    require(os.environ[SOURCE_MODE] == version, "fault_capture", "explicit_version")
     writer = pytest_evidence.ACTIVE
     binding = current_binding()
     require(writer is not None and writer.nodeid == nodeid(request["case_id"]) and
@@ -57,6 +58,8 @@ def before_fault(coordinator, output, request, process, raw, collector):
     from helpers.b04_process_binding import PROBE_MODE
     name = ("c26-s0-eligibility.json" if PROBE_MODE in os.environ
             else "b04-s0-" + sha(request["case_id"].encode()) + ".json")
+    if version == "0.13":
+        name = "b04-s0-" + request["pytest_request"]["sha256"] + "-" + sha(request["case_id"].encode()) + ".json"
     destination = writer.output.parent / name
     write_new(destination, {"case_id": request["case_id"], "binding": binding,
                            "source_root": str(coordinator.root), "output": str(output),
@@ -75,8 +78,9 @@ class NativeCapture:
             for row in raw["events"] if row["event"].startswith("control.")}
         self.request, self.raw = deepcopy(request), deepcopy(raw)
         self.binding = current_binding()
-        self.directory = anchor_directory(self.binding, request["case_id"])
-        self.directory.parent.mkdir(exist_ok=True)
+        self.pytest_request = request.get("pytest_request")
+        self.directory = anchor_directory(self.binding, request["case_id"], pytest_request=self.pytest_request)
+        self.directory.parent.mkdir(parents=True, exist_ok=True)
         self.directory.mkdir()
         self.records, self.manifests, self.calls, self.contenders = [], [], [], []
         self.identities = HostIdentities("b00c27-parent-recovery:" + request["case_id"])
@@ -93,6 +97,8 @@ class NativeCapture:
         files = {"request.json": canonical(request), "receipt.json": Path(request["receipt_path"]).read_bytes(),
                  "process-source.json": source, "before-raw.json": canonical(raw),
                  "original-before-raw.json": (Path(output) / "before-raw.json").read_bytes()}
+        if self.pytest_request is not None:
+            files["pytest-request.json"] = Path(self.pytest_request["path"]).read_bytes()
         for name, content in files.items():
             save_evidence(self.directory, name, content)
         self.common = {"schema_version": "0.1", "binding": self.binding, "case_id": request["case_id"],
@@ -213,8 +219,12 @@ class NativeCapture:
 
     def finish(self):
         from harness.fault_source_trace import source_bundle
-        bundle = source_bundle(self.directory, self.binding, self.request["case_id"])
+        binding = pytest_evidence.ACTIVE.value if self.pytest_request is not None else self.binding
+        bundle = source_bundle(self.directory, binding, self.request["case_id"], pytest_request=self.pytest_request)
         result = deepcopy(bundle["source"])
-        result["schema_version"] = "0.12"
-        result["proof"].update(schema_version="0.9", fault_sources=[bundle["declaration"]])
+        result["schema_version"] = "0.13" if self.pytest_request is not None else "0.12"
+        result["proof"].update(schema_version="0.10" if self.pytest_request is not None else "0.9",
+                               fault_sources=[bundle["declaration"]])
+        if self.pytest_request is not None:
+            result["proof"]["pytest_request"] = self.pytest_request
         return result

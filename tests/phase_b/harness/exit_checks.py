@@ -30,6 +30,7 @@ class Adapter:
     selection: tuple = ()
     scenarios: tuple = ()
     files: tuple = ()
+    pytest_schema_version: str = "0.1"
 
 
 def production_adapters(inputs):
@@ -63,10 +64,17 @@ def validate_adapter_targets(inputs, session, adapters):
 
 def normalized_pytest(value):
     # Raw file digests are deliberately not used as normalized evidence digests.
-    result = {k: v for k, v in value.items() if k not in {"invocation_token"}}
+    result = {k: v for k, v in value.items() if k not in ({"invocation_token", "execution_root", "pytest_requests"} if value["schema_version"] == "0.2" else {"invocation_token"})}
+    if value["schema_version"] == "0.2":
+        from .pytest_evidence import referenced_request
+        result["check_id"] = referenced_request(value["execution_root"])["check_id"]
     result["observations"] = [dict(row, trace=normalize(row["trace"], binding=value) if row["trace"] is not None else None)
                               for row in value["observations"]]
     result["case_results"] = [dict(row, trace=normalize(row["trace"], binding=value)) for row in value["case_results"]]
+    if value["schema_version"] == "0.2":
+        result["nodes"] = sorted(result["nodes"], key=lambda row: (row["nodeid"], row["when"]))
+        for name, identity in (("observations", "scenario_id"), ("hook_events", "case_id"), ("case_results", "case_id")):
+            result[name] = sorted(result[name], key=lambda row: (row[identity], row["nodeid"]))
     return result
 
 
@@ -113,7 +121,9 @@ def validate_exit(value, check_id, session, adapter):
         strings(artifact["files"], check_id, "files")
         normalized = artifact
     else:
-        validate_pytest(artifact, session, list(adapter.selection))
+        validate_pytest(artifact, session, list(adapter.selection),
+                        check_id=check_id if adapter.pytest_schema_version == "0.2" else None,
+                        schema_version=adapter.pytest_schema_version)
         if adapter.scenarios:
             validate_observations(artifact, adapter.scenarios, session.root)
         if check_id in {"cli_smoke", "documentation_scope"}:

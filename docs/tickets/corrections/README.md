@@ -205,3 +205,27 @@ C19 已完成；C18 仍 in_progress，C15/C16/C17/B04 仍 blocked。独立候选
 - 2026-10-16 [C28执行验收说明](B00C28_OWNED_BINDING_LIFECYCLE_ACCEPTANCE.md)：用户批准修订版后in_progress；11/11专项通过，完整验收及独立交接尚待完成，B04仍blocked。
 
 - 2026-10-18: [Test infrastructure maintenance](TEST_INFRASTRUCTURE_MAINTENANCE.md): opt-in development smoke, invocation-local AST parsing and ownership-based ordinary-test directory cleanup; frozen acceptance is unchanged.
+
+- [B05 Integration Maintenance](B05_MAINTENANCE.md): contract-preserving local fixes during B05; original counterexamples and verification remain separate from final acceptance.
+
+- [B00C30 B04 golden baseline provenance (review)](../phase-b-graph-harness/B00C30_B04_GOLDEN_BASELINE_PROVENANCE.md): independently reproduced pre-B05 exact mismatch; proposed source audit before B05 resumes, not an approved expected update.
+
+
+- [C30 provenance audit](B00C30_MAINTENANCE.md): approved audit stopped on missing historical Analysis preimages; no expected/runtime change.
+
+
+- [B00C31 baseline review](B00C31_CURRENT_HOST_BASELINE.md): preserved historical goldens and explicit actual Host configuration baseline.
+
+- [B00C32 maintenance](B00C32_MAINTENANCE.md): retained original60 failure/profile and same-Parent collision; approved finite correction.
+
+- [B00C33 canonical record pipeline correction](B00C33_MAINTENANCE.md).
+
+- [C34 maintenance](B00C34_MAINTENANCE.md): finite projection consumers; preserves public untrusted validation.
+
+- [B00C35 maintenance](B00C35_MAINTENANCE.md) — finite scalar/append equivalence; not a full pass.
+
+- 2026-10-22T09:48-04:00 [C36 finite source plan](B00C36_MAINTENANCE.md): cancel redundant standalone144 and mandatory AC; preserve original source/full/entry obligations.
+
+- [B00C37 maintenance](B00C37_MAINTENANCE.md): finite stop source correction and lossless provenance transport; acceptance pending.
+
+C32-C37 common gate completed after the new full and original independent entry; B05 ready pending verified baseline commit/push. Historical blocked/failed audits retain their original identities and results. See the C37 execution and maintenance records.

@@ -4,8 +4,8 @@ from pathlib import Path
 from lqcd_agent.artifacts import registry
 
 from .budget import validate_policy
-from .execution import parse_ledger
-from .projections import attach_checkpoint, bounded_projection, validate_projection
+from .execution import _decoded_records, parse_ledger
+from .projections import _bounded_projection, attach_checkpoint, validate_projection
 from .strict_json import ControlIntegrityError, ValidatedValue, closed, digest, loads, number, require
 
 
@@ -29,7 +29,7 @@ def _validate(root, *, manifest, projection, advanced=False, pending_index=None)
             "Missing or escaped control artifact")
     original = {name: path.read_bytes() for name, path in paths.items()}
     execution = parse_ledger(original["execution_history.jsonl"])
-    records = execution.values
+    records = _decoded_records(execution.records)
     require(execution.projection.value["run_status"] != "initializing", "Bootstrap publication is incomplete")
     transition_ids = {record["transition_id"] for record in records if record["record_type"] == "transition"}
     for record in records:
@@ -78,7 +78,8 @@ def _validate(root, *, manifest, projection, advanced=False, pending_index=None)
             "Artifact index cross-head mismatch")
     require(records[-1]["artifact_head"] == artifact_heads[-1] and records[-1]["artifact_event_index"] == len(history),
             "Incomplete execution/artifact publication closure")
-    core = bounded_projection(execution, artifact_index=index, artifact_head=artifact_heads[-1], artifact_event_index=len(history))
+    core = _bounded_projection(execution, records[0]["canonical_output_root"], artifact_index=index,
+                               artifact_head=artifact_heads[-1], artifact_event_index=len(history))
     state = {**core.value, "output_dir": str(root), "execution_history_path": str(paths["execution_history.jsonl"]),
              "artifact_history_path": str(paths["artifact_history.jsonl"]), "artifact_index_path": str(paths["artifact_index.json"])}
     # The established bidirectional A03 checks retain every invalidation and
@@ -105,8 +106,9 @@ def _validate(root, *, manifest, projection, advanced=False, pending_index=None)
                 "Transition does not extend its immutable checkpoint anchor")
         anchored_execution = replay(records[:count])
         anchored_index = {"run_id": old["run_id"], "case_id": old["case_id"], "current": old["current_artifacts"]}
-        anchored_core = bounded_projection(anchored_execution, artifact_index=anchored_index,
-                                          artifact_head=old["artifact_head"], artifact_event_index=old["artifact_event_index"])
+        anchored_core = _bounded_projection(anchored_execution, records[0]["canonical_output_root"],
+                                            artifact_index=anchored_index, artifact_head=old["artifact_head"],
+                                            artifact_event_index=old["artifact_event_index"])
         require(anchored_core.value == old, "Checkpoint prefix state does not replay")
         attach_checkpoint(anchored_core, anchored_execution, manifest)
         require(core.value["run_status"] == "running" or pending_index is not None and

@@ -31,8 +31,8 @@ def child_binding(request, case_id):
     require(multiprocessing.parent_process() is not None and pytest_evidence.ACTIVE is None,
             "b04_child", "spawned_child")
     keys(request, {"schema_version", "invocation_token", "digests", "project_root", "nodeid", "case_id",
-                   "process_token", "hook_ref", "receipt_path"}, "b04_child")
-    require(request["schema_version"] == "0.1" and request["case_id"] == case_id,
+                   "process_token", "hook_ref", "receipt_path"} | ({"pytest_request"} if request.get("schema_version") == "0.2" else set()), "b04_child")
+    require(request["schema_version"] in ("0.1", "0.2") and request["case_id"] == case_id,
             "b04_child", "identity")
     validate_digests(request["digests"])
     token = request["invocation_token"]
@@ -48,6 +48,10 @@ def child_binding(request, case_id):
             not receipt.is_relative_to(ROOT) and receipt.name == nonce + ".json" and not receipt.exists(),
             "b04_child", "receipt_path")
     binding = {"invocation_token": token, "digests": deepcopy(request["digests"])}
+    if request["schema_version"] == "0.2":
+        root, _ = pytest_evidence.execution_request(request["pytest_request"], binding,
+            nodeid=request["nodeid"], case_id=case_id)
+        require(root["project_root"] == request["project_root"], "b04_child", "scoped_project")
     require(PROCESS_BINDING.get() in (None, binding), "b04_child", "nested_binding")
     reset = PROCESS_BINDING.set(binding)
     try:

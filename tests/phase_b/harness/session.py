@@ -2,6 +2,7 @@
 import os
 import secrets
 import stat
+from weakref import WeakKeyDictionary
 from pathlib import Path
 
 from .contracts import DIGEST_KEYS
@@ -42,6 +43,9 @@ def validate_digests(value, *, nullable=False):
                 and all(c in "0123456789abcdef" for c in item)), "digests", name)
 
 
+EXECUTIONS = WeakKeyDictionary()
+
+
 class Session:
     def __init__(self, root, evidence_dir, digests):
         self.root = Path(root).resolve()
@@ -52,6 +56,7 @@ class Session:
         self.token = secrets.token_hex(32)
         self.digests = dict(digests, worktree_inputs=worktree_digest(self.root))
         validate_digests(self.digests)
+        EXECUTIONS[self] = {}
 
     def unchanged(self):
         require(worktree_digest(self.root) == self.digests["worktree_inputs"],

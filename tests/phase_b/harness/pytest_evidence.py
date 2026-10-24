@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from .strict_json import keys, require, read, write_new, strings, path_in, canonical
+from .strict_json import keys, require, read, write_new, strings, path_in, canonical, sha
 from .matrix import validate_result
 from .trace import normalize, compare
 
@@ -22,8 +22,19 @@ class Writer:
     def __init__(self, config):
         self.config = config
         self.output = Path(os.environ["PHASE_B_EVIDENCE_OUTPUT"])
-        self.value = read(Path(os.environ["PHASE_B_EVIDENCE_REQUEST"]))
-        keys(self.value, {"schema_version", "invocation_token", "digests", "selection"}, "pytest_request")
+        request_path = Path(os.environ["PHASE_B_EVIDENCE_REQUEST"])
+        self.value = read(request_path)
+        fields = {"schema_version", "invocation_token", "digests", "selection"}
+        if self.value.get("schema_version") == "0.2":
+            keys(self.value, fields | {"execution_root", "batch_index"}, "pytest_request")
+            reference = {"path": str(request_path), "sha256": sha(request_path.read_bytes())}
+            root, leaf = execution_request(reference, self.value)
+            require(root["project_root"] == str(Path(config.rootpath).resolve()), "pytest_request", "project_root")
+            self.value = {key: leaf[key] for key in fields}
+            self.value.update(execution_root=leaf["execution_root"], pytest_requests=[reference])
+        else:
+            keys(self.value, fields, "pytest_request")
+            require(self.value["schema_version"] == "0.1", "pytest_request", "schema_version")
         self.value.update(collected=[], deselected=[], exit_code=None, nodes=[], observations=[], hook_events=[], case_results=[])
         self.nodeid = None
 
@@ -117,7 +128,7 @@ CONSUMED_PROCESS_RECEIPTS = set()
 PENDING_PROCESS_REQUESTS = {}
 
 
-def process_hook_request(case_id, directory):
+def process_hook_request(case_id, directory, *, scoped=False):
     """Bind one child trigger to the current pytest node and fresh session."""
     from .contracts import ROOT, DIGEST_KEYS
     token = secrets.token_hex(32)
@@ -128,6 +139,10 @@ def process_hook_request(case_id, directory):
             "project_root": str(Path(ACTIVE.config.rootpath).resolve() if ACTIVE else ROOT),
             "nodeid": ACTIVE.nodeid if ACTIVE else "unit-only", "case_id": case_id, "process_token": token,
             "hook_ref": "src/lqcd_agent/control/coordinator.py:boundary", "receipt_path": str(directory / (token + ".json"))}
+    if scoped and ACTIVE is not None and ACTIVE.value["schema_version"] == "0.2":
+        reference, = ACTIVE.value["pytest_requests"]
+        execution_request(reference, ACTIVE.value, nodeid=ACTIVE.nodeid, case_id=case_id)
+        request.update(schema_version="0.2", pytest_request=reference)
     PENDING_PROCESS_REQUESTS[token] = canonical(request)
     return request
 
@@ -143,6 +158,9 @@ def consume_process_hook(request, process, *, expected_exit):
         require(request["invocation_token"] == ACTIVE.value["invocation_token"] and request["digests"] == ACTIVE.value["digests"] and
                 request["nodeid"] == ACTIVE.nodeid and request["project_root"] == str(Path(ACTIVE.config.rootpath).resolve()),
                 "process_hook", "session_binding", "invalid_evidence")
+    if request.get("schema_version") == "0.2":
+        require(ACTIVE is not None and ACTIVE.value["schema_version"] == "0.2", "process_hook", "scoped_outer")
+        execution_request(request["pytest_request"], ACTIVE.value, nodeid=request["nodeid"], case_id=request["case_id"])
     receipt = read(Path(request["receipt_path"]))
     keys(receipt, {"request", "process_id", "hook_ref"}, "process_hook")
     require(receipt["request"] == request and receipt["process_id"] == process.pid and receipt["hook_ref"] == request["hook_ref"],
@@ -163,12 +181,134 @@ def observe_case(case_id, outcome, invariants, trace):
                                            "outcome": outcome, "invariants": invariants, "trace": trace})
 
 
-def run_pytest(session, selection, *, name="required", extra=()):
+ROOT_FIELDS = {"schema_version", "invocation_token", "digests", "project_root", "check_id",
+               "execution_nonce", "selection", "batch_lengths"}
+LEAF_FIELDS = {"schema_version", "invocation_token", "digests", "selection", "execution_root", "batch_index"}
+
+
+def referenced_request(reference):
+    keys(reference, {"path", "sha256"}, "request_reference")
+    require(type(reference["path"]) is str and bool(reference["path"]), "request_reference", "path")
+    path = Path(reference["path"])
+    require(path.is_absolute() and path == path.resolve() and path.is_file() and
+            all(not ancestor.is_symlink() for ancestor in (path, *path.parents)), "request_reference", "path")
+    raw = path.read_bytes()
+    require(sha(raw) == reference["sha256"], "request_reference", "original_bytes", "invalid_evidence")
+    value = read(path)
+    require(canonical(value) == raw, "request_reference", "canonical_bytes", "invalid_evidence")
+    return value
+
+
+def execution_request(reference, binding, *, nodeid=None, case_id=None):
+    """Qualify live original transport before source effects or response consumption."""
+    from .contracts import EXIT_CHECKS
+    from .trace_proof import sha_value
+    leaf = referenced_request(reference)
+    keys(leaf, LEAF_FIELDS, "pytest_leaf")
+    root = referenced_request(leaf["execution_root"])
+    keys(root, ROOT_FIELDS, "pytest_execution")
+    require(root["schema_version"] == leaf["schema_version"] == "0.2" and
+            root["check_id"] in (*EXIT_CHECKS, "required", "capacity_calibration"), "pytest_execution", "identity")
+    sha_value(root["execution_nonce"], "execution_nonce")
+    strings(root["selection"], "pytest_execution", "selection")
+    require(root["selection"] == sorted(set(root["selection"])) and bool(root["selection"]),
+            "pytest_execution", "complete_selection")
+    lengths = root["batch_lengths"]
+    require(type(lengths) is list and bool(lengths) and all(type(n) is int and n > 0 for n in lengths) and
+            sum(lengths) == len(root["selection"]), "pytest_execution", "batch_lengths")
+    index = leaf["batch_index"]
+    require(type(index) is int and 0 <= index < len(lengths), "pytest_leaf", "batch_index")
+    offset = sum(lengths[:index])
+    require(leaf["selection"] == root["selection"][offset:offset + lengths[index]], "pytest_leaf", "selection")
+    for value in (root, leaf):
+        require(value["invocation_token"] == binding["invocation_token"] and value["digests"] == binding["digests"],
+                "pytest_execution", "session_binding", "invalid_evidence")
+    directory = Path(leaf["execution_root"]["path"]).parent
+    require(Path(root["project_root"]).is_absolute() and Path(root["project_root"]).resolve() == Path(root["project_root"]) and
+            directory != Path(root["project_root"]) and not directory.is_relative_to(Path(root["project_root"])),
+            "pytest_execution", "project_root")
+    require(Path(leaf["execution_root"]["path"]).name == root["check_id"] + "-execution.json" and
+            Path(reference["path"]) == directory / f"{root['check_id']}-{index:04d}-request.json",
+            "pytest_execution", "request_names")
+    if "execution_root" in binding:
+        require(binding["schema_version"] == "0.2" and binding["execution_root"] == leaf["execution_root"],
+                "pytest_execution", "outer_root", "invalid_evidence")
+        if "pytest_requests" in binding:
+            require(reference in binding["pytest_requests"], "pytest_execution", "outer_leaf", "invalid_evidence")
+    if nodeid is not None:
+        require(nodeid in leaf["selection"], "pytest_execution", "nodeid", "invalid_evidence")
+    if case_id is not None:
+        require(nodeid == "tests/phase_b/test_b04_runtime_cases.py::test_independent_case[" + case_id + "]",
+                "pytest_execution", "case_id", "invalid_evidence")
+    return root, leaf
+
+
+def _begin_execution(session, selection, check_id, lengths):
+    from .session import EXECUTIONS
+    from .contracts import EXIT_CHECKS
+    require(check_id in (*EXIT_CHECKS, "required", "capacity_calibration"), "pytest_execution", "check_id")
+    require(session in EXECUTIONS and check_id not in EXECUTIONS[session], "pytest_execution", "fresh_check", "invalid_evidence")
+    strings(selection, "pytest_execution", "selection")
+    require(selection == sorted(set(selection)) and bool(selection), "pytest_execution", "selection")
+    require(type(lengths) is list and bool(lengths) and all(type(n) is int and n > 0 for n in lengths) and
+            sum(lengths) == len(selection), "pytest_execution", "batch_lengths")
+    root = {"schema_version": "0.2", "invocation_token": session.token, "digests": session.digests,
+            "project_root": str(session.root), "check_id": check_id, "execution_nonce": secrets.token_hex(32),
+            "selection": list(selection), "batch_lengths": list(lengths)}
+    path = session.directory / (check_id + "-execution.json")
+    raw = canonical(root)
+    state = {"root": root, "raw": raw, "reference": {"path": str(path), "sha256": sha(raw)},
+             "leaves": [], "completed": None}
+    EXECUTIONS[session][check_id] = state
+    write_new(path, root)
+    return state
+
+
+def _execution_authority(value, session, *, check_id=None, completed=True):
+    from .session import EXECUTIONS
+    require(session in EXECUTIONS, "pytest_execution", "actual_session", "invalid_evidence")
+    root = referenced_request(value["execution_root"])
+    keys(root, ROOT_FIELDS, "pytest_execution")
+    cid = root["check_id"]
+    require(type(cid) is str, "pytest_execution", "check_id")
+    require(check_id is None or cid == check_id, "pytest_execution", "expected_check", "invalid_evidence")
+    state = EXECUTIONS[session].get(cid)
+    require(state is not None and state["reference"] == value["execution_root"] and
+            state["raw"] == canonical(root) and root["project_root"] == str(session.root),
+            "pytest_execution", "original_issuance", "invalid_evidence")
+    refs = value["pytest_requests"]
+    require(type(refs) is list and bool(refs), "pytest_execution", "leaf_references")
+    indices = []
+    for reference in refs:
+        _, leaf = execution_request(reference, value)
+        index = leaf["batch_index"]
+        require(index < len(state["leaves"]), "pytest_execution", "issued_leaf", "invalid_evidence")
+        issued = state["leaves"][index]
+        require(reference == {"path": issued["path"], "sha256": sha(issued["raw"])} and
+                canonical(leaf) == issued["raw"] and issued["response"] is not None,
+                "pytest_execution", "original_leaf_response", "invalid_evidence")
+        indices.append(index)
+    require(indices == sorted(set(indices)), "pytest_execution", "ordered_partition", "invalid_evidence")
+    if completed:
+        require(indices == list(range(len(root["batch_lengths"]))) and value["selection"] == root["selection"] and
+                state["completed"] == sha(canonical(value)), "pytest_execution", "completed_response", "invalid_evidence")
+    else:
+        require(len(indices) == 1 and state["leaves"][indices[0]]["response"] == sha(canonical(value)),
+                "pytest_execution", "native_leaf_response", "invalid_evidence")
+    return state
+
+
+def _run_pytest(session, selection, *, name, extra=(), execution=None):
     strings(selection, "pytest", "selection")
     request = session.directory / (name + "-request.json")
     output = session.directory / (name + "-pytest.json")
-    write_new(request, {"schema_version": "0.1", "invocation_token": session.token,
-                        "digests": session.digests, "selection": selection})
+    value = {"schema_version": "0.1", "invocation_token": session.token,
+             "digests": session.digests, "selection": selection}
+    if execution is not None:
+        state, index = execution
+        value.update(schema_version="0.2", execution_root=state["reference"], batch_index=index)
+        state["leaves"].append({"path": str(request), "raw": canonical(value), "response": None})
+    write_new(request, value)
     env = dict(os.environ)
     for key in list(env):
         if key.startswith("PYTEST_") or key.startswith("PHASE_B_"):
@@ -183,36 +323,81 @@ def run_pytest(session, selection, *, name="required", extra=()):
     require(output.is_file(), "pytest", "writer_output", "invalid_evidence")
     value = read(output)
     require(value.get("exit_code") == process.returncode, "pytest", "process_exit", "invalid_evidence")
+    if execution is not None:
+        state["leaves"][index]["response"] = sha(canonical(value))
     return value
 
 
-def run_pytest_batches(session, selection, *, name="runtime", batch_size=25):
+def run_pytest(session, selection, *, name="required", extra=(), check_id=None):
+    if check_id is None:
+        return _run_pytest(session, selection, name=name, extra=extra)
+    state = _begin_execution(session, selection, check_id, [len(selection)])
+    value = _run_pytest(session, selection, name=check_id + "-0000", extra=extra, execution=(state, 0))
+    _execution_authority(value, session, check_id=check_id, completed=False)
+    _validate_pytest(value, session, selection)
+    session.unchanged()
+    state["completed"] = sha(canonical(value))
+    return value
+
+
+def run_pytest_batches(session, selection, *, name="runtime", batch_size=25, batch_lengths=None,
+                       before_batch=None, check_id=None):
     """Validate every bounded batch before merging an exact single-session selection."""
     strings(selection, "pytest", "selection")
     require(type(batch_size) is int and batch_size > 0, "pytest", "batch_size")
-    merged = None
-    for offset in range(0, len(selection), batch_size):
-        nodes = selection[offset:offset + batch_size]
-        value = run_pytest(session, nodes, name=f"{name}-{offset // batch_size:04d}")
-        validate_pytest(value, session, nodes)
+    lengths = ([min(batch_size, len(selection) - offset) for offset in range(0, len(selection), batch_size)]
+               if batch_lengths is None else batch_lengths)
+    require(type(lengths) is list and bool(lengths) and all(type(n) is int and n > 0 for n in lengths) and
+            sum(lengths) == len(selection), "pytest", "batch_lengths")
+    require(check_id is not None or batch_lengths is None, "pytest", "scoped_plan")
+    state = _begin_execution(session, selection, check_id, lengths) if check_id is not None else None
+    merged, offset = None, 0
+    for index, length in enumerate(lengths):
+        if before_batch is not None:
+            before_batch()
+        nodes = selection[offset:offset + length]
+        value = (_run_pytest(session, nodes, name=f"{check_id}-{index:04d}", execution=(state, index))
+                 if state is not None else run_pytest(session, nodes, name=f"{name}-{index:04d}"))
+        if state is not None:
+            _execution_authority(value, session, check_id=check_id, completed=False)
+            _validate_pytest(value, session, nodes)
+        else:
+            validate_pytest(value, session, nodes)
         session.unchanged()
         if merged is None:
             merged = {**value, "selection": list(selection)}
         else:
             for key in ("collected", "nodes", "observations", "hook_events", "case_results"):
                 merged[key].extend(value[key])
+            if state is not None:
+                merged["pytest_requests"].extend(value["pytest_requests"])
+        offset += length
     merged["collected"].sort()
     for key, identity in (("observations", "scenario_id"), ("hook_events", "case_id"), ("case_results", "case_id")):
         ids = [(row[identity], row["nodeid"]) for row in merged[key]]
         require(len(ids) == len(set(ids)), "pytest", "duplicate_batch_evidence", "invalid_evidence")
-    validate_pytest(merged, session, selection)
+    _validate_pytest(merged, session, selection)
     session.unchanged()
+    if state is not None:
+        state["completed"] = sha(canonical(merged))
     return merged
 
 
-def validate_pytest(value, session, selection):
-    keys(value, ENVELOPE, "pytest")
-    require(value["schema_version"] == "0.1", "pytest", "schema_version")
+def validate_pytest(value, session, selection, *, check_id=None, schema_version=None):
+    require(type(value) is dict, "pytest", "fields")
+    version = value.get("schema_version")
+    require(schema_version is None or version == schema_version, "pytest", "expected_schema", "invalid_evidence")
+    require(check_id is None or version == "0.2", "pytest", "scoped_check", "invalid_evidence")
+    if version == "0.2":
+        keys(value, ENVELOPE | {"execution_root", "pytest_requests"}, "pytest")
+        _execution_authority(value, session, check_id=check_id)
+    return _validate_pytest(value, session, selection)
+
+
+def _validate_pytest(value, session, selection):
+    version = value.get("schema_version")
+    keys(value, ENVELOPE | ({"execution_root", "pytest_requests"} if version == "0.2" else set()), "pytest")
+    require(version in ("0.1", "0.2"), "pytest", "schema_version")
     session.verify_binding(value)
     require(value["selection"] == selection, "pytest", "selection", "invalid_evidence")
     strings(value["collected"], "pytest", "collected")

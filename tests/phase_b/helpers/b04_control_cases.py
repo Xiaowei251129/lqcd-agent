@@ -246,7 +246,7 @@ def race_grant(root, request, fault_capture=None):
 def exercise_control_case(case_id):
     boundary, side, outcome = case_id.rsplit(".", 2)
     output = Path(mkdtemp(prefix="lqcd-agent-b04-control-case-", dir="/private/tmp"))
-    request = process_hook_request(case_id, output)
+    request = process_hook_request(case_id, output, scoped=True)
     target = bundle_cut if boundary.startswith("artifact.") else invalid_response_cut if "invalid_response" in boundary else advance_cut
     process = multiprocessing.get_context("spawn").Process(target=target, args=(output, case_id, request))
     process.start()

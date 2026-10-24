@@ -1,0 +1,916 @@
+{
+  "ticket_id": "B00C37",
+  "baseline_only": true,
+  "phase_b_complete": false,
+  "actual_Host_fingerprint": {
+    "control_protocol": "7447087f73caae2668a8e71e12fc40e426ebefee5864e3499a3f9cbd1a9322b8",
+    "application_build": "c625cc0f3c29da9ff14bda09f4b509022d13d9e27d55105d379c37f9a085d381",
+    "graph_topology": "d288a0c865f97f9ff84bf507f29e04739325f8d49a980dc74ef0c580302a2fbc",
+    "state_schema": "0.4",
+    "execution_schema": "0.4",
+    "artifact_schema": "0.1",
+    "langgraph": "1.2.10",
+    "checkpointer": "langgraph.checkpoint.sqlite:3.1.1",
+    "serializer": "lqcd_agent.control.checkpoints.CanonicalCheckpointSerializer:0.4"
+  },
+  "independently_recorded_historical_Host": {
+    "path": "/private/tmp/lqcd-agent-c30-execution-20261019-ubr1acn3/original-reconstruction-fingerprint.json",
+    "sha256": "e6b1ce6e1a17c4a9cf0954b970f7162c899bb0a1d6e30248e375ac9ca9745310",
+    "fingerprint": {
+      "control_protocol": "7447087f73caae2668a8e71e12fc40e426ebefee5864e3499a3f9cbd1a9322b8",
+      "application_build": "df2cd8314c25a0d391278c705cb6c97c206e91dbe5b5b8e18ff6684f07ba0f61",
+      "graph_topology": "d288a0c865f97f9ff84bf507f29e04739325f8d49a980dc74ef0c580302a2fbc",
+      "state_schema": "0.4",
+      "execution_schema": "0.4",
+      "artifact_schema": "0.1",
+      "langgraph": "1.1.5",
+      "checkpointer": "langgraph.checkpoint.sqlite:3.1.0",
+      "serializer": "lqcd_agent.control.checkpoints.CanonicalCheckpointSerializer:0.4"
+    }
+  },
+  "replacement_count": 5,
+  "replacements": [
+    {
+      "expected_path": "tests/phase_b/expected_traces/b04_product/stop-attached_halt.json",
+      "before_sha256": "814eb6b92003cb7afbcf316dffcf06cc3b9d344a43282b620213993fa3b5c56d",
+      "after_sha256": "a3b256e962775c6eadc6836eefcb9bc564a6e73d9a4752d9ecf2cb9af913492d",
+      "before": {
+        "member": "attached_halt/before.json",
+        "sha256": "814eb6b92003cb7afbcf316dffcf06cc3b9d344a43282b620213993fa3b5c56d",
+        "size_bytes": 79573
+      },
+      "after": {
+        "member": "attached_halt/after.json",
+        "sha256": "a3b256e962775c6eadc6836eefcb9bc564a6e73d9a4752d9ecf2cb9af913492d",
+        "size_bytes": 79573
+      },
+      "durable_review": [
+        {
+          "member": "attached_halt/source-0/raw.json",
+          "sha256": "40e51b350d922c6f87fe2add3f5f7260d239306b75eb377984d759b34b1c1d90",
+          "size_bytes": 354803,
+          "role": "raw"
+        },
+        {
+          "member": "attached_halt/source-0/facts.json",
+          "sha256": "aa6008e7a386a4aa058e537e6ae829fb67b79f9b76dc31a8996192d5faefb127",
+          "size_bytes": 128,
+          "role": "facts"
+        },
+        {
+          "member": "attached_halt/source-0/normalized.json",
+          "sha256": "4367a53f936d6d1b55b38c98438fca52a2b2a9e6a8856ce6eef3fe80dddbcf7b",
+          "size_bytes": 108977,
+          "role": "normalized"
+        },
+        {
+          "member": "attached_halt/source-0/raw-preimages.json",
+          "sha256": "9e455882df24ae1d5a2bd7888dad0f930ecaeeedb63ea7a2f2b12d1b58221dee",
+          "size_bytes": 288286,
+          "role": "raw-preimages"
+        },
+        {
+          "member": "attached_halt/source-0/semantic-preimages.json",
+          "sha256": "d103024da17b7b552ab3603e88b0565fb1b91e266ff0c217519fc54e1509b3ce",
+          "size_bytes": 722070,
+          "role": "semantic-preimages"
+        },
+        {
+          "member": "attached_halt/source-0/review.json",
+          "sha256": "c93f7842f6c75385d53dd973e5f76f944448c788a537abcf1aa2f53764824848",
+          "size_bytes": 66330,
+          "role": "review"
+        },
+        {
+          "member": "attached_halt/source-1/raw.json",
+          "sha256": "f9e164bf124a0f7e7ed2c16e0b3925f267d1da95d35590b915dfb211dcddc77e",
+          "size_bytes": 354803,
+          "role": "raw"
+        },
+        {
+          "member": "attached_halt/source-1/facts.json",
+          "sha256": "aa6008e7a386a4aa058e537e6ae829fb67b79f9b76dc31a8996192d5faefb127",
+          "size_bytes": 128,
+          "role": "facts"
+        },
+        {
+          "member": "attached_halt/source-1/normalized.json",
+          "sha256": "4367a53f936d6d1b55b38c98438fca52a2b2a9e6a8856ce6eef3fe80dddbcf7b",
+          "size_bytes": 108977,
+          "role": "normalized"
+        },
+        {
+          "member": "attached_halt/source-1/raw-preimages.json",
+          "sha256": "89dc5889d3f25ff9f5fa633a8107c5c1668f9260369a911cd7cd268e669519a1",
+          "size_bytes": 288286,
+          "role": "raw-preimages"
+        },
+        {
+          "member": "attached_halt/source-1/semantic-preimages.json",
+          "sha256": "d103024da17b7b552ab3603e88b0565fb1b91e266ff0c217519fc54e1509b3ce",
+          "size_bytes": 722070,
+          "role": "semantic-preimages"
+        },
+        {
+          "member": "attached_halt/source-1/review.json",
+          "sha256": "393581bce5e6cc99fdee3a0cc2a80acf4066e0ec28fcb1863354b97b69265907",
+          "size_bytes": 66330,
+          "role": "review"
+        }
+      ],
+      "two_fresh_sources": [
+        {
+          "root": "/private/tmp/lqcd-agent-b04-code-product-9ag9lzgh",
+          "raw_sha256": "40e51b350d922c6f87fe2add3f5f7260d239306b75eb377984d759b34b1c1d90",
+          "output_roots": [
+            "/private/tmp/lqcd-agent-b04-code-product-9ag9lzgh/case/run_f3308d7972294b17975219950f7ad3fd"
+          ],
+          "binding": {
+            "digests": {
+              "catalog": "0000000000000000000000000000000000000000000000000000000000000000",
+              "final_obligations": "0000000000000000000000000000000000000000000000000000000000000000",
+              "generated_protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "matrix": "0000000000000000000000000000000000000000000000000000000000000000",
+              "protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "registry": "0000000000000000000000000000000000000000000000000000000000000000",
+              "worktree_inputs": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "invocation_token": "unit-only-not-acceptance"
+          },
+          "facts": {
+            "duplicate_readonly": true,
+            "mode": "attached_halt",
+            "operation_type": "close_run",
+            "run_status": "halted",
+            "variant": "not_applicable"
+          }
+        },
+        {
+          "root": "/private/tmp/lqcd-agent-b04-code-product-uc33uf98",
+          "raw_sha256": "f9e164bf124a0f7e7ed2c16e0b3925f267d1da95d35590b915dfb211dcddc77e",
+          "output_roots": [
+            "/private/tmp/lqcd-agent-b04-code-product-uc33uf98/case/run_f3308d7972294b17975219950f7ad3fd"
+          ],
+          "binding": {
+            "digests": {
+              "catalog": "0000000000000000000000000000000000000000000000000000000000000000",
+              "final_obligations": "0000000000000000000000000000000000000000000000000000000000000000",
+              "generated_protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "matrix": "0000000000000000000000000000000000000000000000000000000000000000",
+              "protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "registry": "0000000000000000000000000000000000000000000000000000000000000000",
+              "worktree_inputs": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "invocation_token": "unit-only-not-acceptance"
+          },
+          "facts": {
+            "duplicate_readonly": true,
+            "mode": "attached_halt",
+            "operation_type": "close_run",
+            "run_status": "halted",
+            "variant": "not_applicable"
+          }
+        }
+      ],
+      "candidate": "/private/tmp/lqcd-agent-c37-archive-transport-20261022-u79bwxl9/candidates/stop-attached_halt.json",
+      "reverse_DAG_residual": [],
+      "classification": "complete_recorded_historical_Host_fingerprint_DAG"
+    },
+    {
+      "expected_path": "tests/phase_b/expected_traces/b04_product/stop-cancel.json",
+      "before_sha256": "997402c7b4c0fcd7b1d4e0e471352d33ae22bc821e70bb279cc0596856a11cdd",
+      "after_sha256": "782e132d807b57ecf72d4285b0d1321bfda5c04ea535af1922a75530a1232163",
+      "before": {
+        "member": "cancel/before.json",
+        "sha256": "997402c7b4c0fcd7b1d4e0e471352d33ae22bc821e70bb279cc0596856a11cdd",
+        "size_bytes": 98726
+      },
+      "after": {
+        "member": "cancel/after.json",
+        "sha256": "782e132d807b57ecf72d4285b0d1321bfda5c04ea535af1922a75530a1232163",
+        "size_bytes": 98726
+      },
+      "durable_review": [
+        {
+          "member": "cancel/source-0/raw.json",
+          "sha256": "f2470cc833c49560b9349ff3617bcb2c4ef119e5d6d7e67e5fd4b31bb4f6296f",
+          "size_bytes": 298617,
+          "role": "raw"
+        },
+        {
+          "member": "cancel/source-0/facts.json",
+          "sha256": "d0b12a51c683272a761db7c1f96c9f6a03ee0307828d1c82d97f2a952f3b8a91",
+          "size_bytes": 124,
+          "role": "facts"
+        },
+        {
+          "member": "cancel/source-0/normalized.json",
+          "sha256": "4e1cb17b627891a03aec48c069c3003170f5ff21a76791b60da828fb57820666",
+          "size_bytes": 135240,
+          "role": "normalized"
+        },
+        {
+          "member": "cancel/source-0/raw-preimages.json",
+          "sha256": "1f5c74e69a314c426e61bec864ebdf6fbb163fe28ba44387b298201f6f2fc49c",
+          "size_bytes": 383113,
+          "role": "raw-preimages"
+        },
+        {
+          "member": "cancel/source-0/semantic-preimages.json",
+          "sha256": "6f5c12921ff37cb6a80efa9cb37a7f563da15374e8c7fd05647d86eed06e0c1c",
+          "size_bytes": 1053351,
+          "role": "semantic-preimages"
+        },
+        {
+          "member": "cancel/source-0/review.json",
+          "sha256": "ec7fcda1b02fdf6c596410ead5f64fc51dd2131011789bcf12a764bb81fce4e4",
+          "size_bytes": 52138,
+          "role": "review"
+        },
+        {
+          "member": "cancel/source-1/raw.json",
+          "sha256": "4117fd67f6bd9869273007378edc3f3a8190f3612fbfe4466fe858fcbaad0379",
+          "size_bytes": 298617,
+          "role": "raw"
+        },
+        {
+          "member": "cancel/source-1/facts.json",
+          "sha256": "d0b12a51c683272a761db7c1f96c9f6a03ee0307828d1c82d97f2a952f3b8a91",
+          "size_bytes": 124,
+          "role": "facts"
+        },
+        {
+          "member": "cancel/source-1/normalized.json",
+          "sha256": "4e1cb17b627891a03aec48c069c3003170f5ff21a76791b60da828fb57820666",
+          "size_bytes": 135240,
+          "role": "normalized"
+        },
+        {
+          "member": "cancel/source-1/raw-preimages.json",
+          "sha256": "f4a51306c89cd1718de482bb47e69bbb1263175fa591e1f67a174d63bda8dd4f",
+          "size_bytes": 383113,
+          "role": "raw-preimages"
+        },
+        {
+          "member": "cancel/source-1/semantic-preimages.json",
+          "sha256": "6f5c12921ff37cb6a80efa9cb37a7f563da15374e8c7fd05647d86eed06e0c1c",
+          "size_bytes": 1053351,
+          "role": "semantic-preimages"
+        },
+        {
+          "member": "cancel/source-1/review.json",
+          "sha256": "bb2d1c007e735651dc4a8b82ee7920867eb608972cd81ca8eaf7b18fb8ba28dc",
+          "size_bytes": 52138,
+          "role": "review"
+        }
+      ],
+      "two_fresh_sources": [
+        {
+          "root": "/private/tmp/lqcd-agent-b04-stop-_kglcj7i",
+          "raw_sha256": "f2470cc833c49560b9349ff3617bcb2c4ef119e5d6d7e67e5fd4b31bb4f6296f",
+          "output_roots": [
+            "/private/tmp/lqcd-agent-b04-stop-_kglcj7i/case/run_6df70635fc5940aba4670ca493989a53"
+          ],
+          "binding": {
+            "digests": {
+              "catalog": "0000000000000000000000000000000000000000000000000000000000000000",
+              "final_obligations": "0000000000000000000000000000000000000000000000000000000000000000",
+              "generated_protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "matrix": "0000000000000000000000000000000000000000000000000000000000000000",
+              "protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "registry": "0000000000000000000000000000000000000000000000000000000000000000",
+              "worktree_inputs": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "invocation_token": "unit-only-not-acceptance"
+          },
+          "facts": {
+            "duplicate_readonly": true,
+            "mode": "cancel",
+            "operation_type": "cancel_pause",
+            "run_status": "halted",
+            "variant": "not_applicable"
+          }
+        },
+        {
+          "root": "/private/tmp/lqcd-agent-b04-stop-53memzlq",
+          "raw_sha256": "4117fd67f6bd9869273007378edc3f3a8190f3612fbfe4466fe858fcbaad0379",
+          "output_roots": [
+            "/private/tmp/lqcd-agent-b04-stop-53memzlq/case/run_6df70635fc5940aba4670ca493989a53"
+          ],
+          "binding": {
+            "digests": {
+              "catalog": "0000000000000000000000000000000000000000000000000000000000000000",
+              "final_obligations": "0000000000000000000000000000000000000000000000000000000000000000",
+              "generated_protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "matrix": "0000000000000000000000000000000000000000000000000000000000000000",
+              "protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "registry": "0000000000000000000000000000000000000000000000000000000000000000",
+              "worktree_inputs": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "invocation_token": "unit-only-not-acceptance"
+          },
+          "facts": {
+            "duplicate_readonly": true,
+            "mode": "cancel",
+            "operation_type": "cancel_pause",
+            "run_status": "halted",
+            "variant": "not_applicable"
+          }
+        }
+      ],
+      "candidate": "/private/tmp/lqcd-agent-c37-archive-transport-20261022-u79bwxl9/candidates/stop-cancel.json",
+      "reverse_DAG_residual": [],
+      "classification": "complete_recorded_historical_Host_fingerprint_DAG"
+    },
+    {
+      "expected_path": "tests/phase_b/expected_traces/b04_product/stop-live_halt.json",
+      "before_sha256": "d1c6cdcfe87449e59bf40e5e0125b40fbd1a2e2ba8a4aec753bcfe08fd70123a",
+      "after_sha256": "64366d6d9df05afc6b6a3ce3f7b661e08919cd32b85a7d4b5bed206628548aac",
+      "before": {
+        "member": "live_halt/before.json",
+        "sha256": "d1c6cdcfe87449e59bf40e5e0125b40fbd1a2e2ba8a4aec753bcfe08fd70123a",
+        "size_bytes": 83603
+      },
+      "after": {
+        "member": "live_halt/after.json",
+        "sha256": "64366d6d9df05afc6b6a3ce3f7b661e08919cd32b85a7d4b5bed206628548aac",
+        "size_bytes": 83603
+      },
+      "durable_review": [
+        {
+          "member": "live_halt/source-0/raw.json",
+          "sha256": "ee5616982ced09536a48bb7add518d7477258d5b0469c4faad20a1653b81835f",
+          "size_bytes": 352882,
+          "role": "raw"
+        },
+        {
+          "member": "live_halt/source-0/facts.json",
+          "sha256": "054402d33199b121d58cba7a9cb6dffbf217a34fb4da53e615029839e00d90da",
+          "size_bytes": 142,
+          "role": "facts"
+        },
+        {
+          "member": "live_halt/source-0/normalized.json",
+          "sha256": "b17a67104757456c4ca1af6e0920ed5caf0c1076985520cd6df43096a9d61b5c",
+          "size_bytes": 114429,
+          "role": "normalized"
+        },
+        {
+          "member": "live_halt/source-0/raw-preimages.json",
+          "sha256": "1b604356aa23e20c2760422ad3cb1c02befb04e90db54b06cef19470e3398d73",
+          "size_bytes": 272963,
+          "role": "raw-preimages"
+        },
+        {
+          "member": "live_halt/source-0/semantic-preimages.json",
+          "sha256": "be70b177bd01afcccad828ce02fc07ea575e3bf4dc17273222eedd3859d8ef53",
+          "size_bytes": 703948,
+          "role": "semantic-preimages"
+        },
+        {
+          "member": "live_halt/source-0/review.json",
+          "sha256": "67fa01ca81ecb5afa582a872b0bf8729bd1a0fe19ef04404f0d73f7b95c19615",
+          "size_bytes": 61307,
+          "role": "review"
+        },
+        {
+          "member": "live_halt/source-1/raw.json",
+          "sha256": "a3784c32128c71f107905f829fe966ecb93ca7b7f6fdec46101d628df3de16b5",
+          "size_bytes": 352882,
+          "role": "raw"
+        },
+        {
+          "member": "live_halt/source-1/facts.json",
+          "sha256": "054402d33199b121d58cba7a9cb6dffbf217a34fb4da53e615029839e00d90da",
+          "size_bytes": 142,
+          "role": "facts"
+        },
+        {
+          "member": "live_halt/source-1/normalized.json",
+          "sha256": "b17a67104757456c4ca1af6e0920ed5caf0c1076985520cd6df43096a9d61b5c",
+          "size_bytes": 114429,
+          "role": "normalized"
+        },
+        {
+          "member": "live_halt/source-1/raw-preimages.json",
+          "sha256": "0d422c40953e05384c3a5425bc61c665f984f8897dd614f7b4dd45bd7b70f796",
+          "size_bytes": 272963,
+          "role": "raw-preimages"
+        },
+        {
+          "member": "live_halt/source-1/semantic-preimages.json",
+          "sha256": "be70b177bd01afcccad828ce02fc07ea575e3bf4dc17273222eedd3859d8ef53",
+          "size_bytes": 703948,
+          "role": "semantic-preimages"
+        },
+        {
+          "member": "live_halt/source-1/review.json",
+          "sha256": "2a23c76bf78ccb2cbed6732fb5750ac1f033dedb475ff9fdb2e27694600dd532",
+          "size_bytes": 61307,
+          "role": "review"
+        }
+      ],
+      "two_fresh_sources": [
+        {
+          "root": "/private/tmp/lqcd-agent-b04-code-product-qhomfves",
+          "raw_sha256": "ee5616982ced09536a48bb7add518d7477258d5b0469c4faad20a1653b81835f",
+          "output_roots": [
+            "/private/tmp/lqcd-agent-b04-code-product-qhomfves/case/run_1080058354db40e68bff0e67452585d9"
+          ],
+          "binding": {
+            "digests": {
+              "catalog": "0000000000000000000000000000000000000000000000000000000000000000",
+              "final_obligations": "0000000000000000000000000000000000000000000000000000000000000000",
+              "generated_protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "matrix": "0000000000000000000000000000000000000000000000000000000000000000",
+              "protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "registry": "0000000000000000000000000000000000000000000000000000000000000000",
+              "worktree_inputs": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "invocation_token": "unit-only-not-acceptance"
+          },
+          "facts": {
+            "duplicate_readonly": true,
+            "mode": "live_halt",
+            "operation_type": "resolve_external_interrupt",
+            "run_status": "halted",
+            "variant": "controlled_halt"
+          }
+        },
+        {
+          "root": "/private/tmp/lqcd-agent-b04-code-product-kxyfxpwu",
+          "raw_sha256": "a3784c32128c71f107905f829fe966ecb93ca7b7f6fdec46101d628df3de16b5",
+          "output_roots": [
+            "/private/tmp/lqcd-agent-b04-code-product-kxyfxpwu/case/run_1080058354db40e68bff0e67452585d9"
+          ],
+          "binding": {
+            "digests": {
+              "catalog": "0000000000000000000000000000000000000000000000000000000000000000",
+              "final_obligations": "0000000000000000000000000000000000000000000000000000000000000000",
+              "generated_protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "matrix": "0000000000000000000000000000000000000000000000000000000000000000",
+              "protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "registry": "0000000000000000000000000000000000000000000000000000000000000000",
+              "worktree_inputs": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "invocation_token": "unit-only-not-acceptance"
+          },
+          "facts": {
+            "duplicate_readonly": true,
+            "mode": "live_halt",
+            "operation_type": "resolve_external_interrupt",
+            "run_status": "halted",
+            "variant": "controlled_halt"
+          }
+        }
+      ],
+      "candidate": "/private/tmp/lqcd-agent-c37-archive-transport-20261022-u79bwxl9/candidates/stop-live_halt.json",
+      "reverse_DAG_residual": [],
+      "classification": "complete_recorded_historical_Host_fingerprint_DAG"
+    },
+    {
+      "expected_path": "tests/phase_b/expected_traces/b04_product/stop-live_integrity.json",
+      "before_sha256": "c48cc63a7a44685196278936bd7cef5057ad37ca8d42bc49aeefb6b78d93a72f",
+      "after_sha256": "f48c52255bb8e72bf2ad9eff86cc7dd71fc59616feceab20a5d58c61a491ec3e",
+      "before": {
+        "member": "live_integrity/before.json",
+        "sha256": "c48cc63a7a44685196278936bd7cef5057ad37ca8d42bc49aeefb6b78d93a72f",
+        "size_bytes": 83625
+      },
+      "after": {
+        "member": "live_integrity/after.json",
+        "sha256": "f48c52255bb8e72bf2ad9eff86cc7dd71fc59616feceab20a5d58c61a491ec3e",
+        "size_bytes": 83625
+      },
+      "durable_review": [
+        {
+          "member": "live_integrity/source-0/raw.json",
+          "sha256": "60d2b96bfae0dd28c3f0576fddec2fe62b4bc2cf008cb6bcc9382de8c3a5c355",
+          "size_bytes": 352916,
+          "role": "raw"
+        },
+        {
+          "member": "live_integrity/source-0/facts.json",
+          "sha256": "2bfc83d49ce00524c1315ceb2d5e0b6f1f47ab2104ff525c08b9c9a3256a09e1",
+          "size_bytes": 149,
+          "role": "facts"
+        },
+        {
+          "member": "live_integrity/source-0/normalized.json",
+          "sha256": "050bdc830fe321632a26858a944b48cfecd0714b1a25c0b16c38201271861a75",
+          "size_bytes": 114451,
+          "role": "normalized"
+        },
+        {
+          "member": "live_integrity/source-0/raw-preimages.json",
+          "sha256": "cc2ca06b92d1b84c680786d82bbb380493aecc54b14b08aca8c1aae71fdd524b",
+          "size_bytes": 272971,
+          "role": "raw-preimages"
+        },
+        {
+          "member": "live_integrity/source-0/semantic-preimages.json",
+          "sha256": "b914fc253321baed7a00e04bfd220b0f3649b2e23bf63582af49f755642945e5",
+          "size_bytes": 703954,
+          "role": "semantic-preimages"
+        },
+        {
+          "member": "live_integrity/source-0/review.json",
+          "sha256": "f45131022b15de7ea660f52ec15bb8e5ab570f09cedfd937b41a8455de2fdc21",
+          "size_bytes": 61307,
+          "role": "review"
+        },
+        {
+          "member": "live_integrity/source-1/raw.json",
+          "sha256": "0823d2276acd813816e8077f97610e0b291058133068ac144d0e3900744159de",
+          "size_bytes": 352916,
+          "role": "raw"
+        },
+        {
+          "member": "live_integrity/source-1/facts.json",
+          "sha256": "2bfc83d49ce00524c1315ceb2d5e0b6f1f47ab2104ff525c08b9c9a3256a09e1",
+          "size_bytes": 149,
+          "role": "facts"
+        },
+        {
+          "member": "live_integrity/source-1/normalized.json",
+          "sha256": "050bdc830fe321632a26858a944b48cfecd0714b1a25c0b16c38201271861a75",
+          "size_bytes": 114451,
+          "role": "normalized"
+        },
+        {
+          "member": "live_integrity/source-1/raw-preimages.json",
+          "sha256": "57830b20886d0d8018523d0377d62e8db2551ac6272d96a109cf60adaee818de",
+          "size_bytes": 272971,
+          "role": "raw-preimages"
+        },
+        {
+          "member": "live_integrity/source-1/semantic-preimages.json",
+          "sha256": "b914fc253321baed7a00e04bfd220b0f3649b2e23bf63582af49f755642945e5",
+          "size_bytes": 703954,
+          "role": "semantic-preimages"
+        },
+        {
+          "member": "live_integrity/source-1/review.json",
+          "sha256": "cfa2b6edda8fc8ff96ddc020546c79da5c452858dfa67e91daf50e631b487ccb",
+          "size_bytes": 61307,
+          "role": "review"
+        }
+      ],
+      "two_fresh_sources": [
+        {
+          "root": "/private/tmp/lqcd-agent-b04-code-product-nlr9bvnc",
+          "raw_sha256": "60d2b96bfae0dd28c3f0576fddec2fe62b4bc2cf008cb6bcc9382de8c3a5c355",
+          "output_roots": [
+            "/private/tmp/lqcd-agent-b04-code-product-nlr9bvnc/case/run_4751bb2d336f43c4bf03c0f62ca01825"
+          ],
+          "binding": {
+            "digests": {
+              "catalog": "0000000000000000000000000000000000000000000000000000000000000000",
+              "final_obligations": "0000000000000000000000000000000000000000000000000000000000000000",
+              "generated_protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "matrix": "0000000000000000000000000000000000000000000000000000000000000000",
+              "protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "registry": "0000000000000000000000000000000000000000000000000000000000000000",
+              "worktree_inputs": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "invocation_token": "unit-only-not-acceptance"
+          },
+          "facts": {
+            "duplicate_readonly": true,
+            "mode": "live_integrity",
+            "operation_type": "resolve_external_interrupt",
+            "run_status": "failed",
+            "variant": "integrity_failure"
+          }
+        },
+        {
+          "root": "/private/tmp/lqcd-agent-b04-code-product-n3h019nt",
+          "raw_sha256": "0823d2276acd813816e8077f97610e0b291058133068ac144d0e3900744159de",
+          "output_roots": [
+            "/private/tmp/lqcd-agent-b04-code-product-n3h019nt/case/run_4751bb2d336f43c4bf03c0f62ca01825"
+          ],
+          "binding": {
+            "digests": {
+              "catalog": "0000000000000000000000000000000000000000000000000000000000000000",
+              "final_obligations": "0000000000000000000000000000000000000000000000000000000000000000",
+              "generated_protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "matrix": "0000000000000000000000000000000000000000000000000000000000000000",
+              "protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "registry": "0000000000000000000000000000000000000000000000000000000000000000",
+              "worktree_inputs": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "invocation_token": "unit-only-not-acceptance"
+          },
+          "facts": {
+            "duplicate_readonly": true,
+            "mode": "live_integrity",
+            "operation_type": "resolve_external_interrupt",
+            "run_status": "failed",
+            "variant": "integrity_failure"
+          }
+        }
+      ],
+      "candidate": "/private/tmp/lqcd-agent-c37-archive-transport-20261022-u79bwxl9/candidates/stop-live_integrity.json",
+      "reverse_DAG_residual": [],
+      "classification": "complete_recorded_historical_Host_fingerprint_DAG"
+    },
+    {
+      "expected_path": "tests/phase_b/expected_traces/b04_product/stop-timeout.json",
+      "before_sha256": "2b22c95d80e864521098ef16ccb69a7c499ebb9a21b609d0d9faf22cb2c39338",
+      "after_sha256": "e63555e1742e214cf919a72ea17327daa266368bb0a4da113f7f94db7373f46c",
+      "before": {
+        "member": "timeout/before.json",
+        "sha256": "2b22c95d80e864521098ef16ccb69a7c499ebb9a21b609d0d9faf22cb2c39338",
+        "size_bytes": 154758
+      },
+      "after": {
+        "member": "timeout/after.json",
+        "sha256": "e63555e1742e214cf919a72ea17327daa266368bb0a4da113f7f94db7373f46c",
+        "size_bytes": 154758
+      },
+      "durable_review": [
+        {
+          "member": "timeout/source-0/raw.json",
+          "sha256": "260df266936e7196ad562b4b4d62572cb22a4fa367aeaa6f9bbae35c96ab9a8e",
+          "size_bytes": 509729,
+          "role": "raw"
+        },
+        {
+          "member": "timeout/source-0/facts.json",
+          "sha256": "ccd9f9ed78fd21b7de713633c241dd21e261f521cad25ca4e7b8dc18b5f42751",
+          "size_bytes": 144,
+          "role": "facts"
+        },
+        {
+          "member": "timeout/source-0/normalized.json",
+          "sha256": "cbbd4efb5d85a712f77e9d0ac55b57fd469ed39ea2d36b9cefa0f88f5858e3c3",
+          "size_bytes": 211654,
+          "role": "normalized"
+        },
+        {
+          "member": "timeout/source-0/raw-preimages.json",
+          "sha256": "9632b5905f7efffed4c8690f77547af352502815af68458e9dbfb35483c1dfdb",
+          "size_bytes": 818645,
+          "role": "raw-preimages"
+        },
+        {
+          "member": "timeout/source-0/semantic-preimages.json",
+          "sha256": "8b1aec0a7f15902040613f903abcaf37a0875306737b376bd26209b4026e8293",
+          "size_bytes": 1560783,
+          "role": "semantic-preimages"
+        },
+        {
+          "member": "timeout/source-0/review.json",
+          "sha256": "231cf4b072dc8a2582cfc401a1e57e26d10956f7cc8a393c50e565374584ef89",
+          "size_bytes": 143910,
+          "role": "review"
+        },
+        {
+          "member": "timeout/source-1/raw.json",
+          "sha256": "2788e2ead2b9ffd4d2a13b222381fa8bdeb0c24b74ca97e67f8fa0f0885b14ac",
+          "size_bytes": 509729,
+          "role": "raw"
+        },
+        {
+          "member": "timeout/source-1/facts.json",
+          "sha256": "ccd9f9ed78fd21b7de713633c241dd21e261f521cad25ca4e7b8dc18b5f42751",
+          "size_bytes": 144,
+          "role": "facts"
+        },
+        {
+          "member": "timeout/source-1/normalized.json",
+          "sha256": "cbbd4efb5d85a712f77e9d0ac55b57fd469ed39ea2d36b9cefa0f88f5858e3c3",
+          "size_bytes": 211654,
+          "role": "normalized"
+        },
+        {
+          "member": "timeout/source-1/raw-preimages.json",
+          "sha256": "09b130f60b4ab3b12f8e9b7d61b0788cef9b55a37732822a898064cc9aa379aa",
+          "size_bytes": 818645,
+          "role": "raw-preimages"
+        },
+        {
+          "member": "timeout/source-1/semantic-preimages.json",
+          "sha256": "8b1aec0a7f15902040613f903abcaf37a0875306737b376bd26209b4026e8293",
+          "size_bytes": 1560783,
+          "role": "semantic-preimages"
+        },
+        {
+          "member": "timeout/source-1/review.json",
+          "sha256": "dee06bca1dabc2e7fcf7689c1b0a839686114770e124522ace799633adf777e9",
+          "size_bytes": 143910,
+          "role": "review"
+        }
+      ],
+      "two_fresh_sources": [
+        {
+          "root": "/private/tmp/lqcd-agent-b04-code-product-vxlprge9",
+          "raw_sha256": "260df266936e7196ad562b4b4d62572cb22a4fa367aeaa6f9bbae35c96ab9a8e",
+          "output_roots": [
+            "/private/tmp/lqcd-agent-b04-code-product-vxlprge9/case/run_00df3ed750ca45088e1121e38672c7e8"
+          ],
+          "binding": {
+            "digests": {
+              "catalog": "0000000000000000000000000000000000000000000000000000000000000000",
+              "final_obligations": "0000000000000000000000000000000000000000000000000000000000000000",
+              "generated_protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "matrix": "0000000000000000000000000000000000000000000000000000000000000000",
+              "protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "registry": "0000000000000000000000000000000000000000000000000000000000000000",
+              "worktree_inputs": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "invocation_token": "unit-only-not-acceptance"
+          },
+          "facts": {
+            "duplicate_readonly": true,
+            "mode": "timeout",
+            "operation_type": "resolve_external_interrupt",
+            "run_status": "paused",
+            "variant": "recoverable_timeout"
+          }
+        },
+        {
+          "root": "/private/tmp/lqcd-agent-b04-code-product-y3gsqu61",
+          "raw_sha256": "2788e2ead2b9ffd4d2a13b222381fa8bdeb0c24b74ca97e67f8fa0f0885b14ac",
+          "output_roots": [
+            "/private/tmp/lqcd-agent-b04-code-product-y3gsqu61/case/run_00df3ed750ca45088e1121e38672c7e8"
+          ],
+          "binding": {
+            "digests": {
+              "catalog": "0000000000000000000000000000000000000000000000000000000000000000",
+              "final_obligations": "0000000000000000000000000000000000000000000000000000000000000000",
+              "generated_protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "matrix": "0000000000000000000000000000000000000000000000000000000000000000",
+              "protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "registry": "0000000000000000000000000000000000000000000000000000000000000000",
+              "worktree_inputs": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "invocation_token": "unit-only-not-acceptance"
+          },
+          "facts": {
+            "duplicate_readonly": true,
+            "mode": "timeout",
+            "operation_type": "resolve_external_interrupt",
+            "run_status": "paused",
+            "variant": "recoverable_timeout"
+          }
+        }
+      ],
+      "candidate": "/private/tmp/lqcd-agent-c37-archive-transport-20261022-u79bwxl9/candidates/stop-timeout.json",
+      "reverse_DAG_residual": [],
+      "classification": "complete_recorded_historical_Host_fingerprint_DAG"
+    }
+  ],
+  "unchanged_stop_sources": [
+    {
+      "expected_path": "tests/phase_b/expected_traces/b04_product/stop-normal_end.json",
+      "sha256": "b0dcba2fceea1bc9182bcc8fc5d2d1d2b64e73b8dbda8c12e4017e1758790198",
+      "two_fresh_sources": [
+        {
+          "root": "/private/tmp/lqcd-agent-b04-stop-uphecr7h",
+          "raw_sha256": "e0d79c2c17f5584953e5832d976cb249885fc4c71c19edc2e30a869bdcae03f8",
+          "output_roots": [
+            "/private/tmp/lqcd-agent-b04-stop-uphecr7h/case/run_9344733388754d868d0e74d67562680d"
+          ],
+          "binding": {
+            "digests": {
+              "catalog": "0000000000000000000000000000000000000000000000000000000000000000",
+              "final_obligations": "0000000000000000000000000000000000000000000000000000000000000000",
+              "generated_protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "matrix": "0000000000000000000000000000000000000000000000000000000000000000",
+              "protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "registry": "0000000000000000000000000000000000000000000000000000000000000000",
+              "worktree_inputs": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "invocation_token": "unit-only-not-acceptance"
+          },
+          "facts": {
+            "duplicate_readonly": true,
+            "mode": "normal_end",
+            "operation_type": "close_run",
+            "run_status": "completed",
+            "variant": "not_applicable"
+          }
+        },
+        {
+          "root": "/private/tmp/lqcd-agent-b04-stop-rguuffq1",
+          "raw_sha256": "8a95d01cfb5537094979b2a3035a3e0affb5bbb4900c7e7430a124045e020a3a",
+          "output_roots": [
+            "/private/tmp/lqcd-agent-b04-stop-rguuffq1/case/run_9344733388754d868d0e74d67562680d"
+          ],
+          "binding": {
+            "digests": {
+              "catalog": "0000000000000000000000000000000000000000000000000000000000000000",
+              "final_obligations": "0000000000000000000000000000000000000000000000000000000000000000",
+              "generated_protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "matrix": "0000000000000000000000000000000000000000000000000000000000000000",
+              "protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "registry": "0000000000000000000000000000000000000000000000000000000000000000",
+              "worktree_inputs": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "invocation_token": "unit-only-not-acceptance"
+          },
+          "facts": {
+            "duplicate_readonly": true,
+            "mode": "normal_end",
+            "operation_type": "close_run",
+            "run_status": "completed",
+            "variant": "not_applicable"
+          }
+        }
+      ]
+    },
+    {
+      "expected_path": "tests/phase_b/expected_traces/b04_product/stop-ordinary_halt.json",
+      "sha256": "fd06c280131b64dd38907e26ad408d57b86a874881c53cab5e8199cf4a94dee3",
+      "two_fresh_sources": [
+        {
+          "root": "/private/tmp/lqcd-agent-b04-stop-1m4orsqv",
+          "raw_sha256": "449387b931611ad9e5d332546966f38ca2b6f8024f165a4a1a3c9fda8c30c0c4",
+          "output_roots": [
+            "/private/tmp/lqcd-agent-b04-stop-1m4orsqv/case/run_badf4dfe958c41a2a47ac357ad49098d"
+          ],
+          "binding": {
+            "digests": {
+              "catalog": "0000000000000000000000000000000000000000000000000000000000000000",
+              "final_obligations": "0000000000000000000000000000000000000000000000000000000000000000",
+              "generated_protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "matrix": "0000000000000000000000000000000000000000000000000000000000000000",
+              "protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "registry": "0000000000000000000000000000000000000000000000000000000000000000",
+              "worktree_inputs": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "invocation_token": "unit-only-not-acceptance"
+          },
+          "facts": {
+            "duplicate_readonly": true,
+            "mode": "ordinary_halt",
+            "operation_type": "close_run",
+            "run_status": "halted",
+            "variant": "not_applicable"
+          }
+        },
+        {
+          "root": "/private/tmp/lqcd-agent-b04-stop-f0nr8jct",
+          "raw_sha256": "8e67148142dea00039d23b3f68dc173be598f8f8a176c569794deb3f3394839f",
+          "output_roots": [
+            "/private/tmp/lqcd-agent-b04-stop-f0nr8jct/case/run_badf4dfe958c41a2a47ac357ad49098d"
+          ],
+          "binding": {
+            "digests": {
+              "catalog": "0000000000000000000000000000000000000000000000000000000000000000",
+              "final_obligations": "0000000000000000000000000000000000000000000000000000000000000000",
+              "generated_protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "matrix": "0000000000000000000000000000000000000000000000000000000000000000",
+              "protocol": "0000000000000000000000000000000000000000000000000000000000000000",
+              "registry": "0000000000000000000000000000000000000000000000000000000000000000",
+              "worktree_inputs": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "invocation_token": "unit-only-not-acceptance"
+          },
+          "facts": {
+            "duplicate_readonly": true,
+            "mode": "ordinary_halt",
+            "operation_type": "close_run",
+            "run_status": "halted",
+            "variant": "not_applicable"
+          }
+        }
+      ]
+    }
+  ],
+  "shared_durable_review": [
+    {
+      "member": "recorded-historical-Host.json",
+      "sha256": "e6b1ce6e1a17c4a9cf0954b970f7162c899bb0a1d6e30248e375ac9ca9745310",
+      "size_bytes": 961
+    },
+    {
+      "member": "original-stop-command-receipt.json",
+      "sha256": "2348f566b9b804f1c384dd0ee0ddf78dd8efcdf5f265fcd49670d0a7c7da9589",
+      "size_bytes": 421
+    },
+    {
+      "member": "original-stop-output.log",
+      "sha256": "1bc106b15f18bf8f93e6c147f07c485ce095b19906cba4c06f2af01110735ac0",
+      "size_bytes": 109
+    },
+    {
+      "member": "approved-ticket.md",
+      "sha256": "066cc94d08cc539c1eb96f3b9563f254b14fe3fa1951d45168472f9bf677669e",
+      "size_bytes": 7903
+    },
+    {
+      "member": "preserved-C36-failure-receipt.json",
+      "sha256": "327afb0df5279eb7eaa6bde0a1f0c6a8e3e83bc6b50e2d8f28f8095615141355",
+      "size_bytes": 290
+    }
+  ],
+  "archive": {
+    "path": "docs/tickets/corrections/b00c37/review-preimages.tar.xz",
+    "sha256": "d4a1db3934e91a82c2361067993faec197ca7a3bb47c3181b71650757ca3a695",
+    "member_count": 75
+  },
+  "prior_full_failed_not_promoted": true,
+  "complete_current_full_and_original_entry_required": true
+}

@@ -27,6 +27,12 @@ def checkpoint_manifest(execution, *, artifact_head, artifact_event_index, check
 def bounded_projection(execution, *, artifact_index, artifact_head, artifact_event_index):
     """Derive pre-checkpoint state. Registry validation remains in the A03 adapter."""
     require(type(execution) is ExecutionReplay, "Missing execution replay")
+    return _bounded_projection(execution, execution.values[0]["canonical_output_root"],
+                               artifact_index=artifact_index, artifact_head=artifact_head,
+                               artifact_event_index=artifact_event_index)
+
+
+def _bounded_projection(execution, canonical_output_root, *, artifact_index, artifact_head, artifact_event_index):
     closed(artifact_index["current"], ARTIFACT_SLOTS)
     value = execution.projection.value
     require(artifact_index["run_id"] == value["run_id"] and artifact_index["case_id"] == value["case_id"],
@@ -39,8 +45,7 @@ def bounded_projection(execution, *, artifact_index, artifact_head, artifact_eve
         paths = pointer["state_paths"] if pointer is not None else {}
         for field in fields:
             value[field] = paths.get(field)
-    value.update(_code_scalar_projection(value, artifact_index,
-                                         run_root=execution.values[0]["canonical_output_root"]))
+    value.update(_code_scalar_projection(value, artifact_index, run_root=canonical_output_root))
     return ValidatedValue.from_value(value)
 
 

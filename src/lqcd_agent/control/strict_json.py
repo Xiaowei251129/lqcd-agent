@@ -27,8 +27,9 @@ def text(value, *, nullable=False):
 
 
 def number(value, *, integer=False, minimum=0):
-    require(type(value) in ((int,) if integer else (int, float)), "Invalid number type")
-    require(abs(value) <= 2**53 - 1 and math.isfinite(value) and value >= minimum,
+    kind = type(value)
+    require((kind is int) if integer else (kind is int or kind is float), "Invalid number type")
+    require(abs(value) <= 2**53 - 1 and (kind is int or math.isfinite(value)) and value >= minimum,
             "Non-finite, overflowing or out-of-range number")
     return value
 
@@ -36,19 +37,20 @@ def number(value, *, integer=False, minimum=0):
 def digest_value(value, *, nullable=False):
     require((nullable and value is None) or
             (type(value) is str and len(value) == 64 and
-             all(char in "0123456789abcdef" for char in value)), "Invalid digest")
+             value.strip("0123456789abcdef") == ""), "Invalid digest")
     return value
 
 
 def _json_value(value):
-    if value is None or type(value) in (str, bool):
+    kind = type(value)
+    if value is None or kind is str or kind is bool:
         return
-    if type(value) in (int, float):
+    if kind is int or kind is float:
         number(value, minimum=-(2**53 - 1))
-    elif type(value) is list:
+    elif kind is list:
         for item in value:
             _json_value(item)
-    elif type(value) is dict:
+    elif kind is dict:
         require(all(type(key) is str for key in value), "Non-string JSON key")
         for item in value.values():
             _json_value(item)

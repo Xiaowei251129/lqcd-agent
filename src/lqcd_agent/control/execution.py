@@ -8,7 +8,7 @@ from lqcd_agent.graph.state import stable_cycle_id
 
 from .budget import WORK_KINDS, validate_policy
 from .protocol import PROTOCOL
-from .records import IDENTITIES, _validate_record, validate_record
+from .records import IDENTITIES, _validate_record, parse_record, validate_record
 from .strict_json import ControlIntegrityError, ValidatedValue, digest, loads, require
 
 
@@ -22,11 +22,14 @@ class ExecutionReplay:
         return [_validate_record(loads(record)) for record in self.records]
 
 
-def _checked_replay(records):
-    require(type(records) in (list, tuple) and bool(records), "Missing execution ledger")
-    snapshots = tuple(validate_record(record).canonical for record in records)
-    # Decode only the immutable canonical bytes just produced by validation.
-    records = [json.loads(record) for record in snapshots]
+def _decoded_records(snapshots):
+    # Callers must first validate every immutable canonical snapshot.
+    return [json.loads(record) for record in snapshots]
+
+
+def _replay_snapshots(snapshots):
+    # Both public entry points validate every immutable canonical snapshot first.
+    records = _decoded_records(snapshots)
     root = records[0]
     require(root["record_type"] == "run", "Ledger must begin with Run creation")
     run_status = root["status"]
@@ -214,21 +217,28 @@ def _checked_replay(records):
 def replay(records):
     """Validate an in-memory ledger prefix, without granting publication permission."""
     try:
-        return _checked_replay(records)
+        require(type(records) in (list, tuple) and bool(records), "Missing execution ledger")
+        return _replay_snapshots(tuple(validate_record(record).canonical for record in records))
     except (ValueError, KeyError, TypeError, IndexError, OverflowError) as error:
         raise ControlIntegrityError(str(error)) from error
 
 
 def parse_ledger(data):
     require(type(data) is bytes and data.endswith(b"\n"), "Partial execution ledger line")
-    return replay([loads(line) for line in data[:-1].split(b"\n")])
+    try:
+        return _replay_snapshots(tuple(parse_record(line).canonical for line in data[:-1].split(b"\n")))
+    except (ValueError, KeyError, TypeError, IndexError, OverflowError) as error:
+        raise ControlIntegrityError(str(error)) from error
 
 
 def append_record_bytes(ledger, record):
     """Return validated new bytes. Only a later durable owner may publish them."""
-    # Preserve full prefix validation before decoding its validated snapshot.
-    prior = [] if ledger == b"" else [json.loads(row) for row in parse_ledger(ledger).records]
-    result = replay([*prior, record])
+    # Preserve full prefix validation before extending its immutable snapshots.
+    prior = () if ledger == b"" else parse_ledger(ledger).records
+    try:
+        result = _replay_snapshots((*prior, validate_record(record).canonical))
+    except (ValueError, KeyError, TypeError, IndexError, OverflowError) as error:
+        raise ControlIntegrityError(str(error)) from error
     return b"\n".join(result.records) + b"\n"
 
 

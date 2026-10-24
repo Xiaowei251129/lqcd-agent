@@ -378,9 +378,10 @@ class InvocationLeases:
                 authorization["terminal_closure_revision"] == 0, "Terminal ownership revoked invocation authorization")
         root = self.coordinator.root / locator["case_id"] / locator["run_id"]
         require(root == root.resolve(), "Invocation Run path changed")
-        records = parse_ledger(read_regular(root / "execution_history.jsonl")).values
+        # Replay the full fresh ledger before decoding its immutable Run record.
+        run_record = loads(parse_ledger(read_regular(root / "execution_history.jsonl")).records[0])
         for name in ("root_goal_reference", "input_snapshot_reference"):
-            reference = records[0][name]
+            reference = run_record[name]
             path = root / reference["reference"]
             require(path == path.resolve() and path.is_relative_to(root), "Invocation input reference escaped Run")
             require(sha256(read_regular(path)).hexdigest() == reference["sha256"], "Invocation root input digest mismatch")

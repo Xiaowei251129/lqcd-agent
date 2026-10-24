@@ -249,7 +249,8 @@ def build_record(record_type, event, *, run_id, case_id, event_index, previous_e
 
 
 def parse_record(data):
-    return validate_record(loads(data))
+    _validate_record(loads(data))
+    return ValidatedValue(data.encode("utf-8") if type(data) is str else data)
 
 
 def execution_head(record):
