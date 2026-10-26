@@ -1,9 +1,0 @@
-# A05 Completion Record
-
-- Ticket：[A05 Code Agent Contract](../phase-a-control-contracts/A05_CODE_AGENT_CONTRACT.md)
-- Status：2026-09-14 completed。
-- Changed：仅更新A05 YAML lifecycle metadata；把已冻结的`CodeAgentSubgraph`/`CodingBackend`职责边界、durable ExternalOperation、Attempt-isolated workspace、task/result taxonomy、trusted verification、canonical code bundle与fresh Analysis handoff目标合同同步到Docs Index、Phase A Overview、Architecture、Agent Roles、State Schema、Artifact Contracts、Security Policy、Verification Guide、Repo Current State与Decision Log；新增本completion record并更新completion index。没有修改runtime、graph、checkpoint backend、legacy handoff、tests、dependencies、configs、evaluation、provider、数据、accepted artifacts、A01–A04/A02C01/A03C01正文、A06/A07正文、Control Protocol或requirement catalog。
-- Verified：`python scripts/validate_phase_a_control_protocol.py`通过，确认protocol SHA-256 `7447087f73caae2668a8e71e12fc40e426ebefee5864e3499a3f9cbd1a9322b8`、catalog SHA-256 `ed39a0b35feb3372e7647436ee588699c16b7c05555a03c791f69760626a9726`、131项requirements、101项语义变异、3项结构变异、178项publication-order变异和6项JSON/catalog检查；catalog中的29项A05 required IDs与ticket scenario set一致；44个现行Markdown文件的407个relative links为0 broken；`git diff --check`、ticket metadata、Allowed Files/Do Not Touch、删除/重命名与stale-documentation审计通过。A05冻结正文SHA-256保持`889bbbb41e201ab36f76eae1f634403543d3d51bbb38ce0ebc614d710c67262f`，A01–A04/A02C01/A03C01及A06/A07正文、protocol/catalog exact hashes与执行基线一致。官方Codex SDK和Sandbox Agents文档复核支持继续把Python SDK视为C00后的条件性候选，而不是已证明backend。按ticket要求未运行runtime、benchmark或live-provider测试；本记录不把A02C01执行时的`325 passed`冒充A05验收。
-- Commit：本次执行变更与本记录一并提交；exact commit由包含本记录的Git历史标识。
-- Deviations：无。
-- Follow-ups：A06继续按已冻结依赖执行，随后执行A07；A05目标runtime由Phase B implementation tickets实现，Phase C必须先执行独立`C00_CODEX_SDK_BACKEND_FEASIBILITY`，通过全部required capabilities后才能选择真实backend。Patch promotion、commit/merge/push/PR/deployment仍需未来独立、Human-authorized ticket。

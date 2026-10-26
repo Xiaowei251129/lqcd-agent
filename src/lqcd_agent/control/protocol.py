@@ -1,5 +1,5 @@
 """Pure lookups over generated, deeply immutable control declarations."""
-from ._generated_protocol import PROTOCOL, PROTOCOL_SHA256, CATALOG_SHA256
+from ._generated_protocol import PROTOCOL, PROTOCOL_SHA256
 
 
 def operation_variant(operation_type, operation_variant):

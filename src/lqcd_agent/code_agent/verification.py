@@ -70,7 +70,7 @@ class TrustedVerifier:
             else:
                 effective[path] = final[path]
         require(effective == final, "Verification effective tree differs from validated change")
-        workspace_id = task["attempt_id"] + "_verification"
+        workspace_id = task["producer_operation_id"] + "_verification"
         manifest = {"workspace_id": workspace_id,
                     "manifest_digest": digest({"task_digest": task["task_digest"],
                                                "effective_tree_digest": tree_digest(effective)}),

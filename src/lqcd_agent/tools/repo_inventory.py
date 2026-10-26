@@ -10,15 +10,15 @@ from lqcd_agent.analysis_programs import program_inventory
 
 DEFAULT_REQUIRED_FILES = [
     "src/lqcd_agent/graph/nodes.py",
-    "src/lqcd_agent/graph/run_graph.py",
+    "src/lqcd_agent/runtime.py",
     "src/lqcd_agent/analysis_programs/registry.py",
-    "docs/ARTIFACT_CONTRACTS.md",
+    "contracts/control.json",
 ]
 
 DEFAULT_ALLOWED_FILES = [
     "src/lqcd_agent/analysis_programs/",
     "tests/",
-    "docs/ARTIFACT_CONTRACTS.md",
+    "contracts/control.json",
     "docs/REPO_CURRENT_STATE.md",
 ]
 

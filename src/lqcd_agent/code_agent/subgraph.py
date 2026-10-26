@@ -316,7 +316,7 @@ class ProductCodeHost:
         plane = ControlPlane(self.coordinator, worker_id=worker_id)
         plane.publish_pause(PublishPauseRequest(producer["run_locator"], "external_result", task["attempt_id"], task["attempt_id"],
             {"kind": "external_result", "producer_operation_id": producer["producer_operation_id"]},
-            {"actor_type": "human", "scopes": ["resume"]}, "product-code-pause:" + task["attempt_id"]), actor=actor)
+            {"actor_type": "human", "scopes": ["resume"]}, "product-code-pause:" + digest(producer["run_locator"]) + ":" + task["attempt_id"]), actor=actor)
         self._dispatch(producer, worker_id).dispatch()
         return ExternalProducer(self.coordinator).lookup(producer["producer_operation_id"])
 

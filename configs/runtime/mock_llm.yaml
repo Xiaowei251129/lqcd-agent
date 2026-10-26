@@ -1,6 +1,0 @@
-schema_version: "0.1"
-provider: "mock"
-mode: "deterministic"
-notes:
-  - "This placeholder does not configure any external API provider."
-  - "OpenAI and DeepSeek dry-run configs live in openai.yaml and deepseek.yaml."

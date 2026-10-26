@@ -130,7 +130,7 @@ def _bootstrap_snapshot(output_root, operation, *, child=None):
 class ControlPlane:
     """Explicit versioned Host adapter; construction never executes a target."""
 
-    def __init__(self, coordinator, *, worker_id, lease_seconds=30, route_adapter=None, resume_target_adapter=None, resume_decision_adapter=None, external_adapter=None, preparation_adapter=None, source_adapter=None):
+    def __init__(self, coordinator, *, worker_id, lease_seconds=30, route_adapter=None, resume_target_adapter=None, resume_decision_adapter=None, external_adapter=None, preparation_adapter=None):
         text(worker_id)
         self.coordinator = coordinator
         self.worker_id, self.lease_seconds = worker_id, lease_seconds
@@ -139,7 +139,6 @@ class ControlPlane:
         self.resume_decision_adapter = resume_decision_adapter
         self.external_adapter = external_adapter
         self.preparation_adapter = preparation_adapter
-        self.source_adapter = source_adapter
 
     def start_run(self, request, *, actor):
         require(type(request) is StartRunRequest, "Expected typed StartRunRequest")
@@ -207,13 +206,13 @@ class ControlPlane:
     def replay_run(self, request, *, actor):
         from .children import ChildOperations
         require(type(actor) is ActorContext, "Missing Host-authenticated ActorContext")
-        operation = ChildOperations(self.coordinator, self.worker_id, self.lease_seconds, self.source_adapter).create(request, actor)
+        operation = ChildOperations(self.coordinator, self.worker_id, self.lease_seconds).create(request, actor)
         return self.query_operation(operation["operation_id"])
 
     def fork_run(self, request, *, actor):
         from .children import ChildOperations
         require(type(actor) is ActorContext, "Missing Host-authenticated ActorContext")
-        operation = ChildOperations(self.coordinator, self.worker_id, self.lease_seconds, self.source_adapter).create(request, actor)
+        operation = ChildOperations(self.coordinator, self.worker_id, self.lease_seconds).create(request, actor)
         return self.query_operation(operation["operation_id"])
 
     def cancel_pause(self, request, *, actor):

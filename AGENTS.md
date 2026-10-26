@@ -1,61 +1,19 @@
-# Repository Expectations
+# Working agreements
 
-## Code Comments
-- All code comments must be written in English only.
-- Never write comments in Chinese or any other non-English language.
-- This applies to both new code and modifications to existing code.
+Build a useful LQCD research partner. Mock outputs and software checks are not evidence of physics correctness.
 
-## Behavioral Guidelines
-These guidelines reduce common LLM coding mistakes. Use judgment for trivial tasks.
-
-### 1. Think Before Coding
-- State assumptions explicitly.
-- If something is uncertain, ask rather than guessing.
-- If multiple interpretations exist, surface them instead of choosing silently.
-- If a simpler approach exists, say so.
-- Push back when a request looks overcomplicated or internally inconsistent.
-- If something is unclear, stop and name what is confusing.
-
-### 2. Simplicity First
-- Implement the minimum code that solves the problem.
-- Do not add features beyond what was asked.
-- Do not introduce abstractions for single-use code.
-- Do not add flexibility or configurability that was not requested.
-- Do not add error handling for impossible scenarios.
-- If a change feels too large, simplify it.
-
-### 3. Surgical Changes
-- Touch only what is necessary for the request.
-- Do not "improve" adjacent code, comments, or formatting.
-- Do not refactor unrelated code.
-- Match existing style, even if you would do it differently.
-- If you notice unrelated dead code, mention it instead of deleting it.
-- Remove imports, variables, or functions only if your own change made them unused.
-- Do not remove pre-existing dead code unless asked.
-
-### 4. Goal-Driven Execution
-- Turn tasks into verifiable goals.
-- For multi-step work, state a brief plan with explicit checks.
-- Loop until the result is verified.
-
-Example:
-```text
-1. [Step] -> verify: [check]
-2. [Step] -> verify: [check]
-3. [Step] -> verify: [check]
-```
-
-### 5. Ticket Execution
-- Read `docs/README.md` before executing a repository ticket.
-- Execute only tickets whose YAML front matter has `status: ready`.
-- Treat a `ready` ticket body as frozen. After execution starts, only YAML lifecycle metadata may change in that ticket.
-- Treat a ready ticket's Allowed Files, Do Not Touch, and Stop Conditions as hard scope boundaries.
-- If a ticket conflicts with this file, the security policy, or a current public contract, stop and request clarification instead of silently overriding the contract.
-- Record implementation results in a separate completion record, never by appending to or rewriting the frozen ticket body.
-- Record a contract-preserving local fix in a separate maintenance record. If a fix changes architecture, schema, public contract, Allowed Files, or acceptance boundaries, create and approve a new corrective ticket before implementation.
-- After completing a ticket, update affected source-of-truth documents, `docs/REPO_CURRENT_STATE.md`, and `docs/DECISION_LOG.md` when architecture or policy changed.
-
-### What Good Looks Like
-- Fewer unnecessary changes in diffs
-- Fewer rewrites due to overcomplication
-- Clarifying questions before implementation, not after mistakes
+- Finish authorized work autonomously. Resolve reversible choices; ask only for material missing information or authorization.
+- Use the smallest coherent implementation. Keep one canonical workflow and one Code backend interface.
+- This checkout supports the current version only. Remove retired code, tickets, compatibility branches and obsolete tests rather than archiving them here. Do not delete version-control history without explicit authorization.
+- Routine work needs no ticket, frozen hash, approval chain or duplicate completion records. Existing user authorization persists.
+- Read relevant code and docs; do not ingest the entire repository by default. Comments are English; explanations use the user's language.
+- Use the repository's `.venv`. Temporary files use the trusted parent in `configs/storage.json`; never fall back to `/tmp`.
+- Run affected tests with `python scripts/check.py tests/path.py::test_name`. Default is the 12-check core; `--integration` runs the current suite once and the numerical benchmark. No historical acceptance mode remains.
+- Add tests for meaningful behavior or defects. Do not add tests that mirror code, repeat passing selections, or expand the core for every fix.
+- Preserve actual authority, fencing, idempotency, permissions, WAL/FULL durability, immutable accepted results and scientific provenance. Do not weaken behavior to obtain a pass.
+- Distinguish results, skipped or unexecuted work and limitations. Model confidence is not a passing result.
+- Use up to 8 CPUs for independent work when measurements justify it. Isolate mutable state; do not parallelize shared SQLite writes blindly.
+- Confirm unapproved destructive/irreversible actions, external publication/contact, spending, permission expansion or incompatible migration. Reversible authorized maintenance proceeds without new process gates.
+- `README.md` is the overview; `docs/REPO_CURRENT_STATE.md` is the only milestone/status record; `docs/VERIFICATION_GUIDE.md` defines verification.
+- Documentation-only changes need links/diff checks. Update status when milestones change; do not maintain parallel histories.
+- Done means behavior works, relevant checks passed, changes were reviewed and material limits are explicit.

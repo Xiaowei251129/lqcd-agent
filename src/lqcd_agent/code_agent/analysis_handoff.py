@@ -99,7 +99,7 @@ class AnalysisHandoff:
                 view["state"]["schema_version"] == "0.4", "Analysis source head changed")
         target = {**locator, "attempt_id": target_attempt_id, "attempt_kind": "analysis_engineer"}
         source = {"artifact_id": selected["artifact_id"], "digest": digest(selected)}
-        workspace_id = "analysis_" + target_attempt_id
+        workspace_id = "analysis_" + digest(target)
         manifest = {"schema_version": "0.1", "workspace_id": workspace_id,
                     "managed_root_identity": digest(str(self.provider.root)),
                     "base_tree_digest": task["base_tree_digest"], "target_attempt_identity": target,

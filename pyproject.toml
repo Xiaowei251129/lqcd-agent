@@ -4,21 +4,30 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lqcd-agent"
-version = "0.1.0"
+version = "0.2.0"
 description = "AI-assisted, auditable mock-first LangGraph workflow for LQCD meson DA analysis support."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
-    "langgraph>=0.2",
-    "langgraph-checkpoint-sqlite>=2.0",
+    "langgraph>=1.2,<2",
+    "langgraph-checkpoint-sqlite>=3.1,<4",
+    "PyYAML>=6,<7",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest>=9,<10"]
+
+[project.scripts]
+lqcd-agent = "lqcd_agent.cli:main"
+lqcd-agent-demo = "lqcd_agent.demo.server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-lqcd_agent.demo = ["static/*"]
+"lqcd_agent" = ["_build_manifest.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["smoke: small canonical workflow checks for local development; not full acceptance"]
+addopts = "--import-mode=importlib"
+markers = ["integration: actual process and durable workflow checks"]

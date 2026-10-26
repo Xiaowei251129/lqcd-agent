@@ -26,7 +26,6 @@ ARTIFACT_SLOTS = (
 )
 SLOT_BY_ATTEMPT_KIND = {
     "method_planner": "plan",
-    "legacy_codex_handoff": "code",
     "code_agent": "code",
     "analysis_engineer": "analysis",
     "scientific_reviewer": "review",
@@ -36,7 +35,6 @@ SLOT_BY_ATTEMPT_KIND = {
 }
 INVALIDATED_SLOTS_BY_TARGET_KIND = {
     "method_planner": ARTIFACT_SLOTS,
-    "legacy_codex_handoff": ARTIFACT_SLOTS[1:],
     "code_agent": ARTIFACT_SLOTS[1:],
     "analysis_engineer": ARTIFACT_SLOTS[2:],
     "scientific_reviewer": ARTIFACT_SLOTS[3:],

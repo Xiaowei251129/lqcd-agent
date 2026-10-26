@@ -1,4 +1,5 @@
 """Per-Run LangGraph persistence, subordinate to a held coordinator fence."""
+from lqcd_agent.control.storage import execution_scratch_root
 from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
@@ -106,6 +107,10 @@ def verify_checkpoint(run_root, manifest):
     path = Path(run_root) / "checkpoints/graph_checkpoints.sqlite"
     require(path.is_file() and not path.is_symlink(), "Missing durable checkpoint")
     read_regular(path)
+    control = Path(run_root).parent.parent / ".lqcd"
+    if control.exists() or control.is_symlink():
+        from .storage import require_host_binding
+        require_host_binding(control)
     connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)
     try:
         raw_metadata = connection.execute("SELECT metadata FROM checkpoints WHERE thread_id=? AND checkpoint_ns='' AND checkpoint_id=?",
@@ -147,7 +152,7 @@ def verify_source_checkpoint(coordinator, db, run_root, manifest):
     names = ("graph_checkpoints.sqlite", "graph_checkpoints.sqlite-wal", "graph_checkpoints.sqlite-shm")
     frozen = {name: read_regular(directory / name) if (directory / name).exists() else None for name in names}
     require(frozen[names[0]] is not None, "Missing source checkpoint database")
-    with tempfile.TemporaryDirectory(prefix="lqcd-agent-checkpoint-read-", dir="/private/tmp") as temporary:
+    with tempfile.TemporaryDirectory(prefix="lqcd-agent-checkpoint-read-", dir=execution_scratch_root()) as temporary:
         copy_root = Path(temporary)
         (copy_root / "checkpoints").mkdir()
         for name, content in frozen.items():

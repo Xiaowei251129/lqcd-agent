@@ -18,15 +18,14 @@ FINGERPRINT_FIELDS = ("control_protocol", "application_build", "graph_topology",
 
 def runtime_fingerprint():
     """Capture actual Host runtime components only at the explicit control boundary."""
-    from hashlib import sha256
     from importlib.metadata import version
-    from pathlib import Path
     from .protocol import PROTOCOL_SHA256
 
-    package = Path(__file__).resolve().parents[1]
-    sources = {str(path.relative_to(package)): sha256(path.read_bytes()).hexdigest() for path in sorted(package.rglob("*.py"))}
-    value = {"control_protocol": PROTOCOL_SHA256, "application_build": digest(sources),
-             "graph_topology": sources["graph/analysis_graph.py"], "state_schema": "0.4", "execution_schema": "0.4",
+    from importlib.resources import files
+    import json
+    manifest = json.loads(files("lqcd_agent").joinpath("_build_manifest.json").read_text())
+    value = {"control_protocol": PROTOCOL_SHA256, "application_build": manifest["application_build"],
+             "graph_topology": manifest["graph_topology"], "state_schema": "0.4", "execution_schema": "0.4",
              "artifact_schema": "0.1", "langgraph": version("langgraph"),
              "checkpointer": "langgraph.checkpoint.sqlite:" + version("langgraph-checkpoint-sqlite"),
              "serializer": "lqcd_agent.control.checkpoints.CanonicalCheckpointSerializer:0.4"}

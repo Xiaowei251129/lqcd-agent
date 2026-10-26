@@ -1,1 +1,0 @@
-{"entrypoint":"tests/phase_b/test_b00c26_fault_sources.py:test_original_fault_sources","expected_result":{"kind":"boolean","value":true},"fixture_id":"tests/phase_b/fixtures/b00c26/corrupt_member.json","required_invariants":["native_fault_source","original_rejection","source_bound_trace"],"schema_version":"0.1"}

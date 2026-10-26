@@ -1,9 +1,0 @@
-# A06 Completion Record
-
-- Ticket：[A06 Budgets and Stop Conditions](../phase-a-control-contracts/A06_BUDGETS_AND_STOP_CONDITIONS.md)
-- Status：2026-09-14 completed。
-- Changed：仅更新A06 YAML lifecycle metadata；把已冻结的`BudgetPolicy 0.1`、`BudgetDecision 0.1`、`FailureFingerprint 0.1`、`BudgetGrant 0.1`、allowlisted profiles、resource reservation/settlement、semantic repeated-failure、Pause deadline、terminal reserve和fail-closed stop目标合同同步到Docs Index、Phase A Overview、Architecture、Agent Roles、State Schema、Artifact Contracts、Security Policy、Evals/Observability、Verification Guide、Repo Current State与Decision Log；新增本completion record并更新completion index。没有修改runtime、graph、checkpoint backend、tests、dependencies、configs、evaluation、provider、数据、accepted artifacts、历史Run、A01–A05/A02C01/A03C01正文、A07正文、Control Protocol或requirement catalog。
-- Verified：`python scripts/validate_phase_a_control_protocol.py`通过，确认protocol SHA-256 `7447087f73caae2668a8e71e12fc40e426ebefee5864e3499a3f9cbd1a9322b8`、catalog SHA-256 `ed39a0b35feb3372e7647436ee588699c16b7c05555a03c791f69760626a9726`、131项requirements、101项语义变异、3项结构变异、178项publication-order变异和6项JSON/catalog检查；catalog中的21项A06 required IDs与ticket scenario set一致；45个现行Markdown文件的413个relative links为0 broken；`git diff --check`、ticket metadata、Allowed Files/Do Not Touch、删除/重命名与stale-documentation审计通过。A06冻结正文SHA-256保持`2701cc0d22020d05e2622f184f0d0b6db05c8d0959edb52db27b53170ccbd782`，执行前完整文件SHA-256为`7e8b13a2d503006a023b6cf7b4464a9e65a1d4ee281bf63a16e7b622fe3d42bd`；A01–A05/A02C01/A03C01及A07正文、protocol/catalog exact hashes与执行基线一致。按ticket要求未运行runtime、benchmark或live-provider测试；最近一次完整runtime回归仍是A02C01执行时的`325 passed`，本记录不把该历史结果冒充A06验收。
-- Commit：本次执行变更与本记录一并提交；exact commit由包含本记录的Git历史标识。
-- Deviations：无。
-- Follow-ups：A07继续按已冻结依赖执行；随后为Phase B起草B00 Acceptance Foundation及B01–B05 implementation tickets，实现schema `0.4` policy/ledger、admission、resource accounting、fake clock、fingerprint/grant、deadline和stop harness。当前schema `0.2` runtime没有这些能力。

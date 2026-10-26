@@ -157,7 +157,7 @@ def test_missing_raw_data_is_deferred_to_analysis_engineer(tmp_path: Path) -> No
     assert method_plan["warnings"][0]["code"] == "runtime_input_validation_deferred_to_analysis_engineer"
 
 
-def test_code_needed_generates_valid_task_packet(tmp_path: Path) -> None:
+def test_code_needed_returns_domain_request_without_control_authority(tmp_path: Path) -> None:
     result = run_method_planner(
         user_goal="Plan the mock run and hand off missing implementation gaps.",
         case_config=_case_config(),
@@ -171,16 +171,11 @@ def test_code_needed_generates_valid_task_packet(tmp_path: Path) -> None:
     )
 
     method_plan = json.loads((tmp_path / "method_plan.json").read_text(encoding="utf-8"))
-    packet_text = (tmp_path / "coder_task_packet.yaml").read_text(encoding="utf-8")
-
-    assert result["status"] == "success"
-    assert result["code_needed"] is True
-    assert result["coder_task_packet_path"] == str(tmp_path / "coder_task_packet.yaml")
-    assert method_plan["code_needed"] is True
-    assert "schema_version: \"0.1\"" in packet_text
-    assert "status: \"pending\"" in packet_text
-    assert "task_summary:" in packet_text
-    assert "- \"pytest tests/test_method_planner_mock.py -q\"" in packet_text
+    request = result["code_request"]
+    assert request["summary"] == method_plan["coder_task_summary"]
+    assert request["requirements"] == method_plan["method_steps"]
+    assert set(request) == {"summary", "requirements", "proposed_paths"}
+    assert not (tmp_path / "coder_task_packet.yaml").exists()
 
 
 def test_missing_critical_fields_produce_needs_more_info(tmp_path: Path) -> None:
@@ -195,7 +190,7 @@ def test_missing_critical_fields_produce_needs_more_info(tmp_path: Path) -> None
     method_plan = json.loads((tmp_path / "method_plan.json").read_text(encoding="utf-8"))
 
     assert result["status"] == "needs_more_info"
-    assert result["coder_task_packet_path"] is None
+    assert result["code_request"] is None
     assert method_plan["status"] == "needs_more_info"
     assert method_plan["errors"]
     assert {error["field"] for error in method_plan["errors"]} == {"user_goal", "case_config.case_id"}

@@ -1,0 +1,6 @@
+{
+  "schema_version": "0.1",
+  "case_id": "example",
+  "source_kind": "synthetic_placeholder",
+  "physics_goal": "Exercise a reproducible mock LQCD analysis."
+}

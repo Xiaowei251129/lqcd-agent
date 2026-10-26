@@ -1,1 +1,0 @@
-{"entrypoint":"tests/phase_b/test_b00c28_owned_binding_lifecycle.py:test_candidate_inventory_is_complete","expected_result":{"kind":"boolean","value":true},"fixture_id":"tests/phase_b/fixtures/b00c28/inventory.json","required_invariants":["candidate_only","original_validators","unchanged_registry"],"schema_version":"0.1"}

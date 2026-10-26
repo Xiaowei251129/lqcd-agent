@@ -1,1 +1,0 @@
-{"entrypoint":"src/lqcd_agent/control/coordinator.py:boundary","expected_result":{"kind":"boolean","value":true},"fixture_id":"tests/phase_b/fixtures/b00c28/candidates/artifact.bounded_state_sync.after.integrity_conflict.json","required_invariants":["frozen_outcome_classification","publication_side:after"],"schema_version":"0.1"}

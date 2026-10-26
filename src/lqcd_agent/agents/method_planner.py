@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from lqcd_agent.coder.task_packet import build_coder_task_packet, write_task_packet_yaml
 from lqcd_agent.llm.base import LLMProvider
 from lqcd_agent.llm.prompts import build_method_planner_request
 from lqcd_agent.llm.provider_factory import create_provider_from_config_path
@@ -621,7 +620,7 @@ def _run_provider_method_planner(
             "status": "failed",
             "method_plan_path": method_plan_path,
             "code_needed": False,
-            "coder_task_packet_path": None,
+            "code_request": None,
             "method_plan": plan,
         }
 
@@ -648,7 +647,7 @@ def _run_provider_method_planner(
             "status": "failed",
             "method_plan_path": method_plan_path,
             "code_needed": False,
-            "coder_task_packet_path": None,
+            "code_request": None,
             "method_plan": plan,
         }
 
@@ -691,7 +690,7 @@ def _run_provider_method_planner(
             "status": "failed",
             "method_plan_path": method_plan_path,
             "code_needed": False,
-            "coder_task_packet_path": None,
+            "code_request": None,
             "method_plan": plan,
         }
 
@@ -705,15 +704,15 @@ def _run_provider_method_planner(
         parsed_payload_path=method_plan_path,
         status=payload["status"],
     )
-    coder_task_packet_path = None
+    code_request = None
     if payload["status"] == "success" and payload["code_needed"]:
-        packet = build_coder_task_packet(method_plan=payload, repo_inventory=repo_inventory or {})
-        coder_task_packet_path = write_task_packet_yaml(output_dir, packet)
+        code_request = {"summary": payload["coder_task_summary"], "requirements": payload["method_steps"],
+                        "proposed_paths": (repo_inventory or {}).get("allowed_files", [])}
     return {
         "status": payload["status"],
         "method_plan_path": method_plan_path,
         "code_needed": payload["code_needed"],
-        "coder_task_packet_path": coder_task_packet_path,
+        "code_request": code_request,
         "method_plan": payload,
     }
 
@@ -754,15 +753,15 @@ def run_method_planner(
         )
 
     method_plan_path = write_method_plan(output_dir, plan)
-    coder_task_packet_path = None
+    code_request = None
     if plan["status"] == "success" and plan["code_needed"]:
-        packet = build_coder_task_packet(method_plan=plan, repo_inventory=repo_inventory or {})
-        coder_task_packet_path = write_task_packet_yaml(output_dir, packet)
+        code_request = {"summary": plan["coder_task_summary"], "requirements": plan["method_steps"],
+                        "proposed_paths": (repo_inventory or {}).get("allowed_files", [])}
 
     return {
         "status": plan["status"],
         "method_plan_path": method_plan_path,
         "code_needed": plan["code_needed"],
-        "coder_task_packet_path": coder_task_packet_path,
+        "code_request": code_request,
         "method_plan": plan,
     }

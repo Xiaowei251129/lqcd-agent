@@ -98,12 +98,15 @@ def sync_directory(path):
 
 
 def local_filesystem(path):
-    """Verify the local mount of the macOS reference durability profile.
+    """Verify the Darwin reference or approved native one-Host Orion profile.
 
     The ABI and MNT_LOCAL flag are defined by Darwin sys/mount.h. Unknown
     platforms fail closed; successful SQLite pragmas alone do not prove a
     local filesystem or a supported durability profile.
     """
+    if sys.platform == "linux":
+        from .storage import linux_filesystem
+        return linux_filesystem(path)["filesystem_type"]
     require(sys.platform == "darwin", "Unverified platform durability profile")
 
     class StatFS(ctypes.Structure):
@@ -146,6 +149,8 @@ def durability_preflight(control, observer=None):
                     "Atomic replacement preflight failed")
             boundary(observer, "preflight.atomic_replace", "after")
     sync_directory(control)
+    from .storage import bind_storage_host
+    bind_storage_host(control)
     return filesystem
 
 

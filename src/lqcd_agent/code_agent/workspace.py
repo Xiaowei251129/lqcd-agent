@@ -127,6 +127,16 @@ def canonical_patch(base, final, changes):
     return "".join(output).encode("utf-8")
 
 
+def _ownership_record(witness, device, inode):
+    """Keep legacy bytes or encode an exact large POSIX identity explicitly."""
+    require(type(device) is int and type(inode) is int, "Invalid physical workspace identity")
+    if max(abs(device), abs(inode)) <= 2**53 - 1:
+        return {**witness, "device": device, "inode": inode}
+    require(0 <= device <= 2**64 - 1 and 0 <= inode <= 2**64 - 1,
+            "Physical workspace identity exceeds unsigned 64-bit bounds")
+    return {**witness, "schema_version": "0.2", "device": str(device), "inode": str(inode)}
+
+
 class WorkspaceProvider:
     """A filesystem port; the caller supplies a live coordinator fence each time."""
 
@@ -163,7 +173,7 @@ class WorkspaceProvider:
             require(not destination.exists() and not destination.is_symlink(), "Workspace has no trusted creation witness")
             exclusive_directory(destination)
             info = destination.stat()
-            publish_exact(ownership, canonical_bytes({**self._public_witness(manifest), "device": info.st_dev, "inode": info.st_ino}))
+            publish_exact(ownership, canonical_bytes(_ownership_record(self._public_witness(manifest), info.st_dev, info.st_ino)))
         existing = scan_tree(destination, expected_paths=files)
         require(all(path in files and files[path] == content for path, content in existing.items()),
                 "Conflicting workspace materialization")
@@ -190,7 +200,7 @@ class WorkspaceProvider:
         expected = self._public_witness(manifest)
         ownership = self.root / ".workspace_owners" / (manifest["workspace_id"] + ".json")
         require(ownership.resolve() == ownership and witness == expected and
-                loads(read_regular(ownership)) == {**expected, "device": info.st_dev, "inode": info.st_ino},
+                loads(read_regular(ownership)) == _ownership_record(expected, info.st_dev, info.st_ino),
                 "Workspace identity was replaced")
         return path
 
