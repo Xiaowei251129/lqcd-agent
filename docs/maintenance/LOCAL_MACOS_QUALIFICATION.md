@@ -12,7 +12,7 @@ Runtime execution now targets the operator's MacBook. Retired cluster storage co
 - `check-results/macbook-current/live-scientific-local.json` records authorized Responses planning and scientific review on the existing synthetic calibration CSV. Seven mass estimates match `0.4`; the Run remains at Human Gate with pending approval and no terminal scientific acceptance. It completed in 33.96 seconds.
 - `check-results/macbook-current/outbound-review.json` records the explicitly approved outbound scope; previous live evidence below was not overwritten.
 - `check-results/macbook-current/local-qualification.json` combines the matching source/build identity and outcomes. The exact application key was absent from 389 scanned tracked/evidence files across both live Hosts. The private `.env` remains mode `0600`; it, synthetic raw data and local evidence remain ignored.
-- The previous HEAD's [remote CI run](https://github.com/Xiaowei251129/lqcd-agent/actions/runs/40572049478) failed before starting a job. The invalid job-level `runner.temp` expression was moved to each Linux run step, where that context is available. A regression check covers job-level contexts; remote verification requires a new push.
+- The previous HEAD's [remote CI run](https://github.com/Xiaowei251129/lqcd-agent/actions/runs/40572049478) failed before starting a job. The invalid job-level `runner.temp` expression was moved to each Linux run step, where that context is available. A regression check covers job-level contexts; the successful repaired run is linked from [Current state](../REPO_CURRENT_STATE.md).
 
 ## Defects and repair
 

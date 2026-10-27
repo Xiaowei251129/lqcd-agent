@@ -26,10 +26,10 @@ Local detailed reports stay in ignored `check-results/` and owned scratch roots.
 | --- | --- |
 | Local MacBook / Python 3.12 | Native offline checks cover actual processes, SQLite settings, wheel installation and scientific Human Gate. |
 | Current local live checks | Bounded Codex proposal/application/verification and Responses planning/review passed on synthetic examples with `gpt-6-luna`. Read-only status and idempotent Resume passed; scientific Human Gate remains pending. |
-| GitHub macOS / Ubuntu | The previous HEAD's workflow failed before starting any job. Its job-level `runner` context was moved to step-level environment configuration and regression-checked locally; a new remote run awaits push. Ubuntu performs static/numerical/build checks only. |
+| GitHub macOS / Ubuntu | Both jobs passed for the Mac execution cleanup commit `a8081d1` in [remote CI](https://github.com/Xiaowei251129/lqcd-agent/actions/runs/40575964984). macOS runs full integration; Ubuntu performs static/numerical/build checks only. |
 
 ## Remaining work
 
-Push the current changes and verify the updated remote CI. General scientific code execution and research-quality evaluation remain separate work; human scientific acceptance is still required.
+General scientific code execution and research-quality evaluation remain separate work; human scientific acceptance is still required.
 
 Use [Architecture](ARCHITECTURE.md), [Data and security](SECURITY_AND_DATA_POLICY.md), and [Engineering decisions](DECISION_LOG.md) for the current contracts and rationale. Previous maintenance details remain in their original records and Git history rather than being repeated here.
