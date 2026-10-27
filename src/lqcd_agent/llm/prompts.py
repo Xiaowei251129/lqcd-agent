@@ -134,22 +134,18 @@ def _diagnostics_schema() -> dict[str, Any]:
 
 
 def _method_plan_json_schema(*, run_id: str, case_id: str) -> dict[str, Any]:
-    selected_program_schema = _object_schema(
-        {
-            "name": {"type": "string"},
-            "category": {"type": "string"},
-            "callable_path": {"type": "string"},
-            "input_mapping": _object_schema(
-                {
-                    "times": {"type": "string"},
-                    "correlator_values": {"type": "string"},
-                    "correlator_errors": {"type": ["string", "null"]},
-                },
-            ),
-            "output_path": {"type": "string"},
-            "required_outputs": _string_array_schema(),
-        }
-    )
+    from lqcd_agent.analysis_programs.registry import PROGRAMS
+    variants = []
+    for program in PROGRAMS:
+        mapping = {name: {'type': 'string'} for name, _ in program.csv_inputs}
+        mapping.update((name, {'type': ['string', 'null']}) for name, _ in program.optional_csv_inputs)
+        variants.append(_object_schema({
+            'name': {'type': 'string', 'enum': [program.name]},
+            'category': {'type': 'string', 'enum': [program.category]},
+            'callable_path': {'type': 'string', 'enum': [program.callable_path]},
+            'input_mapping': _object_schema(mapping), 'output_path': {'type': 'string'},
+            'required_outputs': _string_array_schema()}))
+    selected_program_schema = {'anyOf': variants}
     return _artifact_schema(
         name="method_plan",
         producer="method_planner",
@@ -358,7 +354,7 @@ def build_method_planner_request(
                     "and required_outputs. Set code_needed=false when selected reusable programs are sufficient. "
                     "Use selected_analysis_programs=[] when no registered program is suitable. "
                     "For raw CSV inputs, input_mapping values must be executable source selectors of the form "
-                    "raw_data_csv.<exact_column_name>, for example raw_data_csv.t and raw_data_csv.value. "
+                    "raw_data_csv.<exact_column_name> (or raw_data_csv.rows for a registered record input), for example raw_data_csv.t and raw_data_csv.value. "
                     "If an error column is available for a two-point correlator program, include "
                     "correlator_errors=raw_data_csv.error as an optional propagated-uncertainty input. "
                     "Never use natural-language descriptions such as 'CSV time coordinate column'."
@@ -377,7 +373,7 @@ def build_method_planner_request(
                     "required_outputs": "array",
                     "implementation_gaps": "array",
                     "selected_analysis_programs": (
-                        "array of objects; each input_mapping value must be raw_data_csv.<exact_column_name> "
+                        "array of objects; each input_mapping value must be raw_data_csv.<exact_column_name> (or raw_data_csv.rows for a registered record input) "
                         "when mapping from raw_data_path CSV data; correlator_errors may be included when an error column exists"
                     ),
                     "code_needed": "boolean",

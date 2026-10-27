@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
+from lqcd_agent.configuration import read_config
 from lqcd_agent.analysis_programs.registry import available_programs
 from lqcd_agent.tools.command_runner import run_commands
 from lqcd_agent.tools.manifest import build_manifest, write_manifest_json
@@ -37,66 +38,13 @@ def _base_artifact(*, run_id: str, case_id: str, status: str, summary: str) -> d
     }
 
 
-def _parse_scalar(value: str) -> Any:
-    if value == "[]":
-        return []
-    if value == "{}":
-        return {}
-    if value == "null":
-        return None
-    if value == "true":
-        return True
-    if value == "false":
-        return False
-    if value.startswith('"') and value.endswith('"'):
-        return json.loads(value)
-    try:
-        return int(value)
-    except ValueError:
-        pass
-    try:
-        return float(value)
-    except ValueError:
-        return value
-
-
-def read_case_config(path: str | Path) -> dict[str, Any]:
-    config_path = Path(path)
-    if config_path.suffix == ".json":
-        return json.loads(config_path.read_text(encoding="utf-8"))
-
-    config: dict[str, Any] = {}
-    current_list_key: str | None = None
-    for raw_line in config_path.read_text(encoding="utf-8").splitlines():
-        if not raw_line.strip() or raw_line.lstrip().startswith("#"):
-            continue
-        stripped = raw_line.strip()
-        if stripped.startswith("- ") and current_list_key:
-            config.setdefault(current_list_key, [])
-            config[current_list_key].append(_parse_scalar(stripped[2:].strip()))
-            continue
-        if not raw_line.startswith(" ") and ":" in raw_line:
-            key, raw_value = raw_line.split(":", 1)
-            value = raw_value.strip()
-            if value:
-                config[key.strip()] = _parse_scalar(value)
-                current_list_key = None
-            else:
-                config[key.strip()] = []
-                current_list_key = key.strip()
-            continue
-    return config
-
-
 def _read_task_config(path: str | Path | None) -> dict[str, Any]:
     if not path:
         return {}
     task_path = Path(path)
     if not task_path.exists():
         return {}
-    if task_path.suffix == ".json":
-        return json.loads(task_path.read_text(encoding="utf-8"))
-    return read_case_config(task_path)
+    return read_config(task_path)
 
 
 def _as_string_list(value: Any) -> list[str]:
@@ -170,19 +118,21 @@ def _resolve_raw_data_path(case_config: dict[str, Any], repo_root: Path) -> tupl
     return resolved, None
 
 
-def _read_raw_csv_columns(path: Path) -> tuple[dict[str, list[float]] | None, str | None]:
-    columns: dict[str, list[float]] = {}
+def _read_raw_csv_columns(path: Path, *, text_columns=()) -> tuple[dict[str, list[Any]] | None, str | None]:
+    columns: dict[str, list[Any]] = {}
     try:
         with path.open("r", encoding="utf-8", newline="") as handle:
             reader = csv.DictReader(handle)
-            if not reader.fieldnames:
-                return None, "Raw CSV has no header row."
+            if not reader.fieldnames or len(set(reader.fieldnames)) != len(reader.fieldnames):
+                return None, "Raw CSV requires a nonempty header with unique columns."
             for field in reader.fieldnames:
                 columns[field] = []
             for row_index, row in enumerate(reader, start=2):
+                if None in row or any(value is None for value in row.values()):
+                    return None, f"Raw CSV row {row_index} has the wrong number of columns."
                 for field in reader.fieldnames:
                     try:
-                        columns[field].append(float(row[field]))
+                        columns[field].append(row[field] if field in text_columns else float(row[field]))
                     except (TypeError, ValueError):
                         return None, f"Raw CSV column {field} has a non-numeric value on row {row_index}."
     except OSError as exc:
@@ -193,14 +143,26 @@ def _read_raw_csv_columns(path: Path) -> tuple[dict[str, list[float]] | None, st
 def _resolve_program_inputs(
     *,
     selected_program: dict[str, Any],
-    csv_columns: dict[str, list[float]],
+    csv_columns: dict[str, list[Any]],
 ) -> tuple[dict[str, Any] | None, str | None]:
     input_mapping = selected_program.get("input_mapping")
     if not isinstance(input_mapping, dict):
         return None, "selected_analysis_programs[].input_mapping must be an object."
 
+    program = _registered_program_by_name().get(selected_program.get('name'))
+    if program is None:
+        return None, 'Unknown analysis program.'
+    required = dict(program.csv_inputs)
+    optional = dict(program.optional_csv_inputs)
+    if not set(required) <= set(input_mapping) or set(input_mapping) - set(required) - set(optional):
+        return None, 'Analysis program input names do not match the registry.'
     inputs: dict[str, Any] = {}
     for input_name, source in input_mapping.items():
+        if source is None and input_name in optional:
+            continue
+        if required.get(input_name) == 'rows' and source == 'raw_data_csv.rows':
+            inputs[input_name] = [dict(zip(csv_columns, values)) for values in zip(*csv_columns.values(), strict=True)]
+            continue
         source_text = str(source)
         prefix = "raw_data_csv."
         if not source_text.startswith(prefix):
@@ -304,7 +266,10 @@ def _run_selected_analysis_programs(
             )
         ]
 
-    csv_columns, csv_error = _read_raw_csv_columns(raw_data_path)
+    text_columns = {column for selected in selected_programs
+                    for program in available_programs() if program.name == selected.get('name') and
+                    program.callable_path == selected.get('callable_path') for column in program.text_columns}
+    csv_columns, csv_error = _read_raw_csv_columns(raw_data_path, text_columns=text_columns)
     if csv_error or csv_columns is None:
         return [
             _program_result(
@@ -638,12 +603,13 @@ def run_analysis_engineer(
         }
 
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    case_config = read_case_config(case_config_path)
+    case_config = read_config(case_config_path)
     task_config = _read_task_config(method_plan_path)
     explicit_commands = _resolve_explicit_commands(case_config)
     selected_programs = _selected_program_configs(task_config)
     expected_outputs = _resolve_expected_outputs(case_config, task_config)
-    repo_path = (Path(repo_root) if repo_root is not None else Path(__file__).resolve().parents[3]).resolve()
+    from lqcd_agent.settings import workspace_root
+    repo_path = workspace_root(repo_root)
     golden_reference_files = _resolve_case_reference_files(case_config, repo_path)
 
     if explicit_commands:

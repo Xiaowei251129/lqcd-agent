@@ -2,6 +2,7 @@
 from __future__ import annotations
 import os
 from typing import Any
+from time import perf_counter
 from lqcd_agent.llm.base import LLMProviderConfig, LLMRequest, LLMResponse, ProviderReadiness
 
 
@@ -51,6 +52,7 @@ class OpenAIResponsesProvider:
             raise LiveProviderError("unsupported_response_format", "Unsupported OpenAI output format.")
         if not model.startswith(("gpt-5", "gpt-6", "o1", "o3", "o4")):
             options["temperature"] = request.temperature if request.temperature is not None else self.config.temperature
+        started = perf_counter()
         try:
             from openai import OpenAI, APIError
             client = self._client or OpenAI(api_key=key, base_url=self.config.api_base,
@@ -69,4 +71,6 @@ class OpenAIResponsesProvider:
         if not isinstance(content, str) or not content:
             raise LiveProviderError("response_missing_text", "OpenAI returned no usable text or declined the request.")
         usage = response.usage.model_dump() if response.usage else {}
-        return LLMResponse(provider="openai", model=response.model, content=content, finish_reason="stop", usage=usage)
+        return LLMResponse(provider="openai", model=response.model, content=content, finish_reason="stop", usage=usage,
+            elapsed_seconds=perf_counter()-started, request_id=getattr(response, "_request_id", None),
+            response_id=getattr(response, "id", None))

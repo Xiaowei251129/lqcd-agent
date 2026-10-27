@@ -73,6 +73,26 @@ TABLES = {
 }
 
 
+def coordinator_tables(db):
+    require(not db.execute("SELECT 1 FROM sqlite_master WHERE type IN ('trigger','view') OR "
+                           "(type='index' AND name NOT LIKE 'sqlite_autoindex_%')").fetchone(),
+            "Unknown coordinator schema object")
+    return {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+
+
+def validate_coordinator_schema(db, root):
+    """Share the existing closed schema and Host binding checks with read-only clients."""
+    require(coordinator_tables(db) == set(TABLES), "Unknown or incomplete coordinator schema")
+    require(db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION,
+            "Unsupported coordinator version")
+    for name, definition in TABLES.items():
+        actual = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()[0]
+        require(actual == f"CREATE TABLE {name} ({definition})", "Coordinator table contract changed")
+    metadata = dict(db.execute("SELECT key,value FROM control_metadata"))
+    require(metadata == {"protocol_digest": PROTOCOL_SHA256, "output_root": str(root)},
+            "Coordinator authority binding changed")
+
+
 def boundary(observer, name, side, value=None):
     """Expose a real production boundary without taking authority from an observer."""
     if observer is not None:
@@ -275,26 +295,14 @@ class Coordinator:
                     self.connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1,
                     "SQLite FULL/foreign-key profile is unavailable")
             with self.transaction() as db:
-                tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                require(not db.execute("SELECT 1 FROM sqlite_master WHERE type IN ('trigger','view') OR "
-                                       "(type='index' AND name NOT LIKE 'sqlite_autoindex_%')").fetchone(),
-                        "Unknown coordinator schema object")
+                tables = coordinator_tables(db)
                 if not existing and not tables:
                     for name, definition in TABLES.items():
                         db.execute(f"CREATE TABLE {name} ({definition})")
                     db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                     db.execute("INSERT INTO control_metadata VALUES (?,?)", ("protocol_digest", PROTOCOL_SHA256))
                     db.execute("INSERT INTO control_metadata VALUES (?,?)", ("output_root", str(root)))
-                else:
-                    require(tables == set(TABLES), "Unknown or incomplete coordinator schema")
-                require(db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION,
-                        "Unsupported coordinator version")
-                for name, definition in TABLES.items():
-                    actual = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()[0]
-                    require(actual == f"CREATE TABLE {name} ({definition})", "Coordinator table contract changed")
-                metadata = dict(db.execute("SELECT key,value FROM control_metadata"))
-                require(metadata == {"protocol_digest": PROTOCOL_SHA256, "output_root": str(root)},
-                        "Coordinator authority binding changed")
+                validate_coordinator_schema(db, root)
             sync_directory(control)
             self._locking_preflight()
         except BaseException:

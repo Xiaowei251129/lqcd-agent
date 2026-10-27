@@ -27,11 +27,12 @@ def provider(reply=None, error=None):
 
 def test_responses_schema_usage_and_no_unsupported_temperature():
     reply = NS(status='completed', output_text='{"ok":true}', model='gpt-6-luna',
-               usage=NS(model_dump=lambda: {'total_tokens': 12}))
+               usage=NS(model_dump=lambda: {'total_tokens': 12}), id='response-test', _request_id='request-test')
     p, calls = provider(reply)
     schema = {'type': 'object', 'properties': {'ok': {'type': 'boolean'}}, 'required': ['ok'], 'additionalProperties': False}
     result = p.generate(LLMRequest([{'role':'user','content':'Return JSON'}], 'json_schema', schema, max_tokens=32))
     assert result.usage == {'total_tokens':12} and result.content == '{"ok":true}'
+    assert result.elapsed_seconds >= 0 and result.request_id == 'request-test' and result.response_id == 'response-test'
     assert calls == [{'model':'gpt-6-luna', 'input':[{'role':'user','content':'Return JSON'}],
         'max_output_tokens':32, 'store':False, 'text':{'format':{'type':'json_schema','name':'agent_output','schema':schema,'strict':True}}}]
 
@@ -178,7 +179,7 @@ def test_provider_factory_keeps_dotenv_out_of_process_environment(tmp_path, monk
 @pytest.mark.parametrize('source,valid', [('def value(): return 2',True),
     ('import os\ndef value(): return 2',False),('def value(): return 3',False)])
 def test_sample_analysis_validates_structure_before_execution(tmp_path, source, valid):
-    from lqcd_agent.runtime import SAMPLE_ANALYSIS_COMMAND
+    from lqcd_agent.examples import SAMPLE_ANALYSIS_COMMAND
     (tmp_path/'sample.py').write_text(source)
     result=subprocess.run([sys.executable,'-I','-S','-c',SAMPLE_ANALYSIS_COMMAND],cwd=tmp_path,
         env={'PATH':os.defpath},capture_output=True,timeout=10)

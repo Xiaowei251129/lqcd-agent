@@ -11,11 +11,14 @@ import time
 from lqcd_agent.control.coordinator import component, publish_exact, read_regular
 from lqcd_agent.control.clock import host_boot_id
 from lqcd_agent.control.strict_json import canonical_bytes, digest, loads, require
-from lqcd_agent.settings import ApplicationSettings, child_environment
+from lqcd_agent.settings import child_environment, workspace_root
 from .backend import validate_receipt, validate_result_reference, validate_status
 from .schemas import IDENTITY, relative_path, validate_manifest, validate_task, within
 from .workspace import WorkspaceProvider, canonical_patch, immutable_git_tree, scan_tree, seal_workspace
 from .codex_worker import write_json
+
+
+JOBS_DIRECTORY = 'coding_jobs'
 
 
 def process_identity(pid):
@@ -106,7 +109,8 @@ class CodexCodingBackend:
         write_json(job / 'state.json', {'status': 'accepted', 'created_at': time.monotonic()})
         environment = child_environment()
         from lqcd_agent.control.storage import execution_scratch_root
-        environment.update(PYTHONDONTWRITEBYTECODE='1', TMPDIR=str(execution_scratch_root()))
+        environment.update(PYTHONDONTWRITEBYTECODE='1', TMPDIR=str(execution_scratch_root()),
+                           LQCD_AGENT_WORKSPACE=str(workspace_root()))
         with (job / 'worker.log').open('wb') as log:
             process = subprocess.Popen([sys.executable, '-B', '-m', 'lqcd_agent.code_agent.codex_worker', str(job)],
                 env=environment, cwd=self.root, stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
@@ -116,21 +120,7 @@ class CodexCodingBackend:
         return receipt
 
     def lookup(self, producer_operation_id):
-        job = self.job(producer_operation_id)
-        receipt = loads(read_regular(job / 'receipt.json')) if (job / 'receipt.json').exists() else None
-        state = json.loads((job / 'state.json').read_text()) if receipt else {}
-        status = state.get('status', 'unknown')
-        if status == 'accepted' and (job / 'process.json').exists():
-            status = 'running'
-        if status in ('accepted', 'running') and (job / 'process.json').exists():
-            identity = json.loads((job / 'process.json').read_text())
-            if process_identity(identity['pid']) != identity['start_ticks']:
-                status = 'failed'
-        value = {'schema_version': '0.1', 'producer_operation_id': producer_operation_id,
-            'backend_kind': self.kind, 'backend_version': self.version, 'status': status,
-            'receipt_reference': 'codex-receipt:' + producer_operation_id if receipt else None,
-            'receipt_digest': digest(receipt) if receipt else None, 'queried_at': time.time()}
-        return validate_status(value).value
+        return lookup_codex_job(self.root, producer_operation_id)
 
     def read_receipt(self, reference):
         require(reference.startswith('codex-receipt:'), 'Invalid Codex receipt')
@@ -321,3 +311,24 @@ def _seal_codex_result(backend, coordinator, producer, repository, containment, 
     fence()
     publish_exact(job / 'backend-result.json', canonical_bytes(value))
     return audit_bytes, patch
+
+
+def lookup_codex_job(root, producer_operation_id):
+    root = Path(root)
+    require(root.is_dir() and root == root.resolve(), 'Backend root was redirected')
+    component(producer_operation_id)
+    job = root/producer_operation_id
+    receipt = loads(read_regular(job / 'receipt.json')) if (job / 'receipt.json').exists() else None
+    state = json.loads((job / 'state.json').read_text()) if receipt else {}
+    status = state.get('status', 'unknown')
+    if status == 'accepted' and (job / 'process.json').exists():
+        status = 'running'
+    if status in ('accepted', 'running') and (job / 'process.json').exists():
+        identity = json.loads((job / 'process.json').read_text())
+        if process_identity(identity['pid']) != identity['start_ticks']:
+            status = 'failed'
+    value = {'schema_version': '0.1', 'producer_operation_id': producer_operation_id,
+        'backend_kind': CodexCodingBackend.kind, 'backend_version': CodexCodingBackend.version, 'status': status,
+        'receipt_reference': 'codex-receipt:' + producer_operation_id if receipt else None,
+        'receipt_digest': digest(receipt) if receipt else None, 'queried_at': time.time()}
+    return validate_status(value).value

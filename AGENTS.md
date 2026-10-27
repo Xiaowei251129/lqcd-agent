@@ -7,7 +7,7 @@ Build a useful LQCD research partner. Mock outputs and software checks are not e
 - This checkout supports the current version only. Remove retired code, tickets, compatibility branches and obsolete tests rather than archiving them here. Do not delete version-control history without explicit authorization.
 - Routine work needs no ticket, frozen hash, approval chain or duplicate completion records. Existing user authorization persists.
 - Read relevant code and docs; do not ingest the entire repository by default. Comments are English; explanations use the user's language.
-- Use the repository's `.venv`. Temporary files use the trusted parent in `configs/storage.json`; never fall back to `/tmp`.
+- Use the repository's `.venv`. Temporary files use the trusted storage profile in `src/lqcd_agent/resources/storage.json` or the operator's validated deployment profile; never fall back to `/tmp`.
 - Run affected tests with `python scripts/check.py tests/path.py::test_name`. Default is the 12-check core; `--integration` runs the current suite once and the numerical benchmark. No historical acceptance mode remains.
 - Add tests for meaningful behavior or defects. Do not add tests that mirror code, repeat passing selections, or expand the core for every fix.
 - Preserve actual authority, fencing, idempotency, permissions, WAL/FULL durability, immutable accepted results and scientific provenance. Do not weaken behavior to obtain a pass.

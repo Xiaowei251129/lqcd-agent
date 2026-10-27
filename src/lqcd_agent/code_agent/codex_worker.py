@@ -7,7 +7,7 @@ import sys
 import threading
 import time
 
-from lqcd_agent.settings import ApplicationSettings, ROOT, child_environment
+from lqcd_agent.settings import ApplicationSettings, child_environment, workspace_root
 
 
 def write_json(path, value):
@@ -27,8 +27,9 @@ def run(job):
     home = job / 'codex-home'
     home.mkdir(mode=0o700, exist_ok=True)
     settings = ApplicationSettings.load()
+    workspace_config = workspace_root()
     profile = {':root': 'deny', ':minimal': 'read', ':workspace_roots': {'.': 'read'},
-               str(ROOT / '.venv'): 'read', str(ROOT / '.runtime'): 'read', ':slash_tmp': 'deny', ':tmpdir': 'deny'}
+               str(workspace_config / '.venv'): 'read', str(workspace_config / '.runtime'): 'read', ':slash_tmp': 'deny', ':tmpdir': 'deny'}
     overrides = ('forced_login_method="api"', 'cli_auth_credentials_store="ephemeral"',
                  'default_permissions="lqcd"', 'web_search="disabled"',
                  'permissions.lqcd.filesystem=' + json.dumps(profile).replace(': ', ' = '),

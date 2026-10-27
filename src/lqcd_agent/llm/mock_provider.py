@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-import csv
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from lqcd_agent.analysis_programs.registry import selected_analysis_programs
 from lqcd_agent.llm.base import LLMProviderConfig, LLMRequest, LLMResponse, ProviderReadiness
 
 
@@ -65,62 +65,6 @@ def _as_string_list(value: Any) -> list[str]:
     return [str(value)]
 
 
-def _selected_analysis_programs(case_config: dict[str, Any], repo_inventory: dict[str, Any]) -> list[dict[str, Any]]:
-    requested_tags = set(_as_string_list(case_config.get("analysis_program_tags")))
-    requested_outputs = set(_as_string_list(case_config.get("target_observables")))
-    programs = repo_inventory.get("analysis_programs", [])
-    if not isinstance(programs, list) or not case_config.get("raw_data_path"):
-        return []
-
-    selected: list[dict[str, Any]] = []
-    for program in programs:
-        if not isinstance(program, dict):
-            continue
-        tags = set(_as_string_list(program.get("tags")))
-        produced_outputs = _as_string_list(program.get("produced_outputs"))
-        output_match = bool(requested_outputs) and bool(requested_outputs & set(produced_outputs))
-        tag_match = bool(requested_tags) and requested_tags.issubset(tags)
-        if not (tag_match or output_match):
-            continue
-        required_inputs = set(_as_string_list(program.get("required_inputs")))
-        if required_inputs != {"times", "correlator_values"}:
-            continue
-        output_name = produced_outputs[0] if produced_outputs else str(program.get("name", "analysis_program"))
-        input_mapping = {
-            "times": "raw_data_csv.t",
-            "correlator_values": "raw_data_csv.value",
-        }
-        if _raw_csv_has_column(case_config, repo_inventory, "error"):
-            input_mapping["correlator_errors"] = "raw_data_csv.error"
-        selected.append(
-            {
-                "name": str(program.get("name", "")),
-                "category": str(program.get("category", "")),
-                "callable_path": str(program.get("callable_path", "")),
-                "input_mapping": input_mapping,
-                "output_path": f"analysis_outputs/{output_name}.json",
-                "required_outputs": produced_outputs,
-            }
-        )
-    return selected
-
-
-def _raw_csv_has_column(case_config: dict[str, Any], repo_inventory: dict[str, Any], column_name: str) -> bool:
-    raw_value = case_config.get("raw_data_path")
-    repo_root = repo_inventory.get("repo_root")
-    if not raw_value or not repo_root:
-        return False
-    raw_path = Path(str(raw_value))
-    if raw_path.is_absolute():
-        return False
-    try:
-        with (Path(str(repo_root)) / raw_path).resolve().open("r", encoding="utf-8", newline="") as handle:
-            reader = csv.DictReader(handle)
-            return bool(reader.fieldnames and column_name in reader.fieldnames)
-    except OSError:
-        return False
-
-
 class MockLLMProvider:
     def __init__(self, config: LLMProviderConfig | None = None) -> None:
         self.config = config or LLMProviderConfig(
@@ -155,7 +99,7 @@ class MockLLMProvider:
         repo_inventory = payload.get("repo_inventory") if isinstance(payload.get("repo_inventory"), dict) else {}
         gaps = repo_inventory.get("implementation_gaps", [])
         implementation_gaps = [str(gap) for gap in gaps] if isinstance(gaps, list) else []
-        selected_programs = _selected_analysis_programs(case_config, repo_inventory)
+        selected_programs = selected_analysis_programs(case_config, repo_inventory)
         program_requested = bool(case_config.get("raw_data_path")) and bool(
             _as_string_list(case_config.get("analysis_program_tags"))
             or _as_string_list(case_config.get("target_observables"))

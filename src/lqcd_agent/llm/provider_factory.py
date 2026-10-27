@@ -8,58 +8,11 @@ import os
 from pathlib import Path
 from typing import Any
 
+from lqcd_agent.configuration import read_config
 from lqcd_agent.llm.base import LLMProvider, LLMProviderConfig
 from lqcd_agent.llm.deepseek_client import DeepSeekChatProvider
 from lqcd_agent.llm.mock_provider import MockLLMProvider
 from lqcd_agent.llm.openai_client import OpenAIResponsesProvider
-
-
-def _coerce_scalar(value: str) -> Any:
-    stripped = value.strip()
-    if stripped in {"true", "True"}:
-        return True
-    if stripped in {"false", "False"}:
-        return False
-    if stripped in {"null", "None", "~"}:
-        return None
-    if (stripped.startswith('"') and stripped.endswith('"')) or (
-        stripped.startswith("'") and stripped.endswith("'")
-    ):
-        return stripped[1:-1]
-    try:
-        if "." in stripped:
-            return float(stripped)
-        return int(stripped)
-    except ValueError:
-        return stripped
-
-
-def load_flat_yaml(path: str | Path) -> dict[str, Any]:
-    config_path = Path(path)
-    payload: dict[str, Any] = {}
-    current_list_key: str | None = None
-    for line_number, raw_line in enumerate(config_path.read_text(encoding="utf-8").splitlines(), start=1):
-        line = raw_line.split("#", 1)[0].strip()
-        if not line:
-            continue
-        if line.startswith("- ") and current_list_key:
-            payload.setdefault(current_list_key, [])
-            payload[current_list_key].append(_coerce_scalar(line[2:].strip()))
-            continue
-        current_list_key = None
-        if ":" not in line:
-            raise ValueError(f"{config_path}:{line_number} is not a flat key/value YAML line.")
-        key, value = line.split(":", 1)
-        key = key.strip()
-        if not key:
-            raise ValueError(f"{config_path}:{line_number} has an empty key.")
-        value = value.strip()
-        if value:
-            payload[key] = _coerce_scalar(value)
-        else:
-            payload[key] = []
-            current_list_key = key
-    return payload
 
 
 def config_from_dict(payload: dict[str, Any]) -> LLMProviderConfig:
@@ -81,7 +34,7 @@ def config_from_dict(payload: dict[str, Any]) -> LLMProviderConfig:
 
 
 def load_provider_config(path: str | Path) -> LLMProviderConfig:
-    return config_from_dict(load_flat_yaml(path))
+    return config_from_dict(read_config(path))
 
 
 def create_provider(config: LLMProviderConfig) -> LLMProvider:
@@ -136,7 +89,7 @@ def dry_run_report(config_path: str | Path, *, env_path: str | Path = ".env") ->
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Load an LLM provider config without printing secrets.")
-    parser.add_argument("--config", required=True, help="Path to a flat runtime YAML provider config.")
+    parser.add_argument("--config", required=True, help="Path to a JSON/YAML provider config.")
     parser.add_argument("--dry-run", action="store_true", help="Load config and environment metadata only.")
     parser.add_argument("--env-file", default=".env", help="Private application env file; credentials are not exported.")
     args = parser.parse_args()

@@ -4,8 +4,10 @@ from pathlib import Path
 
 
 class ScientificAgent:
-    def __init__(self, host, config, *, provider=None):
+    def __init__(self, host, config, *, provider=None, workspace=None):
+        from .settings import workspace_root
         self.host, self.config = Path(host), config
+        self.workspace = workspace_root(workspace)
         self.provider = provider
         self.timeout_seconds = provider.config.timeout_seconds if provider else 1
 
@@ -20,7 +22,7 @@ class ScientificAgent:
             from .agents.method_planner import run_method_planner
             from .tools.repo_inventory import build_repo_inventory
             result = run_method_planner(user_goal=context['root_goal']['goal'], case_config=self.config,
-                repo_inventory=build_repo_inventory(Path(__file__).resolve().parents[2]),
+                repo_inventory=build_repo_inventory(self.workspace),
                 output_dir=output, run_id=identity['run_id'], provider=self.provider)
             if result['status'] != 'success' or result['code_needed']:
                 diagnostic.update(status='failed', category='implementation_gap', affected_layer='plan', risk='high', human_need='approval')
@@ -31,7 +33,7 @@ class ScientificAgent:
             config.write_text(json.dumps(self.config))
             plan = self._artifact(context, 'method_plan.json')['domain_result']['method_plan_path']
             result = run_analysis_engineer(case_config_path=config, case_id=identity['case_id'], run_id=identity['run_id'],
-                run_output_dir=output, method_plan_path=plan, repo_root=Path(__file__).resolve().parents[2])
+                run_output_dir=output, method_plan_path=plan, repo_root=self.workspace)
             if not result['run_success']:
                 diagnostic.update(status='failed', category='analysis_execution', affected_layer='analysis', risk='high', human_need='approval')
             content = {'domain_result': result}
@@ -43,6 +45,8 @@ class ScientificAgent:
                 run_result_path=result['run_result_path'], analysis_outputs_dir=result['analysis_outputs_dir'], method_plan_path=plan, provider=self.provider)
             # Scientific confirmation is Host policy, independent of model confidence or extra fields.
             diagnostic.update(risk='high', category='scientific_review', human_need='approval')
+            if reviewed['status'] != 'success':
+                diagnostic.update(status='failed', affected_layer='review')
             content = {'domain_result': reviewed}
         else:
             raise ValueError('Unsupported scientific role: ' + node)

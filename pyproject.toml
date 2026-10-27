@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "lqcd-agent"
 version = "0.2.0"
-description = "AI-assisted, auditable mock-first LangGraph workflow for LQCD meson DA analysis support."
+description = "An AI Research Partner for LQCD with controlled execution and attributable scientific results."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -27,7 +27,7 @@ lqcd-agent-demo = "lqcd_agent.demo.server:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"lqcd_agent" = ["_build_manifest.json"]
+"lqcd_agent" = ["_build_manifest.json", "resources/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -38,6 +38,9 @@ class LLMResponse:
     content: str
     finish_reason: str | None = None
     usage: dict[str, Any] = field(default_factory=dict)
+    elapsed_seconds: float | None = None
+    request_id: str | None = None
+    response_id: str | None = None
 
 
 @dataclass(frozen=True)

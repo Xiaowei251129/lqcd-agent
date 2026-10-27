@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from time import perf_counter
 import os
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -94,8 +95,11 @@ class DeepSeekChatProvider:
             },
             method="POST",
         )
+        started = perf_counter()
+        request_id = None
         try:
             with urlopen(http_request, timeout=self.config.timeout_seconds) as response:
+                request_id = response.headers.get("x-request-id")
                 body = json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
             raise LiveProviderError("provider_http_error", f"Provider request failed with HTTP {exc.code}.") from exc
@@ -123,5 +127,6 @@ class DeepSeekChatProvider:
             model=str(body.get("model") or model),
             content=content,
             finish_reason=first_choice.get("finish_reason"),
+            elapsed_seconds=perf_counter()-started, request_id=request_id, response_id=body.get("id"),
             usage=body.get("usage", {}) if isinstance(body.get("usage"), dict) else {},
         )

@@ -5,11 +5,17 @@ import os
 from pathlib import Path
 import stat
 
-ROOT = Path(__file__).resolve().parents[2]
+def workspace_root(path=None):
+    """Resolve the operator's workspace, independently of package installation."""
+    root = Path(path) if path is not None else Path(os.environ.get('LQCD_AGENT_WORKSPACE', str(Path.cwd())))
+    if (not root.is_absolute() or root != root.resolve() or not root.is_dir() or
+            root.stat().st_uid != os.getuid() or root.stat().st_mode & 0o002):
+        raise ValueError('The operator workspace must be an owned canonical directory.')
+    return root
 
 
 def read_env(path=None):
-    path = Path(path) if path is not None else ROOT / '.env'
+    path = Path(path) if path is not None else workspace_root() / '.env'
     if not path.exists():
         return {}
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
@@ -38,7 +44,8 @@ def read_env(path=None):
 def child_environment():
     """Allow only runtime/network plumbing; no API keys or personal Codex overrides."""
     names = {'PATH', 'HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'LD_LIBRARY_PATH', 'SSL_CERT_FILE', 'SSL_CERT_DIR',
-             'HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'no_proxy'}
+             'HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'no_proxy',
+             'LQCD_AGENT_WORKSPACE', 'LQCD_AGENT_STORAGE_CONFIG'}
     return {k: v for k, v in os.environ.items() if k in names}
 
 

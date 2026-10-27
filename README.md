@@ -7,10 +7,13 @@ An AI Research Partner for LQCD with controlled planning, code/analysis work, sc
 ```bash
 source .venv/bin/activate
 lqcd-agent --help
+lqcd-agent doctor
 lqcd-agent start --key example
 lqcd-agent run --case-config configs/example.json --key science
 lqcd-agent-demo --port 8000
 ```
+
+The operator workspace defaults to the current directory; set the absolute `LQCD_AGENT_WORKSPACE` to use another owned workspace. Case `raw_data_path` values resolve under its `raw_data/`; `.env` and optional `.venv`/`.runtime` belong to that workspace, independently of where the package is installed. Resume, replay and fork require the original workspace. Status and cancellation do not require credentials, and cancellation remains available if the data workspace is unavailable.
 
 The demo binds to `127.0.0.1`. CLI, demo and scientific cases use the same canonical engine. The CLI returns the Host, Run and Pause identifiers needed for resume, cancel, fork and replay; see each subcommand's `--help`.
 
@@ -25,11 +28,22 @@ lqcd-agent status --host HOST --case case --run RUN
 lqcd-agent resume --host HOST --case case --run RUN --pause PAUSE --key consume-code
 ```
 
-Copy Host, Run and Pause identifiers from the JSON output. Poll `status` until `coding_backend.status` is `completed`, then resume within the 240-second coding window. Resume applies the bounded proposal, seals it, independently checks syntax and consumes it through the existing control path. Use `cancel` with the same identifiers to stop the original job. Status does not call a model or renew a lease. Backend failures are retained under the private Host's `coding_jobs` directory.
+Copy Host, Run and Pause identifiers from the JSON output. Poll `status` until `coding_backend.status` is `completed`, then resume within the 240-second coding window. Resume applies the bounded proposal, seals it, independently checks syntax and consumes it through the existing control path. Use `cancel` with the same identifiers to stop the original job. Status does not call a model or renew a lease. Backend failures are retained under the private Host's `coding_jobs` directory. Status opens the existing authority read-only, verifies its schema and Run heads, and returns a `next_action`; it does not assemble graph or Code executors. A concurrent head change produces an inspection error rather than a stale cached result.
 
 The current coding workflow is a small integration example: change `sample.py` so `value()` returns integer 2. The Host checks its exact allowed AST before execution. Codex proposes UTF-8 files; it cannot run commands or directly edit the workspace. The backend supports macOS process identity and termination as well as Linux. Neither deployment enables arbitrary generated-program execution; OLCF additionally disables the user namespaces needed by Codex command sandboxes. Scientific case planning that requires a new analysis implementation still pauses for a scoped implementation decision; a sample program is never substituted for scientific code.
 
 Live requests transmit the supplied task and selected context to OpenAI and incur API usage. Codex's private job records contain turn IDs and reported token usage; control `llm_calls` counts logical invocations, not transport retries. SDK jobs have a time limit, not a guaranteed dollar/token cap. Use project spending limits for billing control. See [security boundaries](docs/SECURITY_AND_DATA_POLICY.md).
+
+## Evidence lifecycle
+
+```bash
+lqcd-agent archive --host HOST --case CASE --run RUN
+lqcd-agent verify-archive --archive-path /absolute/path/to/ARCHIVE.zip
+```
+
+Archive accepts only a terminated Run with committed closure. It writes a content-addressed ZIP inside that Host's private `archives/`, retains the source, and repeats exactly for unchanged evidence. The bundle contains Run files, a validated control snapshot and hash-bound scientific domain members. It excludes SQLite/checkpoint database files, backend homes and worktrees, application credentials and raw data stored outside the Run. Its limit is 256 MiB and 10,000 evidence members; it is a portable evidence bundle, not a database backup or an executable/restorable Run. Copy it to durable storage before operator cleanup of temporary Hosts. Verification checks inventory and hashes without extraction; preserve its SHA-256 through a trusted channel for origin verification. It does not independently establish scientific acceptance.
+
+Python clients use the same application entry, for example `execute(ApplicationRequest('status', host=..., case=..., run=...))` from `lqcd_agent.runtime`. Request objects carry business inputs, never actor scopes or write roots.
 
 ## Develop
 
@@ -37,11 +51,12 @@ Live requests transmit the supplied task and selected context to OpenAI and incu
 python scripts/check.py                          # 12 critical checks
 python scripts/check.py tests/test_analysis_programs.py
 python scripts/check.py --integration            # current tests once + numerical benchmark
+python scripts/measure_cli.py --samples 3         # fresh offline Runs; retains measured Hosts
 ```
 
-The runner selects this checkout's `.venv`; it never imports a previous checkout. After source edits it regenerates the build manifest once. Standalone CLI users must run `python scripts/build_manifest.py` after editing runtime source; installed builds include the manifest.
+The runner selects this checkout's `.venv`; it never imports a previous checkout. After source edits it regenerates the build manifest once. Standalone CLI users must run `python scripts/build_manifest.py` after editing runtime source; wheel builds regenerate the installed manifest without changing sources. The packaged storage profile is `lqcd_agent/resources/storage.json`; an operator-owned `LQCD_AGENT_STORAGE_CONFIG` can select an approved deployment profile.
 
-Dependencies live in [pyproject.toml](pyproject.toml) and [requirements.lock](requirements.lock). The existing OLCF checkout contains its own ignored `.runtime` and `.venv`. For another installation, create a Python 3.12+ virtual environment, install the lock and this package, and supply an operator-owned storage profile with a supported SQLite runtime. See [verification](docs/VERIFICATION_GUIDE.md).
+Dependencies live in [pyproject.toml](pyproject.toml) and [requirements.lock](requirements.lock). The existing OLCF checkout contains its own ignored `.runtime` and `.venv`. For another installation, create a Python 3.12+ virtual environment, install the lock and this package, and verify the packaged or operator-owned storage profile with a supported SQLite runtime. `doctor` checks actual storage admission and WAL/FULL/foreign-key settings in its own temporary root, without loading a key or calling a model. See [verification](docs/VERIFICATION_GUIDE.md).
 
 Current control declarations live in [contracts/control.json](contracts/control.json); regenerate with `python scripts/generate_protocol.py`. Only current Runs are supported. Old runtime paths, historical acceptance, ticket archives and old demo/benchmark implementations have been removed.
 

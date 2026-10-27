@@ -1,6 +1,7 @@
 """Trusted scratch and the approved one-Host Orion storage admission profile."""
 import os
 from functools import lru_cache
+from importlib.resources import files
 from pathlib import Path
 import re
 import sqlite3
@@ -14,7 +15,7 @@ from .strict_json import canonical_bytes, loads, require
 def storage_profile():
     """Read a trusted deployment profile; callers cannot pass output roots."""
     import json
-    path = Path(os.environ.get("LQCD_AGENT_STORAGE_CONFIG", str(Path(__file__).resolve().parents[3] / "configs/storage.json")))
+    path = Path(os.environ.get("LQCD_AGENT_STORAGE_CONFIG", str(files("lqcd_agent").joinpath("resources/storage.json"))))
     require(path == path.resolve() and path.is_file() and not path.is_symlink(), "Invalid storage configuration path")
     identity = path.stat()
     require(identity.st_uid == os.getuid() and not identity.st_mode & 0o002, "Untrusted storage configuration owner or mode")

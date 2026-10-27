@@ -59,8 +59,7 @@ def test_matrix_element_normalization_program() -> None:
 
 
 def test_repo_inventory_guides_codex_to_analysis_programs(tmp_path) -> None:
-    inventory = build_repo_inventory(tmp_path, required_files=[], allowed_files=None)
+    inventory = build_repo_inventory(tmp_path)
 
-    assert "src/lqcd_agent/analysis_programs/" in inventory["allowed_files"]
     assert inventory["analysis_programs"]
     assert "Reuse existing analysis_programs" in inventory["analysis_program_guidance"]

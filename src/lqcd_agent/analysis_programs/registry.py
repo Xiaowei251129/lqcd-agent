@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import csv
 from dataclasses import asdict, dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -12,12 +14,21 @@ class AnalysisProgram:
     callable_path: str
     description: str
     tags: tuple[str, ...]
-    required_inputs: tuple[str, ...]
+    csv_inputs: tuple[tuple[str, str], ...]
+    optional_csv_inputs: tuple[tuple[str, str], ...]
+    text_columns: tuple[str, ...]
     produced_outputs: tuple[str, ...]
+
+    @property
+    def required_inputs(self):
+        return tuple(name for name, _ in self.csv_inputs)
 
     def to_dict(self) -> dict[str, object]:
         payload = asdict(self)
-        for key in ["tags", "required_inputs", "produced_outputs"]:
+        payload["required_inputs"] = list(self.required_inputs)
+        payload["csv_inputs"] = dict(self.csv_inputs)
+        payload["optional_csv_inputs"] = dict(self.optional_csv_inputs)
+        for key in ("tags", "produced_outputs", "text_columns"):
             payload[key] = list(payload[key])
         return payload
 
@@ -29,7 +40,9 @@ PROGRAMS: tuple[AnalysisProgram, ...] = (
         callable_path="lqcd_agent.analysis_programs.two_point_fit.program.single_exponential_effective_mass",
         description="Estimate effective masses from positive two-point correlator values.",
         tags=("two_point", "effective_mass", "correlator"),
-        required_inputs=("times", "correlator_values"),
+        csv_inputs=(("times", "t"), ("correlator_values", "value")),
+        optional_csv_inputs=(("correlator_errors", "error"),),
+        text_columns=(),
         produced_outputs=("effective_mass_estimates",),
     ),
     AnalysisProgram(
@@ -38,7 +51,9 @@ PROGRAMS: tuple[AnalysisProgram, ...] = (
         callable_path="lqcd_agent.analysis_programs.matrix_element.program.check_matrix_element_normalization",
         description="Check whether z=0 real matrix elements satisfy a target normalization.",
         tags=("matrix_element", "normalization", "diagnostic"),
-        required_inputs=("matrix_elements",),
+        csv_inputs=(("matrix_elements", "rows"),),
+        optional_csv_inputs=(),
+        text_columns=("component",),
         produced_outputs=("normalization_diagnostics",),
     ),
 )
@@ -62,3 +77,47 @@ def find_programs(*, category: str | None = None, tags: list[str] | tuple[str, .
 
 def program_inventory() -> list[dict[str, object]]:
     return [program.to_dict() for program in PROGRAMS]
+
+
+def requested_programs(config):
+    def values(value):
+        return [str(item).strip() for item in value] if isinstance(value, list) else [str(value).strip()] if value else []
+    tags = values(config.get('analysis_program_tags')) or values(config.get('analysis_tags'))
+    outputs = values(config.get('target_observables')) + values(config.get('analysis_outputs'))
+    return set(filter(None, tags)), set(filter(None, outputs))
+
+
+def canonical_program_selection(program, config, inventory=None):
+    if not config.get('raw_data_path'):
+        return None
+    descriptor = next((item for item in PROGRAMS if item.name == program.get('name') and
+                       item.callable_path == program.get('callable_path')), None)
+    if descriptor is None:
+        return None
+    mapping = {key: 'raw_data_csv.' + column for key, column in descriptor.csv_inputs}
+    root = (inventory or {}).get('repo_root')
+    if root and descriptor.optional_csv_inputs:
+        raw = (Path(root)/str(config['raw_data_path'])).resolve()
+        if raw.is_relative_to((Path(root)/'raw_data').resolve()):
+            try:
+                with raw.open(newline='', encoding='utf-8') as handle:
+                    columns = next(csv.reader(handle), [])
+                mapping.update((key, 'raw_data_csv.'+column) for key, column in descriptor.optional_csv_inputs if column in columns)
+            except OSError:
+                pass
+    return {'name': descriptor.name, 'category': descriptor.category, 'callable_path': descriptor.callable_path,
+            'input_mapping': mapping, 'output_path': 'analysis_outputs/'+descriptor.produced_outputs[0]+'.json',
+            'required_outputs': list(descriptor.produced_outputs)}
+
+
+def selected_analysis_programs(case_config, repo_inventory):
+    tags, outputs = requested_programs(case_config)
+    selected = []
+    for program in repo_inventory.get('analysis_programs', []):
+        if not isinstance(program, dict):
+            continue
+        if (tags and tags <= set(program.get('tags', []))) or outputs.intersection(program.get('produced_outputs', [])):
+            choice = canonical_program_selection(program, case_config, repo_inventory)
+            if choice is not None:
+                selected.append(choice)
+    return selected

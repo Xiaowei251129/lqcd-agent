@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import csv
+from lqcd_agent.analysis_programs.registry import canonical_program_selection, requested_programs, selected_analysis_programs
+
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -106,53 +107,6 @@ def _program_inventory(repo_inventory: dict[str, Any]) -> list[dict[str, Any]]:
     return [program for program in programs if isinstance(program, dict)]
 
 
-def _requested_tags(case_config: dict[str, Any]) -> set[str]:
-    tags = _as_string_list(case_config.get("analysis_program_tags"))
-    if not tags:
-        tags = _as_string_list(case_config.get("analysis_tags"))
-    return {tag.strip() for tag in tags if tag.strip()}
-
-
-def _requested_outputs(case_config: dict[str, Any]) -> set[str]:
-    outputs = _as_string_list(case_config.get("target_observables"))
-    outputs.extend(_as_string_list(case_config.get("analysis_outputs")))
-    return {output.strip() for output in outputs if output.strip()}
-
-
-def _program_satisfies_request(
-    program: dict[str, Any],
-    *,
-    requested_tags: set[str],
-    requested_outputs: set[str],
-) -> bool:
-    program_tags = {str(tag) for tag in _as_string_list(program.get("tags"))}
-    produced_outputs = {str(output) for output in _as_string_list(program.get("produced_outputs"))}
-    tag_match = bool(requested_tags) and requested_tags.issubset(program_tags)
-    output_match = bool(requested_outputs) and bool(requested_outputs & produced_outputs)
-    return tag_match or output_match
-
-
-def _raw_csv_has_column(
-    case_config: dict[str, Any],
-    repo_inventory: dict[str, Any] | None,
-    column_name: str,
-) -> bool:
-    raw_value = case_config.get("raw_data_path")
-    repo_root = (repo_inventory or {}).get("repo_root")
-    if not raw_value or not repo_root:
-        return False
-    raw_path = Path(str(raw_value))
-    if raw_path.is_absolute():
-        return False
-    resolved = (Path(str(repo_root)) / raw_path).resolve()
-    try:
-        with resolved.open("r", encoding="utf-8", newline="") as handle:
-            reader = csv.DictReader(handle)
-            return bool(reader.fieldnames and column_name in reader.fieldnames)
-    except OSError:
-        return False
-
-
 def _raw_data_missing(case_config: dict[str, Any], repo_inventory: dict[str, Any] | None) -> bool:
     raw_value = case_config.get("raw_data_path")
     repo_root = (repo_inventory or {}).get("repo_root")
@@ -174,69 +128,6 @@ def _runtime_input_warning(case_config: dict[str, Any]) -> dict[str, Any]:
         "path": raw_value,
         "value": raw_value,
     }
-
-
-def _input_mapping_for_program(
-    program: dict[str, Any],
-    case_config: dict[str, Any],
-    repo_inventory: dict[str, Any] | None = None,
-) -> dict[str, str] | None:
-    required_inputs = set(_as_string_list(program.get("required_inputs")))
-    if not case_config.get("raw_data_path"):
-        return None
-    if required_inputs == {"times", "correlator_values"}:
-        mapping = {
-            "times": "raw_data_csv.t",
-            "correlator_values": "raw_data_csv.value",
-        }
-        if _raw_csv_has_column(case_config, repo_inventory, "error"):
-            mapping["correlator_errors"] = "raw_data_csv.error"
-        return mapping
-    return None
-
-
-def _canonical_program_selection(
-    program: dict[str, Any],
-    case_config: dict[str, Any],
-    repo_inventory: dict[str, Any] | None = None,
-) -> dict[str, Any] | None:
-    input_mapping = _input_mapping_for_program(program, case_config, repo_inventory)
-    if input_mapping is None:
-        return None
-    produced_outputs = _as_string_list(program.get("produced_outputs"))
-    output_name = produced_outputs[0] if produced_outputs else str(program.get("name", "analysis_program"))
-    return {
-        "name": str(program.get("name", "")),
-        "category": str(program.get("category", "")),
-        "callable_path": str(program.get("callable_path", "")),
-        "input_mapping": input_mapping,
-        "output_path": f"analysis_outputs/{output_name}.json",
-        "required_outputs": produced_outputs,
-    }
-
-
-def _selected_analysis_programs(
-    *,
-    case_config: dict[str, Any],
-    repo_inventory: dict[str, Any],
-) -> list[dict[str, Any]]:
-    requested_tags = _requested_tags(case_config)
-    requested_outputs = _requested_outputs(case_config)
-    selected: list[dict[str, Any]] = []
-    for program in _program_inventory(repo_inventory):
-        if not _program_satisfies_request(
-            program,
-            requested_tags=requested_tags,
-            requested_outputs=requested_outputs,
-        ):
-            continue
-        input_mapping = _input_mapping_for_program(program, case_config, repo_inventory)
-        if input_mapping is None:
-            continue
-        canonical = _canonical_program_selection(program, case_config, repo_inventory)
-        if canonical is not None:
-            selected.append(canonical)
-    return selected
 
 
 def _matching_inventory_program(
@@ -292,7 +183,7 @@ def _normalize_provider_selected_programs(
         if program is None:
             canonical_selected.append(item)
             continue
-        canonical = _canonical_program_selection(program, case_config, repo_inventory)
+        canonical = canonical_program_selection(program, case_config, repo_inventory)
         if canonical is None:
             canonical_selected.append(item)
             continue
@@ -307,7 +198,7 @@ def _normalize_provider_selected_programs(
         canonical_selected.append(canonical)
 
     if not canonical_selected:
-        inferred = _selected_analysis_programs(case_config=case_config, repo_inventory=repo_inventory)
+        inferred = selected_analysis_programs(case_config=case_config, repo_inventory=repo_inventory)
         if inferred:
             canonical_selected = inferred
             changed_programs.extend(str(program["name"]) for program in inferred)
@@ -380,9 +271,9 @@ def build_method_plan(
     assert repo_inventory is not None
     physics_goal = str(case_config.get("physics_goal") or user_goal)
     gaps = _inventory_gaps(repo_inventory)
-    selected_programs = _selected_analysis_programs(case_config=case_config, repo_inventory=repo_inventory)
+    selected_programs = selected_analysis_programs(case_config=case_config, repo_inventory=repo_inventory)
     program_requested = bool(case_config.get("raw_data_path")) and bool(
-        _requested_tags(case_config) or _requested_outputs(case_config)
+        any(requested_programs(case_config))
     )
     missing_requested_program = program_requested and not selected_programs
     code_needed = bool(gaps) or missing_requested_program
