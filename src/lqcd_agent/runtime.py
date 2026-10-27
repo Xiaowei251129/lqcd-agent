@@ -1,4 +1,4 @@
-"""Bounded, network-free Phase B Host for the canonical control ports."""
+"""Canonical Host with offline fixtures and explicit application API opt-in."""
 from lqcd_agent.control.storage import execution_scratch_root
 import argparse
 from contextlib import closing
@@ -24,6 +24,8 @@ from lqcd_agent.control.pause import CancelPauseRequest, ResumeRunRequest
 from lqcd_agent.control.strict_json import ControlIntegrityError, canonical_bytes, digest, loads, require
 from lqcd_agent.graph.analysis_graph import CanonicalProductRuntime
 
+SAMPLE_ANALYSIS_COMMAND = "import ast,pathlib; source=pathlib.Path('sample.py').read_text(); expected='def value(): return 2'; assert ast.dump(ast.parse(source)) == ast.dump(ast.parse(expected)), 'Unsupported demo program'; namespace={}; exec(compile(source,'sample.py','exec'),namespace); assert type(namespace['value']()) is int and namespace['value']()==2; print(2)"
+
 class SyntheticAgent:
     """Supply domain facts through the existing validated Agent port."""
 
@@ -32,7 +34,7 @@ class SyntheticAgent:
         workflow = context['root_goal'].get('workflow', 'no-code')
         content = {'domain': 'synthetic'}
         if node == 'method_planner':
-            content = {'code_needed': workflow == 'code', 'requirements': ['Return the approved synthetic value']}
+            content = {'code_needed': workflow == 'code', 'requirements': [context['root_goal']['goal']]}
         if node == 'scientific_reviewer' and workflow == 'human' and (context['remediation'] is None):
             diagnostic.update(risk='critical', human_need='approval')
         return {'diagnostic': diagnostic, 'content': content}
@@ -90,7 +92,7 @@ def create_host():
         subprocess.run(['git', *argv], cwd=repository, env=environment, capture_output=True, check=True, timeout=30)
     return root
 
-def assemble(coordinator, agent_port=None):
+def assemble(coordinator, agent_port=None, *, live=False):
     repository = coordinator.root / 'synthetic_repository'
     require(repository.is_dir() and repository == repository.resolve(), 'Synthetic base escaped its Host')
     revision = subprocess.check_output(['git', '-C', str(repository), 'rev-parse', 'HEAD'], timeout=30).decode().strip()
@@ -98,10 +100,19 @@ def assemble(coordinator, agent_port=None):
     require(base == {'sample.py': b'def value():\n    return 1\n'}, 'Synthetic base changed')
     tool = {'spec_id': 'synthetic-update', 'argv': ['fixture:write', 'sample.py'], 'cwd': '.', 'timeout_seconds': 1, 'required': True, 'expected_exit_codes': [0], 'environment_keys': []}
     policy = {'base_revision': revision, 'base_tree_digest': tree_digest(base), 'task_summary': 'Implement the synthetic observable', 'acceptance_criteria': ['Trusted syntax check passes'], 'read_paths': ['sample.py'], 'write_paths': ['sample.py'], 'forbidden_paths': ['.git'], 'tool_policy': [tool], 'network_policy': {'enabled': False}, 'filesystem_policy': {'binary_changes': False, 'executable_changes': False, 'ephemeral_paths': ['__pycache__']}, 'verification_specs': [{**tool, 'spec_id': 'syntax', 'argv': ['python', '-m', 'compileall', 'sample.py']}], 'coding_backend_kind': 'fake', 'backend_version': '0.1', 'backend_runtime_fingerprint': digest('fake-0.1')}
-    containment = DeterministicContainment(coordinator.root / 'containment')
-    backend = SyntheticBackend(coordinator, repository, containment)
-    code = ProductCodeHost(coordinator, repository, backend, containment, task_policy=policy, maximum_charge={'llm_calls': 1, 'tool_calls': 1, 'verification_commands': 0}, timeout_seconds=20)
-    analysis = AnalysisHandoff(coordinator, repository, allowed_command=[sys.executable, '-I', '-S', '-c', "import runpy; print(runpy.run_path('sample.py')['value']())"])
+    if live:
+        from lqcd_agent.code_agent.codex_backend import CodexCodingBackend, ProcessContainment
+        backend = CodexCodingBackend(coordinator.root / 'coding_jobs', coordinator.root / 'code_workspaces')
+        containment = ProcessContainment(backend)
+        tool = {**tool, 'spec_id': 'host-apply-proposal', 'argv': ['host:apply-proposal', 'sample.py']}
+        policy.update(coding_backend_kind=backend.kind, backend_version=backend.version,
+            backend_runtime_fingerprint=digest('openai-codex-' + backend.version), tool_policy=[tool],
+            task_summary='Bounded sample program', acceptance_criteria=['value() returns integer 2'])
+    else:
+        containment = DeterministicContainment(coordinator.root / 'containment')
+        backend = SyntheticBackend(coordinator, repository, containment)
+    code = ProductCodeHost(coordinator, repository, backend, containment, task_policy=policy, maximum_charge={'llm_calls': 1, 'tool_calls': 1, 'verification_commands': 0}, timeout_seconds=240 if live else 20, lease_seconds=300 if live else 30)
+    analysis = AnalysisHandoff(coordinator, repository, allowed_command=[sys.executable, '-I', '-S', '-c', SAMPLE_ANALYSIS_COMMAND])
     actor = ActorContext('operator', 'human', tuple(sorted(('start', 'resume', 'cancel', 'replay', 'fork', 'policy.select', 'control.internal'))))
     runtime = CanonicalProductRuntime(coordinator, worker_id='product-host', actor=actor, agent_port=agent_port or SyntheticAgent(), analysis_handoff=analysis, code_host=code)
     return (runtime, actor, code)
@@ -113,19 +124,26 @@ def execute(args):
         config = read_case_config(Path(args.case_config))
         args.case = config.get('case_id', args.case)
         args.command, args.workflow = 'start', 'scientific'
+    if args.command == 'start' and args.goal is None:
+        args.goal = config.get('physics_goal', 'Analyze the configured case') if config else (
+            'Implement value() in sample.py returning integer 2' if args.workflow == 'code' else 'Validate the synthetic observable')
     component(args.case)
     if args.command != 'start':
         component(args.run)
     root = create_host() if args.command == 'start' and args.host is None else host_root(args.host)
-    with closing(Coordinator(root, clock=FakeClock(100, 0))) as coordinator:
-        if args.command != 'start':
-            goal = loads(read_regular(root / args.case / args.run / 'root_goal.json'))
-            config = goal.get('case_config')
+    live = bool(getattr(args, 'live', False))
+    if args.command != 'start':
+        goal = loads(read_regular(root / args.case / args.run / 'root_goal.json'))
+        config, live = goal.get('case_config'), goal.get('live', False)
+    from lqcd_agent.control.clock import HostClock
+    from lqcd_agent.settings import ApplicationSettings
+    settings = ApplicationSettings.load() if live and args.command in ('start', 'resume', 'fork', 'replay') else None
+    with closing(Coordinator(root, clock=HostClock() if live else FakeClock(100, 0))) as coordinator:
         from lqcd_agent.science import ScientificAgent
-        runtime, actor, code = assemble(coordinator, ScientificAgent(root, config) if config is not None else None)
+        runtime, actor, code = assemble(coordinator, ScientificAgent(root, config, provider=settings.provider() if settings else None) if config is not None else None, live=live)
         plane = runtime.plane
         if args.command == 'start':
-            inputs = {'root_goal': {'goal': args.goal, 'workflow': args.workflow}, 'input_snapshot': {'kind': 'current_mock' if config is None else 'scientific_case', 'case_config': config}}
+            inputs = {'root_goal': {'goal': args.goal, 'workflow': args.workflow, 'live': live}, 'input_snapshot': {'kind': 'current_mock' if config is None else 'scientific_case', 'case_config': config}}
             if config is not None:
                 inputs['root_goal']['case_config'] = config
             result = plane.start_run(StartRunRequest(args.case, inputs, digest(inputs), args.key), actor=actor)
@@ -139,6 +157,8 @@ def execute(args):
                 result = create(request, actor=actor)
                 locator = result['result']['run_locator']
                 runtime.run(locator)
+            elif args.command == 'status':
+                pass
             elif args.command == 'cancel':
                 plane.external_adapter = CodeExternalStop(coordinator, code.backend, code.containment, code.backend.read_receipt)
                 plane.cancel_pause(CancelPauseRequest(locator, args.pause, args.key, 'operator_cancel'), actor=actor)
@@ -152,12 +172,25 @@ def execute(args):
                 else:
                     require(pause['reason'] == 'external_result', 'Human Resume requires a business response')
                     producer = pause['input_contract']['producer_operation_id']
-                    delivery = root / 'synthetic_deliveries' / producer
-                    final = code.finalize(producer, tool_audit=read_regular(delivery / 'tool-audit.jsonl'), patch=read_regular(delivery / 'patch.diff'))
+                    if live:
+                        from lqcd_agent.code_agent.codex_backend import seal_codex_result
+                        audit, patch = seal_codex_result(code.backend, coordinator, producer, code.base_repository, code.containment)
+                    else:
+                        delivery = root / 'synthetic_deliveries' / producer
+                        audit, patch = read_regular(delivery / 'tool-audit.jsonl'), read_regular(delivery / 'patch.diff')
+                    final = code.finalize(producer, tool_audit=audit, patch=patch)
                     payload = {'producer_operation_id': producer, 'external_final_digest': final['terminal_evidence_digest']}
                     kind = 'external_result'
                 runtime.resume(ResumeRunRequest(locator, args.pause, args.key, kind, payload, digest(payload)), actor=actor)
         run, execution = runtime._records(locator)
         state = execution.projection.value
         inputs = {name: loads(read_regular(run / (name + '.json'))) for name in ('root_goal', 'input_snapshot')}
-        return {'host': root.name.removeprefix('lqcd-agent-host-'), 'run_locator': locator, 'run_status': state['run_status'], 'execution_head': state['execution_head'], 'root_inputs_digest': digest(inputs), 'active_pause': state.get('active_pause')}
+        backend_state = None
+        if live and state.get('active_pause'):
+            opened = next((r for r in reversed(execution.values) if r.get('event') == 'pause_opened' and r.get('pause_id') == state['active_pause']['pause_id']), None)
+            if opened and opened['reason'] == 'external_result':
+                backend_state = code.backend.lookup(opened['input_contract']['producer_operation_id'])
+        result = {'host': root.name.removeprefix('lqcd-agent-host-'), 'run_locator': locator, 'run_status': state['run_status'], 'execution_head': state['execution_head'], 'root_inputs_digest': digest(inputs), 'active_pause': state.get('active_pause')}
+        if live:
+            result['coding_backend'] = backend_state
+        return result

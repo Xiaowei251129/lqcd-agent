@@ -1,139 +1,72 @@
-"""OpenAI-compatible live provider client with explicit opt-in guards."""
-
+"""OpenAI Responses provider with explicit activation and secret-safe errors."""
 from __future__ import annotations
-
-import json
 import os
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
-
 from lqcd_agent.llm.base import LLMProviderConfig, LLMRequest, LLMResponse, ProviderReadiness
 
 
 class LiveProviderError(RuntimeError):
-    def __init__(self, code: str, message: str, *, missing_env_vars: list[str] | None = None) -> None:
+    def __init__(self, code, message, *, missing_env_vars=None):
         super().__init__(message)
         self.code = code
         self.missing_env_vars = missing_env_vars or []
 
-    def as_error(self) -> dict[str, Any]:
-        return {
-            "code": self.code,
-            "message": str(self),
-            "missing_env_vars": self.missing_env_vars,
-        }
+    def as_error(self):
+        return {"code": self.code, "message": str(self), "missing_env_vars": self.missing_env_vars}
 
 
-class OpenAIChatProvider:
-    def __init__(self, config: LLMProviderConfig) -> None:
-        self.config = config
+class OpenAIResponsesProvider:
+    def __init__(self, config: LLMProviderConfig, *, api_key=None, enabled=False, client=None):
+        self.config, self._api_key, self._enabled, self._client = config, api_key, enabled, client
 
-    def _live_enabled(self) -> bool:
-        return os.environ.get(self.config.live_test_env) == "1"
-
-    def _required_env_values(self) -> tuple[str | None, str | None, list[str]]:
-        missing: list[str] = []
-        api_key = os.environ.get(self.config.api_key_env or "")
+    def _credentials(self):
+        key = self._api_key or os.environ.get(self.config.api_key_env or "")
         model = os.environ.get(self.config.model_env or "") or self.config.default_model
-        if self.config.api_key_env and not api_key:
-            missing.append(self.config.api_key_env)
-        if self.config.model_env and not model:
-            missing.append(self.config.model_env)
-        return api_key, model, missing
+        return key, model
 
-    def readiness(self) -> ProviderReadiness:
-        _api_key, model, missing = self._required_env_values()
-        live_enabled = self._live_enabled()
-        return ProviderReadiness(
-            provider=self.config.provider,
-            ready=live_enabled and not missing and bool(self.config.api_base),
-            live_enabled=live_enabled,
-            missing_env_vars=missing,
-            model_configured=bool(model),
-            api_base_configured=bool(self.config.api_base),
-        )
+    def readiness(self):
+        key, model = self._credentials()
+        missing = [name for name, value in [(self.config.api_key_env, key), (self.config.model_env, model)] if name and not value]
+        active = self._enabled or os.environ.get(self.config.live_test_env) == "1"
+        return ProviderReadiness(self.config.provider, bool(active and key and model and self.config.api_base),
+                                 active, missing, bool(model), bool(self.config.api_base))
 
-    def _ensure_live_ready(self) -> tuple[str, str]:
-        if not self._live_enabled():
-            raise LiveProviderError(
-                "live_llm_tests_disabled",
-                f"Live provider calls require {self.config.live_test_env}=1.",
-            )
-        api_key, model, missing = self._required_env_values()
-        if missing:
-            raise LiveProviderError(
-                "missing_provider_environment",
-                "Required provider environment variables are not set.",
-                missing_env_vars=missing,
-            )
-        if not self.config.api_base:
-            raise LiveProviderError("missing_api_base", "Provider api_base is not configured.")
-        assert api_key is not None
-        assert model is not None
-        return api_key, model
-
-    def _max_tokens_field(self, model: str) -> str:
-        if model.startswith("gpt-5"):
-            return "max_completion_tokens"
-        return "max_tokens"
-
-    def generate(self, request: LLMRequest) -> LLMResponse:
-        api_key, model = self._ensure_live_ready()
-        payload = {
-            "model": model,
-            "messages": request.messages,
-            "temperature": self.config.temperature if request.temperature is None else request.temperature,
-            self._max_tokens_field(model): self.config.max_tokens if request.max_tokens is None else request.max_tokens,
-        }
-        if request.response_format == "json_object":
-            payload["response_format"] = {"type": "json_object"}
-        elif request.response_format == "json_schema":
+    def generate(self, request: LLMRequest):
+        if not self.readiness().ready:
+            raise LiveProviderError("provider_not_ready", "OpenAI provider is disabled or missing application configuration.")
+        key, model = self._credentials()
+        options = {"model": model, "input": request.messages,
+                   "max_output_tokens": request.max_tokens if request.max_tokens is not None else self.config.max_tokens,
+                   "store": False}
+        if request.response_format == "json_schema":
             if request.json_schema is None:
-                raise LiveProviderError("missing_json_schema", "JSON schema response format requires a schema.")
-            payload["response_format"] = {
-                "type": "json_schema",
-                "json_schema": request.json_schema,
-            }
-
-        url = self.config.api_base.rstrip("/") + "/chat/completions"
-        http_request = Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
+                raise LiveProviderError("missing_json_schema", "JSON schema output requires a schema.")
+            schema = dict(request.json_schema)
+            if "schema" not in schema:
+                schema = {"name": "agent_output", "schema": schema, "strict": True}
+            options["text"] = {"format": {"type": "json_schema", **schema}}
+        elif request.response_format == "json_object":
+            options["text"] = {"format": {"type": "json_object"}}
+        elif request.response_format != "text":
+            raise LiveProviderError("unsupported_response_format", "Unsupported OpenAI output format.")
+        if not model.startswith(("gpt-5", "gpt-6", "o1", "o3", "o4")):
+            options["temperature"] = request.temperature if request.temperature is not None else self.config.temperature
         try:
-            with urlopen(http_request, timeout=self.config.timeout_seconds) as response:
-                body = json.loads(response.read().decode("utf-8"))
-        except HTTPError as exc:
-            raise LiveProviderError("provider_http_error", f"Provider request failed with HTTP {exc.code}.") from exc
-        except URLError as exc:
-            raise LiveProviderError("provider_network_error", "Provider request failed before a response was returned.") from exc
-        except json.JSONDecodeError as exc:
-            raise LiveProviderError("provider_response_not_json", "Provider response was not valid JSON.") from exc
-
-        choices = body.get("choices", [])
-        if not choices:
-            raise LiveProviderError("provider_response_missing_choice", "Provider response did not include choices.")
-        first_choice = choices[0]
-        if first_choice.get("finish_reason") == "length":
-            raise LiveProviderError(
-                "finish_reason_length",
-                "Provider stopped because the completion token limit was reached before a complete JSON artifact.",
-            )
-        message = first_choice.get("message", {})
-        content = message.get("content")
-        if not isinstance(content, str):
-            raise LiveProviderError("provider_response_missing_content", "Provider response content was missing.")
-
-        return LLMResponse(
-            provider=self.config.provider,
-            model=str(body.get("model") or model),
-            content=content,
-            finish_reason=first_choice.get("finish_reason"),
-            usage=body.get("usage", {}) if isinstance(body.get("usage"), dict) else {},
-        )
+            from openai import OpenAI, APIError
+            client = self._client or OpenAI(api_key=key, base_url=self.config.api_base,
+                timeout=self.config.timeout_seconds, max_retries=0)
+            try:
+                response = client.responses.create(**options)
+            finally:
+                if self._client is None:
+                    client.close()
+        except APIError as error:
+            status = getattr(error, "status_code", None)
+            raise LiveProviderError("provider_api_error", f"OpenAI request failed (HTTP {status or 'unavailable'}).") from None
+        if response.status != "completed":
+            raise LiveProviderError("response_incomplete", "OpenAI did not return a completed response.")
+        content = response.output_text
+        if not isinstance(content, str) or not content:
+            raise LiveProviderError("response_missing_text", "OpenAI returned no usable text or declined the request.")
+        usage = response.usage.model_dump() if response.usage else {}
+        return LLMResponse(provider="openai", model=response.model, content=content, finish_reason="stop", usage=usage)

@@ -1,6 +1,6 @@
 # LQCD Agent
 
-An AI Research Partner for LQCD with controlled planning, code/analysis work, scientific review, human decisions and attributable results. This version uses deterministic scientific roles and a Fake coding backend; it makes no real-provider or physics-readiness claim.
+An AI Research Partner for LQCD with controlled planning, code/analysis work, scientific review, human decisions and attributable results. Offline mode uses deterministic roles and a Fake coding backend. Explicit live mode uses OpenAI Responses for planning/review and an independent Codex SDK backend for bounded coding proposals. Software checks do not establish physics readiness.
 
 ## Use
 
@@ -13,6 +13,23 @@ lqcd-agent-demo --port 8000
 ```
 
 The demo binds to `127.0.0.1`. CLI, demo and scientific cases use the same canonical engine. The CLI returns the Host, Run and Pause identifiers needed for resume, cancel, fork and replay; see each subcommand's `--help`.
+
+## Application API and coding
+
+Create a private `.env` from `.env.example`, set `OPENAI_API_KEY`, and run `chmod 600 .env`. The file is ignored by Git. Planner, reviewer and Codex use this application key; models default to `gpt-6-luna`. Nothing depends on your interactive Codex session or login.
+
+```bash
+lqcd-agent run --case-config configs/example.json --live --key live-science
+lqcd-agent start --workflow code --live --key live-code
+lqcd-agent status --host HOST --case case --run RUN
+lqcd-agent resume --host HOST --case case --run RUN --pause PAUSE --key consume-code
+```
+
+Copy Host, Run and Pause identifiers from the JSON output. Poll `status` until `coding_backend.status` is `completed`, then resume within the 240-second coding window. Resume applies the bounded proposal, seals it, independently checks syntax and consumes it through the existing control path. Use `cancel` with the same identifiers to stop the original job. Status does not call a model or renew a lease. Backend failures are retained under the private Host's `coding_jobs` directory.
+
+The current coding workflow is a small integration example: change `sample.py` so `value()` returns integer 2. The Host checks its exact allowed AST before execution. Codex proposes UTF-8 files; it cannot run commands or directly edit the workspace. Arbitrary program execution is not supported on this OLCF host because user namespaces are disabled. Scientific case planning that requires a new analysis implementation still pauses for a scoped implementation decision; a sample program is never substituted for scientific code.
+
+Live requests transmit the supplied task and selected context to OpenAI and incur API usage. Codex's private job records contain turn IDs and reported token usage; control `llm_calls` counts logical invocations, not transport retries. SDK jobs have a time limit, not a guaranteed dollar/token cap. Use project spending limits for billing control. See [security boundaries](docs/SECURITY_AND_DATA_POLICY.md).
 
 ## Develop
 

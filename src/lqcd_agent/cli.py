@@ -10,13 +10,14 @@ def host_root(identifier):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("start", "run", "resume", "replay", "fork", "cancel"):
+    for name in ("start", "run", "resume", "replay", "fork", "cancel", "status"):
         command = commands.add_parser(name)
         command.add_argument("--host", required=name not in ("start", "run"))
         command.add_argument("--case", default="case")
-        command.add_argument("--key", required=True)
+        command.add_argument("--key", required=name != "status")
         if name in ("start", "run"):
-            command.add_argument("--goal", default="Validate the synthetic observable")
+            command.add_argument("--goal", default=None)
+            command.add_argument("--live", action="store_true", help="Opt in to application API calls; coding uses bounded proposals")
             command.add_argument("--workflow", choices=("no-code", "code", "human"), default="no-code")
             if name == "run":
                 command.add_argument("--case-config", required=True)

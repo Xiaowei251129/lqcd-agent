@@ -410,10 +410,12 @@ class ExternalNormalFinal:
         provider = WorkspaceProvider(coordinator.root / "code_workspaces")
         base = immutable_git_tree(self.base_repository, task["base_revision"])
         now = coordinator._time().monotonic_seconds
-        duration = now - source["dispatch_started_at"]
-        require(duration >= 0, "Backend active interval moved backward")
         prior_seal = directory / "workspace_seal.json"
-        sealed_at = loads(read_regular(prior_seal))["sealed_at"] if prior_seal.exists() else now
+        finished_at = loads(read_regular(prior_seal))["sealed_at"] if prior_seal.exists() else now
+        require(source["dispatch_started_at"] <= finished_at <= now, "Invalid backend stop interval")
+        duration = finished_at - source["dispatch_started_at"]
+        require(duration >= 0, "Backend active interval moved backward")
+        sealed_at = finished_at
         boundary(coordinator.observer, "external.workspace_seal", "before", value=source)
         changes, seal = seal_workspace(provider, task, manifest, witness, base,
                                        backend_status=status["status"], stop_proof=stop_proof,

@@ -22,6 +22,10 @@ class CodingBackend(Protocol):
 
     def cancel(self, producer_operation_id, typed_reason): ...
 
+    def read_receipt(self, reference): ...
+
+    def read_result(self, reference): ...
+
 
 def validate_receipt(value, task, manifest):
     value = loads(value) if type(value) in (str, bytes) else loads(canonical_bytes(value))

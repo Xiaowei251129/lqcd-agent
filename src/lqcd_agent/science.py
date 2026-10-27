@@ -4,8 +4,10 @@ from pathlib import Path
 
 
 class ScientificAgent:
-    def __init__(self, host, config):
+    def __init__(self, host, config, *, provider=None):
         self.host, self.config = Path(host), config
+        self.provider = provider
+        self.timeout_seconds = provider.config.timeout_seconds if provider else 1
 
     def run(self, node, context, *, timeout_seconds):
         identity = context['identity']
@@ -19,7 +21,7 @@ class ScientificAgent:
             from .tools.repo_inventory import build_repo_inventory
             result = run_method_planner(user_goal=context['root_goal']['goal'], case_config=self.config,
                 repo_inventory=build_repo_inventory(Path(__file__).resolve().parents[2]),
-                output_dir=output, run_id=identity['run_id'])
+                output_dir=output, run_id=identity['run_id'], provider=self.provider)
             if result['status'] != 'success' or result['code_needed']:
                 diagnostic.update(status='failed', category='implementation_gap', affected_layer='plan', risk='high', human_need='approval')
             content = {'code_needed': False, 'domain_result': result}
@@ -38,7 +40,7 @@ class ScientificAgent:
             result = self._artifact(context, 'run_result.json')['domain_result']
             plan = self._artifact(context, 'method_plan.json')['domain_result']['method_plan_path']
             reviewed = run_scientific_reviewer(run_id=identity['run_id'], case_id=identity['case_id'], run_output_dir=output,
-                run_result_path=result['run_result_path'], analysis_outputs_dir=result['analysis_outputs_dir'], method_plan_path=plan)
+                run_result_path=result['run_result_path'], analysis_outputs_dir=result['analysis_outputs_dir'], method_plan_path=plan, provider=self.provider)
             report = json.loads(Path(reviewed['scientific_review_report_path']).read_text())
             diagnostic['risk'] = report.get('risk_level', 'high')
             if diagnostic['risk'] in ('high', 'critical'):

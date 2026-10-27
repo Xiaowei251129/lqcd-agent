@@ -25,7 +25,9 @@ class Clock(Protocol):
 
 class HostClock:
     def __init__(self):
-        self.epoch_id = "host_clock_" + uuid.uuid4().hex
+        from pathlib import Path
+        boot = Path("/proc/sys/kernel/random/boot_id")
+        self.epoch_id = "host_clock_" + (boot.read_text().strip() if boot.exists() else uuid.uuid4().hex)
 
     def now(self):
         return Timestamp("host", time.time(), time.monotonic())

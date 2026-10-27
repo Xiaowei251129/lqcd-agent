@@ -408,10 +408,11 @@ class ProductNode:
             content = {'reasons': [diagnostic['category']], 'evidence': diagnostic['evidence'], 'risk_level': diagnostic['risk']}
         else:
 
+            timeout = getattr(self.agent_port, 'timeout_seconds', 1)
             def effect():
-                return self.agent_port.run(node, context, timeout_seconds=1)
+                return self.agent_port.run(node, context, timeout_seconds=timeout)
             try:
-                outcome = product_resource(port, resource_kind='llm_call', resource_id='domain-diagnosis', input_digest=digest(context), config_digest=digest({'node': node, 'structured_output': True}), timeout_seconds=1, effect=effect)
+                outcome = product_resource(port, resource_kind='llm_call', resource_id='domain-diagnosis', input_digest=digest(context), config_digest=digest({'node': node, 'structured_output': True}), timeout_seconds=timeout, effect=effect)
                 closed(outcome, ('diagnostic', 'content'))
                 require(type(outcome['content']) is dict and type(outcome['diagnostic']) is dict, 'Unstructured Agent output')
                 diagnostic, content = (outcome['diagnostic'], outcome['content'])
