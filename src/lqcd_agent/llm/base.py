@@ -19,7 +19,6 @@ class LLMProviderConfig:
     temperature: float = 0.0
     live_test_env: str = "RUN_LIVE_LLM_TESTS"
     dry_run_only: bool = False
-    raw: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

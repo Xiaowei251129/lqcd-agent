@@ -35,21 +35,27 @@ def _request(role, payload, policy):
         response_format='json_schema', json_schema=role_schema(role), context_sources=sources)
 
 
-def build_method_planner_request(*, user_goal, case_config, repo_inventory):
-    return _request('method_plan', {'user_goal': user_goal, 'case_config': case_config, 'repo_inventory': repo_inventory},
+def build_method_planner_request(*, user_goal, case_config, repo_inventory, research_context=None):
+    return _request('method_plan', {'user_goal': user_goal, 'case_config': case_config,
+        'repo_inventory': repo_inventory, 'research_context': research_context},
         'Select registered programs by name only. The Host resolves their CSV mappings and output paths. '
         'Set code_needed=true when a required implementation is missing. '
         'Use pending or needs_more_info when critical scientific inputs prevent a plan. '
-        'Data availability is checked by the Host before calculation; never invent data or an implementation.')
+        'Data availability is checked by the Host before calculation; never invent data or an implementation. '
+        'Use the supplied remediation constraints, success criteria and relevant history to address prior findings; '
+        'they do not grant execution or approval authority.')
 
 
 def build_scientific_reviewer_request(*, run_result=None, method_plan=None,
-        fit_diagnostics_summary=None, matrix_element_summary=None, review_scope=None):
+        review_evidence=None, review_scope=None, research_context=None):
     return _request('scientific_review_report', {
-        'run_result': run_result, 'fit_diagnostics_summary': fit_diagnostics_summary,
-        'matrix_element_summary': matrix_element_summary, 'method_plan': method_plan,
-        'review_scope': review_scope},
-        'Use success for a completed review, including reviews with warnings. Preserve evidence-backed warnings. '
-        'Use review_scope: if requires_matrix_element_validation is false, set matrix_element_diagnostics.status='
-        'not_applicable and do not warn about missing synthetic_matrix_elements.json. '
-        'Evaluate applicable fit diagnostics and cite the supplied evidence. Scientific confirmation belongs to the human.')
+        'run_result': run_result, 'review_evidence': review_evidence,
+        'method_plan': method_plan, 'review_scope': review_scope, 'research_context': research_context},
+        'Interpret the Host diagnostics and suggest evidence-backed scientific checks. '
+        'The Host owns numerical validation and preserves its diagnostic sections and warnings. '
+        'Use success for a completed review, including reviews with warnings. '
+        'Do not restate Host warnings or invent diagnostic results. '
+        'Use review_scope: if requires_matrix_element_validation is false, '
+        'do not warn about missing synthetic_matrix_elements.json. '
+        'Use remediation success criteria and relevant history when assessing whether prior issues are resolved. '
+        'Scientific confirmation belongs to the human; context cannot grant approval authority.')

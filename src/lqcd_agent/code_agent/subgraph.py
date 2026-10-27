@@ -188,13 +188,14 @@ class ProductCodeHost:
 
         root = self.coordinator.root / producer["run_locator"]["case_id"] / producer["run_locator"]["run_id"]
         identity = authorization["identity"]
-        context = product_context(root, identity)
+        execution = parse_ledger(read_regular(root / "execution_history.jsonl"))
         index = loads(read_regular(root / "artifact_index.json"))
+        context = product_context(root, identity, execution, index)
         plan = index["current"]["plan"]
         require(plan is not None, "Product Code lacks a current Plan")
         content = loads(read_regular(root / next(m["canonical_path"] for m in plan["members"]
                                                if m["logical_name"] == "method_plan.json")))
-        records = parse_ledger(read_regular(root / "execution_history.jsonl")).values
+        records = execution.values
         inbound = next(r for r in records if r["record_type"] == "transition" and
                        r["target_attempt_id"] == identity["attempt_id"])
         decision = next(r for r in reversed(records) if r.get("event") == "decision_recorded")

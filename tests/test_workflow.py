@@ -1,6 +1,9 @@
 """Scientific entry uses the canonical durable engine."""
 import json
+import pytest
 from pathlib import Path
+from lqcd_agent.control.execution import parse_ledger
+from lqcd_agent.control.strict_json import ControlIntegrityError
 from tests.support import command
 from tests.test_cli import persisted
 
@@ -22,3 +25,15 @@ def test_scientific_case_uses_canonical_engine(tmp_path):
     assert index['current']['terminal'] is None
     decision=json.loads(Path(index['current']['decision']['state_paths']['decision_log_path']).read_text())
     assert decision['risk_level'] == 'high'
+
+    prefix = parse_ledger(b'\n'.join(execution.records[:-1]) + b'\n')
+    before = prefix.canonical
+    record = execution.values[-1]
+    extended = prefix.append(record)
+    assert extended.canonical == execution.canonical
+    record['previous_execution_head'] = '0' * 64
+    assert prefix.canonical == before and extended.canonical == execution.canonical
+    with pytest.raises(ControlIntegrityError):
+        prefix.append(record)
+    with pytest.raises(ControlIntegrityError):
+        parse_ledger(before[:-1])

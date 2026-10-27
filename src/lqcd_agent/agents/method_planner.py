@@ -11,7 +11,6 @@ from typing import Any
 
 from lqcd_agent.llm.base import LLMProvider
 from lqcd_agent.llm.prompts import build_method_planner_request
-from lqcd_agent.llm.provider_factory import create_provider_from_config_path
 from lqcd_agent.llm.schemas import validate_proposal, artifact_payload
 from lqcd_agent.llm.structured_output import (
     parse_json_object,
@@ -282,6 +281,7 @@ def _run_provider_method_planner(
     output_dir: str | Path,
     run_id: str,
     provider: LLMProvider,
+    research_context: dict[str, Any] | None,
 ) -> dict[str, Any]:
     case_id = str((case_config or {}).get("case_id", "unknown_case"))
     request = None
@@ -290,6 +290,7 @@ def _run_provider_method_planner(
             user_goal=user_goal,
             case_config=case_config,
             repo_inventory=repo_inventory,
+            research_context=research_context,
         )
         persist_context(output_dir, request)
         # Resolve the frozen catalog again before using it for execution mappings.
@@ -432,14 +433,12 @@ def run_method_planner(
     output_dir: str | Path,
     run_id: str = "mock_run",
     provider: LLMProvider | None = None,
-    provider_config_path: str | Path | None = None,
+    research_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if case_config and repo_inventory and case_config.get('raw_data_path') and repo_inventory.get('repo_root'):
         if 'dataset_snapshot' not in repo_inventory:
             from lqcd_agent.tools.dataset import snapshot_dataset
             repo_inventory = {**repo_inventory, 'dataset_snapshot': snapshot_dataset(case_config, repo_inventory['repo_root'])}
-    if provider is None and provider_config_path is not None:
-        provider = create_provider_from_config_path(provider_config_path)
     if provider is not None:
         return _run_provider_method_planner(
             user_goal=user_goal,
@@ -448,6 +447,7 @@ def run_method_planner(
             output_dir=output_dir,
             run_id=run_id,
             provider=provider,
+            research_context=research_context,
         )
 
     plan = build_method_plan(

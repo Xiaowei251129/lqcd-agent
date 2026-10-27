@@ -8,18 +8,16 @@ AttemptKind = Literal['method_planner', 'code_agent', 'analysis_engineer', 'scie
 ATTEMPT_KIND_BY_NODE: dict[str, AttemptKind] = {'method_planner': 'method_planner', 'code_agent': 'code_agent', 'analysis_engineer': 'analysis_engineer', 'scientific_reviewer': 'scientific_reviewer', 'decision_coordinator': 'decision_coordinator', 'human_approval_gate': 'human_gate', 'human_gate': 'human_gate', 'memory_report': 'memory_report'}
 PRODUCT_CONTEXT_SLOTS = {'method_planner': ('plan',), 'code_agent': ('plan', 'code'), 'analysis_engineer': ('plan', 'code', 'analysis'), 'scientific_reviewer': ('plan', 'analysis', 'review'), 'decision_coordinator': ('plan', 'code', 'analysis', 'review', 'decision', 'approval'), 'human_gate': ('decision', 'approval'), 'memory_report': ('review', 'decision', 'approval')}
 
-def product_context(root, identity):
+def product_context(root, identity, execution, index):
     """Resolve bounded input references for one fenced canonical invocation."""
     from lqcd_agent.control.coordinator import read_regular
-    from lqcd_agent.control.execution import parse_ledger
     from lqcd_agent.control.strict_json import loads, require
     root = Path(root)
-    execution = parse_ledger(read_regular(root / 'execution_history.jsonl'))
     state, records = (execution.projection.value, execution.values)
     require(state['schema_version'] == '0.4' and all((state[k] == identity[k] for k in identity)), 'Context does not belong to the current canonical Attempt')
     scheduled = next((row for row in records if row['record_type'] == 'attempt' and row['event'] == 'scheduled' and (row['attempt_id'] == identity['attempt_id'])))
     registered = {row['artifact_id']: row['pointer'] for row in (loads(line) for line in read_regular(root / 'artifact_history.jsonl').splitlines()) if row['event'] == 'registered'}
-    current = loads(read_regular(root / 'artifact_index.json'))['current']
+    current = index['current']
     selected = {slot: pointer for slot, pointer in current.items() if pointer is not None}
     for slot, artifact_id in scheduled['input_references']['current_artifact_ids'].items():
         require(artifact_id in registered, 'Context references an unregistered source')

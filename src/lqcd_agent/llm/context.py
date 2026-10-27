@@ -32,6 +32,11 @@ def review_context_view(sources):
         if source is not None:
             summary.update({key: source[key] for key in ('status', 'warnings', 'errors', *fields) if key in source})
         view[name + '_summary'] = summary
+    evidence = view.get('review_evidence')
+    if evidence is not None:
+        # Aggregate evidence retains every finding and warning; section lists are duplicates.
+        view['review_evidence'] = {key: ({field: value[field] for field in ('status', 'summary') if field in value}
+            if key.endswith('_diagnostics') else value) for key, value in evidence.items()}
     return view
 
 

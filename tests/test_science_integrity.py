@@ -46,3 +46,43 @@ def test_scientific_confirmation_is_host_policy_not_a_reviewer_risk_field(tmp_pa
     assert result['diagnostic']['risk'] == 'high'
     assert result['diagnostic']['human_need'] == 'approval'
     assert result['diagnostic']['category'] == 'scientific_review'
+
+
+@pytest.mark.parametrize('node', ['method_planner', 'scientific_reviewer'])
+def test_scientific_roles_receive_frozen_remediation_and_history(tmp_path, monkeypatch, node):
+    from copy import deepcopy
+    from lqcd_agent.llm.context import context_reference, read_context_evidence
+    from lqcd_agent.llm.mock_provider import MockLLMProvider
+    from tests.test_research_evidence import inputs
+    from tests.test_scientific_reviewer import _write_effective_mass_artifacts
+
+    class RecordingProvider(MockLLMProvider):
+        def generate(self, request):
+            self.request = request
+            return super().generate(request)
+
+    _, config, inventory, _, _ = inputs(tmp_path)
+    run_dir, result_path, plan_path = _write_effective_mass_artifacts(tmp_path, run_id='run', case_id='case')
+    provider = RecordingProvider()
+    agent = ScientificAgent(tmp_path, config, workspace=tmp_path, provider=provider)
+    monkeypatch.setattr(agent, '_artifact', lambda context, name: {'domain_result': {
+        'run_result_path': str(result_path), 'analysis_outputs_dir': str(run_dir / 'analysis_outputs'),
+        'method_plan_path': str(plan_path)}})
+    context = {'identity': {'attempt_id': 'first', 'case_id': 'case', 'run_id': 'run'},
+        'root_goal': {'goal': 'Estimate effective mass.', 'dataset_snapshot': inventory['dataset_snapshot']},
+        'remediation': {'problem': 'Window stability', 'constraints': ['Preserve measured data'],
+            'success_criteria': ['Compare fit windows']},
+        'relevant_history': [{'artifact_id': 'prior:review', 'status': 'failed'}]}
+    for attempt, criterion in [('first', 'Compare fit windows'), ('second', 'Report unresolved uncertainty')]:
+        context['identity']['attempt_id'] = attempt
+        context['remediation']['success_criteria'] = [criterion]
+        result = agent.run(node, context, timeout_seconds=1)
+        payload = json.loads(provider.request.messages[1]['content'])
+        expected = {key: deepcopy(context[key]) for key in ('remediation', 'relevant_history')}
+        assert payload['research_context'] == expected
+        if node == 'scientific_reviewer':
+            assert result['diagnostic']['risk'] == 'high' and result['diagnostic']['human_need'] == 'approval'
+        output = tmp_path / 'domain' / attempt / 'case' / 'run'
+        catalog = context_reference(provider.request.context_sources)
+        context['remediation']['success_criteria'].append('Do not mutate prior context')
+        assert read_context_evidence(output, catalog, 'research_context') == expected

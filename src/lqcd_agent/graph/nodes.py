@@ -352,10 +352,10 @@ class ProductNode:
         from lqcd_agent.graph.routing import select_product_route
         from lqcd_agent.graph.state import product_context
         node = identity['attempt_kind']
-        context = product_context(self.root, identity)
-        records = parse_ledger(read_regular(self.root / 'execution_history.jsonl')).values
-        state = parse_ledger(read_regular(self.root / 'execution_history.jsonl')).projection.value
+        execution = parse_ledger(read_regular(self.root / 'execution_history.jsonl'))
+        records, state = execution.values, execution.projection.value
         index = loads(read_regular(self.root / 'artifact_index.json'))
+        context = product_context(self.root, identity, execution, index)
         refs = {slot: pointer['artifact_id'] for slot, pointer in index['current'].items() if pointer is not None}
         refs[SLOT_BY_ATTEMPT_KIND[node]] = identity['attempt_id'] + ':' + SLOT_BY_ATTEMPT_KIND[node]
         if node == 'human_gate':
@@ -444,13 +444,13 @@ class ProductNode:
         if node == 'decision_coordinator':
             if authorization is None and sequence is None and (previous['status'] != 'success' or previous['candidates']):
                 product_observe_failure(self.root, source, previous, port, records)
-                records = parse_ledger(read_regular(self.root / 'execution_history.jsonl')).values
-                state = parse_ledger(read_regular(self.root / 'execution_history.jsonl')).projection.value
+                execution = parse_ledger(read_regular(self.root / 'execution_history.jsonl'))
+                records, state = execution.values, execution.projection.value
                 view['state'] = state
             issued = product_issue_grant(self.root, identity, diagnostic, authorization, port, records, state, sequence)
             if issued is not None:
-                records = parse_ledger(read_regular(self.root / 'execution_history.jsonl')).values
-                state = parse_ledger(read_regular(self.root / 'execution_history.jsonl')).projection.value
+                execution = parse_ledger(read_regular(self.root / 'execution_history.jsonl'))
+                records, state = execution.values, execution.projection.value
                 view['state'] = state
             selection = select_product_route(view, diagnostic, human_authorization=authorization, stop_sequence_id=sequence)
             target = selection['target_node']

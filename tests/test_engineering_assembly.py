@@ -55,15 +55,3 @@ def test_failed_review_is_a_failed_domain_diagnostic(tmp_path, monkeypatch):
     value = agent.run('scientific_reviewer', {'identity': {'attempt_id': 'a', 'case_id': 'c', 'run_id': 'r'}}, timeout_seconds=1)
     assert value['diagnostic']['status'] == 'failed'
     assert value['diagnostic']['human_need'] == 'approval' and value['diagnostic']['risk'] == 'high'
-
-
-def test_provider_configuration_uses_the_shared_loader(tmp_path):
-    from lqcd_agent.llm.provider_factory import load_provider_config
-    path = tmp_path/'provider.yaml'
-    path.write_text('schema_version: "0.1"\nprovider: mock\ndefault_model: "model#literal"\nmetadata:\n  tags: [one, two]\n')
-    config = load_provider_config(path)
-    assert config.default_model == 'model#literal'
-    assert config.raw['metadata'] == {'tags':['one','two']}
-    path.write_text('provider: mock\nprovider: openai\n')
-    with pytest.raises(ValueError):
-        load_provider_config(path)

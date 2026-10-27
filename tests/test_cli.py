@@ -1,16 +1,36 @@
 """Real independent CLI processes verify durable canonical control material."""
 from contextlib import closing
+from copy import deepcopy
 import json
 import sqlite3
 import pytest
 from tests.support import command
 from lqcd_agent.control.execution import parse_ledger
 from lqcd_agent.control.integrity import validate_run_root
-from lqcd_agent.control.strict_json import digest, loads
+from lqcd_agent.control.strict_json import ControlIntegrityError, digest, loads
 from lqcd_agent.cli import host_root
 
 def arguments(result):
     return ('--host', result['host'], '--case', result['run_locator']['case_id'], '--run', result['run_locator']['run_id'])
+
+def assert_owned_journals_reject_tampering(host):
+    from lqcd_agent.control.capabilities import invocation_prefix
+    with closing(sqlite3.connect('file:' + str(host / '.lqcd/control_operations.sqlite') + '?mode=ro', uri=True)) as db:
+        values = [loads(row[0]) for row in db.execute('SELECT value FROM invocation_capabilities')]
+    for name in ('budget_intents', 'verification_intents'):
+        value = next(v for v in values if len(v.get(name, [])) >= 2)
+        assert invocation_prefix(value)['content'] == value[name][-1]['content']
+        for field in ('previous', 'content', 'record'):
+            changed = deepcopy(value)
+            entry = changed[name][-1]
+            if field == 'record':
+                entry['record']['previous_execution_head'] = '0' * 64
+            else:
+                entry[field] += '\n'
+            entry['intent_digest'] = digest({k: v for k, v in entry.items() if k not in ('intent_digest', 'published')})
+            with pytest.raises(ControlIntegrityError):
+                invocation_prefix(changed)
+        assert invocation_prefix(value)['content'] == value[name][-1]['content']
 
 def persisted(result):
     root = host_root(result['host'])
@@ -69,6 +89,7 @@ def test_two_code_runs_have_independent_pause_verification_and_analysis():
         roots.append(root)
     assert roots[0] != roots[1]
     persisted(finished)
+    assert_owned_journals_reject_tampering(host_root(host))
 
 def test_human_cancel_and_replay_preserve_the_source():
     paused = command('start', '--workflow', 'human', '--key', 'human')

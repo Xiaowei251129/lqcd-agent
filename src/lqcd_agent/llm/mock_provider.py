@@ -9,35 +9,6 @@ from lqcd_agent.analysis_programs.registry import matching_programs
 from lqcd_agent.llm.base import LLMProviderConfig, LLMRequest, LLMResponse, ProviderReadiness
 
 
-def _flag_severity(value: Any) -> str:
-    text = str(value).lower()
-    if "severe" in text or "critical" in text or "fail" in text or "invalid" in text:
-        return "severe"
-    return "warning"
-
-
-def _review_warning_from_flag(flag: Any, *, path: Any, index: int) -> dict[str, Any]:
-    severity = _flag_severity(flag)
-    return {
-        "section": "matrix_element",
-        "code": "upstream_diagnostic_flag",
-        "severity": severity,
-        "decision_coordinator_flag": severity == "severe",
-        "message": "The provider-backed mock reviewer preserved an upstream diagnostic flag.",
-        "path": path,
-        "field": f"diagnostic_flags[{index}]",
-        "value": flag,
-    }
-
-
-def _has_severe_warning(warnings: list[Any]) -> bool:
-    return any(
-        isinstance(warning, dict)
-        and (warning.get("severity") == "severe" or warning.get("decision_coordinator_flag") is True)
-        for warning in warnings
-    )
-
-
 def _as_string_list(value: Any) -> list[str]:
     if value is None:
         return []
@@ -136,95 +107,10 @@ class MockLLMProvider:
         }
 
     def _scientific_review(self, payload: dict[str, Any]) -> dict[str, Any]:
-        matrix_summary = payload.get("matrix_element_summary")
-        if not isinstance(matrix_summary, dict):
-            matrix_summary = {}
-        review_scope = payload.get("review_scope")
-        if not isinstance(review_scope, dict):
-            review_scope = {}
-        requires_matrix = review_scope.get("requires_matrix_element_validation", True)
-        fit_diagnostics = payload.get("fit_diagnostics_summary")
-        if not isinstance(fit_diagnostics, dict):
-            fit_diagnostics = {"status": "not_populated_mvp"}
-        fit_diagnostics = {**fit_diagnostics, 'findings': [
-            {'message': item} if isinstance(item, str) else item
-            for item in fit_diagnostics.get('findings', [])]}
-        run_summary = payload.get("run_result_summary")
-        if not isinstance(run_summary, dict):
-            run_summary = {}
-        warnings: list[dict[str, Any]] = []
-        flags = matrix_summary.get("diagnostic_flags", [])
-        if requires_matrix and isinstance(flags, list):
-            warnings.extend(
-                _review_warning_from_flag(flag, path=matrix_summary.get("path"), index=index)
-                for index, flag in enumerate(flags)
-            )
-        if run_summary.get("run_success") is False:
-            warnings.append(
-                {
-                    "section": "run_result",
-                    "code": "analysis_run_failed",
-                    "severity": "severe",
-                    "decision_coordinator_flag": True,
-                    "message": "The provider-backed mock reviewer preserved failed-run evidence.",
-                    "path": run_summary.get("path"),
-                    "field": "run_success",
-                    "value": False,
-                }
-            )
-        severe = _has_severe_warning(warnings)
-        confidence = "low" if severe else "medium" if warnings else "high"
-        matrix_status = (
-            "fail"
-            if requires_matrix and severe
-            else "warning"
-            if requires_matrix and warnings
-            else "pass"
-            if requires_matrix
-            else "not_applicable"
-        )
-        summary = (
-            "Provider-backed mock Scientific Reviewer found severe summary evidence."
-            if severe
-            else "Provider-backed mock Scientific Reviewer found warning summary evidence."
-            if warnings
-            else "Provider-backed mock Scientific Reviewer completed structured checks."
-        )
-        return {
-            "status": "success",
-            "summary": summary,
-            "warnings": warnings,
-            "errors": [],
-            "correlator_diagnostics": {"status": "not_populated_mvp"},
-            "fit_diagnostics": fit_diagnostics,
-            "matrix_element_diagnostics": (
-                {"status": matrix_status}
-                if requires_matrix
-                else {
-                    "status": "not_applicable",
-                    "summary": "Matrix-element validation is outside the scope of this case.",
-                    "warnings": [],
-                    "evidence": [],
-                    "findings": [],
-                    "recommended_checks": [],
-                }
-            ),
-            "findings": [{"code": "provider_mock_review_complete"}],
-            "evidence": [
-                {
-                    "path": payload.get("analysis_outputs_dir"),
-                    "field": "provider_mode",
-                    "value": "mock",
-                },
-                {
-                    "path": matrix_summary.get("path"),
-                    "field": "diagnostic_flags",
-                    "value": flags if isinstance(flags, list) else [],
-                }
-            ],
-            "recommended_checks": [],
-            "confidence": confidence,
-        }
+        evidence = payload.get('review_evidence') or {}
+        return {'status': 'success', 'summary': 'Provider-backed mock Scientific Reviewer interpreted Host diagnostics.',
+                'warnings': [], 'errors': [], 'findings': [], 'evidence': [], 'recommended_checks': [],
+                'confidence': evidence.get('confidence', 'high')}
 
     def generate(self, request: LLMRequest) -> LLMResponse:
         payload = self._request_payload(request)

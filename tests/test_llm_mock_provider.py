@@ -70,72 +70,13 @@ def test_llm_call_trace_records_request_response_without_secret_values(tmp_path:
     assert "sk-" not in json.dumps(payload)
 
 
-def test_mock_provider_preserves_severe_reviewer_summary() -> None:
-    provider = MockLLMProvider()
-    response = provider.generate(
-        LLMRequest(
-            messages=[
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {
-                            "artifact_type": "scientific_review_report",
-                            "run_id": "unit_run",
-                            "case_id": "unit_case",
-                            "analysis_outputs_dir": "analysis_outputs",
-                            "matrix_element_summary": {
-                                "path": "analysis_outputs/synthetic_matrix_elements.json",
-                                "diagnostic_flags": ["severe_demo_requires_human_approval"],
-                            },
-                            "run_result_summary": {"run_success": True},
-                        }
-                    ),
-                }
-            ]
-        )
-    )
-    payload = json.loads(response.content)
-
-    assert payload["confidence"] == "low"
-    assert payload["warnings"][0]["severity"] == "severe"
-    assert payload["warnings"][0]["decision_coordinator_flag"] is True
 
 
-def test_mock_provider_marks_fit_only_matrix_review_not_applicable() -> None:
-    provider = MockLLMProvider()
-    response = provider.generate(
-        LLMRequest(
-            messages=[
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {
-                            "artifact_type": "scientific_review_report",
-                            "run_id": "unit_run",
-                            "case_id": "unit_case",
-                            "analysis_outputs_dir": "analysis_outputs",
-                            "matrix_element_summary": {"exists": False, "path": None, "applicable": False},
-                            "review_scope": {
-                                "requires_matrix_element_validation": False,
-                                "has_effective_mass_outputs": True,
-                            },
-                            "run_result_summary": {"run_success": True},
-                        }
-                    ),
-                }
-            ]
-        )
-    )
-    payload = json.loads(response.content)
-
-    assert payload["confidence"] == "high"
-    assert payload["warnings"] == []
-    assert payload["matrix_element_diagnostics"]["status"] == "not_applicable"
 
 
 def test_scientific_reviewer_prompt_includes_scope_policy() -> None:
     request = build_scientific_reviewer_request(
-        fit_diagnostics_summary={"status": "pass"},
+        review_evidence={"fit_diagnostics": {"status": "pass"}},
         review_scope={
             "requires_matrix_element_validation": False,
             "has_effective_mass_outputs": True,
@@ -147,6 +88,6 @@ def test_scientific_reviewer_prompt_includes_scope_policy() -> None:
     assert request.json_schema is not None
     assert request.json_schema["name"] == "scientific_review_report"
     assert payload["review_scope"]["requires_matrix_element_validation"] is False
-    assert payload["fit_diagnostics_summary"]["status"] == "pass"
+    assert payload["review_evidence"]["fit_diagnostics"]["status"] == "pass"
     assert request.json_schema["strict"] is True
     assert "do not warn about missing synthetic_matrix_elements.json" in request.messages[0]["content"]

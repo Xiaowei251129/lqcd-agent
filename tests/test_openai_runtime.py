@@ -62,6 +62,10 @@ def test_application_env_is_private_and_not_inherited(tmp_path, monkeypatch):
     settings = ApplicationSettings.load(path)
     assert settings.api_key == 'private-test-value' and 'private-test-value' not in repr(settings)
     monkeypatch.setenv('OPENAI_API_KEY','personal-test-value')
+    assembled = settings.provider()
+    assert assembled._credentials() == ('private-test-value', 'gpt-6-luna')
+    assert assembled.readiness().live_enabled
+    assert os.environ['OPENAI_API_KEY'] == 'personal-test-value'
     monkeypatch.setenv('CODEX_HOME','/personal/codex')
     assert 'OPENAI_API_KEY' not in child_environment() and 'CODEX_HOME' not in child_environment()
     path.chmod(0o644)
@@ -166,14 +170,18 @@ def test_backend_stop_rejects_foreign_identity_before_signalling(tmp_path, field
         os.killpg(process.pid, signal.SIGKILL); process.wait()
 
 
-def test_provider_factory_keeps_dotenv_out_of_process_environment(tmp_path, monkeypatch):
-    from lqcd_agent.llm.provider_factory import create_provider_from_config_path
-    path=tmp_path/'.env'; path.write_text('OPENAI_API_KEY=private-test-value\nOPENAI_MODEL=gpt-6-luna\n');path.chmod(0o600)
-    config=tmp_path/'provider.yaml';config.write_text('schema_version: "0.1"\nprovider: openai\napi_base: https://api.openai.com/v1\n')
-    monkeypatch.setenv('OPENAI_API_KEY','personal-test-value')
-    p=create_provider_from_config_path(config,env_path=path)
-    assert p._credentials()==('private-test-value','gpt-6-luna')
-    assert os.environ['OPENAI_API_KEY']=='personal-test-value' and not p.readiness().live_enabled
+@pytest.mark.parametrize('name', ['openai', 'deepseek'])
+def test_injected_live_provider_still_requires_explicit_activation(monkeypatch, name):
+    from lqcd_agent.llm.deepseek_client import DeepSeekChatProvider
+    monkeypatch.setenv('RUN_LIVE_LLM_TESTS', '0')
+    config = LLMProviderConfig('0.1', name, api_base='https://example.invalid', default_model='test-model')
+    adapter = OpenAIResponsesProvider if name == 'openai' else DeepSeekChatProvider
+    p = adapter(config, api_key='private-test-value')
+    assert not p.readiness().live_enabled
+    with pytest.raises(LiveProviderError, match='require|disabled'):
+        p.generate(LLMRequest([{'role': 'user', 'content': 'Return JSON'}]))
+    monkeypatch.setenv('RUN_LIVE_LLM_TESTS', '1')
+    assert p.readiness().ready
 
 
 @pytest.mark.parametrize('source,valid', [('def value(): return 2',True),

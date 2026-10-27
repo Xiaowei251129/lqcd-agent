@@ -14,7 +14,7 @@ def main():
     planner = build_method_planner_request(user_goal=config['physics_goal'], case_config=config,
                                           repo_inventory=build_repo_inventory(Path.cwd()))
     reviewer = build_scientific_reviewer_request(run_result={'status': 'success', 'run_success': True},
-        fit_diagnostics_summary={'status': 'pass'}, review_scope={
+        review_evidence={'fit_diagnostics': {'status': 'pass'}}, review_scope={
             'requires_matrix_element_validation': False, 'has_effective_mass_outputs': True})
     samples = []
     for _ in range(50):

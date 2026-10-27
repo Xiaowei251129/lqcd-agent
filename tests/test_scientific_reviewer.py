@@ -1,4 +1,5 @@
 import json
+import pytest
 from pathlib import Path
 
 from lqcd_agent.agents.scientific_reviewer import run_scientific_reviewer
@@ -437,3 +438,46 @@ def test_provider_scientific_reviewer_filters_context_only_warnings(tmp_path: Pa
 
     assert result["status"] == "success"
     assert result["warnings"] == []
+
+
+@pytest.mark.parametrize('defect', ['negative_error', 'missing_matrix', 'invalid_matrix', 'failed_run', 'invalid_run'])
+def test_provider_cannot_override_shared_scientific_diagnostics(tmp_path, defect):
+    payload = _good_matrix_payload()
+    if defect == 'negative_error':
+        payload['matrix_elements'][0]['error'] = -0.01
+    run_dir, result_path, plan_path = _write_run_artifacts(tmp_path, payload)
+    matrix = run_dir/'analysis_outputs/synthetic_matrix_elements.json'
+    if defect == 'missing_matrix': matrix.unlink()
+    elif defect == 'invalid_matrix': matrix.write_text('{')
+    elif defect == 'failed_run':
+        result = json.loads(result_path.read_text()); result['run_success'] = False
+        result_path.write_text(json.dumps(result))
+    elif defect == 'invalid_run': result_path.write_text('{')
+    arguments = dict(run_id='run_a', case_id='case_a', run_output_dir=run_dir,
+                     run_result_path=result_path, method_plan_path=plan_path)
+    baseline = run_scientific_reviewer(**arguments)['report']
+    # A valid but optimistic model response cannot erase deterministic failures.
+    proposal = mock_proposal({'status': 'success', 'summary': 'Everything looks good.',
+                             'confidence': 'high'}, 'scientific_review_report')
+    provider = StaticProvider(json.dumps(proposal))
+    actual = run_scientific_reviewer(**arguments, provider=provider)['report']
+    for section in ('correlator_diagnostics', 'fit_diagnostics', 'matrix_element_diagnostics', 'warnings'):
+        assert actual[section] == baseline[section]
+    assert actual['status'] == 'success'
+    assert actual['confidence'] == baseline['confidence'] == 'low'
+    assert any(w['severity'] == 'severe' for w in actual['warnings'])
+    trace = json.loads((run_dir/'llm_calls/scientific_reviewer.json').read_text())
+    sent = json.loads(trace['request']['messages'][1]['content'])
+    assert sent['review_evidence']['warnings'] == baseline['warnings']
+    assert not {'correlator_diagnostics', 'fit_diagnostics', 'matrix_element_diagnostics'} & proposal.keys()
+
+
+def test_provider_failure_retains_host_scientific_warnings(tmp_path):
+    payload = _good_matrix_payload(); payload['matrix_elements'][0]['error'] = -0.01
+    run_dir, result_path, plan_path = _write_run_artifacts(tmp_path, payload)
+    report = run_scientific_reviewer(run_id='run_a', case_id='case_a', run_output_dir=run_dir,
+        run_result_path=result_path, method_plan_path=plan_path, provider=StaticProvider('{'))['report']
+    assert report['status'] == 'failed' and report['confidence'] == 'low'
+    assert report['matrix_element_diagnostics']['status'] == 'severe'
+    assert any(w['code'] == 'non_positive_matrix_error' for w in report['warnings'])
+    assert report['errors'][0]['code'] == 'invalid_json'

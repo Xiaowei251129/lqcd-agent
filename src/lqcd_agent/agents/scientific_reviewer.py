@@ -12,8 +12,7 @@ from lqcd_agent.analysis.fit_diagnostics import diagnose_fit_outputs
 from lqcd_agent.analysis.matrix_element_diagnostics import diagnose_matrix_elements
 from lqcd_agent.llm.base import LLMProvider
 from lqcd_agent.llm.prompts import build_scientific_reviewer_request
-from lqcd_agent.llm.provider_factory import create_provider_from_config_path
-from lqcd_agent.llm.schemas import validate_proposal, artifact_payload
+from lqcd_agent.llm.schemas import validate_proposal
 from lqcd_agent.llm.structured_output import (
     parse_json_object,
     provider_exception_artifact,
@@ -149,14 +148,11 @@ def _not_applicable_matrix_element_diagnostics() -> dict[str, Any]:
     }
 
 
-def _unique_strings(values: list[str]) -> list[str]:
-    seen: set[str] = set()
-    unique: list[str] = []
+def _unique_items(values):
+    unique = []
     for value in values:
-        if value in seen:
-            continue
-        seen.add(value)
-        unique.append(value)
+        if value not in unique:
+            unique.append(value)
     return unique
 
 
@@ -196,63 +192,6 @@ def _write_report(path: Path, report: dict[str, Any]) -> str:
     return str(path)
 
 
-def _artifact_summary(payload: dict[str, Any] | None, *, path: str | Path | None) -> dict[str, Any]:
-    if payload is None:
-        return {"exists": bool(path and Path(path).exists()), "path": str(path) if path else None}
-    return {
-        "exists": True,
-        "path": str(path) if path else None,
-        "schema_version": payload.get("schema_version"),
-        "status": payload.get("status"),
-        "warnings": payload.get("warnings", []),
-        "errors": payload.get("errors", []),
-    }
-
-
-def _matrix_element_summary(payload: dict[str, Any] | None, *, path: str | Path | None) -> dict[str, Any]:
-    summary = _artifact_summary(payload, path=path)
-    if payload is None:
-        return summary
-    rows = payload.get("matrix_elements", [])
-    summary.update(
-        {
-            "source_kind": payload.get("source_kind"),
-            "normalization": payload.get("normalization"),
-            "diagnostic_flags": payload.get("diagnostic_flags", []),
-            "matrix_element_count": len(rows) if isinstance(rows, list) else None,
-            "golden_example": payload.get("golden_example"),
-        }
-    )
-    return summary
-
-
-def _provider_failure_report(
-    *,
-    run_id: str,
-    case_id: str,
-    artifact: dict[str, Any],
-) -> dict[str, Any]:
-    return {
-        **artifact,
-        "run_id": run_id,
-        "case_id": case_id,
-        "correlator_diagnostics": {"status": "provider_validation_failed"},
-        "fit_diagnostics": {"status": "provider_validation_failed"},
-        "matrix_element_diagnostics": {"status": "provider_validation_failed"},
-        "findings": [],
-        "evidence": [],
-        "recommended_checks": ["Inspect provider validation errors before decision coordination."],
-        "confidence": "low",
-    }
-
-
-def _flag_severity(flag: Any) -> str:
-    text = str(flag).lower()
-    if "severe" in text or "critical" in text or "fail" in text:
-        return "severe"
-    return "warning"
-
-
 def _is_ungrounded_provider_warning(warning: dict[str, Any]) -> bool:
     if warning.get("severity") == "severe" or warning.get("decision_coordinator_flag") is True:
         return False
@@ -269,240 +208,6 @@ def _is_out_of_scope_matrix_warning(warning: dict[str, Any]) -> bool:
     return "matrix" in text and ("missing" in text or "absent" in text or "synthetic_matrix_elements" in text)
 
 
-def _normalize_provider_review_payload(
-    payload: dict[str, Any],
-    *,
-    fit_diagnostics: dict[str, Any],
-    matrix_summary: dict[str, Any],
-    review_scope: dict[str, Any],
-) -> dict[str, Any]:
-    normalized = dict(payload)
-    warnings = normalized.get("warnings", [])
-    if not isinstance(warnings, list):
-        warnings = []
-    preserved_warnings = [
-        warning
-        for warning in warnings
-        if not (
-            isinstance(warning, dict)
-            and _is_ungrounded_provider_warning(warning)
-        )
-    ]
-    if fit_diagnostics.get("status") not in {None, "not_found", "not_populated_mvp"}:
-        normalized["fit_diagnostics"] = fit_diagnostics
-        fit_warnings = fit_diagnostics.get("warnings", [])
-        if isinstance(fit_warnings, list):
-            preserved_warnings.extend(warning for warning in fit_warnings if isinstance(warning, dict))
-
-    if not review_scope.get("requires_matrix_element_validation"):
-        preserved_warnings = [
-            warning
-            for warning in preserved_warnings
-            if not (isinstance(warning, dict) and _is_out_of_scope_matrix_warning(warning))
-        ]
-        normalized["warnings"] = preserved_warnings
-        normalized["matrix_element_diagnostics"] = _not_applicable_matrix_element_diagnostics()
-        structured_warnings = [warning for warning in preserved_warnings if isinstance(warning, dict)]
-        normalized["confidence"] = _lower_confidence(
-            normalized.get("confidence"),
-            _confidence_from_warnings(structured_warnings),
-        )
-        return normalized
-
-    structured_warnings = [warning for warning in preserved_warnings if isinstance(warning, dict)]
-    existing_values = {str(warning.get("value")) for warning in structured_warnings}
-    flags = matrix_summary.get("diagnostic_flags", [])
-    if isinstance(flags, list):
-        for index, flag in enumerate(flags):
-            if str(flag) in existing_values:
-                continue
-            severity = _flag_severity(flag)
-            preserved_warnings.append(
-                {
-                    "section": "matrix_element",
-                    "code": "upstream_diagnostic_flag",
-                    "severity": severity,
-                    "decision_coordinator_flag": severity == "severe",
-                    "message": "The provider-backed reviewer preserved an upstream diagnostic flag.",
-                    "path": matrix_summary.get("path"),
-                    "field": f"diagnostic_flags[{index}]",
-                    "value": flag,
-                }
-            )
-    normalized["warnings"] = preserved_warnings
-    structured_warnings = [warning for warning in preserved_warnings if isinstance(warning, dict)]
-    normalized["confidence"] = _lower_confidence(
-        normalized.get("confidence"),
-        _confidence_from_warnings(structured_warnings),
-    )
-    return normalized
-
-
-def _run_provider_scientific_reviewer(
-    *,
-    run_id: str,
-    case_id: str,
-    run_output_dir: str | Path,
-    run_result_path: str | Path | None,
-    analysis_outputs_dir: str | Path | None,
-    method_plan_path: str | Path | None,
-    provider: LLMProvider,
-) -> dict[str, Any]:
-    run_dir = Path(run_output_dir)
-    run_result = _read_json(run_result_path)
-    method_plan = _read_json(method_plan_path)
-    resolved_analysis_outputs_dir = _resolve_analysis_outputs_dir(
-        run_output_dir=run_dir,
-        analysis_outputs_dir=analysis_outputs_dir,
-        run_result=run_result,
-    )
-    matrix_path = _resolve_matrix_path(
-        run_output_dir=run_dir,
-        analysis_outputs_dir=resolved_analysis_outputs_dir,
-        run_result=run_result,
-    )
-    review_scope = _review_scope(run_result, method_plan)
-    fit_diagnostics = diagnose_fit_outputs(resolved_analysis_outputs_dir)
-    matrix_payload = _read_json(matrix_path)
-    matrix_summary = (
-        _matrix_element_summary(matrix_payload, path=matrix_path)
-        if review_scope["requires_matrix_element_validation"]
-        else {"exists": False, "path": None, "applicable": False}
-    )
-    request = None
-    try:
-        request = build_scientific_reviewer_request(
-            run_result=run_result,
-            fit_diagnostics_summary=fit_diagnostics,
-            matrix_element_summary=matrix_summary,
-            method_plan=method_plan,
-            review_scope=review_scope,
-        )
-        persist_context(run_dir, request)
-        fit_diagnostics = read_context_evidence(run_dir, context_reference(request.context_sources), 'fit_diagnostics_summary')
-        response = provider.generate(request)
-    except Exception as exc:
-        report = _provider_failure_report(
-            run_id=run_id,
-            case_id=case_id,
-            artifact=provider_exception_artifact(
-                producer="scientific_reviewer",
-                run_id=run_id,
-                case_id=case_id,
-                code=getattr(exc, "code", "provider_call_failed"),
-                message=str(exc),
-            ),
-        )
-        report_path = _write_report(run_dir / "scientific_review_report.json", report)
-        result = {
-            "status": "failed",
-            "report_path": report_path,
-            "scientific_review_report_path": report_path,
-            "report": report,
-            "warnings": [],
-            "errors": report["errors"],
-            "confidence": "low",
-        }
-        write_llm_call_trace(
-            output_dir=run_dir,
-            agent="scientific_reviewer",
-            provider=provider,
-            request=request,
-            parsed_payload_path=report_path,
-            status="failed",
-            error=report,
-        )
-        return result
-
-    payload, parse_error = parse_json_object(
-        response.content,
-        producer="scientific_reviewer",
-        run_id=run_id,
-        case_id=case_id,
-    )
-    if parse_error is not None:
-        report = _provider_failure_report(run_id=run_id, case_id=case_id, artifact=parse_error)
-        report_path = _write_report(run_dir / "scientific_review_report.json", report)
-        result = {
-            "status": "failed",
-            "report_path": report_path,
-            "scientific_review_report_path": report_path,
-            "report": report,
-            "warnings": [],
-            "errors": report["errors"],
-            "confidence": "low",
-        }
-        write_llm_call_trace(
-            output_dir=run_dir,
-            agent="scientific_reviewer",
-            provider=provider,
-            request=request,
-            response=response,
-            parsed_payload_path=report_path,
-            status="failed",
-            error=parse_error,
-        )
-        return result
-
-    assert payload is not None
-    validation_errors = validate_proposal(payload, 'scientific_review_report')
-    if validation_errors:
-        report = _provider_failure_report(
-            run_id=run_id,
-            case_id=case_id,
-            artifact=validation_error_artifact(
-                producer="scientific_reviewer",
-                run_id=run_id,
-                case_id=case_id,
-                errors=validation_errors,
-            ),
-        )
-        report_path = _write_report(run_dir / "scientific_review_report.json", report)
-        result = {
-            "status": "failed",
-            "report_path": report_path,
-            "scientific_review_report_path": report_path,
-            "report": report,
-            "warnings": [],
-            "errors": report["errors"],
-            "confidence": "low",
-        }
-        write_llm_call_trace(
-            output_dir=run_dir,
-            agent="scientific_reviewer",
-            provider=provider,
-            request=request,
-            response=response,
-            parsed_payload_path=report_path,
-            status="failed",
-            error=report,
-        )
-        return result
-
-    payload = artifact_payload(payload, run_id=run_id, case_id=case_id, producer='scientific_reviewer')
-    payload = _normalize_provider_review_payload(payload, fit_diagnostics=fit_diagnostics,
-        matrix_summary=matrix_summary, review_scope=review_scope)
-    report_path = _write_report(run_dir / "scientific_review_report.json", payload)
-    write_llm_call_trace(
-        output_dir=run_dir,
-        agent="scientific_reviewer",
-        provider=provider,
-        request=request,
-        response=response,
-        parsed_payload_path=report_path,
-        status=payload["status"],
-    )
-    return {
-        "status": payload["status"],
-        "report_path": report_path,
-        "scientific_review_report_path": report_path,
-        "report": payload,
-        "warnings": payload["warnings"],
-        "errors": payload["errors"],
-        "confidence": payload["confidence"],
-    }
-
-
 def run_scientific_reviewer(
     *,
     run_id: str,
@@ -512,21 +217,8 @@ def run_scientific_reviewer(
     analysis_outputs_dir: str | Path | None = None,
     method_plan_path: str | Path | None = None,
     provider: LLMProvider | None = None,
-    provider_config_path: str | Path | None = None,
+    research_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if provider is None and provider_config_path is not None:
-        provider = create_provider_from_config_path(provider_config_path)
-    if provider is not None:
-        return _run_provider_scientific_reviewer(
-            run_id=run_id,
-            case_id=case_id,
-            run_output_dir=run_output_dir,
-            run_result_path=run_result_path,
-            analysis_outputs_dir=analysis_outputs_dir,
-            method_plan_path=method_plan_path,
-            provider=provider,
-        )
-
     run_dir = Path(run_output_dir)
     run_result = _read_json(run_result_path)
     method_plan = _read_json(method_plan_path)
@@ -587,6 +279,10 @@ def run_scientific_reviewer(
             )
         )
 
+    if run_result is not None and run_result.get('run_success') is False:
+        context_warnings.append(_warning(path=run_result_path, field='run_success', value=False,
+            code='analysis_run_failed', severity='severe', message='Scientific review received a failed analysis Run.'))
+
     correlator_diagnostics = diagnose_correlator_outputs(resolved_analysis_outputs_dir)
     fit_diagnostics = diagnose_fit_outputs(resolved_analysis_outputs_dir)
     matrix_element_diagnostics = (
@@ -599,11 +295,11 @@ def run_scientific_reviewer(
     warnings = context_warnings + _flatten_section_values(sections, "warnings")
     findings = _flatten_section_values(sections, "findings")
     evidence = context_evidence + _flatten_section_values(sections, "evidence")
-    recommended_checks = _unique_strings(
+    recommended_checks = _unique_items(
         [str(check) for check in _flatten_section_values(sections, "recommended_checks")]
     )
     if context_warnings:
-        recommended_checks = _unique_strings(
+        recommended_checks = _unique_items(
             ["Inspect reviewer input artifacts before downstream decision coordination."] + recommended_checks
         )
     confidence = _confidence_from_warnings(warnings)
@@ -621,13 +317,43 @@ def run_scientific_reviewer(
         "recommended_checks": recommended_checks,
         "confidence": confidence,
     }
-    report_path = _write_report(run_dir / "scientific_review_report.json", report)
-    return {
-        "status": "success",
-        "report_path": report_path,
-        "scientific_review_report_path": report_path,
-        "report": report,
-        "warnings": warnings,
-        "errors": [],
-        "confidence": confidence,
-    }
+    request = response = error = None
+    if provider is not None:
+        try:
+            request = build_scientific_reviewer_request(
+                run_result=run_result, method_plan=method_plan, review_scope=review_scope,
+                research_context=research_context,
+                review_evidence={key: report[key] for key in (
+                    'correlator_diagnostics', 'fit_diagnostics', 'matrix_element_diagnostics',
+                    'warnings', 'findings', 'evidence', 'recommended_checks', 'confidence')})
+            persist_context(run_dir, request)
+            evidence = read_context_evidence(run_dir, context_reference(request.context_sources), 'review_evidence')
+            report.update(evidence)
+            response = provider.generate(request)
+            payload, error = parse_json_object(response.content, producer='scientific_reviewer',
+                                               run_id=run_id, case_id=case_id)
+            if error is None:
+                errors = validate_proposal(payload, 'scientific_review_report')
+                if errors:
+                    error = validation_error_artifact(producer='scientific_reviewer',
+                        run_id=run_id, case_id=case_id, errors=errors)
+        except Exception as exc:
+            error = provider_exception_artifact(producer='scientific_reviewer', run_id=run_id,
+                case_id=case_id, code=getattr(exc, 'code', 'provider_call_failed'), message=str(exc))
+        if error is not None:
+            report.update(status='failed', summary=error['summary'], errors=error['errors'], confidence='low')
+        else:
+            report.update(status=payload['status'], summary=payload['summary'], errors=payload['errors'])
+            additions = [warning for warning in payload['warnings']
+                if not _is_ungrounded_provider_warning(warning) and
+                (review_scope['requires_matrix_element_validation'] or not _is_out_of_scope_matrix_warning(warning))]
+            report['warnings'] = _unique_items([*report['warnings'], *additions])
+            for key in ('findings', 'evidence', 'recommended_checks'):
+                report[key] = _unique_items([*report[key], *payload[key]])
+            report['confidence'] = _lower_confidence(payload['confidence'], _confidence_from_warnings(report['warnings']))
+    report_path = _write_report(run_dir / 'scientific_review_report.json', report)
+    if provider is not None:
+        write_llm_call_trace(output_dir=run_dir, agent='scientific_reviewer', provider=provider,
+            request=request, response=response, parsed_payload_path=report_path, status=report['status'], error=error)
+    return {'status': report['status'], 'report_path': report_path, 'scientific_review_report_path': report_path,
+            'report': report, 'warnings': report['warnings'], 'errors': report['errors'], 'confidence': report['confidence']}

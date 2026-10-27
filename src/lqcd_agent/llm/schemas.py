@@ -19,8 +19,6 @@ def role_schema(role):
             selected_analysis_programs={'type': 'array', 'items': {'type': 'string', 'enum': [p.name for p in PROGRAMS]}},
             code_needed={'type': 'boolean'}, coder_task_summary={'type': ['string', 'null']})
     elif role == 'scientific_review_report':
-        properties.update({name: {'$ref': '#/$defs/diagnostics'}
-                           for name in ('correlator_diagnostics', 'fit_diagnostics', 'matrix_element_diagnostics')})
         properties.update(findings=records, evidence=records, recommended_checks=strings,
                           confidence={'type': 'string', 'enum': ['high', 'medium', 'low']})
     else:
@@ -32,9 +30,6 @@ def role_schema(role):
     record['required'] = list(record['properties'])
     schema = object_schema(properties)
     schema['$defs'] = {'record': record}
-    if role == 'scientific_review_report':
-        schema['$defs']['diagnostics'] = object_schema({'status': {'type': 'string'}, 'summary': {'type': 'string'},
-            'evidence': records, 'findings': records, 'warnings': records, 'recommended_checks': strings})
     return {'name': role, 'strict': True, 'schema': schema}
 
 

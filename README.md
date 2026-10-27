@@ -2,6 +2,8 @@
 
 An AI Research Partner for LQCD with controlled planning, code/analysis work, scientific review, human decisions and attributable results. Offline mode uses deterministic roles and a Fake coding backend. Explicit live mode uses OpenAI Responses for planning/review and an independent Codex SDK backend for bounded coding proposals. Software checks do not establish physics readiness.
 
+Scientific validation is shared by offline and model-assisted review: models interpret Host diagnostics and cannot erase numerical warnings. Planner and Reviewer receive validated remediation and relevant history through their retained context bundles. Provider credentials and live activation belong to application assembly; scientific roles accept constructed providers. See the [architecture maintenance record](docs/maintenance/ARCHITECTURE_SIMPLIFICATION.md).
+
 ## Use
 
 ```bash

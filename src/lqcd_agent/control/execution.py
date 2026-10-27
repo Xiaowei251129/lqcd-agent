@@ -21,6 +21,17 @@ class ExecutionReplay:
     def values(self):
         return [_validate_record(loads(record)) for record in self.records]
 
+    @property
+    def canonical(self):
+        return b"\n".join(self.records) + b"\n"
+
+    def append(self, record):
+        """Extend immutable validated records; this grants no publication authority."""
+        try:
+            return _replay_snapshots((*self.records, validate_record(record).canonical))
+        except (ValueError, KeyError, TypeError, IndexError, OverflowError) as error:
+            raise ControlIntegrityError(str(error)) from error
+
 
 def _decoded_records(snapshots):
     # Callers must first validate every immutable canonical snapshot.
@@ -233,13 +244,8 @@ def parse_ledger(data):
 
 def append_record_bytes(ledger, record):
     """Return validated new bytes. Only a later durable owner may publish them."""
-    # Preserve full prefix validation before extending its immutable snapshots.
-    prior = () if ledger == b"" else parse_ledger(ledger).records
-    try:
-        result = _replay_snapshots((*prior, validate_record(record).canonical))
-    except (ValueError, KeyError, TypeError, IndexError, OverflowError) as error:
-        raise ControlIntegrityError(str(error)) from error
-    return b"\n".join(result.records) + b"\n"
+    result = replay([record]) if ledger == b"" else parse_ledger(ledger).append(record)
+    return result.canonical
 
 
 def _identity_projection(seen):

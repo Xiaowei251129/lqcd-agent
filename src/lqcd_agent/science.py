@@ -13,6 +13,7 @@ class ScientificAgent:
 
     def run(self, node, context, *, timeout_seconds):
         identity = context['identity']
+        research_context = {key: context.get(key) for key in ('remediation', 'relevant_history')}
         output = self.host / 'domain' / identity['attempt_id'] / identity['case_id'] / identity['run_id']
         output.mkdir(parents=True, exist_ok=True)
         diagnostic = {'status': 'success', 'category': 'validated_domain', 'affected_layer': 'none', 'evidence': [],
@@ -23,7 +24,7 @@ class ScientificAgent:
             from .tools.repo_inventory import build_repo_inventory
             result = run_method_planner(user_goal=context['root_goal']['goal'], case_config=self.config,
                 repo_inventory={**build_repo_inventory(self.workspace), 'dataset_snapshot': context['root_goal']['dataset_snapshot']},
-                output_dir=output, run_id=identity['run_id'], provider=self.provider)
+                output_dir=output, run_id=identity['run_id'], provider=self.provider, research_context=research_context)
             if result['status'] != 'success' or result['code_needed']:
                 diagnostic.update(status='failed', category='implementation_gap', affected_layer='plan', risk='high', human_need='approval')
             content = {'code_needed': False, 'domain_result': result}
@@ -43,7 +44,8 @@ class ScientificAgent:
             result = self._artifact(context, 'run_result.json')['domain_result']
             plan = self._artifact(context, 'method_plan.json')['domain_result']['method_plan_path']
             reviewed = run_scientific_reviewer(run_id=identity['run_id'], case_id=identity['case_id'], run_output_dir=output,
-                run_result_path=result['run_result_path'], analysis_outputs_dir=result['analysis_outputs_dir'], method_plan_path=plan, provider=self.provider)
+                run_result_path=result['run_result_path'], analysis_outputs_dir=result['analysis_outputs_dir'],
+                method_plan_path=plan, provider=self.provider, research_context=research_context)
             # Scientific confirmation is Host policy, independent of model confidence or extra fields.
             diagnostic.update(risk='high', category='scientific_review', human_need='approval')
             if reviewed['status'] != 'success':

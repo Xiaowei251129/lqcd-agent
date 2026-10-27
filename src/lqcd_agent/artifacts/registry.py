@@ -5,11 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import mimetypes
-import os
-import shutil
-import tempfile
 from copy import deepcopy
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -92,19 +88,6 @@ LEGACY_PROJECTION_ROOTS = (
     "final_report.md",
     "llm_calls",
 )
-LEGACY_MANAGED_OUTPUT_ROOTS = tuple(
-    path
-    for path in LEGACY_PROJECTION_ROOTS
-    if path not in {"code_change_summary.md", "tests_status.json"}
-)
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _sha256_bytes(value: bytes) -> str:
-    return hashlib.sha256(value).hexdigest()
 
 
 def _sha256_file(path: Path) -> str:
@@ -201,43 +184,6 @@ def _assert_active_attempt(state: dict[str, Any]) -> None:
     for ledger_field, state_field in field_pairs:
         if attempts[-1].get(ledger_field) != state.get(state_field):
             raise ValueError(f"Artifact producing Attempt disagrees with the execution ledger: {state_field}")
-
-
-def prepare_attempt_output_dir(state: dict[str, Any]) -> Path:
-    _assert_active_attempt(state)
-    path = attempt_output_dir(state)
-    if path.exists():
-        raise FileExistsError(f"Refusing to reuse canonical Attempt directory: {path}")
-    path.mkdir(parents=True, exist_ok=False)
-    return path
-
-
-def _empty_index(state: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "schema_version": ARTIFACT_SCHEMA_VERSION,
-        "run_id": state["run_id"],
-        "case_id": state["case_id"],
-        "revision": 0,
-        "last_event_id": None,
-        "current": {slot: None for slot in ARTIFACT_SLOTS},
-        "managed_projections": {},
-    }
-
-
-def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
-    temporary_path = Path(temporary_name)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2, sort_keys=True)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary_path, path)
-    finally:
-        if temporary_path.exists():
-            temporary_path.unlink()
 
 
 def _read_history(path: Path) -> list[dict[str, Any]]:
@@ -1456,73 +1402,6 @@ def _validate_registry_head(
     return index, history
 
 
-def _append_history(path: Path, records: Iterable[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        for record in records:
-            handle.write(json.dumps(record, sort_keys=True) + "\n")
-        handle.flush()
-        os.fsync(handle.fileno())
-
-
-def _new_event(
-    state: dict[str, Any],
-    *,
-    event_index: int,
-    event: str,
-    slot: str | None,
-    artifact_id: str,
-    reason_code: str,
-    **fields: Any,
-) -> dict[str, Any]:
-    return {
-        "schema_version": ARTIFACT_SCHEMA_VERSION,
-        "event_id": _event_id(event_index),
-        "event_index": event_index,
-        "event": event,
-        "run_id": state["run_id"],
-        "case_id": state["case_id"],
-        "cycle_id": state.get("cycle_id"),
-        "attempt_id": state.get("attempt_id"),
-        "transition_id": fields.pop("transition_id", None),
-        "human_request_id": state.get("active_human_request_id"),
-        "human_response_id": state.get("active_human_response_id"),
-        "slot": slot,
-        "artifact_id": artifact_id,
-        "reason_code": reason_code,
-        "created_at": _utc_now(),
-        **fields,
-    }
-
-
-def _publish_index(
-    state: dict[str, Any],
-    index: dict[str, Any],
-    records: list[dict[str, Any]],
-) -> dict[str, Any]:
-    if records:
-        _append_history(_history_path(state), records)
-        index["revision"] = records[-1]["event_index"]
-        index["last_event_id"] = records[-1]["event_id"]
-    _atomic_write_json(_index_path(state), index)
-    updated = dict(state)
-    updated["artifact_event_index"] = int(index["revision"])
-    updated["current_artifacts"] = deepcopy(index["current"])
-    return _sync_state_paths(updated, index)
-
-
-def _sync_state_paths(state: dict[str, Any], index: dict[str, Any]) -> dict[str, Any]:
-    updated = dict(state)
-    for slot in STATE_FIELDS_BY_SLOT:
-        fields = state_fields_for_slot(slot, updated.get("schema_version"))
-        pointer = index["current"].get(slot)
-        state_paths = pointer.get("state_paths", {}) if isinstance(pointer, dict) else {}
-        for field in fields:
-            updated[field] = state_paths.get(field)
-    updated.update(_code_scalar_projection(updated, index))
-    return updated
-
-
 def _code_scalar_projection(state: dict[str, Any], index: dict[str, Any], *, run_root=None) -> dict[str, Any]:
     if state.get("schema_version") != "0.4":
         return {}
@@ -1538,64 +1417,6 @@ def _code_scalar_projection(state: dict[str, Any], index: dict[str, Any], *, run
     if result["status"] != pointer["status"]:
         raise ValueError("Canonical Code scalar status differs from pointer.")
     return {"code_agent_status": result["status"], "code_agent_usable": result["usable"]}
-
-
-def _has_populated_artifact_state(state: dict[str, Any]) -> bool:
-    current = state.get("current_artifacts")
-    return (
-        state.get("artifact_event_index") not in {None, 0}
-        or (isinstance(current, dict) and bool(current))
-        or (state.get("schema_version") == "0.4" and any(state.get(field) is not None for field in
-            (*CANONICAL_CODE_PATH_FIELDS, "code_agent_status", "code_agent_usable")))
-        or any(
-            state.get(field) is not None
-            for fields in STATE_FIELDS_BY_SLOT.values()
-            for field in fields
-        )
-    )
-
-
-def initialize_artifact_registry(state: dict[str, Any]) -> dict[str, Any]:
-    run_root = _run_root(state)
-    run_root.mkdir(parents=True, exist_ok=True)
-    history_path = _history_path(state)
-    index_path = _index_path(state)
-    updated = dict(state)
-    updated["artifact_history_path"] = str(history_path)
-    updated["artifact_index_path"] = str(index_path)
-    if index_path.exists():
-        if _has_populated_artifact_state(state):
-            validate_state_artifacts(state)
-            return dict(state)
-        history = _read_history(history_path)
-        updated["artifact_event_index"] = int(history[-1].get("event_index", 0)) if history else 0
-        index = _read_index(updated)
-        latest_id = history[-1].get("event_id") if history else None
-        if index.get("last_event_id") != latest_id or int(index.get("revision", -1)) != updated["artifact_event_index"]:
-            raise ValueError("Artifact registry cannot restore an inconsistent history/index pair.")
-        if updated.get("committed_transition_id") is not None and updated.get("committed_route") is None:
-            transition = _committed_transition_record(
-                _execution_records(updated),
-                str(updated["committed_transition_id"]),
-            )
-            updated["committed_route"] = transition.get("route")
-        updated["current_artifacts"] = deepcopy(index["current"])
-        updated = _sync_state_paths(updated, index)
-        validate_state_artifacts(updated)
-        return updated
-
-    legacy = [
-        run_root / relative
-        for relative in LEGACY_MANAGED_OUTPUT_ROOTS
-        if (run_root / relative).exists()
-    ]
-    if legacy:
-        names = ", ".join(path.name for path in legacy)
-        raise ValueError(f"Refusing to manage legacy Run artifacts without an A03 index: {names}")
-    updated["artifact_event_index"] = 0
-    updated["current_artifacts"] = {slot: None for slot in ARTIFACT_SLOTS}
-    _atomic_write_json(index_path, _empty_index(updated))
-    return updated
 
 
 def _is_within(path: Path, root: Path) -> bool:
@@ -1732,81 +1553,6 @@ def _projection_target(run_root: Path, relative_path: str) -> Path:
     return target
 
 
-def _atomic_copy(source: Path, target: Path) -> None:
-    target.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{target.name}.", dir=str(target.parent))
-    os.close(descriptor)
-    temporary_path = Path(temporary_name)
-    try:
-        shutil.copyfile(source, temporary_path)
-        os.replace(temporary_path, target)
-    finally:
-        if temporary_path.exists():
-            temporary_path.unlink()
-
-
-def _publish_projections(
-    state: dict[str, Any],
-    index: dict[str, Any],
-    pointer: dict[str, Any],
-) -> None:
-    run_root = _run_root(state)
-    managed = index["managed_projections"]
-    artifact_id = str(pointer["artifact_id"])
-    publications: list[tuple[Path, Path, str]] = []
-    seen: set[str] = set()
-    for member in pointer["members"]:
-        source = run_root / str(member["canonical_path"])
-        projection = str(member["projection_path"])
-        target = _projection_target(run_root, projection)
-        if projection in seen:
-            raise ValueError(f"Artifact bundle publishes the same projection twice: {projection}")
-        seen.add(projection)
-        owner = managed.get(projection)
-        if owner is not None and owner != artifact_id:
-            raise ValueError(f"Compatibility projection is owned by another current artifact: {projection}")
-        if target.exists() and (
-            not target.is_file() or (owner is None and _sha256_file(target) != member["sha256"])
-        ):
-            raise FileExistsError(f"Refusing to replace unmanaged compatibility path: {target}")
-        publications.append((source, target, projection))
-    for source, target, projection in publications:
-        _atomic_copy(source, target)
-        managed[projection] = artifact_id
-
-
-def _remove_empty_projection_parents(path: Path, run_root: Path) -> None:
-    current = path.parent
-    while current != run_root and current.name not in {"attempts", "human_responses"}:
-        try:
-            current.rmdir()
-        except OSError:
-            break
-        current = current.parent
-
-
-def _clear_projections(state: dict[str, Any], index: dict[str, Any], pointer: dict[str, Any]) -> None:
-    run_root = _run_root(state)
-    managed = index["managed_projections"]
-    artifact_id = str(pointer["artifact_id"])
-    for member in pointer.get("members", []):
-        relative = str(member["projection_path"])
-        if managed.get(relative) != artifact_id:
-            continue
-        target = _projection_target(run_root, relative)
-        if (
-            relative in {"code_change_summary.md", "tests_status.json"}
-            and target.is_file()
-            and _sha256_file(target) != member.get("sha256")
-        ):
-            managed.pop(relative, None)
-            continue
-        if target.is_file():
-            target.unlink()
-            _remove_empty_projection_parents(target, run_root)
-        managed.pop(relative, None)
-
-
 def preflight_control_registration(
     state: dict[str, Any], *, slot: str, member_paths: Iterable[str | Path],
     state_paths: dict[str, str | None], status: str, created_at: str,
@@ -1862,80 +1608,6 @@ def preflight_control_registration(
     return index, records
 
 
-def register_artifact_bundle(
-    state: dict[str, Any],
-    *,
-    slot: str,
-    member_paths: Iterable[str | Path],
-    state_paths: dict[str, str | None],
-    status: str,
-    extra_dependency_ids: Iterable[str] = (),
-) -> dict[str, Any]:
-    if slot not in ARTIFACT_SLOTS:
-        raise ValueError(f"Unknown artifact slot: {slot}")
-    _assert_active_attempt(state)
-    expected_slot = SLOT_BY_ATTEMPT_KIND.get(str(state.get("attempt_kind")))
-    if expected_slot != slot:
-        raise ValueError(f"Attempt kind {state.get('attempt_kind')} cannot register slot {slot}.")
-    index, history = _validate_registry_head(state)
-    if index["current"].get(slot) is not None:
-        raise ValueError(f"Artifact slot {slot} was not invalidated before registration.")
-    artifact_id = f"{state['attempt_id']}:{slot}"
-    if artifact_id in _registered_artifact_ids(history):
-        raise ValueError(f"Artifact ID is already registered: {artifact_id}")
-    members = _member_records(state, member_paths)
-    dependencies = _dependency_ids(index, slot)
-    known_ids = _registered_artifact_ids(history)
-    for dependency in extra_dependency_ids:
-        if dependency not in known_ids:
-            raise ValueError(f"Artifact dependency is not registered in this Run: {dependency}")
-        dependencies.append(dependency)
-    dependencies = list(dict.fromkeys(dependencies))
-    allowed_state_fields = set(state_fields_for_slot(slot, state.get("schema_version")))
-    if set(state_paths) != allowed_state_fields:
-        raise ValueError(f"Artifact slot {slot} must publish state fields {sorted(allowed_state_fields)}.")
-    pointer = {
-        "artifact_id": artifact_id,
-        "slot": slot,
-        "cycle_id": state["cycle_id"],
-        "attempt_id": state["attempt_id"],
-        "attempt_kind": state["attempt_kind"],
-        "status": status,
-        "dependencies": dependencies,
-        "members": members,
-        "state_paths": dict(state_paths),
-    }
-    next_index = int(state["artifact_event_index"]) + 1
-    registered = _new_event(
-        state,
-        event_index=next_index,
-        event="registered",
-        slot=slot,
-        artifact_id=artifact_id,
-        reason_code="attempt_output_registered",
-        canonical_root=attempt_output_dir(state).resolve().relative_to(_run_root(state)).as_posix(),
-        members=members,
-        dependencies=dependencies,
-        status=status,
-        pointer=deepcopy(pointer),
-        node_name=state.get("attempt_node"),
-    )
-    _validate_registered_pointer(state, registered)
-    current_set = _new_event(
-        state,
-        event_index=next_index + 1,
-        event="current_set",
-        slot=slot,
-        artifact_id=artifact_id,
-        reason_code="attempt_output_current",
-        dependencies=dependencies,
-        status=status,
-    )
-    index["current"][slot] = pointer
-    _publish_projections(state, index, pointer)
-    return _publish_index(state, index, [registered, current_set])
-
-
 def _slots_for_target(target_attempt_kind: str, *, new_human_request: bool) -> tuple[str, ...]:
     if target_attempt_kind == "human_gate":
         return ("approval", "terminal") if new_human_request else ()
@@ -1943,147 +1615,6 @@ def _slots_for_target(target_attempt_kind: str, *, new_human_request: bool) -> t
         return tuple(INVALIDATED_SLOTS_BY_TARGET_KIND[target_attempt_kind])
     except KeyError as exc:
         raise ValueError(f"Unsupported invalidation target kind: {target_attempt_kind}") from exc
-
-
-def invalidate_for_target(
-    state: dict[str, Any],
-    *,
-    target_attempt_kind: str,
-    transition_id: str,
-    target_attempt_id: str,
-    new_human_request: bool = False,
-) -> dict[str, Any]:
-    slots = _slots_for_target(target_attempt_kind, new_human_request=new_human_request)
-    index, _ = _validate_registry_head(
-        state,
-        allow_pending_invalidation_attempt_id=target_attempt_id,
-    )
-    records: list[dict[str, Any]] = []
-    next_index = int(state["artifact_event_index"])
-    for slot in slots:
-        pointer = index["current"].get(slot)
-        if not isinstance(pointer, dict):
-            continue
-        _clear_projections(state, index, pointer)
-        next_index += 1
-        records.append(
-            _new_event(
-                state,
-                event_index=next_index,
-                event="current_cleared",
-                slot=slot,
-                artifact_id=str(pointer["artifact_id"]),
-                reason_code=f"target_{target_attempt_kind}",
-                transition_id=transition_id,
-                target_attempt_id=target_attempt_id,
-                prior_artifact_id=pointer["artifact_id"],
-            )
-        )
-        index["current"][slot] = None
-    if not records:
-        return dict(state)
-    return _publish_index(state, index, records)
-
-
-def register_human_response_snapshot(
-    state: dict[str, Any],
-    *,
-    payload: dict[str, Any],
-) -> tuple[dict[str, Any], str, str]:
-    response_id = state.get("active_human_response_id")
-    if not isinstance(response_id, str) or not response_id:
-        raise ValueError("Human Response snapshot requires an allocated response identity.")
-    index, history = _validate_registry_head(
-        state,
-        allow_pending_human_response_id=response_id,
-    )
-    artifact_id = f"{response_id}:payload"
-    if artifact_id in _registered_artifact_ids(history):
-        raise ValueError(f"Human Response snapshot is already registered: {artifact_id}")
-    payload_bytes = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
-    snapshot_dir = _run_root(state) / "human_responses" / response_id
-    snapshot_path = snapshot_dir / "payload.json"
-    snapshot_dir.mkdir(parents=True, exist_ok=False)
-    with snapshot_path.open("xb") as handle:
-        handle.write(payload_bytes)
-        handle.flush()
-        os.fsync(handle.fileno())
-    digest = _sha256_bytes(payload_bytes)
-    member = {
-        "logical_name": "payload.json",
-        "canonical_path": snapshot_path.resolve().relative_to(_run_root(state)).as_posix(),
-        "projection_path": None,
-        "sha256": digest,
-        "size_bytes": len(payload_bytes),
-        "media_type": "application/json",
-    }
-    event_index = int(state["artifact_event_index"]) + 1
-    event = _new_event(
-        state,
-        event_index=event_index,
-        event="protected_snapshot_registered",
-        slot=None,
-        artifact_id=artifact_id,
-        reason_code="human_response_submitted",
-        protected_kind="human_response",
-        members=[member],
-        dependencies=[],
-    )
-    updated = _publish_index(state, index, [event])
-    return updated, str(snapshot_path), digest
-
-
-def current_artifact_pointer(state: dict[str, Any], *, slot: str) -> dict[str, Any] | None:
-    if slot not in ARTIFACT_SLOTS:
-        raise ValueError(f"Unknown artifact slot: {slot}")
-    index, _ = _validate_registry_head(state)
-    pointer = index["current"].get(slot)
-    return deepcopy(pointer) if isinstance(pointer, dict) else None
-
-
-def protect_current_artifact(
-    state: dict[str, Any],
-    *,
-    slot: str,
-    protected_kind: str,
-) -> dict[str, Any]:
-    if protected_kind != "accepted_result":
-        raise ValueError(f"Unsupported current artifact protection: {protected_kind}")
-    if slot != "terminal":
-        raise ValueError("Accepted-result protection requires the terminal artifact slot.")
-    pending_artifact_id = f"{state.get('attempt_id')}:terminal"
-    index, history = _validate_registry_head(
-        state,
-        allow_pending_accepted_protection_artifact_id=pending_artifact_id,
-    )
-    pointer = index["current"].get(slot)
-    if not isinstance(pointer, dict):
-        raise ValueError(f"Cannot protect an empty current artifact slot: {slot}")
-    if pointer.get("artifact_id") != pending_artifact_id:
-        raise ValueError("Accepted-result protection must be added by its producing Attempt.")
-    if pointer.get("status") != "accepted":
-        raise ValueError("Accepted-result protection requires an accepted terminal artifact.")
-    artifact_id = str(pointer["artifact_id"])
-    if any(
-        record.get("event") == "protected_snapshot_registered"
-        and record.get("artifact_id") == artifact_id
-        and record.get("protected_kind") == protected_kind
-        for record in history
-    ):
-        raise ValueError(f"Artifact {artifact_id} already has protection {protected_kind}.")
-    event_index = int(state["artifact_event_index"]) + 1
-    event = _new_event(
-        state,
-        event_index=event_index,
-        event="protected_snapshot_registered",
-        slot=slot,
-        artifact_id=artifact_id,
-        reason_code=f"protected_{protected_kind}",
-        protected_kind=protected_kind,
-        members=pointer["members"],
-        dependencies=pointer["dependencies"],
-    )
-    return _publish_index(state, index, [event])
 
 
 def validate_state_artifacts(state: dict[str, Any]) -> None:

@@ -6,7 +6,7 @@ publication intent, never an independent budget authority or a retry permit.
 from dataclasses import asdict
 
 from lqcd_agent.control.coordinator import boundary, publish_exact, read_regular, replace_projection
-from lqcd_agent.control.execution import append_record_bytes, parse_ledger
+from lqcd_agent.control.execution import parse_ledger
 from lqcd_agent.control.records import build_record
 from lqcd_agent.control.strict_json import canonical_bytes, closed, digest, digest_value, loads, number, require, text
 
@@ -17,6 +17,7 @@ def owned_prefix(value, *, published=True):
     entries = value.get("verification_intents", [])
     require(type(entries) is list, "Invalid verification publication journal")
     authorization = value["authorization"]
+    execution = parse_ledger(previous["content"].encode()) if entries else None
     reserved, settled = set(), set()
     for entry in entries:
         closed(entry, ("record", "previous", "previous_index", "content", "index", "intent_digest", "published"))
@@ -43,7 +44,8 @@ def owned_prefix(value, *, published=True):
             require(payload["operation_id"] == authorization["producer_operation_id"] and
                     resource in reserved and resource not in settled, "Foreign verification settlement owner")
             settled.add(resource)
-        require(append_record_bytes(entry["previous"].encode(), record).decode() == entry["content"],
+        execution = execution.append(record)
+        require(execution.canonical.decode() == entry["content"],
                 "Verification ledger differs from its frozen record")
         index = loads(entry["previous_index"])
         require(canonical_bytes({**index, "execution_head": digest(record)}).decode() == entry["index"],
@@ -109,8 +111,7 @@ def _commit(port, event, payload, *, timestamp=None):
             artifact_head=index["artifact_head"], artifact_event_index=index["revision"], timestamp=timestamp or now,
             budget_event_id=f"budget_event_{position:06d}", budget_event_index=position,
             policy_version="0.1", policy_digest=state["budget"]["policy_digest"], payload=payload).value
-        content = append_record_bytes(previous["content"].encode(), record)
-        parse_ledger(content)
+        content = execution.append(record).canonical
         entry = {"record": record, "previous": previous["content"], "previous_index": previous["index"],
                  "content": content.decode(), "index": canonical_bytes({**index, "execution_head": digest(record)}).decode()}
         entry.update(intent_digest=digest(entry), published=False)

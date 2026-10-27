@@ -26,6 +26,7 @@ def invocation_prefix(value, *, published=True):
     require(not entries or not value.get("verification_intents"), "Mixed invocation publication owners")
     require(type(entries) is list, "Invalid invocation budget journal")
     authorization = value["authorization"]
+    execution = parse_ledger(previous["content"].encode()) if entries else None
     for entry in entries:
         closed(entry, ("record", "previous", "previous_index", "content", "index", "intent_digest", "published"))
         require(type(entry["published"]) is bool and (entry["published"] or not published), "Unpublished budget prefix")
@@ -42,7 +43,8 @@ def invocation_prefix(value, *, published=True):
                     record["payload"]["resource_kind"] in ("llm_call", "tool_call"), "Foreign ordinary resource")
         if record["event"] == "resource_settled":
             require(record["payload"]["operation_id"] == authorization["producer_operation_id"], "Foreign settlement owner")
-        require(append_record_bytes(entry["previous"].encode(), record).decode() == entry["content"],
+        execution = execution.append(record)
+        require(execution.canonical.decode() == entry["content"],
                 "Budget ledger differs from its frozen intent")
         index = loads(entry["previous_index"])
         require(canonical_bytes({**index, "execution_head": digest(record)}).decode() == entry["index"],
@@ -147,8 +149,7 @@ class ArtifactEffectPort:
                 artifact_head=index["artifact_head"], artifact_event_index=index["revision"], timestamp=now,
                 budget_event_id=f"budget_event_{position:06d}", budget_event_index=position,
                 policy_version="0.1", policy_digest=state["budget"]["policy_digest"], payload=payload).value
-            content = append_record_bytes(previous["content"].encode(), record)
-            parse_ledger(content)
+            content = execution.append(record).canonical
             entry = {"record": record, "previous": previous["content"], "previous_index": previous["index"],
                      "content": content.decode(), "index": canonical_bytes({**index, "execution_head": digest(record)}).decode()}
             entry.update(intent_digest=digest(entry), published=False)
