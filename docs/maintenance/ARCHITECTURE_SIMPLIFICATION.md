@@ -52,4 +52,4 @@ Ignored evidence: `check-results/architecture-before.json`, `architecture-after.
 
 ## Qualification limits
 
-These are offline engineering checks and local measurements. Paid API calls, remote CI and OLCF qualification have not been rerun for this build. Existing scientific confirmation remains a human decision. Autonomous evidence retrieval, arbitrary generated scientific execution and physics acceptance are not claimed by this maintenance.
+These are offline engineering checks and local measurements. Paid API calls and remote CI have not been rerun for that build. Existing scientific confirmation remains a human decision. Autonomous evidence retrieval, arbitrary generated scientific execution and physics acceptance are not claimed by this maintenance.

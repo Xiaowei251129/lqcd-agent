@@ -52,6 +52,6 @@ Non-generated runtime source has a net reduction of 111 lines, counting all thre
 
 ## Qualification limits
 
-This maintenance uses offline checks. Paid OpenAI/Codex calls, remote CI and OLCF native admission have not been rerun for this build. Ubuntu source/build checks do not establish OLCF storage/process qualification. Scientific acceptance remains a human decision and requires appropriate physics validation.
+This maintenance uses offline checks. Paid OpenAI/Codex calls and remote CI were not rerun for that maintenance build. Ubuntu source/build checks do not establish native macOS runtime qualification. Scientific acceptance remains a human decision and requires appropriate physics validation.
 
 Lock and lint procedures follow the [uv locking guide](https://docs.astral.sh/uv/pip/compile/) and [Ruff configuration guide](https://docs.astral.sh/ruff/configuration/). CI outcome retention uses the [GitHub artifact mechanism](https://docs.github.com/en/actions/tutorials/store-and-share-data).

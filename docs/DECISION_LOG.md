@@ -2,11 +2,15 @@
 
 Milestone status belongs in [Current state](REPO_CURRENT_STATE.md).
 
+## 2026-10-27 — native Mac execution
+
+Use the fixed canonical macOS `/private/tmp` execution parent. Delete retired deployment configuration, environment overrides and admission records. Preserve native writable-local-filesystem checks, private Hosts, boot/PID identity, SQLite WAL/FULL durability, checkpoint validation and human confirmation. Unsupported runtime platforms fail closed; Linux CI remains limited to static/numerical/build checks. Qualification evidence is in the [local record](maintenance/LOCAL_MACOS_QUALIFICATION.md).
+
 ## 2026-10-27 — pure contracts and reproducible engineering checks
 
 Keep identities, lifecycle validation and artifact field policy in three small modules without I/O. Move the existing implementations directly; all consumers use their canonical definitions. Keep registry I/O, phase ownership, permission checks, human confirmation and durable publication in their existing owners. Remove unused result/clock helpers, historical source locators and alternate Analysis artifact output projection instead of retaining compatibility branches.
 
-Use pinned uv to generate one hashed environment from runtime/development declarations and an explicit build-tool group. Preserve the existing runtime versions. Apply a narrow Ruff rule set without reformatting the repository. CI retains only bounded outcome reports, with unchanged read-only permissions; Linux static/build checks remain separate from macOS integration and OLCF native admission. Keep the current-state document current and fold the redundant start page into README. Audit and evidence are in the [maintenance record](maintenance/GOVERNANCE_AND_CONTRACT_BOUNDARIES.md).
+Use pinned uv to generate one hashed environment from runtime/development declarations and an explicit build-tool group. Preserve the existing runtime versions. Apply a narrow Ruff rule set without reformatting the repository. CI retains only bounded outcome reports, with unchanged read-only permissions; Linux static/build checks remain separate from macOS runtime integration. Keep the current-state document current and fold the redundant start page into README. Audit and evidence are in the [maintenance record](maintenance/GOVERNANCE_AND_CONTRACT_BOUNDARIES.md).
 
 ## 2026-10-27 — one scientific validator and one publication path
 

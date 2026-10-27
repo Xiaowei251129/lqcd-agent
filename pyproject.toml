@@ -30,7 +30,7 @@ lqcd-agent-demo = "lqcd_agent.demo.server:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"lqcd_agent" = ["_build_manifest.json", "resources/*.json"]
+"lqcd_agent" = ["_build_manifest.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

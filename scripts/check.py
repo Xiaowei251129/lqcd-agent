@@ -31,9 +31,9 @@ CORE = [
  "tests/test_durability.py::test_operation_lease_fences_old_epoch_and_queries_do_not_renew",
  "tests/test_durability.py::test_reservation_replay_and_conflict",
  "tests/test_durability.py::test_two_process_reservation_arbitration[False]",
- "tests/test_scratch.py::test_invalid_linux_parent_is_refused_without_fallback[symlink]",
+ "tests/test_scratch.py::test_invalid_parent_is_refused_without_fallback[symlink]",
  "tests/test_storage.py::test_actual_native_profile_keeps_wal_full_and_foreign_keys",
- "tests/test_storage.py::test_changed_admission_is_rejected_before_sqlite_changes[host_boot_id]"]
+ "tests/test_storage.py::test_existing_authority_rejects_unsupported_platform_without_writes"]
 
 def identity():
     files = [p for base in ("src", "tests", "contracts", "configs", "scripts") for p in (ROOT/base).rglob("*")

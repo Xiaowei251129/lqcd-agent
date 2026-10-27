@@ -9,7 +9,7 @@ import stat
 from .control.coordinator import component, local_filesystem, read_regular, validate_coordinator_schema
 from .control.execution import parse_ledger
 from .control.integrity import validate_run_root
-from .control.storage import execution_scratch_root, require_host_binding
+from .control.storage import execution_scratch_root
 from .control.strict_json import digest, loads, require
 
 
@@ -57,7 +57,6 @@ def read_snapshot(host, locator):
         component(locator[name])
     control_root = root/'.lqcd'
     require(control_root == control_root.resolve() and control_root.is_dir(), 'Invalid control root')
-    require_host_binding(control_root)
     local_filesystem(control_root)
     database = control_root/'control_operations.sqlite'
     identity = database.lstat()

@@ -28,7 +28,7 @@ Remove replaced implementations; do not retain compatibility aliases or a second
 
 ## Removed or merged
 
-- Delete the source-relative runtime settings constant and the old `configs/storage.json` copy after moving its unchanged bytes into package resources.
+- Remove source-relative runtime settings so installation and the operator workspace remain independent.
 - Remove unconditional example Git/Code initialization from scientific execution and queries.
 - Merge planner/mock input mapping and selection logic into the program registry; remove the two duplicate CSV-header readers and fixed two-point-only model input schema.
 - Replace filename-based installed capability checks and both handwritten case/provider YAML subsets with the shared `configuration.py` loader.
@@ -39,7 +39,7 @@ Remove replaced implementations; do not retain compatibility aliases or a second
 
 Affected checks covered wheel installation, scientific assembly/input validation, Reviewer propagation, read-only status, archive admission/tampering and existing durability/backup/fencing. A separate passive Codex status fixture uses a validated receipt and the shared original job namespace, asserting no backend construction or file changes without a paid call. It also rejects a redirected backend root, preserving the check previously performed by backend construction. Initial affected failures exposed a moved import, fixture output declarations and an overstrict newly added reader file-mode assumption; the corrections preserve the original private-Host boundary and existing SQLite file modes. The final read-path audit also corrected its Codex job directory reference and centralized that fixed namespace with production assembly. Original failed reports remain separate. Cancellation was checked without credentials or an available data workspace; no existing control authorization was bypassed.
 
-GitHub CI is configured but has not run remotely. OLCF storage qualification and paid Responses/Codex qualification were not repeated for this build. Previous live evidence applies to its earlier build. The wheel smoke reuses locked third-party dependencies offline; it does not certify a new network dependency resolution or live coding deployment. Portable bundles need explicit transport to durable storage and a separately trusted SHA-256; they are not database backups, origin certificates, recoverable Runs or physics acceptance.
+GitHub CI is configured but has not run remotely. Paid Responses/Codex qualification was not repeated for that build. Previous live evidence applies to its earlier build. The wheel smoke reuses locked third-party dependencies offline; it does not certify a new network dependency resolution or live coding deployment. Portable bundles need explicit transport to durable storage and a separately trusted SHA-256; they are not database backups, origin certificates, recoverable Runs or physics acceptance.
 
 ## Final verification — 2026-10-27
 
@@ -56,4 +56,4 @@ Fresh offline CLI processes, three samples before and three after, same local ma
 
 Status latency fell approximately **83.7%** in this local sample; start timings are broadly similar. Final maxima were 7.955 s / 0.191 s respectively. Existing integrity validation and write durability were retained. These small samples are not a production SLO or a scientific capability evaluation. Raw samples remain in ignored `check-results/engineering-baseline.json` and `engineering-after.json`; the timing probe retained its own completed Hosts for inspection.
 
-Remaining external checks are a remote GitHub CI run, native OLCF qualification and explicitly scoped real Responses/Codex qualification for this build. Durable transport of archives remains an explicit operator action.
+The external checks at that point were remote GitHub CI and explicitly scoped real Responses/Codex qualification. Durable transport of archives remains an explicit operator action.

@@ -44,7 +44,7 @@ def child_environment():
     """Allow only runtime/network plumbing; no API keys or personal Codex overrides."""
     names = {'PATH', 'HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'LD_LIBRARY_PATH', 'SSL_CERT_FILE', 'SSL_CERT_DIR',
              'HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'no_proxy',
-             'LQCD_AGENT_WORKSPACE', 'LQCD_AGENT_STORAGE_CONFIG'}
+             'LQCD_AGENT_WORKSPACE'}
     return {k: v for k, v in os.environ.items() if k in names}
 
 

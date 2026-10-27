@@ -1,6 +1,5 @@
-"""The execution parent is fixed, canonical and shared with pytest's own roots."""
+"""The Mac execution parent is fixed and rejects unsupported paths/platforms."""
 from pathlib import Path
-import sys
 
 import pytest
 
@@ -10,10 +9,7 @@ from lqcd_agent.control.strict_json import ControlIntegrityError
 
 def test_actual_scratch_parent_is_fixed_and_existing(monkeypatch):
     monkeypatch.setenv("TMPDIR", "/tmp/foreign-caller-parent")
-    expected = (Path("/private/tmp") if sys.platform == "darwin" else
-                Path("/lustre/orion/nph158/proj-shared/xgao/lqcd_agent/tmp"))
-    assert storage.execution_scratch_root() == expected
-    assert expected.is_dir() and expected.resolve() == expected
+    assert storage.execution_scratch_root() == Path("/private/tmp")
 
 
 def test_pytest_owned_tmp_path_uses_the_same_approved_parent(tmp_path):
@@ -22,13 +18,17 @@ def test_pytest_owned_tmp_path_uses_the_same_approved_parent(tmp_path):
 
 
 @pytest.mark.parametrize("fault", ["missing", "symlink"])
-def test_invalid_linux_parent_is_refused_without_fallback(tmp_path, monkeypatch, fault):
-    if sys.platform == "darwin":
-        assert storage.execution_scratch_root() == Path("/private/tmp")
-        return
+def test_invalid_parent_is_refused_without_fallback(tmp_path, monkeypatch, fault):
     proposed = tmp_path / "untrusted-parent"
     if fault == "symlink":
         proposed.symlink_to(storage.execution_scratch_root(), target_is_directory=True)
-    monkeypatch.setattr(storage, "LINUX_SCRATCH", proposed)
+    monkeypatch.setattr(storage, "Path", lambda _: proposed)
     with pytest.raises(ControlIntegrityError, match="existing canonical directory"):
+        storage.execution_scratch_root()
+
+
+@pytest.mark.parametrize("platform", ["linux", "win32"])
+def test_unqualified_platform_cannot_select_an_execution_parent(monkeypatch, platform):
+    monkeypatch.setattr(storage.sys, "platform", platform)
+    with pytest.raises(ControlIntegrityError, match="qualified macOS platform"):
         storage.execution_scratch_root()

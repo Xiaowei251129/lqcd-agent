@@ -107,10 +107,6 @@ def verify_checkpoint(run_root, manifest):
     path = Path(run_root) / "checkpoints/graph_checkpoints.sqlite"
     require(path.is_file() and not path.is_symlink(), "Missing durable checkpoint")
     read_regular(path)
-    control = Path(run_root).parent.parent / ".lqcd"
-    if control.exists() or control.is_symlink():
-        from .storage import require_host_binding
-        require_host_binding(control)
     connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)
     try:
         raw_metadata = connection.execute("SELECT metadata FROM checkpoints WHERE thread_id=? AND checkpoint_ns='' AND checkpoint_id=?",

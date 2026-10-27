@@ -38,7 +38,6 @@ def test_wheel_installs_and_runs_outside_source(tmp_path):
     assert result.returncode == 0, result.stderr
     wheel, = (build/'wheels').glob('*.whl')
     with zipfile.ZipFile(wheel) as bundle:
-        assert 'lqcd_agent/resources/storage.json' in bundle.namelist()
         manifest = json.loads(bundle.read('lqcd_agent/_build_manifest.json'))
         assert manifest['application_build']
         assert not any(n.startswith(('check-results/', '.env', 'raw_data/')) for n in bundle.namelist())
@@ -57,6 +56,7 @@ def test_wheel_installs_and_runs_outside_source(tmp_path):
     assert check.returncode == 0, check.stderr
     report = json.loads(check.stdout)
     assert report['passed'] and report['workspace'] == str(workspace)
+    assert report['platform'] == 'Darwin' and report['scratch_parent'] == '/private/tmp'
     assert report['pragmas'] == {'journal_mode': 'wal', 'synchronous': 2, 'foreign_keys': 1}
     assert not report['live_api_called']
 

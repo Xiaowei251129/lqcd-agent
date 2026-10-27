@@ -2,6 +2,8 @@
 import json
 import ast
 import os
+import re
+import yaml
 from pathlib import Path
 import subprocess
 import sys
@@ -74,7 +76,7 @@ assert not {{'lqcd_agent.control.storage', 'lqcd_agent.control.coordinator',
              'lqcd_agent.artifacts.registry', 'lqcd_agent.graph.state', 'langgraph'}} & sys.modules.keys()
 '''
     result = subprocess.run([sys.executable, '-I', '-S', '-B', '-c', script], capture_output=True,
-        text=True, timeout=15, env={'PATH': os.defpath, 'LQCD_AGENT_STORAGE_CONFIG': str(tmp_path/'unavailable')})
+        text=True, timeout=15, env={'PATH': os.defpath, 'TMPDIR': str(tmp_path/'unavailable')})
     assert result.returncode == 0, result.stderr
 
 
@@ -93,3 +95,13 @@ def test_control_contract_consumers_do_not_depend_on_graph_modules():
             if any(module == 'lqcd_agent.graph' or module.startswith('lqcd_agent.graph.') for module in modules):
                 violations.append((str(path), node.lineno))
     assert not violations
+
+
+def test_workflow_job_environment_uses_only_pre_runner_contexts():
+    source = Path(__file__).resolve().parents[1]/'.github/workflows/check.yml'
+    workflow = yaml.load(source.read_text(), Loader=yaml.BaseLoader)
+    allowed = {'github', 'needs', 'strategy', 'matrix', 'vars', 'secrets', 'inputs'}
+    for job in workflow['jobs'].values():
+        for value in job.get('env', {}).values():
+            contexts = re.findall(r'\$\{\{\s*([a-zA-Z_]+)\.', value)
+            assert set(contexts) <= allowed

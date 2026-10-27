@@ -33,4 +33,4 @@ The canonical protocol generator, strict changed-JSON parsing, Python compilatio
 
 ## Remaining qualification
 
-No paid provider calls were made. The new proposal schema and projections need explicit live-provider qualification before claiming API latency, cost or scientific quality improvements. OLCF/Linux qualification remains separate from local macOS integration. Scientific evaluation data and autonomous model-directed retrieval are outside this maintenance scope.
+No paid provider calls were made. The new proposal schema and projections need explicit live-provider qualification before claiming API latency, cost or scientific quality improvements. Scientific evaluation data and autonomous model-directed retrieval are outside this maintenance scope.

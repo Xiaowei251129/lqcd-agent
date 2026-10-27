@@ -44,7 +44,6 @@ jobs:
     timeout-minutes: 10
     env:
       RUN_LIVE_LLM_TESTS: '0'
-      TMPDIR: ${{ runner.temp }}
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
@@ -56,9 +55,13 @@ jobs:
           python -m venv .venv
           .venv/bin/python -m pip install --require-hashes -r requirements.lock
           .venv/bin/python -m pip install --no-deps --no-build-isolation -e .
+        env:
+          TMPDIR: ${{ runner.temp }}
       - run: |
           .venv/bin/ruff check src tests scripts setup.py
           .venv/bin/python scripts/generate_protocol.py --check
           .venv/bin/python scripts/build_manifest.py --check
           .venv/bin/python -m lqcd_agent.benchmark
           .venv/bin/python -c 'from setuptools.build_meta import build_wheel; build_wheel("dist")'
+        env:
+          TMPDIR: ${{ runner.temp }}
