@@ -453,19 +453,20 @@ def _run_provider_scientific_reviewer(
         if review_scope["requires_matrix_element_validation"]
         else {"exists": False, "path": None, "applicable": False}
     )
-    request = build_scientific_reviewer_request(
-        run_id=run_id,
-        case_id=case_id,
-        run_result_path=str(run_result_path) if run_result_path else None,
-        analysis_outputs_dir=str(resolved_analysis_outputs_dir),
-        method_plan_path=str(method_plan_path) if method_plan_path else None,
-        run_result_summary=_run_result_summary(run_result, path=run_result_path),
-        fit_diagnostics_summary=fit_diagnostics,
-        matrix_element_summary=matrix_summary,
-        method_plan_summary=_method_plan_summary(method_plan, path=method_plan_path),
-        review_scope=review_scope,
-    )
+    request = None
     try:
+        request = build_scientific_reviewer_request(
+            run_id=run_id,
+            case_id=case_id,
+            run_result_path=str(run_result_path) if run_result_path else None,
+            analysis_outputs_dir=str(resolved_analysis_outputs_dir),
+            method_plan_path=str(method_plan_path) if method_plan_path else None,
+            run_result_summary=_run_result_summary(run_result, path=run_result_path),
+            fit_diagnostics_summary=fit_diagnostics,
+            matrix_element_summary=matrix_summary,
+            method_plan_summary=_method_plan_summary(method_plan, path=method_plan_path),
+            review_scope=review_scope,
+        )
         response = provider.generate(request)
     except Exception as exc:
         report = _provider_failure_report(

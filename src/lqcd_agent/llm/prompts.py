@@ -11,6 +11,10 @@ from lqcd_agent.llm.base import LLMRequest
 MAX_CONTEXT_CHARS = 6000
 
 
+class ContextLimitError(ValueError):
+    code = "context_limit_exceeded"
+
+
 def _string_schema(enum: list[str] | None = None) -> dict[str, Any]:
     schema: dict[str, Any] = {"type": "string"}
     if enum is not None:
@@ -226,18 +230,11 @@ def _decision_log_json_schema(*, run_id: str, case_id: str) -> dict[str, Any]:
 
 
 def _bounded_json(payload: dict[str, Any]) -> str:
-    text = json.dumps(payload, sort_keys=True)
-    if len(text) <= MAX_CONTEXT_CHARS:
-        return text
-    truncated = {
-        "schema_version": payload.get("schema_version", "0.1"),
-        "artifact_type": payload.get("artifact_type"),
-        "run_id": payload.get("run_id"),
-        "case_id": payload.get("case_id"),
-        "truncated": True,
-        "summary": "Prompt context exceeded the Phase 10B bound; use artifact paths and summaries only.",
-    }
-    return json.dumps(truncated, sort_keys=True)
+    text = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    if len(text) > MAX_CONTEXT_CHARS:
+        raise ContextLimitError(
+            f"Prompt context exceeds {MAX_CONTEXT_CHARS} characters; reduce the supplied context before retrying.")
+    return text
 
 
 def _request(*, agent_name: str, payload: dict[str, Any], json_schema: dict[str, Any]) -> LLMRequest:

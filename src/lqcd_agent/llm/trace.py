@@ -19,7 +19,9 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _request_payload(request: LLMRequest) -> dict[str, Any]:
+def _request_payload(request: LLMRequest | None) -> dict[str, Any] | None:
+    if request is None:
+        return None
     return {
         "messages": [dict(message) for message in request.messages],
         "response_format": request.response_format,
@@ -64,7 +66,7 @@ def write_llm_call_trace(
     output_dir: str | Path,
     agent: str,
     provider: LLMProvider,
-    request: LLMRequest,
+    request: LLMRequest | None,
     response: LLMResponse | None = None,
     parsed_payload_path: str | Path | None = None,
     status: str,

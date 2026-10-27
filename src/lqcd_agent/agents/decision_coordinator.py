@@ -973,17 +973,18 @@ def _run_provider_decision_coordinator(
         run_result_path=run_result_path,
         scientific_review_report_path=scientific_review_report_path,
     )
-    request = build_decision_coordinator_request(
-        run_id=run_id,
-        case_id=case_id,
-        method_plan_path=str(method_plan_path) if method_plan_path else None,
-        run_result_path=str(run_result_path) if run_result_path else None,
-        scientific_review_report_path=str(scientific_review_report_path) if scientific_review_report_path else None,
-        method_plan_summary=local_context["method_plan_summary"],
-        run_result_summary=local_context["run_result_summary"],
-        scientific_review_summary=local_context["scientific_review_summary"],
-    )
+    request = None
     try:
+        request = build_decision_coordinator_request(
+            run_id=run_id,
+            case_id=case_id,
+            method_plan_path=str(method_plan_path) if method_plan_path else None,
+            run_result_path=str(run_result_path) if run_result_path else None,
+            scientific_review_report_path=str(scientific_review_report_path) if scientific_review_report_path else None,
+            method_plan_summary=local_context["method_plan_summary"],
+            run_result_summary=local_context["run_result_summary"],
+            scientific_review_summary=local_context["scientific_review_summary"],
+        )
         response = provider.generate(request)
     except Exception as exc:
         decision_log = _provider_failure_decision_log(

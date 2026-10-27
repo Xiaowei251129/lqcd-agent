@@ -9,6 +9,7 @@ import sys
 import time
 
 from lqcd_agent.control.coordinator import component, publish_exact, read_regular
+from lqcd_agent.control.clock import host_boot_id
 from lqcd_agent.control.strict_json import canonical_bytes, digest, loads, require
 from lqcd_agent.settings import ApplicationSettings, child_environment
 from .backend import validate_receipt, validate_result_reference, validate_status
@@ -18,6 +19,25 @@ from .codex_worker import write_json
 
 
 def process_identity(pid):
+    if sys.platform == 'darwin':
+        import ctypes
+        import errno
+        # Darwin sys/proc_info.h, PROC_PIDTBSDINFO: retain microsecond start identity.
+        class BSDInfo(ctypes.Structure):
+            _fields_ = [('fields', ctypes.c_uint32 * 12), ('names', ctypes.c_char * 48),
+                        ('files_and_group', ctypes.c_uint32 * 6),
+                        ('start_seconds', ctypes.c_uint64), ('start_microseconds', ctypes.c_uint64)]
+        library = ctypes.CDLL('/usr/lib/libproc.dylib', use_errno=True)
+        inspect = library.proc_pidinfo
+        inspect.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_uint64, ctypes.c_void_p, ctypes.c_int]
+        inspect.restype = ctypes.c_int
+        info = BSDInfo()
+        size = inspect(pid, 3, 0, ctypes.byref(info), ctypes.sizeof(info))
+        if size == 0 and ctypes.get_errno() == errno.ESRCH:
+            return None
+        require(size == ctypes.sizeof(info) and info.fields[3] == pid, 'Cannot verify backend PID identity')
+        return None if info.fields[1] == 5 else f'{info.start_seconds}:{info.start_microseconds}'
+    require(sys.platform == 'linux', 'Unsupported backend process platform')
     try:
         text = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()
         return None if text[0] == 'Z' else text[19]
@@ -26,6 +46,11 @@ def process_identity(pid):
 
 
 def group_members(group):
+    if sys.platform == 'darwin':
+        rows = subprocess.check_output(['/bin/ps', '-axo', 'pid=,pgid=,stat='], text=True, timeout=10)
+        return [int(pid) for row in rows.splitlines() for pid, pgid, status in [row.split()]
+                if int(pgid) == group and not status.startswith('Z')]
+    require(sys.platform == 'linux', 'Unsupported backend process platform')
     found = []
     for p in Path('/proc').iterdir():
         if not p.name.isdigit():
@@ -58,6 +83,7 @@ class CodexCodingBackend:
         manifest = validate_manifest(workspace_manifest_ref, task).value
         require(task['producer_operation_id'] == producer_operation_id and task['coding_backend_kind'] == self.kind,
                 'Codex dispatch identity mismatch')
+        boot_id = host_boot_id()
         job = self.job(producer_operation_id)
         if job.exists():
             saved = json.loads((job / 'request.json').read_text())
@@ -86,7 +112,7 @@ class CodexCodingBackend:
                 env=environment, cwd=self.root, stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
         self.children[producer_operation_id] = process
         write_json(job / 'process.json', {'pid': process.pid, 'start_ticks': process_identity(process.pid),
-            'boot_id': Path('/proc/sys/kernel/random/boot_id').read_text().strip()})
+            'boot_id': boot_id})
         return receipt
 
     def lookup(self, producer_operation_id):
@@ -137,7 +163,7 @@ class CodexCodingBackend:
         if not path.exists():
             return
         identity = json.loads(path.read_text())
-        require(identity['boot_id'] == Path('/proc/sys/kernel/random/boot_id').read_text().strip(), 'Foreign backend Host')
+        require(identity['boot_id'] == host_boot_id(), 'Foreign backend Host')
         group = identity['pid']
         current = process_identity(group)
         require(current is None or current == identity['start_ticks'], 'Backend PID identity changed')

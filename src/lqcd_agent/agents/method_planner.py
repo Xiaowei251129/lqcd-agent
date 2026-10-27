@@ -585,14 +585,15 @@ def _run_provider_method_planner(
     provider: LLMProvider,
 ) -> dict[str, Any]:
     case_id = str((case_config or {}).get("case_id", "unknown_case"))
-    request = build_method_planner_request(
-        run_id=run_id,
-        case_id=case_id,
-        user_goal=user_goal,
-        case_config=case_config,
-        repo_inventory=repo_inventory,
-    )
+    request = None
     try:
+        request = build_method_planner_request(
+            run_id=run_id,
+            case_id=case_id,
+            user_goal=user_goal,
+            case_config=case_config,
+            repo_inventory=repo_inventory,
+        )
         response = provider.generate(request)
     except Exception as exc:
         plan = _provider_failure_plan(

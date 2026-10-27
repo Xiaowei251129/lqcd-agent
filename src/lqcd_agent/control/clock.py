@@ -2,6 +2,8 @@
 from dataclasses import dataclass
 import time
 import uuid
+import sys
+import subprocess
 from typing import Protocol
 
 from .strict_json import number, require
@@ -23,11 +25,21 @@ class Clock(Protocol):
     def now(self) -> Timestamp: ...
 
 
+def host_boot_id():
+    """Keep monotonic intervals bound to the same OS boot across CLI processes."""
+    from pathlib import Path
+    require(sys.platform in ("linux", "darwin"), "Unsupported Host boot identity platform")
+    if sys.platform == "linux":
+        value = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+    else:
+        value = subprocess.check_output(["/usr/sbin/sysctl", "-n", "kern.bootsessionuuid"],
+                                        text=True, timeout=10).strip()
+    return str(uuid.UUID(value))
+
+
 class HostClock:
     def __init__(self):
-        from pathlib import Path
-        boot = Path("/proc/sys/kernel/random/boot_id")
-        self.epoch_id = "host_clock_" + (boot.read_text().strip() if boot.exists() else uuid.uuid4().hex)
+        self.epoch_id = "host_clock_" + host_boot_id()
 
     def now(self):
         return Timestamp("host", time.time(), time.monotonic())

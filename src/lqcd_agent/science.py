@@ -41,10 +41,8 @@ class ScientificAgent:
             plan = self._artifact(context, 'method_plan.json')['domain_result']['method_plan_path']
             reviewed = run_scientific_reviewer(run_id=identity['run_id'], case_id=identity['case_id'], run_output_dir=output,
                 run_result_path=result['run_result_path'], analysis_outputs_dir=result['analysis_outputs_dir'], method_plan_path=plan, provider=self.provider)
-            report = json.loads(Path(reviewed['scientific_review_report_path']).read_text())
-            diagnostic['risk'] = report.get('risk_level', 'high')
-            if diagnostic['risk'] in ('high', 'critical'):
-                diagnostic.update(category='scientific_review', human_need='approval')
+            # Scientific confirmation is Host policy, independent of model confidence or extra fields.
+            diagnostic.update(risk='high', category='scientific_review', human_need='approval')
             content = {'domain_result': reviewed}
         else:
             raise ValueError('Unsupported scientific role: ' + node)

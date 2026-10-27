@@ -112,18 +112,57 @@ def test_sdk_worker_uses_private_auth_and_retains_permissions(tmp_path, monkeypa
 
 def test_real_backend_stop_verifies_pid_and_drains_group(tmp_path):
     from lqcd_agent.code_agent.codex_backend import CodexCodingBackend, process_identity, group_members
+    from lqcd_agent.control.clock import host_boot_id
     backend=CodexCodingBackend(tmp_path/'jobs',tmp_path/'workspaces')
     job=backend.job('operation');job.mkdir()
-    process=subprocess.Popen([sys.executable,'-I','-S','-c','import time;time.sleep(120)'], start_new_session=True)
+    script = '''import subprocess, sys, time
+child = subprocess.Popen([sys.executable, '-I', '-S', '-c',
+    'import os,signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); print(os.getpid(),flush=True); time.sleep(120)'],
+    stdout=subprocess.PIPE, text=True)
+print(child.stdout.readline().strip(), flush=True)
+time.sleep(120)
+'''
+    process=subprocess.Popen([sys.executable,'-I','-S','-c',script], start_new_session=True,
+        stdout=subprocess.PIPE, text=True)
     backend.children['operation']=process
-    identity={'pid':process.pid,'start_ticks':process_identity(process.pid),'boot_id':Path('/proc/sys/kernel/random/boot_id').read_text().strip()}
+    child_pid = int(process.stdout.readline())
+    identity={'pid':process.pid,'start_ticks':process_identity(process.pid),'boot_id':host_boot_id()}
     (job/'process.json').write_text(json.dumps(identity))
     try:
+        assert child_pid in group_members(process.pid)
         backend.stop('operation')
         assert process.poll() is not None and not group_members(process.pid)
     finally:
-        if process.poll() is None:
-            os.killpg(process.pid,signal.SIGKILL);process.wait()
+        try: os.killpg(process.pid,signal.SIGKILL)
+        except ProcessLookupError: pass
+        process.wait()
+        process.stdout.close()
+
+
+def test_host_clock_epoch_survives_fresh_cli_process():
+    from lqcd_agent.control.clock import HostClock
+    child = subprocess.check_output([sys.executable, '-B', '-c',
+        'from lqcd_agent.control.clock import HostClock; print(HostClock().epoch_id)'], text=True, timeout=30)
+    assert child.strip() == HostClock().epoch_id
+
+
+@pytest.mark.parametrize('field,value,message', [('start_ticks', 'foreign', 'PID identity changed'),
+    ('boot_id', 'foreign', 'Foreign backend Host')])
+def test_backend_stop_rejects_foreign_identity_before_signalling(tmp_path, field, value, message):
+    from lqcd_agent.code_agent.codex_backend import CodexCodingBackend, process_identity
+    from lqcd_agent.control.clock import host_boot_id
+    from lqcd_agent.control.strict_json import ControlIntegrityError
+    backend = CodexCodingBackend(tmp_path/'jobs', tmp_path/'workspaces')
+    job = backend.job('operation'); job.mkdir()
+    process = subprocess.Popen([sys.executable, '-I', '-S', '-c', 'import time;time.sleep(120)'], start_new_session=True)
+    identity = {'pid': process.pid, 'start_ticks': process_identity(process.pid), 'boot_id': host_boot_id()}
+    (job/'process.json').write_text(json.dumps({**identity, field: value}))
+    try:
+        with pytest.raises(ControlIntegrityError, match=message):
+            backend.stop('operation')
+        assert process.poll() is None
+    finally:
+        os.killpg(process.pid, signal.SIGKILL); process.wait()
 
 
 def test_provider_factory_keeps_dotenv_out_of_process_environment(tmp_path, monkeypatch):
@@ -160,6 +199,8 @@ def test_backend_dispatch_is_idempotent_conflicts_fail_and_cancel_stops(tmp_path
     manifest={'workspace_id':'workspace','manifest_digest':digest('manifest')}
     launch=subprocess.Popen; calls=[]
     def worker(argv, **kwargs):
+        if argv[1:4] != ['-B', '-m', 'lqcd_agent.code_agent.codex_worker']:
+            return launch(argv, **kwargs)
         assert argv[3]=='lqcd_agent.code_agent.codex_worker' and 'OPENAI_API_KEY' not in kwargs['env']
         calls.append(argv)
         return launch([sys.executable,'-I','-S','-c','import time;time.sleep(120)'],**kwargs)
