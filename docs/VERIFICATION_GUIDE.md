@@ -31,3 +31,21 @@ The [engineering maintenance record](maintenance/ENGINEERING_DELIVERY.md) descri
 The GitHub workflow pins checkout/setup actions, grants read-only repository access, installs the lock and runs offline integration on macOS. Local checks do not certify a remote CI run or OLCF admission. The CLI timing probe reports independent-process samples, median and maximum; it retains its own completed Hosts and does not call paid APIs. Small local samples measure engineering overhead, not scientific capability or a production latency SLO.
 
 Archive verification is content/inventory checking, not a replay, origin authentication without a separately trusted digest, or physics acceptance. Archives exclude SQLite and do not replace the coordinator backup API. There is no old-Run migration, automatic cleanup, unrestricted execution or extra approval policy.
+
+## Scientific evidence and context maintenance
+
+`tests/test_research_evidence.py` verifies exact consumed-byte provenance, changed-data refusal before calculation, explicit missing-input identity, and inherited input identity during a real scientific Replay. It also checks that models select program IDs while the Host creates mappings, rejects forged identities/paths and duplicate/unknown selections, preserves pending proposals, and supports digest-checked context section reads. Existing workflow, durability, cancellation, archive and credential tests remain part of integration.
+
+Read a role's evidence catalog from its `llm_calls/<role>.json` request message. In Python:
+
+```python
+from lqcd_agent.llm.context import read_context_evidence
+
+# output_dir is the scientific role's recorded domain output directory.
+# catalog is the evidence_catalog from that role's request JSON.
+source = read_context_evidence(output_dir, catalog, 'repo_inventory', fields=['analysis_programs'])
+```
+
+Planner sources are `user_goal`, `case_config` and `repo_inventory`. Reviewer sources include the complete supplied `method_plan` and `run_result`, plus diagnostic summaries and review scope. A referenced digest identifies one immutable bundle; missing sections, changed bytes, symlinks and hardlinks are rejected. This helper reads local evidence and grants no execution, approval or control authority. Model messages contain selected views, not command logs or a general filesystem-reading tool. Archives include these bundles through the existing scientific member inventory.
+
+`python scripts/measure_context.py` measures fixed offline request character sizes (messages and compact JSON Schema separately) and 50 invocations of the current eight-point numerical program. These are payload sizes and local computation timings, not tokenizer counts, API latency, cache hit rates or scientific quality estimates. Explicitly authorized provider qualification is still required for this build; ordinary checks do not spend API credits.

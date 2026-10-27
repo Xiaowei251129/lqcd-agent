@@ -135,11 +135,6 @@ def test_mock_provider_marks_fit_only_matrix_review_not_applicable() -> None:
 
 def test_scientific_reviewer_prompt_includes_scope_policy() -> None:
     request = build_scientific_reviewer_request(
-        run_id="unit_run",
-        case_id="unit_case",
-        run_result_path="run_result.json",
-        analysis_outputs_dir="analysis_outputs",
-        method_plan_path="method_plan.json",
         fit_diagnostics_summary={"status": "pass"},
         review_scope={
             "requires_matrix_element_validation": False,
@@ -153,43 +148,5 @@ def test_scientific_reviewer_prompt_includes_scope_policy() -> None:
     assert request.json_schema["name"] == "scientific_review_report"
     assert payload["review_scope"]["requires_matrix_element_validation"] is False
     assert payload["fit_diagnostics_summary"]["status"] == "pass"
-    assert payload["output_contract"]["strict_json_schema"] is True
-    assert "do not warn about missing synthetic_matrix_elements.json" in payload["output_contract"]["scope_policy"]
-
-
-def test_mock_provider_decision_does_not_lower_severe_review() -> None:
-    provider = MockLLMProvider()
-    response = provider.generate(
-        LLMRequest(
-            messages=[
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {
-                            "artifact_type": "decision_log",
-                            "run_id": "unit_run",
-                            "case_id": "unit_case",
-                            "method_plan_summary": {"status": "success"},
-                            "run_result_summary": {"run_success": True},
-                            "scientific_review_summary": {
-                                "status": "success",
-                                "confidence": "low",
-                                "warnings": [
-                                    {
-                                        "severity": "severe",
-                                        "decision_coordinator_flag": True,
-                                        "message": "Severe summary evidence.",
-                                    }
-                                ],
-                            },
-                        }
-                    ),
-                }
-            ]
-        )
-    )
-    payload = json.loads(response.content)
-
-    assert payload["risk_level"] == "high"
-    assert payload["human_approval_required"] is True
-    assert payload["routing_decision"]["actual_route"] == "human_approval_gate"
+    assert request.json_schema["strict"] is True
+    assert "do not warn about missing synthetic_matrix_elements.json" in request.messages[0]["content"]

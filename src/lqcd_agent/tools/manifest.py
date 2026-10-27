@@ -117,6 +117,7 @@ def build_manifest(
     commands: Sequence[dict[str, Any]],
     status: str,
     summary: str,
+    data_inputs: Sequence[dict[str, Any]] = (),
     warnings: Sequence[dict[str, Any]] | None = None,
     errors: Sequence[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -142,7 +143,7 @@ def build_manifest(
         "git_commit": git["commit"],
         "git_status_summary": git["status_summary"],
         "config_hash": _combined_config_hash(input_files),
-        "input_files": [_file_record(path) for path in input_files],
+        "input_files": [_file_record(path) for path in input_files] + [dict(record) for record in data_inputs],
         "output_files": [_file_record(path) for path in output_files],
         "commands": [dict(command) for command in commands],
         "tool_versions": _tool_versions(),

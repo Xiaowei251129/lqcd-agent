@@ -29,6 +29,7 @@ class LLMRequest:
     json_schema: dict[str, Any] | None = None
     temperature: float | None = None
     max_tokens: int | None = None
+    context_sources: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

@@ -12,13 +12,14 @@ from typing import Any
 from lqcd_agent.llm.base import LLMProvider
 from lqcd_agent.llm.prompts import build_method_planner_request
 from lqcd_agent.llm.provider_factory import create_provider_from_config_path
-from lqcd_agent.llm.schemas import validate_method_plan_payload
+from lqcd_agent.llm.schemas import validate_proposal, artifact_payload
 from lqcd_agent.llm.structured_output import (
     parse_json_object,
     provider_exception_artifact,
     validation_error_artifact,
 )
 from lqcd_agent.llm.trace import write_llm_call_trace
+from lqcd_agent.llm.context import persist_context, read_context_evidence, context_reference
 
 
 REQUIRED_PLAN_FIELDS = [
@@ -100,13 +101,6 @@ def _as_string_list(value: Any) -> list[str]:
     return [str(value)]
 
 
-def _program_inventory(repo_inventory: dict[str, Any]) -> list[dict[str, Any]]:
-    programs = repo_inventory.get("analysis_programs", [])
-    if not isinstance(programs, list):
-        return []
-    return [program for program in programs if isinstance(program, dict)]
-
-
 def _raw_data_missing(case_config: dict[str, Any], repo_inventory: dict[str, Any] | None) -> bool:
     raw_value = case_config.get("raw_data_path")
     repo_root = (repo_inventory or {}).get("repo_root")
@@ -128,107 +122,6 @@ def _runtime_input_warning(case_config: dict[str, Any]) -> dict[str, Any]:
         "path": raw_value,
         "value": raw_value,
     }
-
-
-def _matching_inventory_program(
-    selected_program: dict[str, Any],
-    repo_inventory: dict[str, Any],
-) -> dict[str, Any] | None:
-    selected_name = str(selected_program.get("name", ""))
-    selected_callable = str(selected_program.get("callable_path", ""))
-    for program in _program_inventory(repo_inventory):
-        program_name = str(program.get("name", ""))
-        program_callable = str(program.get("callable_path", ""))
-        if selected_name and selected_name == program_name:
-            return program
-        if selected_callable and selected_callable == program_callable:
-            return program
-    return None
-
-
-def _append_warning(payload: dict[str, Any], warning: dict[str, Any]) -> None:
-    warnings = payload.get("warnings", [])
-    if not isinstance(warnings, list):
-        warnings = []
-    warnings.append(warning)
-    payload["warnings"] = warnings
-
-
-def _changed_program_fields(original: dict[str, Any], normalized: dict[str, Any]) -> list[str]:
-    fields = sorted(set(original) | set(normalized))
-    return [field for field in fields if original.get(field) != normalized.get(field)]
-
-
-def _normalize_provider_selected_programs(
-    *,
-    payload: dict[str, Any],
-    case_config: dict[str, Any] | None,
-    repo_inventory: dict[str, Any] | None,
-) -> dict[str, Any]:
-    if case_config is None or repo_inventory is None:
-        return payload
-
-    normalized = dict(payload)
-    selected = normalized.get("selected_analysis_programs", [])
-    if not isinstance(selected, list):
-        return normalized
-
-    canonical_selected: list[dict[str, Any]] = []
-    changed_programs: list[str] = []
-    changed_fields: list[dict[str, Any]] = []
-    for item in selected:
-        if not isinstance(item, dict):
-            continue
-        program = _matching_inventory_program(item, repo_inventory)
-        if program is None:
-            canonical_selected.append(item)
-            continue
-        canonical = canonical_program_selection(program, case_config, repo_inventory)
-        if canonical is None:
-            canonical_selected.append(item)
-            continue
-        if item != canonical:
-            changed_programs.append(str(canonical["name"]))
-            changed_fields.append(
-                {
-                    "name": str(canonical["name"]),
-                    "changed_fields": _changed_program_fields(item, canonical),
-                }
-            )
-        canonical_selected.append(canonical)
-
-    if not canonical_selected:
-        inferred = selected_analysis_programs(case_config=case_config, repo_inventory=repo_inventory)
-        if inferred:
-            canonical_selected = inferred
-            changed_programs.extend(str(program["name"]) for program in inferred)
-            changed_fields.extend(
-                {
-                    "name": str(program["name"]),
-                    "changed_fields": ["selected_analysis_programs"],
-                }
-                for program in inferred
-            )
-
-    if canonical_selected != selected:
-        normalized["selected_analysis_programs"] = canonical_selected
-        _append_warning(
-            normalized,
-            {
-                "code": "selected_analysis_programs_normalized",
-                "severity": "info",
-                "decision_coordinator_flag": False,
-                "message": (
-                    "Provider selected registered analysis program(s), and the runtime normalized "
-                    "their executable input mappings from repo inventory."
-                ),
-                "programs": sorted(set(changed_programs)),
-                "changed_fields": changed_fields,
-                "original_selected_analysis_programs": selected,
-                "normalized_selected_analysis_programs": canonical_selected,
-            },
-        )
-    return normalized
 
 
 def build_method_plan(
@@ -381,91 +274,6 @@ def _provider_failure_plan(
     }
 
 
-def _normalize_provider_method_plan(payload: dict[str, Any]) -> dict[str, Any]:
-    normalized = dict(payload)
-    if (
-        normalized.get("status") in {"pending", "needs_more_info"}
-        and not normalized.get("errors")
-        and isinstance(normalized.get("code_needed"), bool)
-        and all(field in normalized for field in REQUIRED_PLAN_FIELDS)
-    ):
-        warnings = normalized.get("warnings", [])
-        if not isinstance(warnings, list):
-            warnings = []
-        warnings.append(
-            {
-                "code": "provider_status_normalized",
-                "message": "Provider returned a complete executable plan with a non-terminal status; normalized to success.",
-                "original_status": normalized.get("status"),
-            }
-        )
-        normalized["warnings"] = warnings
-        normalized["status"] = "success"
-    return normalized
-
-
-def _provider_errors_are_only_missing_raw_data(payload: dict[str, Any], case_config: dict[str, Any]) -> bool:
-    errors = payload.get("errors", [])
-    if not isinstance(errors, list):
-        return False
-    if not errors:
-        return True
-    raw_value = str(case_config.get("raw_data_path", "")).lower()
-    for error in errors:
-        if not isinstance(error, dict):
-            return False
-        text = " ".join(
-            str(error.get(field, ""))
-            for field in ["field", "path", "value", "message", "code", "artifact"]
-            if error.get(field) is not None
-        ).lower()
-        if "raw_data_path" not in text and raw_value not in text:
-            return False
-        if "missing" not in text and "absent" not in text and "not exist" not in text and "unavailable" not in text:
-            return False
-    return True
-
-
-def _normalize_provider_deferred_runtime_inputs(
-    *,
-    payload: dict[str, Any],
-    case_config: dict[str, Any] | None,
-    repo_inventory: dict[str, Any] | None,
-) -> dict[str, Any]:
-    if case_config is None or repo_inventory is None:
-        return payload
-    selected = payload.get("selected_analysis_programs", [])
-    if not selected or not isinstance(selected, list):
-        return payload
-    if not _raw_data_missing(case_config, repo_inventory):
-        return payload
-    if not _provider_errors_are_only_missing_raw_data(payload, case_config):
-        return payload
-    implementation_gaps = payload.get("implementation_gaps", [])
-    if isinstance(implementation_gaps, list) and implementation_gaps:
-        return payload
-
-    normalized = dict(payload)
-    original_errors = normalized.get("errors", [])
-    original_status = normalized.get("status")
-    original_code_needed = normalized.get("code_needed")
-    if original_status in {"pending", "needs_more_info"}:
-        normalized["status"] = "success"
-    normalized["errors"] = []
-    normalized["code_needed"] = False
-    normalized["coder_task_summary"] = None
-    _append_warning(
-        normalized,
-        {
-            **_runtime_input_warning(case_config),
-            "original_status": original_status,
-            "original_code_needed": original_code_needed,
-            "original_errors": original_errors if isinstance(original_errors, list) else [],
-        },
-    )
-    return normalized
-
-
 def _run_provider_method_planner(
     *,
     user_goal: str | None,
@@ -479,12 +287,13 @@ def _run_provider_method_planner(
     request = None
     try:
         request = build_method_planner_request(
-            run_id=run_id,
-            case_id=case_id,
             user_goal=user_goal,
             case_config=case_config,
             repo_inventory=repo_inventory,
         )
+        persist_context(output_dir, request)
+        # Resolve the frozen catalog again before using it for execution mappings.
+        repo_inventory = read_context_evidence(output_dir, context_reference(request.context_sources), 'repo_inventory')
         response = provider.generate(request)
     except Exception as exc:
         plan = _provider_failure_plan(
@@ -544,18 +353,24 @@ def _run_provider_method_planner(
         }
 
     assert payload is not None
-    payload = _normalize_provider_method_plan(payload)
-    payload = _normalize_provider_selected_programs(
-        payload=payload,
-        case_config=case_config,
-        repo_inventory=repo_inventory,
-    )
-    payload = _normalize_provider_deferred_runtime_inputs(
-        payload=payload,
-        case_config=case_config,
-        repo_inventory=repo_inventory,
-    )
-    validation_errors = validate_method_plan_payload(payload, run_id=run_id, case_id=case_id)
+    validation_errors = validate_proposal(payload, 'method_plan')
+    if not validation_errors:
+        selected = []
+        inventory = {p['name']: p for p in (repo_inventory or {}).get('analysis_programs', [])}
+        for name in payload['selected_analysis_programs']:
+            choice = canonical_program_selection(inventory.get(name, {}), case_config or {}, repo_inventory)
+            if choice is None or any(item['name'] == name for item in selected):
+                validation_errors.append('Selected program is unavailable or duplicated.')
+                break
+            selected.append(choice)
+        if (payload['status'] == 'success' and (case_config or {}).get('raw_data_path')
+                and any(requested_programs(case_config)) and not selected and not payload['code_needed']):
+            validation_errors.append('A raw-data analysis plan requires a selected program or an implementation request.')
+        if not validation_errors:
+            payload = artifact_payload(payload, run_id=run_id, case_id=case_id, producer='method_planner')
+            payload['selected_analysis_programs'] = selected
+            payload['required_outputs'] = ['method_plan.json', 'run_result.json',
+                *[item['output_path'] for item in selected], 'scientific_review_report.json', 'decision_log.json']
     if validation_errors:
         plan = _provider_failure_plan(
             run_id=run_id,
@@ -619,6 +434,10 @@ def run_method_planner(
     provider: LLMProvider | None = None,
     provider_config_path: str | Path | None = None,
 ) -> dict[str, Any]:
+    if case_config and repo_inventory and case_config.get('raw_data_path') and repo_inventory.get('repo_root'):
+        if 'dataset_snapshot' not in repo_inventory:
+            from lqcd_agent.tools.dataset import snapshot_dataset
+            repo_inventory = {**repo_inventory, 'dataset_snapshot': snapshot_dataset(case_config, repo_inventory['repo_root'])}
     if provider is None and provider_config_path is not None:
         provider = create_provider_from_config_path(provider_config_path)
     if provider is not None:

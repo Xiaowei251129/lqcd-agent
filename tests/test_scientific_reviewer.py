@@ -3,7 +3,7 @@ from pathlib import Path
 
 from lqcd_agent.agents.scientific_reviewer import run_scientific_reviewer
 from lqcd_agent.llm.base import LLMProviderConfig, LLMRequest, LLMResponse
-from lqcd_agent.llm.mock_provider import MockLLMProvider
+from lqcd_agent.llm.mock_provider import MockLLMProvider, mock_proposal
 
 
 class StaticProvider:
@@ -394,7 +394,7 @@ def test_provider_scientific_reviewer_rejects_string_warning_items(tmp_path: Pat
         run_output_dir=run_dir,
         run_result_path=run_result_path,
         method_plan_path=method_plan_path,
-        provider=StaticProvider(json.dumps(valid_except_warning_shape)),
+        provider=StaticProvider(json.dumps(mock_proposal(valid_except_warning_shape, 'scientific_review_report'))),
     )
     report = json.loads((run_dir / "scientific_review_report.json").read_text(encoding="utf-8"))
 
@@ -432,73 +432,8 @@ def test_provider_scientific_reviewer_filters_context_only_warnings(tmp_path: Pa
         run_output_dir=run_dir,
         run_result_path=run_result_path,
         method_plan_path=method_plan_path,
-        provider=StaticProvider(json.dumps(payload)),
+        provider=StaticProvider(json.dumps(mock_proposal(payload, 'scientific_review_report'))),
     )
 
     assert result["status"] == "success"
     assert result["warnings"] == []
-
-
-def test_provider_scientific_reviewer_preserves_normalization_advisory_as_evidence(tmp_path: Path) -> None:
-    run_dir, run_result_path, method_plan_path = _write_run_artifacts(tmp_path, _good_matrix_payload())
-    advisory = {
-        "code": "selected_analysis_programs_normalized",
-        "severity": "info",
-        "decision_coordinator_flag": False,
-        "message": "Provider selected registered analysis program(s), and runtime normalized mappings.",
-        "programs": ["single_exponential_effective_mass"],
-        "changed_fields": [
-            {
-                "name": "single_exponential_effective_mass",
-                "changed_fields": ["input_mapping"],
-            }
-        ],
-        "original_selected_analysis_programs": [{"name": "single_exponential_effective_mass"}],
-        "normalized_selected_analysis_programs": [
-            {
-                "name": "single_exponential_effective_mass",
-                "input_mapping": {
-                    "times": "raw_data_csv.t",
-                    "correlator_values": "raw_data_csv.value",
-                },
-            }
-        ],
-    }
-    payload = {
-        "schema_version": "0.1",
-        "run_id": "run_a",
-        "case_id": "case_a",
-        "created_at": "2026-06-10T00:00:00+00:00",
-        "producer": "scientific_reviewer",
-        "status": "success",
-        "summary": "Clean provider-backed review with an advisory normalization audit record.",
-        "warnings": [advisory],
-        "errors": [],
-        "correlator_diagnostics": {"status": "not_populated_mvp"},
-        "fit_diagnostics": {"status": "not_populated_mvp"},
-        "matrix_element_diagnostics": {"status": "pass"},
-        "findings": [{"code": "checked"}],
-        "evidence": [{"field": "x", "value": "y"}],
-        "recommended_checks": [],
-        "confidence": "high",
-    }
-
-    result = run_scientific_reviewer(
-        run_id="run_a",
-        case_id="case_a",
-        run_output_dir=run_dir,
-        run_result_path=run_result_path,
-        method_plan_path=method_plan_path,
-        provider=StaticProvider(json.dumps(payload)),
-    )
-    report = result["report"]
-
-    assert result["status"] == "success"
-    assert report["warnings"] == []
-    assert report["confidence"] == "high"
-    advisory_evidence = [
-        evidence for evidence in report["evidence"] if evidence.get("source") == "method_plan_advisory"
-    ]
-    assert advisory_evidence
-    assert advisory_evidence[0]["code"] == "selected_analysis_programs_normalized"
-    assert advisory_evidence[0]["changed_fields"] == advisory["changed_fields"]

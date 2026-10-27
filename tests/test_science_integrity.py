@@ -27,8 +27,7 @@ def test_changed_scientific_member_is_rejected(tmp_path):
 def test_scientific_confirmation_is_host_policy_not_a_reviewer_risk_field(tmp_path, monkeypatch, declared_risk):
     from lqcd_agent.agents import scientific_reviewer
     from lqcd_agent.llm.prompts import build_scientific_reviewer_request
-    schema = build_scientific_reviewer_request(run_id='run', case_id='case',
-        run_result_path=None, analysis_outputs_dir=None, method_plan_path=None).json_schema['schema']
+    schema = build_scientific_reviewer_request().json_schema['schema']
     assert 'risk_level' not in schema['properties'] and not schema['additionalProperties']
     agent = ScientificAgent(tmp_path, {})
     monkeypatch.setattr(agent, '_artifact', lambda context, name: {'domain_result': {

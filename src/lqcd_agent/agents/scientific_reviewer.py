@@ -13,13 +13,14 @@ from lqcd_agent.analysis.matrix_element_diagnostics import diagnose_matrix_eleme
 from lqcd_agent.llm.base import LLMProvider
 from lqcd_agent.llm.prompts import build_scientific_reviewer_request
 from lqcd_agent.llm.provider_factory import create_provider_from_config_path
-from lqcd_agent.llm.schemas import validate_scientific_review_payload
+from lqcd_agent.llm.schemas import validate_proposal, artifact_payload
 from lqcd_agent.llm.structured_output import (
     parse_json_object,
     provider_exception_artifact,
     validation_error_artifact,
 )
 from lqcd_agent.llm.trace import write_llm_call_trace
+from lqcd_agent.llm.context import persist_context, read_context_evidence, context_reference
 
 
 def utc_now() -> str:
@@ -208,38 +209,6 @@ def _artifact_summary(payload: dict[str, Any] | None, *, path: str | Path | None
     }
 
 
-def _run_result_summary(payload: dict[str, Any] | None, *, path: str | Path | None) -> dict[str, Any]:
-    summary = _artifact_summary(payload, path=path)
-    if payload is None:
-        return summary
-    summary.update(
-        {
-            "run_success": payload.get("run_success"),
-            "failure_type": payload.get("failure_type"),
-            "analysis_outputs_dir": payload.get("analysis_outputs_dir"),
-            "produced_output_count": len(payload.get("produced_outputs", []))
-            if isinstance(payload.get("produced_outputs"), list)
-            else None,
-        }
-    )
-    return summary
-
-
-def _method_plan_summary(payload: dict[str, Any] | None, *, path: str | Path | None) -> dict[str, Any]:
-    summary = _artifact_summary(payload, path=path)
-    if payload is None:
-        return summary
-    summary.update(
-        {
-            "code_needed": payload.get("code_needed"),
-            "implementation_gap_count": len(payload.get("implementation_gaps", []))
-            if isinstance(payload.get("implementation_gaps"), list)
-            else None,
-        }
-    )
-    return summary
-
-
 def _matrix_element_summary(payload: dict[str, Any] | None, *, path: str | Path | None) -> dict[str, Any]:
     summary = _artifact_summary(payload, path=path)
     if payload is None:
@@ -284,24 +253,11 @@ def _flag_severity(flag: Any) -> str:
     return "warning"
 
 
-def _is_context_only_provider_warning(warning: dict[str, Any]) -> bool:
-    if warning.get("code") or warning.get("severity") or warning.get("decision_coordinator_flag") is True:
-        return False
-    text = " ".join(
-        str(warning.get(field, ""))
-        for field in ["type", "message", "value"]
-        if warning.get(field) is not None
-    ).lower()
-    if not text.strip():
-        return True
-    return warning.get("type") == "context" and ("synthetic" in text or "mock_unit" in text or "mock normalization" in text)
-
-
 def _is_ungrounded_provider_warning(warning: dict[str, Any]) -> bool:
     if warning.get("severity") == "severe" or warning.get("decision_coordinator_flag") is True:
         return False
     evidence_fields = ["path", "field", "value"]
-    return all(warning.get(field) in {None, ""} for field in evidence_fields)
+    return all(warning.get(field) is None or warning.get(field) == "" for field in evidence_fields)
 
 
 def _is_out_of_scope_matrix_warning(warning: dict[str, Any]) -> bool:
@@ -311,33 +267,6 @@ def _is_out_of_scope_matrix_warning(warning: dict[str, Any]) -> bool:
         if warning.get(field) is not None
     ).lower()
     return "matrix" in text and ("missing" in text or "absent" in text or "synthetic_matrix_elements" in text)
-
-
-def _is_advisory_normalization_warning(warning: dict[str, Any]) -> bool:
-    return (
-        warning.get("code") == "selected_analysis_programs_normalized"
-        and warning.get("decision_coordinator_flag") is not True
-        and warning.get("severity") in {None, "info"}
-    )
-
-
-def _advisory_evidence(warning: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "source": "method_plan_advisory",
-        "action": "recorded",
-        "artifact": warning.get("artifact") or "method_plan.json",
-        "code": warning.get("code"),
-        "severity": warning.get("severity"),
-        "decision_coordinator_flag": warning.get("decision_coordinator_flag"),
-        "message": warning.get("message"),
-        "path": warning.get("path"),
-        "field": warning.get("field"),
-        "value": warning.get("value"),
-        "programs": warning.get("programs"),
-        "changed_fields": warning.get("changed_fields"),
-        "original_selected_analysis_programs": warning.get("original_selected_analysis_programs"),
-        "normalized_selected_analysis_programs": warning.get("normalized_selected_analysis_programs"),
-    }
 
 
 def _normalize_provider_review_payload(
@@ -356,22 +285,9 @@ def _normalize_provider_review_payload(
         for warning in warnings
         if not (
             isinstance(warning, dict)
-            and not _is_advisory_normalization_warning(warning)
-            and (_is_context_only_provider_warning(warning) or _is_ungrounded_provider_warning(warning))
+            and _is_ungrounded_provider_warning(warning)
         )
     ]
-    advisory_evidence = [
-        _advisory_evidence(warning)
-        for warning in preserved_warnings
-        if isinstance(warning, dict) and _is_advisory_normalization_warning(warning)
-    ]
-    preserved_warnings = [
-        warning
-        for warning in preserved_warnings
-        if not (isinstance(warning, dict) and _is_advisory_normalization_warning(warning))
-    ]
-    evidence = normalized.get("evidence", [])
-    normalized["evidence"] = (evidence if isinstance(evidence, list) else []) + advisory_evidence
     if fit_diagnostics.get("status") not in {None, "not_found", "not_populated_mvp"}:
         normalized["fit_diagnostics"] = fit_diagnostics
         fit_warnings = fit_diagnostics.get("warnings", [])
@@ -456,17 +372,14 @@ def _run_provider_scientific_reviewer(
     request = None
     try:
         request = build_scientific_reviewer_request(
-            run_id=run_id,
-            case_id=case_id,
-            run_result_path=str(run_result_path) if run_result_path else None,
-            analysis_outputs_dir=str(resolved_analysis_outputs_dir),
-            method_plan_path=str(method_plan_path) if method_plan_path else None,
-            run_result_summary=_run_result_summary(run_result, path=run_result_path),
+            run_result=run_result,
             fit_diagnostics_summary=fit_diagnostics,
             matrix_element_summary=matrix_summary,
-            method_plan_summary=_method_plan_summary(method_plan, path=method_plan_path),
+            method_plan=method_plan,
             review_scope=review_scope,
         )
+        persist_context(run_dir, request)
+        fit_diagnostics = read_context_evidence(run_dir, context_reference(request.context_sources), 'fit_diagnostics_summary')
         response = provider.generate(request)
     except Exception as exc:
         report = _provider_failure_report(
@@ -532,13 +445,7 @@ def _run_provider_scientific_reviewer(
         return result
 
     assert payload is not None
-    payload = _normalize_provider_review_payload(
-        payload,
-        fit_diagnostics=fit_diagnostics,
-        matrix_summary=matrix_summary,
-        review_scope=review_scope,
-    )
-    validation_errors = validate_scientific_review_payload(payload, run_id=run_id, case_id=case_id)
+    validation_errors = validate_proposal(payload, 'scientific_review_report')
     if validation_errors:
         report = _provider_failure_report(
             run_id=run_id,
@@ -572,6 +479,9 @@ def _run_provider_scientific_reviewer(
         )
         return result
 
+    payload = artifact_payload(payload, run_id=run_id, case_id=case_id, producer='scientific_reviewer')
+    payload = _normalize_provider_review_payload(payload, fit_diagnostics=fit_diagnostics,
+        matrix_summary=matrix_summary, review_scope=review_scope)
     report_path = _write_report(run_dir / "scientific_review_report.json", payload)
     write_llm_call_trace(
         output_dir=run_dir,

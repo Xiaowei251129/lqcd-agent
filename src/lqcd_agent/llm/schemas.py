@@ -1,182 +1,73 @@
-"""Strict schema checks for provider-backed agent artifacts."""
-
-from __future__ import annotations
-
-from typing import Any
+"""One schema for model proposals; Host identity is added only after validation."""
+from datetime import datetime, timezone
+import math
 
 
-BASE_FIELDS = [
-    "schema_version",
-    "run_id",
-    "case_id",
-    "producer",
-    "status",
-    "summary",
-    "warnings",
-    "errors",
-]
-METHOD_PLAN_FIELDS = [
-    "physics_goal",
-    "target_observables",
-    "method_steps",
-    "required_inputs",
-    "required_outputs",
-    "implementation_gaps",
-    "selected_analysis_programs",
-    "code_needed",
-    "coder_task_summary",
-]
-SCIENTIFIC_REVIEW_FIELDS = [
-    "correlator_diagnostics",
-    "fit_diagnostics",
-    "matrix_element_diagnostics",
-    "findings",
-    "evidence",
-    "recommended_checks",
-    "confidence",
-]
-DECISION_FIELDS = [
-    "risk_level",
-    "recommended_action",
-    "human_approval_required",
-    "reasons",
-    "evidence",
-    "next_actions",
-    "routing_decision",
-]
-
-ALLOWED_BASE_STATUSES = {"success", "failed", "pending", "needs_more_info"}
-ALLOWED_RISK_LEVELS = {"low", "medium", "high", "critical"}
-ALLOWED_CONFIDENCE = {"high", "medium", "low"}
-ALLOWED_ACTUAL_ROUTES = {"human_approval_gate", "memory_report"}
-ALLOWED_FOLLOW_UP_ROUTES = {"human_approval_gate", "memory_report", "analysis_engineer", "codex_handoff"}
+def object_schema(properties):
+    return {'type': 'object', 'properties': properties, 'required': list(properties), 'additionalProperties': False}
 
 
-def _missing_fields(payload: dict[str, Any], fields: list[str]) -> list[str]:
-    return [field for field in fields if field not in payload]
+def role_schema(role):
+    from lqcd_agent.analysis_programs.registry import PROGRAMS
+    strings = {'type': 'array', 'items': {'type': 'string'}}
+    records = {'type': 'array', 'items': {'$ref': '#/$defs/record'}}
+    properties = {'status': {'type': 'string', 'enum': ['success', 'failed', 'pending', 'needs_more_info']},
+                  'summary': {'type': 'string'}, 'warnings': records, 'errors': records}
+    if role == 'method_plan':
+        properties.update(physics_goal={'type': 'string'}, target_observables=strings, method_steps=strings,
+            required_inputs=strings, implementation_gaps=strings,
+            selected_analysis_programs={'type': 'array', 'items': {'type': 'string', 'enum': [p.name for p in PROGRAMS]}},
+            code_needed={'type': 'boolean'}, coder_task_summary={'type': ['string', 'null']})
+    elif role == 'scientific_review_report':
+        properties.update({name: {'$ref': '#/$defs/diagnostics'}
+                           for name in ('correlator_diagnostics', 'fit_diagnostics', 'matrix_element_diagnostics')})
+        properties.update(findings=records, evidence=records, recommended_checks=strings,
+                          confidence={'type': 'string', 'enum': ['high', 'medium', 'low']})
+    else:
+        raise ValueError('Unsupported model role')
+    record = object_schema({name: {'type': ['string', 'null']} for name in
+                            ('code', 'message', 'section', 'severity', 'path', 'field')})
+    record['properties'].update(value={'anyOf': [{'type': ['string', 'number', 'boolean', 'null']}, strings]},
+                                decision_coordinator_flag={'type': ['boolean', 'null']})
+    record['required'] = list(record['properties'])
+    schema = object_schema(properties)
+    schema['$defs'] = {'record': record}
+    if role == 'scientific_review_report':
+        schema['$defs']['diagnostics'] = object_schema({'status': {'type': 'string'}, 'summary': {'type': 'string'},
+            'evidence': records, 'findings': records, 'warnings': records, 'recommended_checks': strings})
+    return {'name': role, 'strict': True, 'schema': schema}
 
 
-def _expect_type(errors: list[str], payload: dict[str, Any], field: str, expected_type: type) -> None:
-    if field in payload and not isinstance(payload[field], expected_type):
-        errors.append(f"{field} must be {expected_type.__name__}.")
+def validate_proposal(payload, role):
+    """Validate exactly the JSON Schema subset emitted above, including mock providers."""
+    root = role_schema(role)['schema']
+    types = {'object': dict, 'array': list, 'string': str, 'boolean': bool, 'null': type(None)}
 
-
-def _expect_list_items_dict(errors: list[str], payload: dict[str, Any], field: str) -> None:
-    value = payload.get(field)
-    if isinstance(value, list) and any(not isinstance(item, dict) for item in value):
-        errors.append(f"{field} items must be dict.")
-
-
-def _validate_base(
-    payload: dict[str, Any],
-    *,
-    run_id: str,
-    case_id: str,
-    producer: str,
-) -> list[str]:
-    errors = _missing_fields(payload, BASE_FIELDS)
-    if payload.get("schema_version") != "0.1":
-        errors.append("schema_version must be 0.1.")
-    if payload.get("run_id") != run_id:
-        errors.append("run_id must match the active run.")
-    if payload.get("case_id") != case_id:
-        errors.append("case_id must match the active case.")
-    if payload.get("producer") != producer:
-        errors.append(f"producer must be {producer}.")
-    if payload.get("status") not in ALLOWED_BASE_STATUSES:
-        errors.append("status is not allowed.")
-    _expect_type(errors, payload, "summary", str)
-    _expect_type(errors, payload, "warnings", list)
-    _expect_type(errors, payload, "errors", list)
-    _expect_list_items_dict(errors, payload, "warnings")
-    _expect_list_items_dict(errors, payload, "errors")
-    return errors
-
-
-def validate_method_plan_payload(payload: dict[str, Any], *, run_id: str, case_id: str) -> list[str]:
-    errors = _validate_base(payload, run_id=run_id, case_id=case_id, producer="method_planner")
-    errors.extend(_missing_fields(payload, METHOD_PLAN_FIELDS))
-    for field in [
-        "target_observables",
-        "method_steps",
-        "required_inputs",
-        "required_outputs",
-        "implementation_gaps",
-        "selected_analysis_programs",
-    ]:
-        _expect_type(errors, payload, field, list)
-    _expect_list_items_dict(errors, payload, "selected_analysis_programs")
-    if "code_needed" in payload and not isinstance(payload["code_needed"], bool):
-        errors.append("code_needed must be bool.")
-    return errors
-
-
-def validate_scientific_review_payload(payload: dict[str, Any], *, run_id: str, case_id: str) -> list[str]:
-    errors = _validate_base(
-        payload,
-        run_id=run_id,
-        case_id=case_id,
-        producer="scientific_reviewer",
-    )
-    errors.extend(_missing_fields(payload, SCIENTIFIC_REVIEW_FIELDS))
-    for field in [
-        "findings",
-        "evidence",
-        "recommended_checks",
-        "warnings",
-        "errors",
-    ]:
-        _expect_type(errors, payload, field, list)
-    for field in ["findings", "evidence"]:
-        _expect_list_items_dict(errors, payload, field)
-    for field in ["correlator_diagnostics", "fit_diagnostics", "matrix_element_diagnostics"]:
-        _expect_type(errors, payload, field, dict)
-    if payload.get("confidence") not in ALLOWED_CONFIDENCE:
-        errors.append("confidence is not allowed.")
-    return errors
-
-
-def validate_decision_log_payload(payload: dict[str, Any], *, run_id: str, case_id: str) -> list[str]:
-    errors = _validate_base(
-        payload,
-        run_id=run_id,
-        case_id=case_id,
-        producer="decision_coordinator",
-    )
-    errors.extend(_missing_fields(payload, DECISION_FIELDS))
-    if payload.get("risk_level") not in ALLOWED_RISK_LEVELS:
-        errors.append("risk_level is not allowed.")
-    _expect_type(errors, payload, "recommended_action", str)
-    if "human_approval_required" in payload and not isinstance(payload["human_approval_required"], bool):
-        errors.append("human_approval_required must be bool.")
-    if payload.get("risk_level") in {"high", "critical"} and payload.get("human_approval_required") is not True:
-        errors.append("high and critical risk require human_approval_required=true.")
-    for field in ["reasons", "evidence", "next_actions"]:
-        _expect_type(errors, payload, field, list)
-        _expect_list_items_dict(errors, payload, field)
-    routing = payload.get("routing_decision")
-    if not isinstance(routing, dict):
-        errors.append("routing_decision must be dict.")
+    def check(value, schema, path):
+        if '$ref' in schema:
+            return check(value, root['$defs'][schema['$ref'].rsplit('/', 1)[1]], path)
+        if 'anyOf' in schema:
+            return [] if any(not check(value, branch, path) for branch in schema['anyOf']) else [path + ': invalid value']
+        kinds = schema['type'] if isinstance(schema['type'], list) else [schema['type']]
+        if not any((type(value) is int or (type(value) is float and math.isfinite(value))) if kind == 'number'
+                   else type(value) is types[kind] for kind in kinds):
+            return [path + ': invalid type']
+        if 'enum' in schema and value not in schema['enum']:
+            return [path + ': unknown value']
+        errors = []
+        if type(value) is dict:
+            if set(value) != set(schema['properties']):
+                errors.append(path + ': missing or unexpected fields')
+            for name in value.keys() & schema['properties'].keys():
+                errors.extend(check(value[name], schema['properties'][name], path + '.' + name))
+        elif type(value) is list:
+            for index, item in enumerate(value):
+                errors.extend(check(item, schema['items'], f'{path}[{index}]'))
         return errors
 
-    actual_route = routing.get("actual_route")
-    if actual_route not in ALLOWED_ACTUAL_ROUTES:
-        errors.append("routing_decision.actual_route is not allowed.")
-    requested_route = routing.get("requested_route")
-    if requested_route not in ALLOWED_FOLLOW_UP_ROUTES:
-        errors.append("routing_decision.requested_route is not allowed.")
-    proposed_route = routing.get("proposed_follow_up_route")
-    if proposed_route not in ALLOWED_FOLLOW_UP_ROUTES:
-        errors.append("routing_decision.proposed_follow_up_route is not allowed.")
-    fields = routing.get("fields")
-    if not isinstance(fields, dict):
-        errors.append("routing_decision.fields must be dict.")
-        return errors
-    if fields.get("risk_level") != payload.get("risk_level"):
-        errors.append("routing_decision.fields.risk_level must match risk_level.")
-    if fields.get("human_approval_required") != payload.get("human_approval_required"):
-        errors.append("routing_decision.fields.human_approval_required must match human_approval_required.")
-    for field in ["rerun_requested", "code_fix_requested"]:
-        if field in fields and not isinstance(fields[field], bool):
-            errors.append(f"routing_decision.fields.{field} must be bool.")
-    return errors
+    return check(payload, root, '$')
+
+
+def artifact_payload(payload, *, run_id, case_id, producer):
+    return {**payload, 'schema_version': '0.1', 'run_id': run_id, 'case_id': case_id,
+            'producer': producer, 'created_at': datetime.now(timezone.utc).isoformat()}

@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import csv
 from dataclasses import asdict, dataclass
-from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -95,29 +93,20 @@ def canonical_program_selection(program, config, inventory=None):
     if descriptor is None:
         return None
     mapping = {key: 'raw_data_csv.' + column for key, column in descriptor.csv_inputs}
-    root = (inventory or {}).get('repo_root')
-    if root and descriptor.optional_csv_inputs:
-        raw = (Path(root)/str(config['raw_data_path'])).resolve()
-        if raw.is_relative_to((Path(root)/'raw_data').resolve()):
-            try:
-                with raw.open(newline='', encoding='utf-8') as handle:
-                    columns = next(csv.reader(handle), [])
-                mapping.update((key, 'raw_data_csv.'+column) for key, column in descriptor.optional_csv_inputs if column in columns)
-            except OSError:
-                pass
+    columns = ((inventory or {}).get('dataset_snapshot') or {}).get('columns', [])
+    mapping.update((key, 'raw_data_csv.' + column) for key, column in descriptor.optional_csv_inputs
+                   if column in columns)
     return {'name': descriptor.name, 'category': descriptor.category, 'callable_path': descriptor.callable_path,
             'input_mapping': mapping, 'output_path': 'analysis_outputs/'+descriptor.produced_outputs[0]+'.json',
             'required_outputs': list(descriptor.produced_outputs)}
 
 
-def selected_analysis_programs(case_config, repo_inventory):
+def matching_programs(case_config, repo_inventory):
     tags, outputs = requested_programs(case_config)
-    selected = []
-    for program in repo_inventory.get('analysis_programs', []):
-        if not isinstance(program, dict):
-            continue
-        if (tags and tags <= set(program.get('tags', []))) or outputs.intersection(program.get('produced_outputs', [])):
-            choice = canonical_program_selection(program, case_config, repo_inventory)
-            if choice is not None:
-                selected.append(choice)
-    return selected
+    return [program for program in repo_inventory.get('analysis_programs', []) if isinstance(program, dict) and
+            ((tags and tags <= set(program.get('tags', []))) or outputs.intersection(program.get('produced_outputs', [])))]
+
+
+def selected_analysis_programs(case_config, repo_inventory):
+    return [choice for program in matching_programs(case_config, repo_inventory)
+            if (choice := canonical_program_selection(program, case_config, repo_inventory)) is not None]

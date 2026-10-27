@@ -22,7 +22,7 @@ class ScientificAgent:
             from .agents.method_planner import run_method_planner
             from .tools.repo_inventory import build_repo_inventory
             result = run_method_planner(user_goal=context['root_goal']['goal'], case_config=self.config,
-                repo_inventory=build_repo_inventory(self.workspace),
+                repo_inventory={**build_repo_inventory(self.workspace), 'dataset_snapshot': context['root_goal']['dataset_snapshot']},
                 output_dir=output, run_id=identity['run_id'], provider=self.provider)
             if result['status'] != 'success' or result['code_needed']:
                 diagnostic.update(status='failed', category='implementation_gap', affected_layer='plan', risk='high', human_need='approval')
@@ -33,7 +33,8 @@ class ScientificAgent:
             config.write_text(json.dumps(self.config))
             plan = self._artifact(context, 'method_plan.json')['domain_result']['method_plan_path']
             result = run_analysis_engineer(case_config_path=config, case_id=identity['case_id'], run_id=identity['run_id'],
-                run_output_dir=output, method_plan_path=plan, repo_root=self.workspace)
+                run_output_dir=output, method_plan_path=plan, repo_root=self.workspace,
+                dataset_snapshot=context['root_goal']['dataset_snapshot'])
             if not result['run_success']:
                 diagnostic.update(status='failed', category='analysis_execution', affected_layer='analysis', risk='high', human_need='approval')
             content = {'domain_result': result}

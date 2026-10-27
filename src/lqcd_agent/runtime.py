@@ -96,6 +96,8 @@ def execute(request: ApplicationRequest):
             inputs = {'root_goal': {'goal': args.goal, 'workflow': args.workflow, 'live': live, 'workspace': str(workspace)}, 'input_snapshot': {'kind': 'current_mock' if config is None else 'scientific_case', 'case_config': config}}
             if config is not None:
                 inputs['root_goal']['case_config'] = config
+                from .tools.dataset import snapshot_dataset
+                inputs['root_goal']['dataset_snapshot'] = snapshot_dataset(config, workspace)
             result = plane.start_run(StartRunRequest(args.case, inputs, digest(inputs), args.key), actor=actor)
             locator = result['result']['run_locator']
             runtime.run(locator)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import importlib
 import json
 from datetime import datetime, timezone
@@ -100,44 +99,6 @@ def _is_within(path: Path, root: Path) -> bool:
     except ValueError:
         return False
     return True
-
-
-def _resolve_raw_data_path(case_config: dict[str, Any], repo_root: Path) -> tuple[Path | None, str | None]:
-    raw_value = case_config.get("raw_data_path")
-    if not raw_value:
-        return None, "case_config.raw_data_path is required for selected analysis programs."
-    raw_path = Path(str(raw_value))
-    if raw_path.is_absolute():
-        return None, "raw_data_path must be relative to the repository root."
-    resolved = (repo_root / raw_path).resolve()
-    raw_root = (repo_root / "raw_data").resolve()
-    if not _is_within(resolved, raw_root):
-        return None, "raw_data_path must stay under raw_data/."
-    if not resolved.exists() or not resolved.is_file():
-        return None, "raw_data_path does not exist or is not a file."
-    return resolved, None
-
-
-def _read_raw_csv_columns(path: Path, *, text_columns=()) -> tuple[dict[str, list[Any]] | None, str | None]:
-    columns: dict[str, list[Any]] = {}
-    try:
-        with path.open("r", encoding="utf-8", newline="") as handle:
-            reader = csv.DictReader(handle)
-            if not reader.fieldnames or len(set(reader.fieldnames)) != len(reader.fieldnames):
-                return None, "Raw CSV requires a nonempty header with unique columns."
-            for field in reader.fieldnames:
-                columns[field] = []
-            for row_index, row in enumerate(reader, start=2):
-                if None in row or any(value is None for value in row.values()):
-                    return None, f"Raw CSV row {row_index} has the wrong number of columns."
-                for field in reader.fieldnames:
-                    try:
-                        columns[field].append(row[field] if field in text_columns else float(row[field]))
-                    except (TypeError, ValueError):
-                        return None, f"Raw CSV column {field} has a non-numeric value on row {row_index}."
-    except OSError as exc:
-        return None, str(exc)
-    return columns, None
 
 
 def _resolve_program_inputs(
@@ -250,39 +211,26 @@ def _run_selected_analysis_programs(
     case_id: str,
     timeout_seconds: int,
     force: bool,
+    dataset_snapshot,
+    consumed_inputs,
 ) -> list[dict[str, Any]]:
-    raw_data_path, raw_error = _resolve_raw_data_path(case_config, repo_root)
-    if raw_error or raw_data_path is None:
-        return [
-            _program_result(
-                command_id="analysis_program_0",
-                selected_program=selected_programs[0] if selected_programs else {"name": "unknown"},
-                repo_root=repo_root,
-                timeout_seconds=timeout_seconds,
-                started_at=utc_now(),
-                status="blocked",
-                return_code=None,
-                stderr=raw_error or "Invalid raw data path.",
-            )
-        ]
-
-    text_columns = {column for selected in selected_programs
-                    for program in available_programs() if program.name == selected.get('name') and
-                    program.callable_path == selected.get('callable_path') for column in program.text_columns}
-    csv_columns, csv_error = _read_raw_csv_columns(raw_data_path, text_columns=text_columns)
-    if csv_error or csv_columns is None:
-        return [
-            _program_result(
-                command_id="analysis_program_0",
-                selected_program=selected_programs[0] if selected_programs else {"name": "unknown"},
-                repo_root=repo_root,
-                timeout_seconds=timeout_seconds,
-                started_at=utc_now(),
-                status="blocked",
-                return_code=None,
-                stderr=csv_error or "Raw CSV could not be read.",
-            )
-        ]
+    from lqcd_agent.tools.dataset import read_dataset
+    try:
+        text_columns = {column for selected in selected_programs
+                        for program in available_programs() if program.name == selected.get('name') and
+                        program.callable_path == selected.get('callable_path') for column in program.text_columns}
+        observed, csv_columns = read_dataset(repo_root, case_config.get('raw_data_path'),
+                                            text_columns=text_columns, values=True)
+        consumed_inputs.append(observed)
+        if not observed['exists']:
+            raise ValueError('raw_data_path does not exist or is not a file.')
+        if dataset_snapshot is not None and observed != dataset_snapshot:
+            raise ValueError('Raw data differs from the frozen Run input; start a new Run for changed data.')
+    except (OSError, ValueError, UnicodeError) as error:
+        return [_program_result(command_id='analysis_program_0',
+            selected_program=selected_programs[0], repo_root=repo_root,
+            timeout_seconds=timeout_seconds, started_at=utc_now(), status='blocked',
+            return_code=None, stderr=str(error))]
 
     results: list[dict[str, Any]] = []
     for index, selected_program in enumerate(selected_programs):
@@ -391,7 +339,8 @@ def _run_selected_analysis_programs(
             "created_at": utc_now(),
             "producer": "analysis_engineer",
             "source_kind": "raw_data_csv",
-            "raw_data_path": str(raw_data_path.relative_to(repo_root)),
+            "raw_data_path": observed["path"],
+            "input_dataset": observed,
             **payload,
         }
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -545,6 +494,7 @@ def run_analysis_engineer(
     repo_root: str | Path | None = None,
     timeout_seconds: int = 60,
     force: bool = False,
+    dataset_snapshot: dict | None = None,
 ) -> dict[str, Any]:
     run_dir = _resolve_run_output_dir(
         output_root=output_root,
@@ -606,6 +556,7 @@ def run_analysis_engineer(
     case_config = read_config(case_config_path)
     task_config = _read_task_config(method_plan_path)
     explicit_commands = _resolve_explicit_commands(case_config)
+    consumed_inputs = []
     selected_programs = _selected_program_configs(task_config)
     expected_outputs = _resolve_expected_outputs(case_config, task_config)
     from lqcd_agent.settings import workspace_root
@@ -627,6 +578,7 @@ def run_analysis_engineer(
     elif selected_programs:
         command_results = _run_selected_analysis_programs(
             selected_programs=selected_programs,
+            dataset_snapshot=dataset_snapshot, consumed_inputs=consumed_inputs,
             case_config=case_config,
             repo_root=repo_path,
             run_output_dir=artifact_dir,
@@ -729,6 +681,7 @@ def run_analysis_engineer(
         repo_root=repo_path,
         run_output_dir=artifact_dir,
         input_files=input_files,
+        data_inputs=consumed_inputs,
         output_files=[*produced_outputs, run_log_written_path, run_result_written_path],
         commands=command_results,
         status=status,

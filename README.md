@@ -36,6 +36,8 @@ Live requests transmit the supplied task and selected context to OpenAI and incu
 
 ## Evidence lifecycle
 
+Scientific Runs bind the content identity of their raw CSV input, including its absence, before execution. Replay and fork keep that identity; changed data require a new Run. Analysis manifests identify the bytes actually used. Model proposals contain scientific decisions; the Host constructs executable mappings and artifact identity. Provider-backed roles retain complete local context evidence and send bounded role views with verifiable references. See [architecture](docs/ARCHITECTURE.md) and [verification](docs/VERIFICATION_GUIDE.md) for evidence reads and boundaries.
+
 ```bash
 lqcd-agent archive --host HOST --case CASE --run RUN
 lqcd-agent verify-archive --archive-path /absolute/path/to/ARCHIVE.zip
@@ -52,6 +54,7 @@ python scripts/check.py                          # 12 critical checks
 python scripts/check.py tests/test_analysis_programs.py
 python scripts/check.py --integration            # current tests once + numerical benchmark
 python scripts/measure_cli.py --samples 3         # fresh offline Runs; retains measured Hosts
+python scripts/measure_context.py                # offline prompt sizes and small numerical timing
 ```
 
 The runner selects this checkout's `.venv`; it never imports a previous checkout. After source edits it regenerates the build manifest once. Standalone CLI users must run `python scripts/build_manifest.py` after editing runtime source; wheel builds regenerate the installed manifest without changing sources. The packaged storage profile is `lqcd_agent/resources/storage.json`; an operator-owned `LQCD_AGENT_STORAGE_CONFIG` can select an approved deployment profile.

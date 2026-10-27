@@ -3,16 +3,10 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
-from lqcd_agent.analysis_programs.registry import selected_analysis_programs
+from lqcd_agent.analysis_programs.registry import matching_programs
 from lqcd_agent.llm.base import LLMProviderConfig, LLMRequest, LLMResponse, ProviderReadiness
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _flag_severity(value: Any) -> str:
@@ -44,17 +38,6 @@ def _has_severe_warning(warnings: list[Any]) -> bool:
     )
 
 
-def _has_targeted_rerun_warning(warnings: list[Any]) -> bool:
-    for warning in warnings:
-        if not isinstance(warning, dict):
-            continue
-        code = str(warning.get("code", "")).lower()
-        value = str(warning.get("value", "")).lower()
-        if "targeted_rerun" in code or "targeted_rerun" in value:
-            return True
-    return False
-
-
 def _as_string_list(value: Any) -> list[str]:
     if value is None:
         return []
@@ -63,6 +46,26 @@ def _as_string_list(value: Any) -> list[str]:
     if isinstance(value, list | tuple):
         return [str(item) for item in value if str(item).strip()]
     return [str(value)]
+
+
+def mock_proposal(value, role):
+    """Fill deterministic mock records using the same wire schema as a real provider."""
+    from .schemas import role_schema
+    root = role_schema(role)['schema']
+
+    def shape(value, schema):
+        if '$ref' in schema:
+            schema = root['$defs'][schema['$ref'].rsplit('/', 1)[1]]
+        kind = schema.get('type')
+        if kind == 'object' and isinstance(value, dict):
+            return {key: shape(value.get(key, [] if spec.get('type') == 'array' else
+                        '' if spec.get('type') == 'string' else None), spec)
+                    for key, spec in schema['properties'].items()}
+        if kind == 'array' and isinstance(value, list):
+            return [shape(item, schema['items']) for item in value]
+        return value
+
+    return shape(value, root)
 
 
 class MockLLMProvider:
@@ -99,23 +102,14 @@ class MockLLMProvider:
         repo_inventory = payload.get("repo_inventory") if isinstance(payload.get("repo_inventory"), dict) else {}
         gaps = repo_inventory.get("implementation_gaps", [])
         implementation_gaps = [str(gap) for gap in gaps] if isinstance(gaps, list) else []
-        selected_programs = selected_analysis_programs(case_config, repo_inventory)
+        selected_programs = matching_programs(case_config, repo_inventory) if case_config.get('raw_data_path') else []
         program_requested = bool(case_config.get("raw_data_path")) and bool(
             _as_string_list(case_config.get("analysis_program_tags"))
             or _as_string_list(case_config.get("target_observables"))
         )
         missing_requested_program = program_requested and not selected_programs
         code_needed = bool(implementation_gaps) or missing_requested_program
-        required_outputs = ["method_plan.json", "run_result.json"]
-        if selected_programs:
-            required_outputs.extend(str(program["output_path"]) for program in selected_programs)
-        required_outputs.extend(["scientific_review_report.json", "decision_log.json"])
         return {
-            "schema_version": "0.1",
-            "run_id": str(payload.get("run_id", "mock_run")),
-            "case_id": str(payload.get("case_id", "mock_case")),
-            "created_at": _utc_now(),
-            "producer": "method_planner",
             "status": "success",
             "summary": "Provider-backed mock Method Planner produced a structured method plan.",
             "warnings": [],
@@ -129,9 +123,8 @@ class MockLLMProvider:
                 else ["Use validated provider-backed structured output in mock mode."]
             ),
             "required_inputs": ["case_config", "repo_inventory"],
-            "required_outputs": required_outputs,
             "implementation_gaps": implementation_gaps,
-            "selected_analysis_programs": selected_programs,
+            "selected_analysis_programs": [p["name"] for p in selected_programs],
             "code_needed": code_needed,
             "coder_task_summary": (
                 "Implement a reusable registered analysis program for the requested raw-data analysis."
@@ -153,6 +146,9 @@ class MockLLMProvider:
         fit_diagnostics = payload.get("fit_diagnostics_summary")
         if not isinstance(fit_diagnostics, dict):
             fit_diagnostics = {"status": "not_populated_mvp"}
+        fit_diagnostics = {**fit_diagnostics, 'findings': [
+            {'message': item} if isinstance(item, str) else item
+            for item in fit_diagnostics.get('findings', [])]}
         run_summary = payload.get("run_result_summary")
         if not isinstance(run_summary, dict):
             run_summary = {}
@@ -195,11 +191,6 @@ class MockLLMProvider:
             else "Provider-backed mock Scientific Reviewer completed structured checks."
         )
         return {
-            "schema_version": "0.1",
-            "run_id": str(payload.get("run_id", "mock_run")),
-            "case_id": str(payload.get("case_id", "mock_case")),
-            "created_at": _utc_now(),
-            "producer": "scientific_reviewer",
             "status": "success",
             "summary": summary,
             "warnings": warnings,
@@ -235,140 +226,16 @@ class MockLLMProvider:
             "confidence": confidence,
         }
 
-    def _decision_log(self, payload: dict[str, Any]) -> dict[str, Any]:
-        run_id = str(payload.get("run_id", "mock_run"))
-        case_id = str(payload.get("case_id", "mock_case"))
-        method_summary = payload.get("method_plan_summary")
-        if not isinstance(method_summary, dict):
-            method_summary = {}
-        run_summary = payload.get("run_result_summary")
-        if not isinstance(run_summary, dict):
-            run_summary = {}
-        review_summary = payload.get("scientific_review_summary")
-        if not isinstance(review_summary, dict):
-            review_summary = {}
-        review_warnings = review_summary.get("warnings", [])
-        if not isinstance(review_warnings, list):
-            review_warnings = []
-
-        if method_summary.get("status") and method_summary.get("status") != "success":
-            risk_level = "critical"
-            recommended_action = "pending_human_approval"
-            human_approval_required = True
-            reason = {
-                "code": "provider_mock_method_not_success",
-                "message": "Mock provider preserved non-success method-plan summary evidence.",
-            }
-        elif run_summary.get("run_success") is False:
-            risk_level = "high"
-            recommended_action = "code_fix" if run_summary.get("failure_type") == "code" else "targeted_rerun"
-            human_approval_required = True
-            reason = {
-                "code": "provider_mock_run_failed",
-                "message": "Mock provider preserved failed-run summary evidence.",
-            }
-        elif _has_severe_warning(review_warnings):
-            risk_level = "high"
-            recommended_action = "pending_human_approval"
-            human_approval_required = True
-            reason = {
-                "code": "provider_mock_severe_warning",
-                "message": "Mock provider preserved severe review warning evidence.",
-            }
-        elif _has_targeted_rerun_warning(review_warnings):
-            risk_level = "medium"
-            recommended_action = "targeted_rerun"
-            human_approval_required = False
-            reason = {
-                "code": "provider_mock_targeted_rerun",
-                "message": "Mock provider preserved targeted-rerun review evidence.",
-            }
-        elif review_warnings or review_summary.get("confidence") == "medium":
-            risk_level = "medium"
-            recommended_action = "human_review_recommended"
-            human_approval_required = False
-            reason = {
-                "code": "provider_mock_warning_or_medium_confidence",
-                "message": "Mock provider preserved warning or medium-confidence review evidence.",
-            }
-        else:
-            risk_level = "low"
-            recommended_action = "accept_mock_result"
-            human_approval_required = False
-            reason = {"code": "provider_mock_low_risk", "message": "Validated mock provider output."}
-
-        actual_route = "human_approval_gate" if human_approval_required else "memory_report"
-        if recommended_action == "code_fix":
-            proposed_follow_up_route = "codex_handoff"
-            rerun_requested = False
-            rerun_target = None
-            code_fix_requested = True
-        elif recommended_action == "targeted_rerun":
-            proposed_follow_up_route = "analysis_engineer"
-            rerun_requested = True
-            rerun_target = "analysis_engineer"
-            code_fix_requested = False
-        else:
-            proposed_follow_up_route = actual_route
-            rerun_requested = False
-            rerun_target = None
-            code_fix_requested = False
-
-        return {
-            "schema_version": "0.1",
-            "run_id": run_id,
-            "case_id": case_id,
-            "created_at": _utc_now(),
-            "producer": "decision_coordinator",
-            "status": "success" if risk_level == "low" else "pending",
-            "summary": f"Provider-backed mock Decision Coordinator classified the run as {risk_level} risk.",
-            "warnings": review_warnings,
-            "errors": [],
-            "risk_level": risk_level,
-            "recommended_action": recommended_action,
-            "human_approval_required": human_approval_required,
-            "reasons": [reason],
-            "evidence": [
-                {"artifact": "method_plan", "path": payload.get("method_plan_path")},
-                {"artifact": "run_result", "path": payload.get("run_result_path")},
-                {"artifact": "scientific_review_report", "path": payload.get("scientific_review_report_path")},
-            ],
-            "next_actions": [
-                {
-                    "action": recommended_action,
-                    "primary": True,
-                    "target": actual_route if human_approval_required else proposed_follow_up_route,
-                    "status": "ready" if risk_level == "low" else "pending",
-                }
-            ],
-            "routing_decision": {
-                "actual_route": actual_route,
-                "requested_route": actual_route,
-                "proposed_follow_up_route": proposed_follow_up_route,
-                "fields": {
-                    "risk_level": risk_level,
-                    "recommended_action": recommended_action,
-                    "human_approval_required": human_approval_required,
-                    "rerun_requested": rerun_requested,
-                    "rerun_target": rerun_target,
-                    "code_fix_requested": code_fix_requested,
-                },
-            },
-        }
-
     def generate(self, request: LLMRequest) -> LLMResponse:
         payload = self._request_payload(request)
         if payload and payload.get("artifact_type") == "method_plan":
-            content = json.dumps(self._method_plan(payload), sort_keys=True)
+            content = json.dumps(mock_proposal(self._method_plan(payload), 'method_plan'), sort_keys=True)
         elif payload and payload.get("artifact_type") == "scientific_review_report":
-            content = json.dumps(self._scientific_review(payload), sort_keys=True)
-        elif payload and payload.get("artifact_type") == "decision_log":
-            content = json.dumps(self._decision_log(payload), sort_keys=True)
+            content = json.dumps(mock_proposal(self._scientific_review(payload), 'scientific_review_report'), sort_keys=True)
         else:
             content = json.dumps(
                 {
-                    "schema_version": "0.1",
-                    "provider": "mock",
+                            "provider": "mock",
                     "status": "success",
                     "summary": "Deterministic mock LLM response.",
                     "message_count": len(request.messages),
