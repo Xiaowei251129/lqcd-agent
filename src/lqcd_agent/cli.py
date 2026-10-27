@@ -3,7 +3,6 @@ import argparse
 import json
 import sys
 
-from .inspection import host_root
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)

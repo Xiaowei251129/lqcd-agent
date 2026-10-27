@@ -1,5 +1,6 @@
 """Bounded projections and explicit checkpoint manifests, never authorities."""
-from lqcd_agent.artifacts.registry import ARTIFACT_SLOTS, STATE_FIELDS_BY_SLOT, _code_scalar_projection, state_fields_for_slot
+from lqcd_agent.artifacts.contracts import ARTIFACT_SLOTS, STATE_FIELDS_BY_SLOT, state_fields_for_slot
+from lqcd_agent.artifacts.registry import code_scalar_projection
 
 from .execution import ExecutionReplay
 from .strict_json import ValidatedValue, canonical_bytes, closed, digest, digest_value, number, require, text
@@ -45,7 +46,7 @@ def _bounded_projection(execution, canonical_output_root, *, artifact_index, art
         paths = pointer["state_paths"] if pointer is not None else {}
         for field in fields:
             value[field] = paths.get(field)
-    value.update(_code_scalar_projection(value, artifact_index, run_root=canonical_output_root))
+    value.update(code_scalar_projection(value, artifact_index, run_root=canonical_output_root))
     return ValidatedValue.from_value(value)
 
 

@@ -1,7 +1,6 @@
 """Application credentials, Responses wire contract and bounded SDK lifecycle."""
 import json
 import os
-from pathlib import Path
 import signal
 import subprocess
 import sys

@@ -489,7 +489,6 @@ def run_analysis_engineer(
     run_id: str,
     output_root: str | Path | None = None,
     run_output_dir: str | Path | None = None,
-    artifact_output_dir: str | Path | None = None,
     method_plan_path: str | Path | None = None,
     repo_root: str | Path | None = None,
     timeout_seconds: int = 60,
@@ -516,29 +515,7 @@ def run_analysis_engineer(
             "manifest": None,
         }
 
-    artifact_dir = Path(artifact_output_dir).resolve() if artifact_output_dir is not None else run_dir
-    if artifact_output_dir is not None:
-        try:
-            artifact_dir.relative_to(run_dir)
-        except ValueError:
-            return {
-                "run_success": False,
-                "failure_type": "workflow",
-                "run_result_path": None,
-                "manifest_path": None,
-                "analysis_outputs_dir": None,
-                "warnings": [],
-                "errors": [
-                    {
-                        "field": "artifact_output_dir",
-                        "message": "Artifact output directory must remain inside the canonical Run root.",
-                        "path": str(artifact_dir),
-                    }
-                ],
-                "run_result": None,
-                "manifest": None,
-            }
-    existing_error = _existing_artifact_error(artifact_dir, force=force)
+    existing_error = _existing_artifact_error(run_dir, force=force)
     if existing_error:
         return {
             "run_success": False,
@@ -552,7 +529,7 @@ def run_analysis_engineer(
             "manifest": None,
         }
 
-    artifact_dir.mkdir(parents=True, exist_ok=True)
+    run_dir.mkdir(parents=True, exist_ok=True)
     case_config = read_config(case_config_path)
     task_config = _read_task_config(method_plan_path)
     explicit_commands = _resolve_explicit_commands(case_config)
@@ -568,7 +545,7 @@ def run_analysis_engineer(
         command_results = run_commands(
             commands=explicit_commands,
             cwd=repo_path,
-            output_dir=artifact_dir,
+            output_dir=run_dir,
             run_id=run_id,
             case_id=case_id,
             timeout_seconds=timeout_seconds,
@@ -581,7 +558,7 @@ def run_analysis_engineer(
             dataset_snapshot=dataset_snapshot, consumed_inputs=consumed_inputs,
             case_config=case_config,
             repo_root=repo_path,
-            run_output_dir=artifact_dir,
+            run_output_dir=run_dir,
             run_id=run_id,
             case_id=case_id,
             timeout_seconds=timeout_seconds,
@@ -593,7 +570,7 @@ def run_analysis_engineer(
         command_results = run_commands(
             commands=commands,
             cwd=repo_path,
-            output_dir=artifact_dir,
+            output_dir=run_dir,
             run_id=run_id,
             case_id=case_id,
             timeout_seconds=timeout_seconds,
@@ -601,7 +578,7 @@ def run_analysis_engineer(
             force=force,
         )
     validation_results = validate_expected_outputs(
-        output_dir=artifact_dir,
+        output_dir=run_dir,
         expected_outputs=expected_outputs,
         run_id=run_id,
         case_id=case_id,
@@ -623,16 +600,9 @@ def run_analysis_engineer(
         }
         | set(validation_results["validated_outputs"])
     )
-    compatibility_outputs = [
-        str(run_dir / Path(output).resolve().relative_to(artifact_dir))
-        if artifact_dir != run_dir and _is_within(Path(output), artifact_dir)
-        else output
-        for output in produced_outputs
-    ]
-
-    run_log_path = artifact_dir / "run.log"
-    run_result_path = artifact_dir / "run_result.json"
-    manifest_path = artifact_dir / "manifest.json"
+    run_log_path = run_dir / "run.log"
+    run_result_path = run_dir / "run_result.json"
+    manifest_path = run_dir / "manifest.json"
     summary = (
         "Analysis Engineer completed the analysis run."
         if run_success
@@ -653,9 +623,9 @@ def run_analysis_engineer(
         "errors": errors,
         "run_success": run_success,
         "failure_type": failure_type,
-        "analysis_outputs_dir": str(artifact_dir / "analysis_outputs"),
+        "analysis_outputs_dir": str(run_dir / "analysis_outputs"),
         "expected_outputs": expected_outputs,
-        "produced_outputs": compatibility_outputs,
+        "produced_outputs": produced_outputs,
         "validation_results": validation_results,
         "command_references": [
             {
@@ -671,7 +641,7 @@ def run_analysis_engineer(
         "manifest_path": str(manifest_path),
         "golden_reference_files": golden_reference_files,
     }
-    run_result_written_path = _write_run_result(artifact_dir, run_result, force=force)
+    run_result_written_path = _write_run_result(run_dir, run_result, force=force)
     input_files = [str(case_config_path), *golden_reference_files]
     if method_plan_path:
         input_files.append(str(method_plan_path))
@@ -679,7 +649,7 @@ def run_analysis_engineer(
         run_id=run_id,
         case_id=case_id,
         repo_root=repo_path,
-        run_output_dir=artifact_dir,
+        run_output_dir=run_dir,
         input_files=input_files,
         data_inputs=consumed_inputs,
         output_files=[*produced_outputs, run_log_written_path, run_result_written_path],
@@ -689,14 +659,14 @@ def run_analysis_engineer(
         warnings=warnings,
         errors=errors,
     )
-    manifest_written_path = write_manifest_json(artifact_dir, manifest, force=force)
+    manifest_written_path = write_manifest_json(run_dir, manifest, force=force)
 
     return {
         "run_success": run_success,
         "failure_type": failure_type,
         "run_result_path": run_result_written_path,
         "manifest_path": manifest_written_path,
-        "analysis_outputs_dir": str(artifact_dir / "analysis_outputs"),
+        "analysis_outputs_dir": str(run_dir / "analysis_outputs"),
         "warnings": warnings,
         "errors": errors,
         "run_result": run_result,

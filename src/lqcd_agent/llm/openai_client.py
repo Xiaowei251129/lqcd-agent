@@ -1,7 +1,6 @@
 """OpenAI Responses provider with explicit activation and secret-safe errors."""
 from __future__ import annotations
 import os
-from typing import Any
 from time import perf_counter
 from lqcd_agent.llm.base import LLMProviderConfig, LLMRequest, LLMResponse, ProviderReadiness
 

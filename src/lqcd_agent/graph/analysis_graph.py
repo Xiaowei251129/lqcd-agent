@@ -15,14 +15,14 @@ class ProductRouteAdapter:
 
     def admit(self, view):
         from pathlib import Path
-        from lqcd_agent.artifacts.registry import SLOT_BY_ATTEMPT_KIND
+        from lqcd_agent.artifacts.contracts import SLOT_BY_ATTEMPT_KIND
         from lqcd_agent.control.coordinator import read_regular
         from lqcd_agent.control.execution import parse_ledger
         from lqcd_agent.control.operations import RouteAdmission
         from lqcd_agent.control.strict_json import loads, require
         from lqcd_agent.graph.nodes import product_diagnostic
         from lqcd_agent.graph.routing import select_product_route
-        from lqcd_agent.graph.state import canonical_attempt_kind, stable_attempt_id, stable_transition_id
+        from lqcd_agent.control.identity import canonical_attempt_kind, stable_attempt_id, stable_transition_id
         root = self.coordinator.root / view['run_locator']['case_id'] / view['run_locator']['run_id']
         records = parse_ledger(read_regular(root / 'execution_history.jsonl')).values
         source = view['source']
@@ -184,7 +184,7 @@ class CanonicalProductRuntime:
             result = self.plane.close_run(CloseRunRequest(locator, digest(records[-1])), actor=self.actor)
             interrupt(result)
         if life[-1]['event'] == 'finished' and life[-1]['status'] == 'failed':
-            from lqcd_agent.artifacts.registry import SLOT_BY_ATTEMPT_KIND
+            from lqcd_agent.artifacts.contracts import SLOT_BY_ATTEMPT_KIND
             index = loads((root / 'artifact_index.json').read_bytes())
             if index['current'][SLOT_BY_ATTEMPT_KIND[life[-1]['attempt_kind']]] is None:
                 result = self.plane.close_run(CloseRunRequest(locator, execution.projection.value['execution_head']), actor=self.actor)

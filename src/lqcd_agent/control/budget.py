@@ -8,13 +8,6 @@ from .strict_json import (ValidatedValue, canonical_bytes, closed, digest, diges
                           number, require, text)
 
 
-SOURCE_LOCATORS = {
-    "policy": "A06_BUDGETS_AND_STOP_CONDITIONS.md#budgetpolicy-01",
-    "events": "A06_BUDGETS_AND_STOP_CONDITIONS.md#execution-ledger-and-event-identity",
-    "usage": "A06_BUDGETS_AND_STOP_CONDITIONS.md#counting-and-ownership-rules",
-    "fingerprint": "A06_BUDGETS_AND_STOP_CONDITIONS.md#failurefingerprint-01",
-    "grant": "A06_BUDGETS_AND_STOP_CONDITIONS.md#budgetgrant-01",
-}
 WORK_KINDS = ("method_planner", "legacy_codex_handoff", "code_agent", "analysis_engineer", "scientific_reviewer")
 CONTROL_KINDS = ("decision_coordinator", "human_gate", "memory_report")
 LIMITS = (

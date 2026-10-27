@@ -37,10 +37,26 @@ CORE = [
 
 def identity():
     files = [p for base in ("src", "tests", "contracts", "configs", "scripts") for p in (ROOT/base).rglob("*")
-             if p.is_file() and "__pycache__" not in p.parts and not p.suffix == ".pyc" and not any(x.endswith(".egg-info") for x in p.parts)]
-    files += [ROOT/"pyproject.toml", ROOT/"requirements.lock"]
+             if p.is_file() and p.name != ".DS_Store" and "__pycache__" not in p.parts and not p.suffix == ".pyc" and not any(x.endswith(".egg-info") for x in p.parts)]
+    files += [ROOT/name for name in ("pyproject.toml", "requirements.lock", "setup.py", "MANIFEST.in", ".github/workflows/check.yml")]
     return hashlib.sha256(json.dumps({str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
                                       for p in sorted(files)},sort_keys=True).encode()).hexdigest()
+
+def write_ci_evidence(output, report, rows):
+    """Export only test outcomes; detailed errors and runtime files stay local."""
+    summary = {key: report.get(key) for key in
+               ("mode", "passed", "selected", "source_sha256", "elapsed_seconds")}
+    summary["benchmark_passed"] = report.get("benchmark", {}).get("passed")
+    (output/"ci-summary.json").write_text(json.dumps(summary, indent=2)+"\n")
+    suite = ET.Element("testsuite", name="offline", tests=str(len(rows)))
+    for row in rows:
+        case = ET.SubElement(suite, "testcase", {key: row.attrib[key] for key in
+                            ("name", "classname", "time") if key in row.attrib})
+        for tag in ("failure", "error", "skipped"):
+            if row.find(tag) is not None:
+                ET.SubElement(case, tag)
+    ET.ElementTree(suite).write(output/"ci-junit.xml", encoding="utf-8", xml_declaration=True)
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -56,6 +72,7 @@ def main():
     report={"mode":"integration" if args.integration else "targeted" if args.paths else "core", "passed":False,
             "created_utc":datetime.now(timezone.utc).isoformat(), "root":str(run)}
     started=time.monotonic()
+    rows = []
     try:
         subprocess.run([str(PYTHON),"scripts/generate_protocol.py","--check"],check=True)
         subprocess.run([str(PYTHON),"scripts/build_manifest.py"],check=True)
@@ -84,6 +101,7 @@ def main():
     output=ROOT/"check-results";output.mkdir(exist_ok=True)
     for name in (["latest","integration"] if args.integration else ["latest"]):
         stage=output/(name+".new");stage.write_text(json.dumps(report,indent=2)+"\n");stage.replace(output/(name+".json"))
+    write_ci_evidence(output, report, rows)
     print(f"{report['mode']}: {'PASS' if report['passed'] else 'FAIL'}; {report.get('selected',0)} tests; {report['elapsed_seconds']:.2f}s; {run/'result.json'}",flush=True)
     return 0 if report["passed"] else 1
 

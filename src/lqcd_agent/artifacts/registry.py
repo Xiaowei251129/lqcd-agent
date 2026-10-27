@@ -8,86 +8,10 @@ import mimetypes
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Iterable
-
-
-ARTIFACT_SCHEMA_VERSION = "0.1"
-ARTIFACT_SLOTS = (
-    "plan",
-    "code",
-    "analysis",
-    "review",
-    "decision",
-    "approval",
-    "terminal",
-)
-SLOT_BY_ATTEMPT_KIND = {
-    "method_planner": "plan",
-    "code_agent": "code",
-    "analysis_engineer": "analysis",
-    "scientific_reviewer": "review",
-    "decision_coordinator": "decision",
-    "human_gate": "approval",
-    "memory_report": "terminal",
-}
-INVALIDATED_SLOTS_BY_TARGET_KIND = {
-    "method_planner": ARTIFACT_SLOTS,
-    "code_agent": ARTIFACT_SLOTS[1:],
-    "analysis_engineer": ARTIFACT_SLOTS[2:],
-    "scientific_reviewer": ARTIFACT_SLOTS[3:],
-    "decision_coordinator": ARTIFACT_SLOTS[4:],
-    "memory_report": ARTIFACT_SLOTS[6:],
-}
-STATE_FIELDS_BY_SLOT = {
-    "plan": ("method_plan_path", "coder_task_packet_path"),
-    "code": ("code_change_summary_path", "tests_status_path"),
-    "analysis": ("run_result_path", "analysis_outputs_dir"),
-    "review": ("scientific_review_report_path",),
-    "decision": ("decision_log_path",),
-    "approval": ("approval_packet_dir", "human_decision_path"),
-    "terminal": ("memory_update_path", "final_report_path"),
-}
-CANONICAL_CODE_PATH_FIELDS = (
-    "code_agent_task_path",
-    "code_agent_result_path",
-    "code_change_manifest_path",
-    "code_verification_results_path",
-)
-CODE_STATE_PATH_FIELDS = (*STATE_FIELDS_BY_SLOT["code"], *CANONICAL_CODE_PATH_FIELDS)
-CODE_MEMBER_BY_STATE_FIELD = dict(zip(CANONICAL_CODE_PATH_FIELDS, (
-    "code_agent_task.json", "code_agent_result.json", "change_manifest.json", "verification_results.json")))
-
-
-def state_fields_for_slot(slot: str, schema_version: str) -> tuple[str, ...]:
-    if slot == "code" and schema_version == "0.4":
-        return CODE_STATE_PATH_FIELDS
-    return STATE_FIELDS_BY_SLOT[slot]
-POINTER_FIELDS = {
-    "artifact_id",
-    "slot",
-    "cycle_id",
-    "attempt_id",
-    "attempt_kind",
-    "status",
-    "dependencies",
-    "members",
-    "state_paths",
-}
-LEGACY_PROJECTION_ROOTS = (
-    "method_plan.json",
-    "coder_task_packet.yaml",
-    "code_change_summary.md",
-    "tests_status.json",
-    "analysis_outputs",
-    "run_result.json",
-    "manifest.json",
-    "run.log",
-    "scientific_review_report.json",
-    "decision_log.json",
-    "approval_packet",
-    "memory_update.json",
-    "final_report.md",
-    "llm_calls",
-)
+from lqcd_agent.control.identity import execution_id
+from lqcd_agent.control.lifecycle import (validate_execution_index_sequence, attempt_lifecycle_records,
+    attempt_provenance, human_request_lifecycle_records, human_response_lifecycle_records)
+from . import contracts
 
 
 def _sha256_file(path: Path) -> str:
@@ -100,41 +24,6 @@ def _sha256_file(path: Path) -> str:
 
 def _event_id(index: int) -> str:
     return f"artifact_event_{index:06d}"
-
-
-def _execution_id(prefix: str, index: int, *, width: int = 6) -> str:
-    return f"{prefix}_{index:0{width}d}"
-
-
-def _validate_execution_index_sequence(
-    identities: Iterable[tuple[Any, Any]],
-    *,
-    label: str,
-    prefix: str,
-    width: int = 6,
-) -> tuple[str | None, int]:
-    by_index: dict[int, str] = {}
-    seen_ids: set[str] = set()
-    for identity, raw_index in identities:
-        if (
-            not isinstance(identity, str)
-            or not identity
-            or not isinstance(raw_index, int)
-            or isinstance(raw_index, bool)
-            or raw_index < 1
-            or identity != _execution_id(prefix, raw_index, width=width)
-            or identity in seen_ids
-            or raw_index in by_index
-        ):
-            raise ValueError(f"Execution ledger contains an invalid or duplicate {label} identity.")
-        seen_ids.add(identity)
-        by_index[raw_index] = identity
-    if not by_index:
-        return None, 0
-    latest_index = max(by_index)
-    if set(by_index) != set(range(1, latest_index + 1)):
-        raise ValueError(f"Execution ledger {label} indexes are not contiguous.")
-    return by_index[latest_index], latest_index
 
 
 def _run_root(state: dict[str, Any]) -> Path:
@@ -226,94 +115,9 @@ def _execution_records(state: dict[str, Any]) -> list[dict[str, Any]]:
     return records
 
 
-def _execution_attempt_lifecycle_records(
-    records: list[dict[str, Any]],
-    attempt_id: str,
-) -> list[dict[str, Any]]:
-    attempts = [
-        record
-        for record in records
-        if record.get("record_type") == "attempt" and record.get("attempt_id") == attempt_id
-    ]
-    if not attempts:
-        raise ValueError(f"Registered artifact Attempt is missing from the execution ledger: {attempt_id}")
-    events = tuple(record.get("event") for record in attempts)
-    allowed_events = {
-        ("scheduled",),
-        ("scheduled", "abandoned"),
-        ("scheduled", "started"),
-        ("scheduled", "started", "finished"),
-    }
-    if events not in allowed_events:
-        raise ValueError(f"Attempt lifecycle is incomplete or out of order in the execution ledger: {attempt_id}")
-    expected_statuses = {
-        "scheduled": {"scheduled"},
-        "started": {"running"},
-        "finished": {"succeeded", "failed", "pending"},
-        "abandoned": {"abandoned"},
-    }
-    if any(record.get("status") not in expected_statuses[str(record.get("event"))] for record in attempts):
-        raise ValueError(f"Attempt lifecycle status is inconsistent in the execution ledger: {attempt_id}")
-    return attempts
-
-
 def _execution_attempt_provenance(state: dict[str, Any], attempt_id: str) -> dict[str, Any]:
-    attempts = _execution_attempt_lifecycle_records(_execution_records(state), attempt_id)
-    return _attempt_provenance_from_lifecycle(attempts, attempt_id)
-
-
-def _attempt_provenance_from_lifecycle(
-    attempts: list[dict[str, Any]],
-    attempt_id: str,
-) -> dict[str, Any]:
-    required_identity_fields = (
-        "run_id",
-        "case_id",
-        "cycle_id",
-        "attempt_id",
-        "attempt_kind",
-        "node_name",
-        "inbound_transition_id",
-    )
-    stable_fields = required_identity_fields + (
-        "cycle_index",
-        "attempt_index",
-        "parent_attempt_id",
-        "attempt_trigger",
-    )
-    if any(field not in record for record in attempts for field in stable_fields):
-        raise ValueError(f"Registered artifact Attempt identity is incomplete in the execution ledger: {attempt_id}")
-    expected = {field: attempts[0].get(field) for field in stable_fields}
-    if any(
-        not isinstance(expected[field], str) or not expected[field]
-        for field in required_identity_fields
-    ):
-        raise ValueError(f"Registered artifact Attempt identity is incomplete in the execution ledger: {attempt_id}")
-    if any({field: record.get(field) for field in stable_fields} != expected for record in attempts[1:]):
-        raise ValueError(f"Registered artifact Attempt identity changes in the execution ledger: {attempt_id}")
-    cycle_index = expected["cycle_index"]
-    attempt_index = expected["attempt_index"]
-    if (
-        not isinstance(cycle_index, int)
-        or isinstance(cycle_index, bool)
-        or cycle_index < 1
-        or expected["cycle_id"] != _execution_id("cycle", cycle_index, width=4)
-        or not isinstance(attempt_index, int)
-        or isinstance(attempt_index, bool)
-        or attempt_index < 1
-        or expected["attempt_id"] != _execution_id("attempt", attempt_index)
-        or not isinstance(expected["attempt_trigger"], str)
-        or not expected["attempt_trigger"]
-        or (
-            expected["parent_attempt_id"] is not None
-            and (
-                not isinstance(expected["parent_attempt_id"], str)
-                or not expected["parent_attempt_id"]
-            )
-        )
-    ):
-        raise ValueError(f"Registered artifact Attempt index identity is invalid in the execution ledger: {attempt_id}")
-    return expected
+    attempts = attempt_lifecycle_records(_execution_records(state), attempt_id)
+    return attempt_provenance(attempts, attempt_id)
 
 
 def _execution_attempt_identity(state: dict[str, Any], attempt_id: str) -> dict[str, Any]:
@@ -409,12 +213,12 @@ def _validate_registered_pointer(
     if record.get("reason_code") != "attempt_output_registered":
         raise ValueError("Registered artifact reason code is inconsistent.")
     pointer = record.get("pointer")
-    if not isinstance(pointer, dict) or set(pointer) != POINTER_FIELDS:
+    if not isinstance(pointer, dict) or set(pointer) != contracts.POINTER_FIELDS:
         raise ValueError("Registered artifact pointer does not match the typed pointer contract.")
     slot = record.get("slot")
     attempt_id = record.get("attempt_id")
     artifact_id = record.get("artifact_id")
-    if not isinstance(slot, str) or slot not in ARTIFACT_SLOTS:
+    if not isinstance(slot, str) or slot not in contracts.ARTIFACT_SLOTS:
         raise ValueError("Registered artifact pointer has an invalid slot.")
     if not isinstance(attempt_id, str) or artifact_id != f"{attempt_id}:{slot}":
         raise ValueError("Registered artifact ID does not match its Attempt and slot.")
@@ -431,10 +235,10 @@ def _validate_registered_pointer(
         if pointer.get(field) != expected:
             raise ValueError(f"Registered artifact pointer disagrees with history field {field}.")
     attempt_kind = pointer.get("attempt_kind")
-    if SLOT_BY_ATTEMPT_KIND.get(str(attempt_kind)) != slot:
+    if contracts.SLOT_BY_ATTEMPT_KIND.get(str(attempt_kind)) != slot:
         raise ValueError("Registered artifact pointer Attempt kind does not match its slot.")
     execution_identity = _execution_attempt_identity(state, attempt_id)
-    lifecycle = _execution_attempt_lifecycle_records(_execution_records(state), attempt_id)
+    lifecycle = attempt_lifecycle_records(_execution_records(state), attempt_id)
     if not any(record.get("event") == "started" for record in lifecycle):
         raise ValueError("Registered artifact producing Attempt was never started.")
     registered_identity = {
@@ -451,7 +255,7 @@ def _validate_registered_pointer(
     if not isinstance(dependencies, list) or any(not isinstance(value, str) for value in dependencies):
         raise ValueError("Registered artifact pointer dependencies are invalid.")
     state_paths = pointer.get("state_paths")
-    expected_state_fields = set(state_fields_for_slot(slot, state.get("schema_version")))
+    expected_state_fields = set(contracts.state_fields_for_slot(slot, state.get("schema_version")))
     if not isinstance(state_paths, dict) or set(state_paths) != expected_state_fields:
         raise ValueError("Registered artifact pointer state paths do not match its slot.")
 
@@ -494,11 +298,11 @@ def _validate_registered_pointer(
             raise ValueError(f"Registered artifact pointer file is not a bundle member: {field}")
     if slot == "code" and state.get("schema_version") == "0.4":
         legacy = attempt_kind == "legacy_codex_handoff"
-        for field in (CANONICAL_CODE_PATH_FIELDS if legacy else STATE_FIELDS_BY_SLOT["code"]):
+        for field in (contracts.CANONICAL_CODE_PATH_FIELDS if legacy else contracts.STATE_FIELDS_BY_SLOT["code"]):
             if state_paths[field] is not None:
                 raise ValueError("Code pointer crossed its producer path boundary.")
         if not legacy:
-            for field, name in CODE_MEMBER_BY_STATE_FIELD.items():
+            for field, name in contracts.CODE_MEMBER_BY_STATE_FIELD.items():
                 if state_paths[field] != str(attempt_root / name):
                     raise ValueError("Canonical Code pointer has a missing or substituted member path.")
             from lqcd_agent.code_agent.artifacts import validate_code_result
@@ -536,122 +340,6 @@ def _transition_creates_human_request(
     )
 
 
-def _human_response_lifecycle_records(
-    execution_records: list[dict[str, Any]],
-    response_id: str,
-) -> list[dict[str, Any]]:
-    responses = [
-        record
-        for record in execution_records
-        if record.get("record_type") == "human_response"
-        and record.get("human_response_id") == response_id
-    ]
-    events = tuple(record.get("event") for record in responses)
-    if events not in {
-        ("submitted",),
-        ("submitted", "validated"),
-        ("submitted", "invalid"),
-        ("submitted", "validated", "consumed"),
-    }:
-        raise ValueError(f"Human Response lifecycle is incomplete or out of order: {response_id}")
-    identity_fields = (
-        "run_id",
-        "case_id",
-        "cycle_id",
-        "human_request_id",
-        "human_response_id",
-        "response_index",
-        "payload_reference",
-        "payload_sha256",
-    )
-    expected = {field: responses[0].get(field) for field in identity_fields}
-    if any({field: record.get(field) for field in identity_fields} != expected for record in responses[1:]):
-        raise ValueError(f"Human Response identity changes in the execution ledger: {response_id}")
-    if any(record.get("status") != record.get("event") for record in responses):
-        raise ValueError(f"Human Response status is inconsistent in the execution ledger: {response_id}")
-    response_index = expected["response_index"]
-    if (
-        not isinstance(response_index, int)
-        or isinstance(response_index, bool)
-        or response_index < 1
-        or response_id != _execution_id("human_response", response_index)
-        or any(
-            not isinstance(expected[field], str) or not expected[field]
-            for field in (
-                "run_id",
-                "case_id",
-                "cycle_id",
-                "human_request_id",
-                "payload_reference",
-                "payload_sha256",
-            )
-        )
-    ):
-        raise ValueError(f"Human Response index identity is invalid: {response_id}")
-    return responses
-
-
-def _human_request_lifecycle_records(
-    execution_records: list[dict[str, Any]],
-    request_id: str,
-) -> list[dict[str, Any]]:
-    requests = [
-        record
-        for record in execution_records
-        if record.get("record_type") == "human_request"
-        and record.get("human_request_id") == request_id
-    ]
-    events = tuple(record.get("event") for record in requests)
-    if events not in {
-        ("created",),
-        ("created", "packet_written"),
-        ("created", "satisfied"),
-        ("created", "packet_written", "satisfied"),
-    }:
-        raise ValueError(f"Human Request lifecycle is incomplete or out of order: {request_id}")
-    identity_fields = (
-        "run_id",
-        "case_id",
-        "cycle_id",
-        "human_request_id",
-        "request_index",
-        "request_kind",
-        "requesting_attempt_id",
-        "authorization_scope",
-    )
-    expected = {field: requests[0].get(field) for field in identity_fields}
-    if any({field: record.get(field) for field in identity_fields} != expected for record in requests[1:]):
-        raise ValueError(f"Human Request identity changes in the execution ledger: {request_id}")
-    expected_statuses = {
-        "created": "open",
-        "packet_written": "open",
-        "satisfied": "satisfied",
-    }
-    if any(record.get("status") != expected_statuses.get(str(record.get("event"))) for record in requests):
-        raise ValueError(f"Human Request status is inconsistent in the execution ledger: {request_id}")
-    request_index = expected["request_index"]
-    if (
-        not isinstance(request_index, int)
-        or isinstance(request_index, bool)
-        or request_index < 1
-        or request_id != _execution_id("human_request", request_index)
-        or any(
-            not isinstance(expected[field], str) or not expected[field]
-            for field in (
-                "run_id",
-                "case_id",
-                "cycle_id",
-                "request_kind",
-                "requesting_attempt_id",
-            )
-        )
-        or not isinstance(expected["authorization_scope"], dict)
-        or not expected["authorization_scope"]
-    ):
-        raise ValueError(f"Human Request index identity is invalid: {request_id}")
-    return requests
-
-
 def _validate_reverse_history_completeness(
     state: dict[str, Any],
     registered_pointers: dict[str, dict[str, Any]],
@@ -678,7 +366,7 @@ def _validate_reverse_history_completeness(
         for record in cycle_records
     ):
         raise ValueError("Execution ledger Cycle lifecycle is invalid for the active Run.")
-    latest_cycle_id, latest_cycle_index = _validate_execution_index_sequence(
+    latest_cycle_id, latest_cycle_index = validate_execution_index_sequence(
         (
             (record.get("cycle_id"), record.get("cycle_index"))
             for record in cycle_records
@@ -689,9 +377,9 @@ def _validate_reverse_history_completeness(
     )
     cycles_by_id = {str(record["cycle_id"]): record for record in cycle_records}
     for cycle_index in range(1, latest_cycle_index + 1):
-        cycle = cycles_by_id[_execution_id("cycle", cycle_index, width=4)]
+        cycle = cycles_by_id[execution_id("cycle", cycle_index, width=4)]
         expected_parent = (
-            _execution_id("cycle", cycle_index - 1, width=4)
+            execution_id("cycle", cycle_index - 1, width=4)
             if cycle_index > 1
             else None
         )
@@ -750,12 +438,12 @@ def _validate_reverse_history_completeness(
     ordinary_ids = set(registered_pointers)
     attempt_lifecycles: dict[str, list[dict[str, Any]]] = {}
     for attempt_id in attempt_ids:
-        lifecycle = _execution_attempt_lifecycle_records(execution_records, attempt_id)
+        lifecycle = attempt_lifecycle_records(execution_records, attempt_id)
         attempt_lifecycles[attempt_id] = lifecycle
-        provenance = _attempt_provenance_from_lifecycle(lifecycle, attempt_id)
+        provenance = attempt_provenance(lifecycle, attempt_id)
         if provenance["run_id"] != state.get("run_id") or provenance["case_id"] != state.get("case_id"):
             raise ValueError(f"Execution ledger Attempt belongs to another Run: {attempt_id}")
-        slot = SLOT_BY_ATTEMPT_KIND.get(str(provenance["attempt_kind"]))
+        slot = contracts.SLOT_BY_ATTEMPT_KIND.get(str(provenance["attempt_kind"]))
         if slot is None:
             raise ValueError(f"Execution ledger Attempt kind has no artifact slot policy: {attempt_id}")
         artifact_id = f"{attempt_id}:{slot}"
@@ -784,7 +472,7 @@ def _validate_reverse_history_completeness(
         if not isinstance(current_ids, dict):
             raise ValueError(f"Scheduled Attempt current artifact references are invalid: {attempt_id}")
         if any(
-            slot_name not in ARTIFACT_SLOTS
+            slot_name not in contracts.ARTIFACT_SLOTS
             or not isinstance(input_artifact_id, str)
             or input_artifact_id not in ordinary_ids
             for slot_name, input_artifact_id in current_ids.items()
@@ -807,7 +495,7 @@ def _validate_reverse_history_completeness(
             provenance["attempt_kind"] == "human_gate"
             and _transition_creates_human_request(execution_records, transition)
         )
-        policy_slots = _slots_for_target(
+        policy_slots = contracts.slots_for_target(
             str(provenance["attempt_kind"]),
             new_human_request=new_human_request,
         )
@@ -819,11 +507,11 @@ def _validate_reverse_history_completeness(
         if cleared_by_attempt.get(attempt_id, {}) != expected_clears:
             raise ValueError(f"Artifact history does not contain the exact required invalidation: {attempt_id}")
 
-    latest_attempt_id, latest_attempt_index = _validate_execution_index_sequence(
+    latest_attempt_id, latest_attempt_index = validate_execution_index_sequence(
         (
             (
                 attempt_id,
-                _attempt_provenance_from_lifecycle(lifecycle, attempt_id)["attempt_index"],
+                attempt_provenance(lifecycle, attempt_id)["attempt_index"],
             )
             for attempt_id, lifecycle in attempt_lifecycles.items()
         ),
@@ -833,14 +521,14 @@ def _validate_reverse_history_completeness(
     if latest_attempt_id is None:
         raise ValueError("Execution ledger does not contain an Attempt head.")
     for attempt_id, lifecycle in attempt_lifecycles.items():
-        provenance = _attempt_provenance_from_lifecycle(lifecycle, attempt_id)
+        provenance = attempt_provenance(lifecycle, attempt_id)
         parent_attempt_id = provenance["parent_attempt_id"]
         if parent_attempt_id is None:
             if provenance["attempt_index"] != 1:
                 raise ValueError("Execution ledger Attempt parent chain is incomplete.")
             continue
         parent = attempt_lifecycles.get(str(parent_attempt_id))
-        if parent is None or _attempt_provenance_from_lifecycle(
+        if parent is None or attempt_provenance(
             parent,
             str(parent_attempt_id),
         )["attempt_index"] >= provenance["attempt_index"]:
@@ -857,7 +545,7 @@ def _validate_reverse_history_completeness(
         for transition in transition_records
     ):
         raise ValueError("Execution ledger Transition lifecycle is invalid for the active Run.")
-    latest_transition_id, latest_transition_index = _validate_execution_index_sequence(
+    latest_transition_id, latest_transition_index = validate_execution_index_sequence(
         (
             (record.get("transition_id"), record.get("transition_index"))
             for record in transition_records
@@ -889,7 +577,7 @@ def _validate_reverse_history_completeness(
             )
         ):
             raise ValueError(f"Committed Transition target Attempt is missing: {transition_id}")
-        provenance = _attempt_provenance_from_lifecycle(
+        provenance = attempt_provenance(
             attempt_lifecycles[target_attempt_id],
             target_attempt_id,
         )
@@ -904,7 +592,7 @@ def _validate_reverse_history_completeness(
             raise ValueError(f"Committed Transition target Attempt identity is inconsistent: {transition_id}")
 
     latest_attempt_lifecycle = attempt_lifecycles[latest_attempt_id]
-    latest_attempt = _attempt_provenance_from_lifecycle(
+    latest_attempt = attempt_provenance(
         latest_attempt_lifecycle,
         latest_attempt_id,
     )
@@ -952,10 +640,10 @@ def _validate_reverse_history_completeness(
         if request_id not in request_ids:
             request_ids.append(request_id)
     request_lifecycles = {
-        request_id: _human_request_lifecycle_records(execution_records, request_id)
+        request_id: human_request_lifecycle_records(execution_records, request_id)
         for request_id in request_ids
     }
-    latest_request_id, latest_request_index = _validate_execution_index_sequence(
+    latest_request_id, latest_request_index = validate_execution_index_sequence(
         (
             (request_id, lifecycle[0].get("request_index"))
             for request_id, lifecycle in request_lifecycles.items()
@@ -1008,10 +696,10 @@ def _validate_reverse_history_completeness(
         if response_id not in response_ids:
             response_ids.append(response_id)
     response_lifecycles = {
-        response_id: _human_response_lifecycle_records(execution_records, response_id)
+        response_id: human_response_lifecycle_records(execution_records, response_id)
         for response_id in response_ids
     }
-    _, latest_response_index = _validate_execution_index_sequence(
+    _, latest_response_index = validate_execution_index_sequence(
         (
             (response_id, lifecycle[0].get("response_index"))
             for response_id, lifecycle in response_lifecycles.items()
@@ -1047,7 +735,7 @@ def _validate_reverse_history_completeness(
     if active_response_id == allow_pending_human_response_id and active_response_id is not None:
         expected_pending_state = {
             "human_response_index": latest_response_index + 1,
-            "active_human_response_id": _execution_id(
+            "active_human_response_id": execution_id(
                 "human_response",
                 latest_response_index + 1,
             ),
@@ -1152,10 +840,10 @@ def _validate_history(
     cleared_by_attempt: dict[str, dict[str, str]] = {}
     pending_current_set: str | None = None
     replayed_current: dict[str, dict[str, Any] | None] = {
-        slot: None for slot in ARTIFACT_SLOTS
+        slot: None for slot in contracts.ARTIFACT_SLOTS
     }
     for expected_index, record in enumerate(records, 1):
-        if record.get("schema_version") != ARTIFACT_SCHEMA_VERSION:
+        if record.get("schema_version") != contracts.ARTIFACT_SCHEMA_VERSION:
             raise ValueError("Artifact history schema_version is unsupported.")
         if record.get("event_index") != expected_index or record.get("event_id") != _event_id(expected_index):
             raise ValueError("Artifact history event sequence is inconsistent.")
@@ -1165,7 +853,7 @@ def _validate_history(
         if event not in {"registered", "current_set", "current_cleared", "protected_snapshot_registered"}:
             raise ValueError(f"Artifact history contains an unknown event: {event}")
         slot = record.get("slot")
-        if slot is not None and slot not in ARTIFACT_SLOTS:
+        if slot is not None and slot not in contracts.ARTIFACT_SLOTS:
             raise ValueError(f"Artifact history contains an unknown slot: {slot}")
         artifact_id = record.get("artifact_id")
         if not isinstance(artifact_id, str) or not artifact_id:
@@ -1232,7 +920,7 @@ def _validate_history(
             if not isinstance(transition_id, str) or not transition_id:
                 raise ValueError("Artifact current_cleared is missing its triggering Transition.")
             transition = _execution_transition_provenance(state, transition_id)
-            allowed_slots = _slots_for_target(
+            allowed_slots = contracts.slots_for_target(
                 str(provenance["attempt_kind"]),
                 new_human_request=provenance["attempt_kind"] == "human_gate",
             )
@@ -1327,13 +1015,13 @@ def _read_index(state: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"Artifact index is invalid JSON: {path}") from exc
     if not isinstance(payload, dict):
         raise ValueError(f"Artifact index is not an object: {path}")
-    if payload.get("schema_version") != ARTIFACT_SCHEMA_VERSION:
+    if payload.get("schema_version") != contracts.ARTIFACT_SCHEMA_VERSION:
         raise ValueError("Artifact index schema_version is unsupported.")
     for field in ("run_id", "case_id"):
         if payload.get(field) != state.get(field):
             raise ValueError(f"Artifact index {field} does not match the active Run.")
     current = payload.get("current")
-    if not isinstance(current, dict) or set(current) != set(ARTIFACT_SLOTS):
+    if not isinstance(current, dict) or set(current) != set(contracts.ARTIFACT_SLOTS):
         raise ValueError("Artifact index current slots do not match the canonical registry.")
     managed = payload.get("managed_projections")
     if not isinstance(managed, dict):
@@ -1402,7 +1090,7 @@ def _validate_registry_head(
     return index, history
 
 
-def _code_scalar_projection(state: dict[str, Any], index: dict[str, Any], *, run_root=None) -> dict[str, Any]:
+def code_scalar_projection(state: dict[str, Any], index: dict[str, Any], *, run_root=None) -> dict[str, Any]:
     if state.get("schema_version") != "0.4":
         return {}
     pointer = index["current"].get("code")
@@ -1499,7 +1187,7 @@ def _dependency_ids_from_current(
     elif slot == "review":
         dependency_slots = ("analysis",)
     else:
-        dependency_slots = ARTIFACT_SLOTS[: ARTIFACT_SLOTS.index(slot)]
+        dependency_slots = contracts.ARTIFACT_SLOTS[: contracts.ARTIFACT_SLOTS.index(slot)]
     dependencies = [
         str(current[name]["artifact_id"])
         for name in dependency_slots
@@ -1563,13 +1251,13 @@ def preflight_control_registration(
     publication and checkpoint. Slot, namespace and dependency rules stay A03.
     """
     _assert_active_attempt(state)
-    if slot not in ARTIFACT_SLOTS or SLOT_BY_ATTEMPT_KIND.get(str(state.get("attempt_kind"))) != slot:
+    if slot not in contracts.ARTIFACT_SLOTS or contracts.SLOT_BY_ATTEMPT_KIND.get(str(state.get("attempt_kind"))) != slot:
         raise ValueError("Control registration does not match the producing Attempt slot.")
     index, history = _validate_registry_head(state)
     artifact_id = f"{state['attempt_id']}:{slot}"
     if index["current"][slot] is not None or artifact_id in _registered_artifact_ids(history):
         raise ValueError("Control registration would overwrite an allocated artifact.")
-    if set(state_paths) != set(state_fields_for_slot(slot, state.get("schema_version"))):
+    if set(state_paths) != set(contracts.state_fields_for_slot(slot, state.get("schema_version"))):
         raise ValueError("Control registration has incomplete state paths.")
     members = _member_records(state, member_paths)
     dependencies = _dependency_ids(index, slot, schema_version=state.get("schema_version"))
@@ -1580,7 +1268,7 @@ def preflight_control_registration(
 
     def event(name: str, reason: str, **fields: Any) -> dict[str, Any]:
         position = int(index["revision"]) + len(records) + 1
-        row = {"schema_version": ARTIFACT_SCHEMA_VERSION, "event_id": _event_id(position),
+        row = {"schema_version": contracts.ARTIFACT_SCHEMA_VERSION, "event_id": _event_id(position),
                "event_index": position, "event": name, "run_id": state["run_id"], "case_id": state["case_id"],
                "cycle_id": state["cycle_id"], "attempt_id": state["attempt_id"], "transition_id": None,
                "human_request_id": state.get("active_human_request_id"), "human_response_id": state.get("active_human_response_id"),
@@ -1608,15 +1296,6 @@ def preflight_control_registration(
     return index, records
 
 
-def _slots_for_target(target_attempt_kind: str, *, new_human_request: bool) -> tuple[str, ...]:
-    if target_attempt_kind == "human_gate":
-        return ("approval", "terminal") if new_human_request else ()
-    try:
-        return tuple(INVALIDATED_SLOTS_BY_TARGET_KIND[target_attempt_kind])
-    except KeyError as exc:
-        raise ValueError(f"Unsupported invalidation target kind: {target_attempt_kind}") from exc
-
-
 def validate_state_artifacts(state: dict[str, Any]) -> None:
     index, _ = _validate_registry_head(state)
     if state.get("artifact_history_path") != str(_history_path(state)):
@@ -1626,15 +1305,15 @@ def validate_state_artifacts(state: dict[str, Any]) -> None:
     if state.get("current_artifacts") != index["current"]:
         raise ValueError("State current_artifacts does not match artifact_index.json.")
     run_root = _run_root(state)
-    for slot in STATE_FIELDS_BY_SLOT:
-        fields = state_fields_for_slot(slot, state.get("schema_version"))
+    for slot in contracts.STATE_FIELDS_BY_SLOT:
+        fields = contracts.state_fields_for_slot(slot, state.get("schema_version"))
         pointer = index["current"].get(slot)
         expected_paths = pointer.get("state_paths", {}) if isinstance(pointer, dict) else {}
         for field in fields:
             if state.get(field) != expected_paths.get(field):
                 raise ValueError(f"State field {field} does not match current artifact slot {slot}.")
         if slot == "code" and state.get("schema_version") == "0.4":
-            for field, value in _code_scalar_projection(state, index).items():
+            for field, value in code_scalar_projection(state, index).items():
                 if state.get(field) != value:
                     raise ValueError(f"State field {field} does not match current Code result.")
         if not isinstance(pointer, dict):

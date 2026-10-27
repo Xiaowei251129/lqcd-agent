@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from lqcd_agent.artifacts import registry
+from lqcd_agent.artifacts.contracts import ARTIFACT_SCHEMA_VERSION, ARTIFACT_SLOTS
 
 from .budget import validate_policy
 from .execution import _decoded_records, parse_ledger
@@ -90,10 +91,10 @@ def _validate(root, *, manifest, projection, advanced=False, pending_index=None)
                 records[-1]["to_status"] == "failed" and
                 all(record["record_type"] in ("run", "lineage", "budget") for record in records[:-1]),
                 "Cycle-free Run is not a failed bootstrap")
-        require(not history and index["schema_version"] == registry.ARTIFACT_SCHEMA_VERSION and
+        require(not history and index["schema_version"] == ARTIFACT_SCHEMA_VERSION and
                 index["run_id"] == records[0]["run_id"] and index["case_id"] == records[0]["case_id"] and
                 index["revision"] == 0 and index["last_event_id"] is None and
-                index["current"] == dict.fromkeys(registry.ARTIFACT_SLOTS) and index["managed_projections"] == {},
+                index["current"] == dict.fromkeys(ARTIFACT_SLOTS) and index["managed_projections"] == {},
                 "Failed pre-Cycle bootstrap has artifact state")
     else:
         registry.validate_state_artifacts(state)

@@ -1,12 +1,10 @@
 """B02 child bootstrap: immutable source proofs, one coordinator, fresh authority."""
 from dataclasses import asdict, dataclass
 from hashlib import sha256
-from pathlib import Path
 import uuid
 from .budget import policy
 from .checkpoints import persist_checkpoint, verify_checkpoint, verify_source_checkpoint
 from .coordinator import boundary, component, exclusive_directory, read_regular
-from .execution import parse_ledger
 from .integrity import validate_run_root
 from .pause import runtime_fingerprint, validate_fingerprint
 from .protocol import PROTOCOL, operation_variant

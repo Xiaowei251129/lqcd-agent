@@ -65,10 +65,6 @@ def parse_json_object(
     return payload, None
 
 
-def validate_required_fields(payload: dict[str, Any], required_fields: list[str]) -> list[str]:
-    return [field for field in required_fields if field not in payload]
-
-
 def validation_error_artifact(
     *,
     producer: str,

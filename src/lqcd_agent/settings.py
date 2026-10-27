@@ -1,6 +1,5 @@
 """Application-owned settings and credentials, never exported to child processes."""
 from dataclasses import dataclass, field
-import json
 import os
 from pathlib import Path
 import stat

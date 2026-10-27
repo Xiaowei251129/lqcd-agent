@@ -2,6 +2,12 @@
 
 Milestone status belongs in [Current state](REPO_CURRENT_STATE.md).
 
+## 2026-10-27 — pure contracts and reproducible engineering checks
+
+Keep identities, lifecycle validation and artifact field policy in three small modules without I/O. Move the existing implementations directly; all consumers use their canonical definitions. Keep registry I/O, phase ownership, permission checks, human confirmation and durable publication in their existing owners. Remove unused result/clock helpers, historical source locators and alternate Analysis artifact output projection instead of retaining compatibility branches.
+
+Use pinned uv to generate one hashed environment from runtime/development declarations and an explicit build-tool group. Preserve the existing runtime versions. Apply a narrow Ruff rule set without reformatting the repository. CI retains only bounded outcome reports, with unchanged read-only permissions; Linux static/build checks remain separate from macOS integration and OLCF native admission. Keep the current-state document current and fold the redundant start page into README. Audit and evidence are in the [maintenance record](maintenance/GOVERNANCE_AND_CONTRACT_BOUNDARIES.md).
+
 ## 2026-10-27 — one scientific validator and one publication path
 
 Use the same Host scientific diagnostics in deterministic and provider review. Limit model proposals to interpretation and additive findings; preserve numerical warnings and their confidence ceiling even when model generation fails. Pass validated remediation/history through the existing context bundle, retaining one model call and the current context limit.

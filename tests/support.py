@@ -1,6 +1,5 @@
 """Small direct-process helpers; no acceptance matrix or evidence authority."""
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -27,6 +26,6 @@ def command(*arguments, expected_exit=0, rejection=None):
         return None
     result = json.loads(child.stdout)
     if arguments[0] in ("start", "run") and "--host" not in arguments:
-        from lqcd_agent.cli import host_root
+        from lqcd_agent.inspection import host_root
         own(host_root(result["host"]))
     return result

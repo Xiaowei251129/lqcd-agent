@@ -240,7 +240,6 @@ def product_failure_material(root, source, diagnostic, records, coordinator):
 
 def product_observe_failure(root, source, diagnostic, port, records):
     """Publish one occurrence for new Work, never for a Human continuation."""
-    from lqcd_agent.control.strict_json import digest
     fp, derivation, registration = product_failure_material(root, source, diagnostic, records, port.leases.coordinator)
     occurrence = 1 + sum((row['payload']['fingerprint']['fingerprint_digest'] == fp['fingerprint_digest'] for row in records if row.get('event') == 'failure_observed'))
     failure = port.append_budget('failure_observed', {'fingerprint': fp, 'occurrence': occurrence})
@@ -251,7 +250,7 @@ def product_issue_grant(root, identity, diagnostic, authorization, port, records
     from lqcd_agent.control.capabilities import invocation_prefix
     from lqcd_agent.control.strict_json import digest, loads, require
     from lqcd_agent.graph.routing import PRODUCT_FALLBACKS, select_product_route
-    from lqcd_agent.graph.state import stable_attempt_id, stable_transition_id
+    from lqcd_agent.control.identity import stable_attempt_id, stable_transition_id
     if authorization is None:
         return None
     response = next((row for row in records if row.get('record_type') == 'human_response' and row['event'] == 'consumed' and (row['human_response_id'] == authorization['human_response_id'])))
@@ -343,7 +342,7 @@ class ProductNode:
     def invoke_scoped(self, identity, port):
         from hashlib import sha256
         from lqcd_agent.agents.decision_coordinator import product_coordinator_diagnosis, validate_product_diagnostic
-        from lqcd_agent.artifacts.registry import SLOT_BY_ATTEMPT_KIND
+        from lqcd_agent.artifacts.contracts import SLOT_BY_ATTEMPT_KIND
         from lqcd_agent.control.budget import BudgetExhausted
         from lqcd_agent.control.capabilities import ArtifactOutput, HumanResponseVerdict, TargetOutcome
         from lqcd_agent.control.coordinator import read_regular

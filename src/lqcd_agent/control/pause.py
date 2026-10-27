@@ -907,10 +907,7 @@ class PauseOperations:
             db.execute("UPDATE run_terminal_closure SET value=? WHERE run_key=?", (canonical_bytes(terminal), key))
 
     def publish(self, request):
-        from .checkpoints import verify_checkpoint
-        from .coordinator import component, read_regular
-        from .execution import parse_ledger
-        from .integrity import validate_run_root
+        from .coordinator import component
         from .operations import continue_publication_plan
 
         require(type(request) is PublishPauseRequest, "Expected internal typed Pause proposal")
@@ -1174,7 +1171,7 @@ class ExternalCancellation:
         from .coordinator import read_regular
         from .execution import parse_ledger
         from .integrity import validate_run_root
-        from .operations import ExternalControl, continue_publication_plan
+        from .operations import ExternalControl
 
         coordinator, locator = self.coordinator, request.run_locator
         root = coordinator.root / locator["case_id"] / locator["run_id"]
@@ -1488,7 +1485,7 @@ class ExternalInterrupt(ExternalCancellation):
         from .coordinator import component, read_regular
         from .execution import parse_ledger
         from .integrity import validate_control_root
-        from .operations import ExternalControl, continue_publication_plan
+        from .operations import ExternalControl
 
         require(type(request) is ResolveExternalInterruptRequest, "Expected typed external interrupt request")
         identity = actor.authorize("control.internal")
@@ -2346,7 +2343,7 @@ class InterruptedDelivery:
             delivery = asdict(proposed)
         require(delivery["result_semantics"] == PROTOCOL["state_machines"]["control_operation"]["recoverable_code_consumption_contract"]["result"],
                 "Timeout delivery changed its failure semantics")
-        from lqcd_agent.artifacts.registry import CODE_STATE_PATH_FIELDS
+        from lqcd_agent.artifacts.contracts import CODE_STATE_PATH_FIELDS
         from lqcd_agent.code_agent.artifacts import timeout_bundle
         from lqcd_agent.code_agent.schemas import validate_manifest, validate_task
         require(type(delivery["member_contents"]) is dict and

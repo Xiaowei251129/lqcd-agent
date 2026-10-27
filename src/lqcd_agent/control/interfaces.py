@@ -7,7 +7,7 @@ The explicit 0.4 adapter is separate from the unchanged default legacy CLI.
 from dataclasses import asdict, dataclass
 import uuid
 
-from lqcd_agent.artifacts.registry import ARTIFACT_SLOTS
+from lqcd_agent.artifacts.contracts import ARTIFACT_SLOTS
 
 from .budget import policy
 from .checkpoints import checkpoint_payload, persist_checkpoint, verify_checkpoint

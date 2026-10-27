@@ -8,7 +8,7 @@ from tests.support import command
 from lqcd_agent.control.execution import parse_ledger
 from lqcd_agent.control.integrity import validate_run_root
 from lqcd_agent.control.strict_json import ControlIntegrityError, digest, loads
-from lqcd_agent.cli import host_root
+from lqcd_agent.inspection import host_root
 
 def arguments(result):
     return ('--host', result['host'], '--case', result['run_locator']['case_id'], '--run', result['run_locator']['run_id'])

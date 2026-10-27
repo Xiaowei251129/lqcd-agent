@@ -1275,7 +1275,7 @@ class RouteAdmission:
 
 def route_grant_consumption(records, state, admitted):
     """Bind an already-issued B04 grant; control never issues or extends one."""
-    from lqcd_agent.graph.state import canonical_attempt_kind, stable_attempt_id, stable_transition_id
+    from lqcd_agent.control.identity import canonical_attempt_kind, stable_attempt_id, stable_transition_id
     from .budget import validate_budget_payload
 
     decision = admitted.budget_decision
@@ -1439,13 +1439,12 @@ class AdvanceOperations:
     def _snapshot(self, operation, records, index, history, manifest, state, source_revision, admitted):
         from copy import deepcopy
         from datetime import datetime, timezone
-        from lqcd_agent.artifacts import registry
-        from lqcd_agent.graph.state import canonical_attempt_kind, stable_attempt_id, stable_cycle_id, stable_transition_id
+        from lqcd_agent.artifacts.contracts import ARTIFACT_SCHEMA_VERSION, slots_for_target
+        from lqcd_agent.control.identity import canonical_attempt_kind, stable_attempt_id, stable_cycle_id, stable_transition_id
         from .budget import ROUTE_DIMENSIONS, WORK_KINDS, validate_budget_payload
         from .execution import replay
         from .integrity import artifact_binding
         from .projections import bounded_projection
-        from .records import build_record
 
         locator = operation["request"]["run_locator"]
         source = next(r for r in reversed(records) if r["record_type"] == "attempt")
@@ -1526,7 +1525,7 @@ class AdvanceOperations:
         transition_id = stable_transition_id(state["transition_index"] + 1)
         cycle_index = state["cycle_index"] + int(new_cycle)
         cycle_id = stable_cycle_id(cycle_index)
-        slots = registry._slots_for_target(target_kind, new_human_request=admitted.human_request is not None) if target_kind is not None else ()
+        slots = slots_for_target(target_kind, new_human_request=admitted.human_request is not None) if target_kind is not None else ()
         invalidation = [{"slot": slot, "artifact_id": index["current"][slot]["artifact_id"]} for slot in slots if index["current"][slot] is not None]
         prior_ids = {item["slot"]: item["artifact_id"] for item in invalidation}
         plan.step("transition_target_classified", {"transition_target_kind": branch,
@@ -1539,7 +1538,7 @@ class AdvanceOperations:
                 plan.append("cycle", "created", cycle_id=cycle_id, cycle_index=cycle_index, parent_cycle_id=state["cycle_id"],
                             trigger_reason="replan", created_by_attempt_id=source["attempt_id"], status="active")
             if admitted.human_request is not None:
-                from lqcd_agent.graph.state import stable_human_request_id
+                from lqcd_agent.control.identity import stable_human_request_id
                 request_index = state["human_request_index"] + 1
                 human_request = plan.append("human_request", "created", cycle_id=cycle_id,
                     human_request_id=stable_human_request_id(request_index), request_index=request_index,
@@ -1562,7 +1561,7 @@ class AdvanceOperations:
                         removals.append({"path": path, "artifact_id": pointer["artifact_id"], "sha256": member["sha256"]})
                         del plan.index["managed_projections"][path]
                 number = plan.index["revision"] + 1
-                row = {"schema_version": registry.ARTIFACT_SCHEMA_VERSION, "event_id": f"artifact_event_{number:06d}", "event_index": number,
+                row = {"schema_version": ARTIFACT_SCHEMA_VERSION, "event_id": f"artifact_event_{number:06d}", "event_index": number,
                        "event": "current_cleared", **locator, "cycle_id": cycle_id, "attempt_id": attempt_id, "transition_id": transition_id,
                        "human_request_id": state["active_human_request_id"], "human_response_id": state["active_human_response_id"],
                        "slot": slot, "artifact_id": pointer["artifact_id"], "reason_code": "target_" + target_kind,

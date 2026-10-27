@@ -1,11 +1,7 @@
 from __future__ import annotations
 import hashlib
 from copy import deepcopy
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
-AttemptKind = Literal['method_planner', 'code_agent', 'analysis_engineer', 'scientific_reviewer', 'decision_coordinator', 'human_gate', 'memory_report']
-ATTEMPT_KIND_BY_NODE: dict[str, AttemptKind] = {'method_planner': 'method_planner', 'code_agent': 'code_agent', 'analysis_engineer': 'analysis_engineer', 'scientific_reviewer': 'scientific_reviewer', 'decision_coordinator': 'decision_coordinator', 'human_approval_gate': 'human_gate', 'human_gate': 'human_gate', 'memory_report': 'memory_report'}
 PRODUCT_CONTEXT_SLOTS = {'method_planner': ('plan',), 'code_agent': ('plan', 'code'), 'analysis_engineer': ('plan', 'code', 'analysis'), 'scientific_reviewer': ('plan', 'analysis', 'review'), 'decision_coordinator': ('plan', 'code', 'analysis', 'review', 'decision', 'approval'), 'human_gate': ('decision', 'approval'), 'memory_report': ('review', 'decision', 'approval')}
 
 def product_context(root, identity, execution, index):
@@ -64,44 +60,3 @@ def validate_remediation_packet(packet, *, identity, parent_attempt_id, register
         closed(authorization, ('human_request_id', 'human_response_id', 'response_digest', 'target_node'))
         require(authorization['target_node'] == packet['target_node'], 'Remediation authorization target changed')
     return packet
-
-def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-def stable_checkpoint_thread_id(case_id: str, run_id: str) -> str:
-    return f'{case_id}:{run_id}'
-
-def stable_cycle_id(cycle_index: int) -> str:
-    return f'cycle_{cycle_index:04d}'
-
-def stable_attempt_id(attempt_index: int) -> str:
-    return f'attempt_{attempt_index:06d}'
-
-def stable_transition_id(transition_index: int) -> str:
-    return f'transition_{transition_index:06d}'
-
-def stable_human_request_id(request_index: int) -> str:
-    return f'human_request_{request_index:06d}'
-
-def stable_human_response_id(response_index: int) -> str:
-    return f'human_response_{response_index:06d}'
-
-def canonical_attempt_kind(node_name: str) -> AttemptKind:
-    try:
-        return ATTEMPT_KIND_BY_NODE[node_name]
-    except KeyError as exc:
-        raise ValueError(f'Unsupported graph node for Attempt identity: {node_name}') from exc
-_CONTROL_PLANE_IDENTITY_FIELDS = ('run_id', 'case_id', 'user_goal', 'case_config_path', 'output_dir', 'checkpoint_thread_id', 'checkpoint_backend', 'checkpoint_db_path', 'parent_run_id', 'cycle_id', 'cycle_index', 'parent_cycle_id', 'attempt_id', 'attempt_index', 'parent_attempt_id', 'attempt_kind', 'attempt_node', 'attempt_trigger', 'attempt_status', 'current_node', 'inbound_transition_id', 'committed_transition_id', 'transition_index', 'committed_route', 'execution_history_path')
-_HUMAN_CONTROL_FIELDS = ('human_request_index', 'human_response_index', 'active_human_request_id', 'human_requesting_attempt_id', 'human_request_kind', 'human_request_status', 'human_request_authorization_scope', 'active_human_response_id', 'human_response_status', 'human_response_decision', 'human_response_authorized_route', 'human_response_authorized_transition_route', 'human_response_authorized_transition_target', 'human_response_validator_attempt_id', 'human_response_consumer_attempt_id', 'human_response_target_attempt_id')
-
-def validate_control_0_4_node_result(active: dict[str, Any], result: dict[str, Any]) -> None:
-    """Keep the separately validated 0.4 control projection out of Agent writes.
-
-    This pure adapter does not validate a Run root or grant execution authority.
-    Domain output remains separate from the current control projection.
-    """
-    from lqcd_agent.control.strict_json import canonical_bytes, require
-    require(active.get('schema_version') == result.get('schema_version') == '0.4', 'Unsupported control projection version')
-    for field in _CONTROL_PLANE_IDENTITY_FIELDS + _HUMAN_CONTROL_FIELDS:
-        require(active.get(field) == result.get(field), 'Graph node modified control-plane identity')
-    require(canonical_bytes(active) == canonical_bytes(result), 'Graph node modified control-plane projection')

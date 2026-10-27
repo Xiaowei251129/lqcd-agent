@@ -51,6 +51,25 @@ Python clients use the same application entry, for example `execute(ApplicationR
 
 ## Develop
 
+Read the [current state](docs/REPO_CURRENT_STATE.md) and [verification guide](docs/VERIFICATION_GUIDE.md). For a fresh Python 3.12 environment, set `TMPDIR` to the approved execution parent, then install the single hash-locked environment:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --require-hashes -r requirements.lock
+python -m pip install --no-deps --no-build-isolation -e .
+```
+
+Runtime dependencies are declared in [pyproject.toml](pyproject.toml), alongside development tools and a separate build-tool group. Regenerate the existing lock with its pinned uv version:
+
+```bash
+uv pip compile pyproject.toml --extra dev --group build --python-version 3.12 --universal --generate-hashes --output-file requirements.lock
+uv pip check
+ruff check src tests scripts setup.py
+```
+
+The compiler retains compatible existing pins. Use `--upgrade-package NAME` only for an intentional dependency update. Universal dependency markers do not qualify additional runtime platforms.
+
 ```bash
 python scripts/check.py                          # 12 critical checks
 python scripts/check.py tests/test_analysis_programs.py
@@ -61,7 +80,7 @@ python scripts/measure_context.py                # offline prompt sizes and smal
 
 The runner selects this checkout's `.venv`; it never imports a previous checkout. After source edits it regenerates the build manifest once. Standalone CLI users must run `python scripts/build_manifest.py` after editing runtime source; wheel builds regenerate the installed manifest without changing sources. The packaged storage profile is `lqcd_agent/resources/storage.json`; an operator-owned `LQCD_AGENT_STORAGE_CONFIG` can select an approved deployment profile.
 
-Dependencies live in [pyproject.toml](pyproject.toml) and [requirements.lock](requirements.lock). The existing OLCF checkout contains its own ignored `.runtime` and `.venv`. For another installation, create a Python 3.12+ virtual environment, install the lock and this package, and verify the packaged or operator-owned storage profile with a supported SQLite runtime. `doctor` checks actual storage admission and WAL/FULL/foreign-key settings in its own temporary root, without loading a key or calling a model. See [verification](docs/VERIFICATION_GUIDE.md).
+The qualified development interpreter is Python 3.12; platform qualification is recorded in the current state. Verify the packaged or operator-owned storage profile with a supported SQLite runtime. `doctor` checks actual storage admission and WAL/FULL/foreign-key settings in its own temporary root, without loading a key or calling a model.
 
 Current control declarations live in [contracts/control.json](contracts/control.json); regenerate with `python scripts/generate_protocol.py`. Only current Runs are supported. Old runtime paths, historical acceptance, ticket archives and old demo/benchmark implementations have been removed.
 

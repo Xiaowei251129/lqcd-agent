@@ -17,7 +17,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=9,<10"]
+dev = ["pytest>=9,<10", "uv==0.11.8", "ruff==0.15.1"]
+
+[dependency-groups]
+build = ["setuptools==80.9.0", "wheel==0.45.1"]
 
 [project.scripts]
 lqcd-agent = "lqcd_agent.cli:main"
@@ -33,3 +36,10 @@ where = ["src"]
 testpaths = ["tests"]
 addopts = "--import-mode=importlib"
 markers = ["integration: actual process and durable workflow checks"]
+
+[tool.ruff]
+target-version = "py312"
+extend-exclude = ["src/lqcd_agent/control/_generated_protocol.py"]
+
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82", "F401"]

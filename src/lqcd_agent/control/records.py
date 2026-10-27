@@ -5,8 +5,8 @@ Execution Ledger and Event Identity. Builders are pure, not write authority.
 """
 from dataclasses import asdict
 
-from lqcd_agent.artifacts.registry import ARTIFACT_SLOTS, STATE_FIELDS_BY_SLOT, CODE_STATE_PATH_FIELDS
-from lqcd_agent.graph.state import (canonical_attempt_kind, stable_attempt_id, stable_cycle_id,
+from lqcd_agent.artifacts.contracts import ARTIFACT_SLOTS, STATE_FIELDS_BY_SLOT, CODE_STATE_PATH_FIELDS
+from lqcd_agent.control.identity import (canonical_attempt_kind, stable_attempt_id, stable_cycle_id,
                                   stable_human_request_id, stable_human_response_id, stable_transition_id,
                                   stable_checkpoint_thread_id)
 
@@ -17,15 +17,6 @@ from .pause import FIELDS as PAUSE_FIELDS, validate_pause_record
 from .strict_json import (ValidatedValue, closed, digest_value, loads,
                           number, require, text)
 
-
-SOURCE_LOCATORS = {
-    "identities": "A02_RUN_CYCLE_ATTEMPT_MODEL.md#2-canonical-identity-formats",
-    "records": "A02_RUN_CYCLE_ATTEMPT_MODEL.md#4-append-only-execution-ledger",
-    "transition": "A02_RUN_CYCLE_ATTEMPT_MODEL.md#6-source-wrapper-transition-commit",
-    "human": "A02_RUN_CYCLE_ATTEMPT_MODEL.md#7-human-request--response-identity",
-    "run_lifecycle": "A04_PAUSE_RESUME_SEMANTICS.md#append-only-run-lifecycle-authority",
-    "bootstrap": "A02C01_EXECUTION_0_4_BOOTSTRAP_ORDER.md",
-}
 
 COMMON = ("schema_version", "record_type", "event", "run_id", "case_id", "event_id", "event_index",
           "previous_execution_head", "artifact_head", "artifact_event_index", "created_at")

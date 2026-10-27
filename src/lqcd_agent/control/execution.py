@@ -3,8 +3,9 @@ from dataclasses import dataclass
 from hashlib import sha256
 import json
 
-from lqcd_agent.artifacts import registry
-from lqcd_agent.graph.state import stable_cycle_id
+from .lifecycle import (validate_execution_index_sequence, attempt_lifecycle_records,
+    attempt_provenance, human_request_lifecycle_records, human_response_lifecycle_records)
+from lqcd_agent.control.identity import stable_cycle_id
 
 from .budget import WORK_KINDS, validate_policy
 from .protocol import PROTOCOL
@@ -195,15 +196,15 @@ def _replay_snapshots(snapshots):
             identity = record[IDENTITIES[kind][0]]
             seen[kind].setdefault(identity, []).append(record)
             if kind == "attempt":
-                life = registry._execution_attempt_lifecycle_records(records[:index], identity)
-                registry._attempt_provenance_from_lifecycle(life, identity)
+                life = attempt_lifecycle_records(records[:index], identity)
+                attempt_provenance(life, identity)
             elif kind == "human_request":
-                registry._human_request_lifecycle_records(records[:index], identity)
+                human_request_lifecycle_records(records[:index], identity)
             elif kind == "human_response":
-                registry._human_response_lifecycle_records(records[:index], identity)
+                human_response_lifecycle_records(records[:index], identity)
         previous = sha256(snapshots[index - 1]).hexdigest()
     for kind, (identity, index, _) in IDENTITIES.items():
-        registry._validate_execution_index_sequence(
+        validate_execution_index_sequence(
             ((key, life[0][index]) for key, life in seen[kind].items()), label=kind,
             prefix=kind, width=4 if kind == "cycle" else 6)
     for position, row in enumerate(records):
@@ -467,7 +468,7 @@ def _budget_projection(records, seen):
                     response[0]["payload_reference"] == payload["response_reference"], "Grant authorization mismatch")
             require(latest_failure is not None and latest_failure["fingerprint_digest"] == payload["fingerprint_digest"] and
                     latest_failure["occurrence"] == payload["occurrence"], "Grant failure context mismatch")
-            from lqcd_agent.graph.state import canonical_attempt_kind, stable_attempt_id, stable_transition_id
+            from lqcd_agent.control.identity import canonical_attempt_kind, stable_attempt_id, stable_transition_id
             prior_attempts = sum(life[0]["event_index"] < record["event_index"] for life in seen["attempt"].values())
             prior_transitions = sum(life[0]["event_index"] < record["event_index"] for life in seen["transition"].values())
             require(payload["target_attempt_id"] == stable_attempt_id(prior_attempts + 1) and
