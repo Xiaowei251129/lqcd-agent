@@ -125,6 +125,8 @@ def _review_scope(run_result: dict[str, Any] | None, method_plan: dict[str, Any]
     requires_matrix_elements = any(
         "synthetic_matrix_elements.json" in value or "matrix_element" in value for value in combined
     )
+    if (run_result or {}).get('generated_execution') is not None:
+        requires_matrix_elements = False
     has_effective_mass = any("effective_mass" in value for value in combined)
     return {
         "requires_matrix_element_validation": requires_matrix_elements,
@@ -137,10 +139,10 @@ def _review_scope(run_result: dict[str, Any] | None, method_plan: dict[str, Any]
     }
 
 
-def _not_applicable_matrix_element_diagnostics() -> dict[str, Any]:
+def _not_applicable_diagnostics(summary) -> dict[str, Any]:
     return {
         "status": "not_applicable",
-        "summary": "Matrix-element validation is outside the scope of this case.",
+        "summary": summary,
         "evidence": [],
         "findings": [],
         "warnings": [],
@@ -218,6 +220,7 @@ def run_scientific_reviewer(
     method_plan_path: str | Path | None = None,
     provider: LLMProvider | None = None,
     research_context: dict[str, Any] | None = None,
+    generated_input: dict | None = None,
 ) -> dict[str, Any]:
     run_dir = Path(run_output_dir)
     run_result = _read_json(run_result_path)
@@ -283,14 +286,23 @@ def run_scientific_reviewer(
         context_warnings.append(_warning(path=run_result_path, field='run_success', value=False,
             code='analysis_run_failed', severity='severe', message='Scientific review received a failed analysis Run.'))
 
-    correlator_diagnostics = diagnose_correlator_outputs(resolved_analysis_outputs_dir)
-    fit_diagnostics = diagnose_fit_outputs(resolved_analysis_outputs_dir)
+    generated = run_result is not None and run_result.get('generated_execution') is not None
+    correlator_diagnostics = (_not_applicable_diagnostics('Generated output uses its scientific numerical contract.')
+        if generated else diagnose_correlator_outputs(resolved_analysis_outputs_dir))
+    fit_diagnostics = (_not_applicable_diagnostics('Generated output uses its scientific numerical contract.')
+        if generated else diagnose_fit_outputs(resolved_analysis_outputs_dir))
     matrix_element_diagnostics = (
         diagnose_matrix_elements(matrix_path)
         if review_scope["requires_matrix_element_validation"]
-        else _not_applicable_matrix_element_diagnostics()
+        else _not_applicable_diagnostics('Matrix-element validation is outside the scope of this case.')
     )
     sections = [correlator_diagnostics, fit_diagnostics, matrix_element_diagnostics]
+    generated_diagnostics = None
+    if generated:
+        from lqcd_agent.analysis.generated_diagnostics import diagnose_generated_output
+        generated_diagnostics = diagnose_generated_output(resolved_analysis_outputs_dir/'generated_result.json',
+            run_result['generated_execution']['result_kind'], generated_input)
+        sections.append(generated_diagnostics)
 
     warnings = context_warnings + _flatten_section_values(sections, "warnings")
     findings = _flatten_section_values(sections, "findings")
@@ -318,6 +330,8 @@ def run_scientific_reviewer(
         "confidence": confidence,
     }
     request = response = error = None
+    if generated_diagnostics is not None:
+        report['generated_diagnostics'] = generated_diagnostics
     if provider is not None:
         try:
             request = build_scientific_reviewer_request(
@@ -325,7 +339,7 @@ def run_scientific_reviewer(
                 research_context=research_context,
                 review_evidence={key: report[key] for key in (
                     'correlator_diagnostics', 'fit_diagnostics', 'matrix_element_diagnostics',
-                    'warnings', 'findings', 'evidence', 'recommended_checks', 'confidence')})
+                    'generated_diagnostics', 'warnings', 'findings', 'evidence', 'recommended_checks', 'confidence') if key in report})
             persist_context(run_dir, request)
             evidence = read_context_evidence(run_dir, context_reference(request.context_sources), 'review_evidence')
             report.update(evidence)

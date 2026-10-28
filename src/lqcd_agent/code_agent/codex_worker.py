@@ -37,11 +37,13 @@ def run(job):
     workspace_config = workspace_root()
     profile = {':root': 'deny', ':minimal': 'read', ':workspace_roots': {'.': 'write'},
                str(workspace_config / '.venv'): 'read', str(workspace_config / '.runtime'): 'read', ':slash_tmp': 'deny', ':tmpdir': 'write'}
+    tool_environment = {'PYTHONDONTWRITEBYTECODE': '1', 'RUFF_CACHE_DIR': str(home/'cache'/'ruff')}
     overrides = ('forced_login_method="api"', 'cli_auth_credentials_store="ephemeral"',
                  'default_permissions="lqcd"',
                  'web_search=' + json.dumps('live' if task['network_policy']['enabled'] else 'disabled'),
                  'permissions.lqcd.filesystem=' + json.dumps(profile).replace(': ', ' = '),
                  'permissions.lqcd.network.enabled=' + str(task['network_policy']['enabled']).lower(),
+                 'shell_environment_policy.set=' + json.dumps(tool_environment).replace(': ', ' = '),
                  'project_doc_max_bytes=0',
                  'openai_base_url=' + json.dumps(settings.api_base))
     environment = child_environment()

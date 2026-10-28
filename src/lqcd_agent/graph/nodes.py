@@ -407,6 +407,13 @@ class ProductNode:
             content = {'reasons': [diagnostic['category']], 'evidence': diagnostic['evidence'], 'risk_level': diagnostic['risk']}
         else:
 
+            if node == 'analysis_engineer' and index['current']['code'] is not None:
+                require(self.analysis_handoff is not None and self.preparation is not None, 'Verified Code requires a fresh Analysis preparation')
+                try:
+                    context['analysis_execution'] = product_resource(port, resource_kind='tool_call', resource_id='analysis-subprocess', input_digest=digest(self.preparation), config_digest=self.preparation['runtime_policy_digest'], timeout_seconds=self.analysis_handoff.timeout_seconds, effect=lambda: self.analysis_handoff.execute(self.preparation))
+                except ProductResourceFailure as error:
+                    current = {slot: pointer['artifact_id'] for slot, pointer in index['current'].items() if pointer is not None}
+                    return TargetOutcome('failed', {'current_artifact_ids': current}, {'type': 'OrdinaryResourceFailure', 'message': str(error)})
             timeout = getattr(self.agent_port, 'timeout_seconds', 1)
             def effect():
                 return self.agent_port.run(node, context, timeout_seconds=timeout)
@@ -425,14 +432,9 @@ class ProductNode:
             except BudgetExhausted:
                 diagnostic = {'status': 'failed', 'category': 'budget', 'affected_layer': 'none', 'evidence': [], 'retryability': 'not_retryable', 'candidates': [], 'confidence': 'unique', 'fingerprint': None, 'human_need': 'approval', 'risk': 'high'}
                 content = {'resource_admission': 'denied'}
-            if node == 'analysis_engineer' and index['current']['code'] is not None:
-                require(self.analysis_handoff is not None and self.preparation is not None, 'Verified Code requires a fresh Analysis preparation')
-                try:
-                    content['execution'] = product_resource(port, resource_kind='tool_call', resource_id='analysis-subprocess', input_digest=digest(self.preparation), config_digest=self.preparation['runtime_policy_digest'], timeout_seconds=10, effect=lambda: self.analysis_handoff.execute(self.preparation))
-                except ProductResourceFailure as error:
-                    current = {slot: pointer['artifact_id'] for slot, pointer in index['current'].items() if pointer is not None}
-                    return TargetOutcome('failed', {'current_artifact_ids': current}, {'type': 'OrdinaryResourceFailure', 'message': str(error)})
-                if content['execution']['returncode'] != 0:
+            if 'analysis_execution' in context:
+                content['execution'] = {k: v for k, v in context['analysis_execution'].items() if k != 'result'}
+                if context['analysis_execution']['returncode'] != 0:
                     diagnostic.update(status='failed', category='analysis_execution', affected_layer='analysis', candidates=['analysis_engineer'], risk='high')
         state = parse_ledger(read_regular(self.root / 'execution_history.jsonl')).projection.value
         inbound = next((row for row in reversed(records) if row['record_type'] == 'transition' and row['target_attempt_id'] == identity['attempt_id']))

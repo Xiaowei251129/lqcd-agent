@@ -8,8 +8,9 @@ import pytest
 
 from lqcd_agent.control.strict_json import ControlIntegrityError
 from lqcd_agent.research_cases import _grouped, extract, verify_pack
-from lqcd_agent.research_codegen import ResearchCodeAgent
-from lqcd_agent.research_evaluation import calibration, check_c2, check_normalization, sandbox_command
+from lqcd_agent.research_evaluation import calibration
+from lqcd_agent.analysis.generated_diagnostics import check_c2, check_normalization
+from lqcd_agent.code_agent.execution import sandbox_command
 
 
 def source_fixture(root):
@@ -53,12 +54,6 @@ def test_extract_preserves_sources_replica_ids_and_withholds_references(tmp_path
     norm = json.loads((root/'inputs/normalization.json').read_text())
     assert {r['sample_id'] for r in norm['records']} == {7,13}
     assert {p:sha256(p.read_bytes()).hexdigest() for p in sources} == before
-    for family in ('c2','normalization'):
-        result = ResearchCodeAgent(family).run('method_planner',{'root_goal':{'goal':'PRIVATE_INPUT_SENTINEL'}},timeout_seconds=1)
-        assert result['content']['code_needed']
-        assert 'PRIVATE_INPUT_SENTINEL' not in json.dumps(result)
-        result = ResearchCodeAgent(family).run('analysis_engineer',{},timeout_seconds=1)
-        assert result['content']['physics_accepted'] is False and result['diagnostic']['human_need']=='approval'
     (root/'inputs/normalization.json').write_text('{}')
     with pytest.raises(ControlIntegrityError,match='changed'):
         verify_pack(root)
@@ -93,7 +88,7 @@ def normalized_control():
             for component,value in (('real',real),('imag',imag))]}
 
 
-@pytest.mark.parametrize('fault',['renumber','drop','duplicate','real_division','uncertainty','invent_reference'])
+@pytest.mark.parametrize('fault',['renumber','drop','duplicate','real_division','uncertainty','mode_tag','invent_reference'])
 def test_independent_normalization_oracle_rejects_corrupted_results(fault):
     payload=calibration('normalization'); result=normalized_control()
     check_normalization(payload,result)
@@ -102,6 +97,7 @@ def test_independent_normalization_oracle_rejects_corrupted_results(fault):
     elif fault=='duplicate': result['results'].append(result['results'][0])
     elif fault=='real_division': result['results'][0]['real']=1
     elif fault=='uncertainty':result['summaries'][0]['error']=1
+    elif fault=='mode_tag':result['results'][0]['mode']=2
     else: payload['omit_reference']=True
     with pytest.raises(ControlIntegrityError):check_normalization(payload,result)
 

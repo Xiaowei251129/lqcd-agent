@@ -4,6 +4,7 @@ import hashlib
 import io
 import os
 from pathlib import Path
+from lqcd_agent.control.strict_json import loads
 
 
 def dataset_path(workspace, relative):
@@ -28,6 +29,17 @@ def read_dataset(workspace, relative, *, text_columns=(), values=False):
         return record, columns
     with handle:
         before = os.fstat(handle.fileno())
+        identity = lambda stat: (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+        if path.suffix == '.json':
+            raw = handle.read()
+            payload = loads(raw, canonical=False)
+            after = os.fstat(handle.fileno())
+            if identity(before) != identity(after) or len(raw) != after.st_size:
+                raise ValueError('Raw data changed while being read.')
+            if type(payload) is not dict:
+                raise ValueError('Scientific JSON input must be an object.')
+            record.update(exists=True, sha256=hashlib.sha256(raw).hexdigest(), bytes=len(raw), columns=sorted(payload))
+            return record, payload if values else {}
         digest, size = hashlib.sha256(), 0
 
         class DigestReader(io.RawIOBase):
@@ -62,7 +74,6 @@ def read_dataset(workspace, relative, *, text_columns=(), values=False):
                 for _ in source:
                     pass
         after = os.fstat(handle.fileno())
-        identity = lambda stat: (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
         if identity(before) != identity(after) or size != after.st_size:
             raise ValueError('Raw data changed while being read.')
     record.update(exists=True, sha256=digest.hexdigest(), bytes=size, columns=header)

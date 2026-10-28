@@ -2,6 +2,12 @@
 
 Milestone status belongs in [Current state](REPO_CURRENT_STATE.md).
 
+## 2026-10-28 — canonical generated scientific execution
+
+Connect the existing scientific Planner, CodeHost, fresh Analysis preparation, normal Analysis writer and Scientific Reviewer. Remove fixed research agents, placeholder calculation and separate research workflow profiles. Keep generated programs Run-local and use one sandbox execution primitive and one Host numerical-contract implementation for scientific review and independent assessment. Independent hidden calibration/reference grading does not acquire Run authority.
+
+Freeze JSON input identity, method parameters, code and numerical environment in the existing preparation. Execute under the original resource/lease owner before constructing Analysis evidence. Preserve tool/network availability, SDK automatic review, fencing, budget settlement, WAL/FULL and human scientific confirmation. Treat completed planning separately from unfinished implementation; retain genuine pending plans instead of starting Code. Operator model selection remains in the private ignored `.env`; no model-specific execution branch is added. Keep the existing input-context bound, use the existing request-level Reviewer output allowance, and retain failed incomplete responses. Make Normalization mode tags explicit. Route Ruff caches into the private SDK home and suppress automatic Python bytecode without ignoring unexpected files or restricting tools, networking or automatic review.
+
 ## 2026-10-27 — independent research cases and tool-enabled coding
 
 Use the existing Codex backend and durable CodeHost to generate independent C2/Normalization programs from task specifications and synthetic calibration, without supplying the earlier analysis implementation or measured inputs. Enable normal tools, task-authorized networking and SDK automatic approval review as requested. Keep one final Host-validated proposal, actual tool observations, immutable task deadlines and original ownership/stop rules. Remove the blanket tool/network/approval bans and the separate global coding timeout; the worker follows its frozen task timeout.

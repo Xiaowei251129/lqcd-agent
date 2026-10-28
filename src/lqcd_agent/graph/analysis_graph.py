@@ -174,7 +174,7 @@ class CanonicalProductRuntime:
                 require(capability.get('completion_intent') is not None, 'Started or uncertain target requires explicit recovery')
                 state = leases.publish_completion(capability_id, self.worker_id, capability['invocation_epoch'])
             else:
-                leased = leases.acquire(capability_id, self.worker_id, expected_epoch=capability['invocation_epoch'], lease_seconds=max(30, getattr(self.agent_port, 'timeout_seconds', 1) + 30))
+                leased = leases.acquire(capability_id, self.worker_id, expected_epoch=capability['invocation_epoch'], lease_seconds=max(30, getattr(self.agent_port, 'timeout_seconds', 1) + (self.analysis_handoff.timeout_seconds if node_name == 'analysis_engineer' and self.analysis_handoff is not None else 0) + 30))
                 preparation = capability['authorization'].get('target_preparation')
                 state = leases.invoke(capability_id, self.worker_id, leased['invocation_epoch'], ProductNode(root, self.agent_port, analysis_handoff=self.analysis_handoff, preparation=preparation))
             _, execution = self._records(locator)

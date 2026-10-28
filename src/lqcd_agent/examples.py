@@ -28,9 +28,10 @@ class SyntheticAgent:
 class SyntheticBackend(FakeCodingBackend):
     """Produce one fixed Fake effect; production independently verifies its claims."""
 
-    def __init__(self, coordinator, repository, containment):
+    def __init__(self, coordinator, repository, containment, *, files=None):
         super().__init__(coordinator.root / 'fake_backend', clock=lambda: 100)
         self.coordinator, self.repository, self.containment = (coordinator, repository, containment)
+        self.files = files if files is not None else {'sample.py': b'def value():\n    return 2\n'}
 
     def dispatch(self, task, manifest, producer):
         existing = self.lookup(producer)
@@ -41,9 +42,10 @@ class SyntheticBackend(FakeCodingBackend):
         provider = WorkspaceProvider(self.coordinator.root / 'code_workspaces')
         base = immutable_git_tree(self.repository, task['base_revision'])
         self.containment.record_tool(producer)
-        (provider.path(manifest['workspace_id']) / 'sample.py').write_bytes(b'def value():\n    return 2\n')
+        for path, content in self.files.items():
+            (provider.path(manifest['workspace_id'])/path).write_bytes(content)
         tool = task['tool_policy'][0]
-        audit = canonical_bytes({'tool_event_index': 1, 'task_id': task['task_id'], 'workspace_id': manifest['workspace_id'], 'tool_id': tool['spec_id'], 'argv_digest': digest(tool['argv']), 'cwd': '.', 'start_at': 100, 'end_at': 100, 'status': 'completed', 'affected_paths': ['sample.py'], 'output_digest': digest(''), 'resource_usage': {'llm_calls': 0, 'tool_calls': 1, 'active_seconds': 0}}) + b'\n'
+        audit = canonical_bytes({'tool_event_index': 1, 'task_id': task['task_id'], 'workspace_id': manifest['workspace_id'], 'tool_id': tool['spec_id'], 'argv_digest': digest(tool['argv']), 'cwd': '.', 'start_at': 100, 'end_at': 100, 'status': 'completed', 'affected_paths': sorted(self.files), 'output_digest': digest(''), 'resource_usage': {'llm_calls': 0, 'tool_calls': 1, 'active_seconds': 0}}) + b'\n'
         witness = provider._public_witness(manifest)
         stop = {'termination_or_not_dispatched': 'confirmed', 'write_lease_revocation': True, 'verify_empty': True, 'bounded_drain': True, 'post_stop_stability': True}
         changes, seal = seal_workspace(provider, task, manifest, witness, base, backend_status='completed', stop_proof=stop, tool_audit=audit, sealed_at=self.coordinator._time().monotonic_seconds, fence=lambda: None)

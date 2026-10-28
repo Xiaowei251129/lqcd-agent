@@ -63,6 +63,7 @@ PROGRAM_REQUIREMENTS = {
         'Preserve explicit failed outcomes for unsuccessful/nonfinite/zero-denominator replicas; never replace them with zero or a central value.',
         'Output status (ok for computed results, needs_more_info for an absent reference), results (rows with mode,bz,sample_id,success,real,imag; failed values null), '
         'summaries (rows with mode,bz,component,mean,error,n_valid), warnings, and method. '
+        'In every results and summaries row, mode must be the literal string "mode2" or "mode3", never the integer 2 or 3. '
         'For summaries use midpoint/half-width of the 16th/84th percentiles (linear interpolation) over valid paired replicas; '
         'if none survive, mean/error must be null and n_valid zero. '
         'Test complex arithmetic and the missing-reference case on synthetic inputs. '
@@ -187,17 +188,40 @@ def verify_pack(root=None):
     return value
 
 
+def prepare_cases(python):
+    """Publish normal scientific-entry configurations; retain one coding workflow."""
+    verify_pack()
+    paths = []
+    for case in CASES:
+        config = {'schema_version': '0.1', 'case_id': case['case_id'], 'physics_goal': case['question'],
+            'source_kind': 'measured_lattice_data',
+            'raw_data_path': f"raw_data/research_cases/inputs/{case['family']}.json",
+            'target_observables': [case['family']+'_scientific_result'],
+            'generated_program': {'python': str(python), 'parameters': case['parameters'],
+                'requirements': PROGRAM_REQUIREMENTS[case['family']], 'timeout_seconds': 120,
+                'result_kind': case['family']}}
+        path = pack_root()/'cases'/(case['case_id']+'.json')
+        path.parent.mkdir(exist_ok=True, mode=0o700)
+        publish_exact(path, canonical_bytes(config))
+        paths.append(str(path))
+    return {'case_configs': paths}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('describe')
     commands.add_parser('verify')
+    prepare = commands.add_parser('prepare')
+    prepare.add_argument('--python', type=Path, required=True)
     command = commands.add_parser('extract')
     command.add_argument('--project', required=True)
     command.add_argument('--correlator', required=True)
     args = parser.parse_args()
     if args.command == 'extract':
         result = extract(args.project, args.correlator)
+    elif args.command == 'prepare':
+        result = prepare_cases(args.python)
     elif args.command == 'verify':
         result = {'manifest_digest': verify_pack()['manifest_digest'], 'passed': True}
     else:

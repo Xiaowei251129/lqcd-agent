@@ -30,7 +30,8 @@ MANIFEST_FIELDS = ("schema_version", "workspace_id", "manifest_digest", "managed
 class AnalysisHandoff:
     """A trusted B02 target-preparation adapter, without product route ownership."""
 
-    def __init__(self, coordinator, base_repository, *, allowed_command, expected_outputs=()):
+    def __init__(self, coordinator, base_repository, *, allowed_command, expected_outputs=(),
+                 generated_program=None, workspace=None):
         self.coordinator = coordinator
         self.base_repository = Path(base_repository)
         self.provider = WorkspaceProvider(coordinator.root / "analysis_workspaces")
@@ -40,6 +41,23 @@ class AnalysisHandoff:
                 all(type(part) is str and part for part in expected_outputs), "Invalid Analysis outputs")
         self.allowed_command = list(allowed_command)
         self.expected_outputs = list(expected_outputs)
+        self.generated_program = loads(canonical_bytes(generated_program)) if generated_program is not None else None
+        self.workspace = workspace
+        self.timeout_seconds = generated_program['timeout_seconds'] if generated_program is not None else 10
+
+    def _environment(self, locator):
+        policy = {'network': 'enabled', 'inherited_environment': False, 'python_isolated': True,
+                  'timeout_seconds': self.timeout_seconds}
+        if self.generated_program is not None:
+            from .execution import interpreter_identity
+            goal = loads(read_regular(self._run_root(locator)/'root_goal.json'))
+            require(goal['workspace'] == str(self.workspace), 'Scientific workspace changed')
+            require(goal['dataset_snapshot'] is not None and goal['dataset_snapshot']['exists'],
+                    'Generated analysis requires a frozen existing dataset')
+            policy.update(generated_program={k: self.generated_program[k] for k in
+                ('python', 'parameters', 'timeout_seconds', 'result_kind')},
+                dataset_snapshot=goal['dataset_snapshot'], runtime=interpreter_identity(self.allowed_command[0]))
+        return policy
 
     def _run_root(self, locator):
         root = self.coordinator.root / locator["case_id"] / locator["run_id"]
@@ -112,8 +130,7 @@ class AnalysisHandoff:
                            for slot in ("plan",) if index["current"][slot] is not None}
         require("plan" in selected_inputs, "Analysis lacks a current plan")
         runtime = {"python": sys.version, "executable": sys.executable}
-        environment = {"network": "disabled", "inherited_environment": False,
-                       "python_isolated": self.allowed_command[:3] == [sys.executable, "-I", "-S"]}
+        environment = self._environment(locator)
         spec = {"schema_version": "0.1", "analysis_execution_spec_id": target_attempt_id + ":analysis_execution_spec",
                 "target_attempt_identity": target, "inbound_transition_identity": inbound_transition_id,
                 "source_code_attempt_id": task["attempt_id"], "source_code_bundle_id_digest": source,
@@ -149,6 +166,7 @@ class AnalysisHandoff:
         closed(spec, SPEC_FIELDS)
         closed(manifest, MANIFEST_FIELDS)
         runtime = {"python": sys.version, "executable": sys.executable}
+        locator = {key: spec['target_attempt_identity'][key] for key in ('case_id', 'run_id')}
         require(value["canonical_spec_bytes"] == canonical_bytes(spec).decode() and
                 value["canonical_workspace_manifest_bytes"] == canonical_bytes(manifest).decode() and
                 value["analysis_execution_spec_id"] == spec["analysis_execution_spec_id"] and
@@ -168,6 +186,7 @@ class AnalysisHandoff:
                 spec["change_manifest_digest"] == value["verified_change_digest"] and
                 manifest["managed_root_identity"] == digest(str(self.provider.root)) and
                 spec["allowed_command"] == self.allowed_command and spec["expected_outputs"] == self.expected_outputs and
+                spec['environment_policy'] == self._environment(locator) and
                 spec["analysis_runtime_fingerprint"] == digest(runtime) and
                 value["runtime_policy_digest"] == digest({"runtime": runtime,
                     "environment": spec["environment_policy"], "command": self.allowed_command,
@@ -268,10 +287,22 @@ class AnalysisHandoff:
         """Run the frozen command in a new process after rechecking the source."""
         self.verify_preparation(value)
         spec, manifest = self._frozen(value)
-        require(spec["environment_policy"] == {"network": "disabled", "inherited_environment": False,
-                                                "python_isolated": True} and
-                spec["allowed_command"][:3] == [sys.executable, "-I", "-S"],
-                "Analysis command is not isolated")
+        if self.generated_program is not None:
+            from .execution import execute_candidate, read_scientific_input
+            environment = spec['environment_policy']
+            record = environment['dataset_snapshot']
+            parameters = environment['generated_program']['parameters']
+            payload = read_scientific_input(self.workspace, record, parameters)
+            files = self.provider.verify_sealed(manifest, self.provider._public_witness(manifest),
+                                                spec['expected_effective_tree_digest'])
+            result, execution = execute_candidate(files['analysis.py'], payload, self.allowed_command[0],
+                timeout=self.timeout_seconds, expected_runtime=environment['runtime'])
+            self.verify_preparation(value)
+            return {'returncode': 0, 'result': result, 'execution': execution, 'dataset_snapshot': record,
+                    'parameters': parameters, 'result_kind': self.generated_program['result_kind'],
+                    'spec_digest': spec['spec_digest'],
+                    'stdout_sha256': execution['stdout_sha256'], 'stderr_sha256': execution['stderr_sha256']}
+        require(spec["allowed_command"][:3] == [sys.executable, "-I", "-S"], 'Analysis command is not isolated')
         boundary(self.coordinator.observer, "analysis.fresh_subprocess", "before", value=value)
         completed = subprocess.run(spec["allowed_command"], cwd=self.provider.path(manifest["workspace_id"]),
                                    env={"PATH": os.defpath, "PYTHONDONTWRITEBYTECODE": "1", "LC_ALL": "C"},

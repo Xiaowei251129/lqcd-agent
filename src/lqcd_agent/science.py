@@ -22,12 +22,20 @@ class ScientificAgent:
         if node == 'method_planner':
             from .agents.method_planner import run_method_planner
             from .tools.repo_inventory import build_repo_inventory
+            inventory = {**build_repo_inventory(self.workspace), 'dataset_snapshot': context['root_goal']['dataset_snapshot']}
+            if self.config.get('generated_program'):
+                inventory['implementation_gaps'] = ['Implement the supplied Run-local scientific JSON contract.']
             result = run_method_planner(user_goal=context['root_goal']['goal'], case_config=self.config,
-                repo_inventory={**build_repo_inventory(self.workspace), 'dataset_snapshot': context['root_goal']['dataset_snapshot']},
+                repo_inventory=inventory,
                 output_dir=output, run_id=identity['run_id'], provider=self.provider, research_context=research_context)
-            if result['status'] != 'success' or result['code_needed']:
+            coding_enabled = self.config.get('generated_program') is not None
+            if result['status'] != 'success' or (result['code_needed'] and not coding_enabled):
                 diagnostic.update(status='failed', category='implementation_gap', affected_layer='plan', risk='high', human_need='approval')
-            content = {'code_needed': False, 'domain_result': result}
+            content = {'code_needed': bool(result['status'] == 'success' and result['code_needed'] and coding_enabled), 'domain_result': result}
+            if content['code_needed']:
+                from .control.strict_json import require
+                require(result['code_request'] is not None, 'Planner has no structured coding request')
+                content['requirements'] = [*result['code_request']['requirements'], *self.config['generated_program']['requirements']]
         elif node == 'analysis_engineer':
             from .agents.analysis_engineer import run_analysis_engineer
             config = output / 'case.json'
@@ -35,7 +43,8 @@ class ScientificAgent:
             plan = self._artifact(context, 'method_plan.json')['domain_result']['method_plan_path']
             result = run_analysis_engineer(case_config_path=config, case_id=identity['case_id'], run_id=identity['run_id'],
                 run_output_dir=output, method_plan_path=plan, repo_root=self.workspace,
-                dataset_snapshot=context['root_goal']['dataset_snapshot'])
+                dataset_snapshot=context['root_goal']['dataset_snapshot'],
+                generated_execution=context.get('analysis_execution') if self.config.get('generated_program') else None)
             if not result['run_success']:
                 diagnostic.update(status='failed', category='analysis_execution', affected_layer='analysis', risk='high', human_need='approval')
             content = {'domain_result': result}
@@ -43,9 +52,15 @@ class ScientificAgent:
             from .agents.scientific_reviewer import run_scientific_reviewer
             result = self._artifact(context, 'run_result.json')['domain_result']
             plan = self._artifact(context, 'method_plan.json')['domain_result']['method_plan_path']
+            generated_input = None
+            if self.config.get('generated_program'):
+                from .code_agent.execution import read_scientific_input
+                observed = result['run_result']['generated_execution']
+                generated_input = read_scientific_input(self.workspace, observed['dataset_snapshot'], observed['parameters'])
             reviewed = run_scientific_reviewer(run_id=identity['run_id'], case_id=identity['case_id'], run_output_dir=output,
                 run_result_path=result['run_result_path'], analysis_outputs_dir=result['analysis_outputs_dir'],
-                method_plan_path=plan, provider=self.provider, research_context=research_context)
+                method_plan_path=plan, provider=self.provider, research_context=research_context,
+                generated_input=generated_input)
             # Scientific confirmation is Host policy, independent of model confidence or extra fields.
             diagnostic.update(risk='high', category='scientific_review', human_need='approval')
             if reviewed['status'] != 'success':

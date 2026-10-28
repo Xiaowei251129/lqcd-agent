@@ -38,10 +38,10 @@ def assemble(coordinator, agent_port=None, *, live=False, workflow='no-code', in
     if workflow == 'code':
         from .examples import prepare_code
         code, analysis = prepare_code(coordinator, live=live, initialize=initialize)
-    if workflow in ('research-c2', 'research-normalization'):
+    if workflow == 'scientific' and agent_port is not None and agent_port.config.get('generated_program') is not None:
         from .research_codegen import prepare_research
-        agent_port, code, analysis = prepare_research(coordinator, workflow.removeprefix('research-'),
-            live=live, initialize=initialize)
+        code, analysis = prepare_research(coordinator, agent_port.config, workspace=agent_port.workspace,
+                                          live=live, initialize=initialize)
     if agent_port is None:
         from .examples import SyntheticAgent
         agent_port = SyntheticAgent()
@@ -117,6 +117,11 @@ def execute(request: ApplicationRequest):
                 if code is not None:
                     from lqcd_agent.code_agent.external_operation import CodeExternalStop
                     plane.external_adapter = CodeExternalStop(coordinator, code.backend, code.containment, code.backend.read_receipt)
+                elif live and config is not None and config.get('generated_program'):
+                    from .code_agent.codex_backend import CodexCodingBackend, ProcessContainment, JOBS_DIRECTORY
+                    from .code_agent.external_operation import CodeExternalStop
+                    backend = CodexCodingBackend(root/JOBS_DIRECTORY, root/'code_workspaces')
+                    plane.external_adapter = CodeExternalStop(coordinator, backend, ProcessContainment(backend), backend.read_receipt)
                 plane.cancel_pause(CancelPauseRequest(locator, args.pause, args.key, 'operator_cancel'), actor=actor)
             else:
                 _, execution = runtime._records(locator)

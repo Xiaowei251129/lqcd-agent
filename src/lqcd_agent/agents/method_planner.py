@@ -178,7 +178,9 @@ def build_method_plan(
         "raw data" if selected_programs else "synthetic matrix-element case metadata",
     ]
     required_outputs = ["method_plan.json", "run_result.json"]
-    if selected_programs:
+    if case_config.get('generated_program'):
+        required_outputs.append('analysis_outputs/generated_result.json')
+    elif selected_programs:
         required_outputs.extend(str(program["output_path"]) for program in selected_programs)
     else:
         required_outputs.append("analysis_outputs/synthetic_matrix_elements.json")
@@ -193,6 +195,8 @@ def build_method_plan(
             summary=(
                 "Selected registered analysis program(s) for deterministic mock planning."
                 if selected_programs
+                else "Planned a Run-local scientific implementation and evidence-backed review."
+                if case_config.get('generated_program')
                 else "Created deterministic mock method plan for a pion quasi-DA analysis support run."
             ),
             warnings=warnings,
@@ -208,6 +212,8 @@ def build_method_plan(
             ]
         ),
         "method_steps": (
+            ['Implement the supplied scientific JSON contract and test with synthetic inputs before measured execution.']
+            if case_config.get('generated_program') else
             [
                 "Inspect repository inventory for reusable registered analysis programs.",
                 "Select registered programs whose tags and produced outputs satisfy the case request.",
@@ -228,6 +234,7 @@ def build_method_plan(
         "selected_analysis_programs": selected_programs,
         "code_needed": code_needed,
         "coder_task_summary": (
+            'Implement the Run-local scientific JSON contract.' if case_config.get('generated_program') else
             "Implement a reusable registered analysis program for the requested raw-data analysis."
             if missing_requested_program
             else "Implement or repair missing mock-only workflow support before analysis execution."
@@ -356,6 +363,9 @@ def _run_provider_method_planner(
     assert payload is not None
     validation_errors = validate_proposal(payload, 'method_plan')
     if not validation_errors:
+        if (case_config or {}).get('generated_program') and payload['status'] == 'success':
+            if not payload['code_needed'] or payload['selected_analysis_programs'] or not payload['method_steps']:
+                validation_errors.append('Generated scientific analysis requires an explicit implementation plan.')
         selected = []
         inventory = {p['name']: p for p in (repo_inventory or {}).get('analysis_programs', [])}
         for name in payload['selected_analysis_programs']:
@@ -371,7 +381,8 @@ def _run_provider_method_planner(
             payload = artifact_payload(payload, run_id=run_id, case_id=case_id, producer='method_planner')
             payload['selected_analysis_programs'] = selected
             payload['required_outputs'] = ['method_plan.json', 'run_result.json',
-                *[item['output_path'] for item in selected], 'scientific_review_report.json', 'decision_log.json']
+                *(['analysis_outputs/generated_result.json'] if (case_config or {}).get('generated_program')
+                  else [item['output_path'] for item in selected]), 'scientific_review_report.json', 'decision_log.json']
     if validation_errors:
         plan = _provider_failure_plan(
             run_id=run_id,

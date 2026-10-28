@@ -4,6 +4,7 @@ import os
 import signal
 import subprocess
 import sys
+from pathlib import Path
 from types import SimpleNamespace as NS
 
 import pytest
@@ -43,6 +44,17 @@ def test_responses_rejects_incomplete_and_refusal(status, content, code):
     with pytest.raises(LiveProviderError) as failure:
         p.generate(LLMRequest([{'role':'user','content':'JSON'}]))
     assert failure.value.code == code
+
+
+@pytest.mark.parametrize('reason',['max_output_tokens','content_filter','private-test-value'])
+def test_incomplete_reason_is_reported_without_partial_content_or_unknown_details(reason):
+    p,calls=provider(NS(status='incomplete',output_text='private-test-value',incomplete_details=NS(reason=reason)))
+    with pytest.raises(LiveProviderError) as failure:
+        p.generate(LLMRequest([{'role':'user','content':'JSON'}]))
+    assert failure.value.code=='response_incomplete' and len(calls)==1
+    assert 'private-test-value' not in json.dumps(failure.value.as_error())
+    if reason in ('max_output_tokens','content_filter'):
+        assert reason in str(failure.value)
 
 
 def test_provider_errors_do_not_persist_credentials():
@@ -122,8 +134,20 @@ def test_sdk_worker_enables_tools_and_review_with_task_network_policy(tmp_path, 
     assert 'permissions.lqcd.network.enabled='+str(network).lower() in overrides and 'default_permissions="lqcd"' in overrides
     assert not any(entry.startswith(('features.','tools.')) for entry in overrides)
     assert 'web_search='+json.dumps('live' if network else 'disabled') in overrides and 'project_doc_max_bytes=0' in overrides
-    assert not any(entry.startswith('shell_environment_policy.') for entry in overrides)
+    import tomllib
+    tool_overrides=[entry for entry in overrides if entry.startswith('shell_environment_policy.')]
+    assert len(tool_overrides)==1 and tool_overrides[0].startswith('shell_environment_policy.set=')
+    tool_environment=tomllib.loads(tool_overrides[0])['shell_environment_policy']['set']
+    assert tool_environment=={'PYTHONDONTWRITEBYTECODE':'1','RUFF_CACHE_DIR':str(tmp_path/'codex-home/cache/ruff')}
     assert 'OPENAI_API_KEY' not in config.env and observed['thread']['approval_mode']==openai_codex.ApprovalMode.auto_review
+    (workspace/'sample.py').write_text('def value():\n    return 2\n')
+    environment={**child_environment(),**tool_environment}
+    subprocess.run([str(Path(sys.executable).with_name('ruff')),'check','sample.py'],
+        cwd=workspace,env=environment,capture_output=True,check=True,timeout=10)
+    subprocess.run([sys.executable,'-c','import sample; assert sample.value()==2'],
+        cwd=workspace,env=environment,capture_output=True,check=True,timeout=10)
+    assert sorted(p.name for p in workspace.iterdir())==['sample.py']
+    assert (tmp_path/'codex-home/cache/ruff').is_dir()
     state=json.loads((tmp_path/'state.json').read_text())
     assert state['status']=='completed' and state['tool_count']==1
     assert len(state['tool_events'])==1

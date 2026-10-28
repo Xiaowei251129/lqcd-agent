@@ -494,6 +494,7 @@ def run_analysis_engineer(
     timeout_seconds: int = 60,
     force: bool = False,
     dataset_snapshot: dict | None = None,
+    generated_execution: dict | None = None,
 ) -> dict[str, Any]:
     run_dir = _resolve_run_output_dir(
         output_root=output_root,
@@ -540,7 +541,22 @@ def run_analysis_engineer(
     repo_path = workspace_root(repo_root)
     golden_reference_files = _resolve_case_reference_files(case_config, repo_path)
 
-    if explicit_commands:
+    if generated_execution is not None:
+        from lqcd_agent.control.coordinator import publish_exact
+        from lqcd_agent.control.strict_json import canonical_bytes, require
+        require(case_config.get('generated_program') and not explicit_commands and not selected_programs,
+                'Generated analysis cannot mix execution paths')
+        require(generated_execution['dataset_snapshot'] == dataset_snapshot, 'Generated input identity changed')
+        destination = run_dir/'analysis_outputs/generated_result.json'
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        publish_exact(destination, canonical_bytes(generated_execution['result']))
+        expected_outputs = ['analysis_outputs/generated_result.json']
+        consumed_inputs.append(generated_execution['dataset_snapshot'])
+        command_results = [{'command_id': 'sealed-scientific-program', 'command': 'sealed:analysis.py',
+            'status': 'passed' if generated_execution['result'].get('status') in ('ok', 'partial') else 'failed',
+            'return_code': generated_execution['returncode'], 'stdout': '', 'stderr': '',
+            'produced_files': [str(destination)], 'execution': generated_execution['execution']}]
+    elif explicit_commands:
         allowed_commands = _resolve_allowed_commands(case_config, explicit_commands)
         command_results = run_commands(
             commands=explicit_commands,
@@ -641,6 +657,8 @@ def run_analysis_engineer(
         "manifest_path": str(manifest_path),
         "golden_reference_files": golden_reference_files,
     }
+    if generated_execution is not None:
+        run_result['generated_execution'] = {k: v for k, v in generated_execution.items() if k != 'result'}
     run_result_written_path = _write_run_result(run_dir, run_result, force=force)
     input_files = [str(case_config_path), *golden_reference_files]
     if method_plan_path:

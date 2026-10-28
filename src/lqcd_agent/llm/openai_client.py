@@ -65,7 +65,9 @@ class OpenAIResponsesProvider:
             status = getattr(error, "status_code", None)
             raise LiveProviderError("provider_api_error", f"OpenAI request failed (HTTP {status or 'unavailable'}).") from None
         if response.status != "completed":
-            raise LiveProviderError("response_incomplete", "OpenAI did not return a completed response.")
+            reason = getattr(getattr(response, 'incomplete_details', None), 'reason', None)
+            suffix = f' ({reason})' if reason in ('max_output_tokens', 'content_filter') else ''
+            raise LiveProviderError("response_incomplete", "OpenAI did not return a completed response" + suffix + ".")
         content = response.output_text
         if not isinstance(content, str) or not content:
             raise LiveProviderError("response_missing_text", "OpenAI returned no usable text or declined the request.")
