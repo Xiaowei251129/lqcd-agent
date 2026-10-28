@@ -7,9 +7,8 @@ from lqcd_agent.code_agent.containment import DeterministicContainment
 from lqcd_agent.code_agent.fake_backend import FakeCodingBackend
 from lqcd_agent.code_agent.schemas import IDENTITY
 from lqcd_agent.code_agent.subgraph import ProductCodeHost
-from lqcd_agent.code_agent.workspace import WorkspaceProvider, canonical_patch, immutable_git_tree, seal_workspace, tree_digest
+from lqcd_agent.code_agent.workspace import WorkspaceProvider, canonical_patch, create_base_repository, immutable_git_tree, seal_workspace, tree_digest
 from lqcd_agent.control.strict_json import canonical_bytes, digest, require
-from lqcd_agent.settings import child_environment
 
 SAMPLE_ANALYSIS_COMMAND = "import ast,pathlib; source=pathlib.Path('sample.py').read_text(); expected='def value(): return 2'; assert ast.dump(ast.parse(source)) == ast.dump(ast.parse(expected)), 'Unsupported demo program'; namespace={}; exec(compile(source,'sample.py','exec'),namespace); assert type(namespace['value']()) is int and namespace['value']()==2; print(2)"
 
@@ -66,13 +65,7 @@ class SyntheticBackend(FakeCodingBackend):
 def prepare_code(coordinator, *, live, initialize):
     root = coordinator.root
     if initialize and not (root/'example_repository').exists():
-        repository = root / 'example_repository'
-        repository.mkdir()
-        (repository / 'sample.py').write_bytes(b'def value():\n    return 1\n')
-        environment = child_environment()
-        environment.update(GIT_CONFIG_GLOBAL='/dev/null', GIT_CONFIG_SYSTEM='/dev/null', GIT_AUTHOR_DATE='2000-01-01T00:00:00+00:00', GIT_COMMITTER_DATE='2000-01-01T00:00:00+00:00')
-        for argv in (('init', '-q'), ('add', 'sample.py'), ('-c', 'user.name=Local example', '-c', 'user.email=example@local', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'Synthetic base')):
-            subprocess.run(['git', *argv], cwd=repository, env=environment, capture_output=True, check=True, timeout=30)
+        create_base_repository(root/'example_repository', {'sample.py': b'def value():\n    return 1\n'})
     repository = coordinator.root / 'example_repository'
     require(repository.is_dir() and repository == repository.resolve(), 'Synthetic base escaped its Host')
     revision = subprocess.check_output(['git', '-C', str(repository), 'rev-parse', 'HEAD'], timeout=30).decode().strip()
@@ -84,13 +77,13 @@ def prepare_code(coordinator, *, live, initialize):
         from lqcd_agent.code_agent.codex_backend import CodexCodingBackend, ProcessContainment, JOBS_DIRECTORY
         backend = CodexCodingBackend(coordinator.root / JOBS_DIRECTORY, coordinator.root / 'code_workspaces')
         containment = ProcessContainment(backend)
-        tool = {**tool, 'spec_id': 'host-apply-proposal', 'argv': ['host:apply-proposal', 'sample.py']}
+        tool = {**tool, 'spec_id': 'codex-task', 'argv': ['codex:task'], 'timeout_seconds': 240}
         policy.update(coding_backend_kind=backend.kind, backend_version=backend.version,
             backend_runtime_fingerprint=digest('openai-codex-' + backend.version), tool_policy=[tool],
-            task_summary='Bounded sample program', acceptance_criteria=['value() returns integer 2'])
+            network_policy={'enabled': True}, task_summary='Bounded sample program', acceptance_criteria=['value() returns integer 2'])
     else:
         containment = DeterministicContainment(coordinator.root / 'containment')
         backend = SyntheticBackend(coordinator, repository, containment)
-    code = ProductCodeHost(coordinator, repository, backend, containment, task_policy=policy, maximum_charge={'llm_calls': 1, 'tool_calls': 1, 'verification_commands': 0}, timeout_seconds=240 if live else 20, lease_seconds=300 if live else 30)
+    code = ProductCodeHost(coordinator, repository, backend, containment, task_policy=policy, maximum_charge={'llm_calls': 1, 'tool_calls': 16 if live else 1, 'verification_commands': 0}, timeout_seconds=240 if live else 20, lease_seconds=300 if live else 30)
     analysis = AnalysisHandoff(coordinator, repository, allowed_command=[sys.executable, '-I', '-S', '-c', SAMPLE_ANALYSIS_COMMAND])
     return code, analysis

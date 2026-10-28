@@ -76,19 +76,30 @@ def test_application_env_is_private_and_not_inherited(tmp_path, monkeypatch):
         read_env(alias)
 
 
-def test_sdk_worker_uses_private_auth_and_retains_permissions(tmp_path, monkeypatch):
+@pytest.mark.parametrize('network',[True,False])
+def test_sdk_worker_enables_tools_and_review_with_task_network_policy(tmp_path, monkeypatch,network):
     from lqcd_agent.code_agent import codex_worker
     import openai_codex
     settings=ApplicationSettings(api_key='private-test-value')
     monkeypatch.setattr(codex_worker.ApplicationSettings, 'load', lambda: settings)
     monkeypatch.setenv('TMPDIR',str(tmp_path))
     workspace=tmp_path/'workspace';workspace.mkdir()
-    task={'write_paths':['sample.py'],'requirements':['Return 2'],'acceptance_criteria':['value()==2']}
+    task={'write_paths':['sample.py'],'requirements':['Return 2'],'acceptance_criteria':['value()==2'],
+          'network_policy':{'enabled':network},'tool_policy':[{'timeout_seconds':240}]}
     (tmp_path/'request.json').write_text(json.dumps({'task':task,'manifest':{},'workspace':str(workspace),'base_files':{}}))
     (tmp_path/'state.json').write_text('{"status":"accepted"}')
     observed={}
     result=NS(status=NS(value='completed',__str__=lambda _: 'completed'),
         final_response=json.dumps({'files':[{'path':'sample.py','content':'def value():\n    return 2\n'}]}),usage=None,items=[])
+    item={'id':'command-1','type':'commandExecution','command':'python --version','status':'completed'}
+    event_item=NS(model_dump=lambda **_:item)
+    events=[NS(method=name,payload=NS(turn_id='turn',item=event_item))
+            for name in ('item/started','item/completed')]
+    def collect(stream, *, turn_id):
+        assert turn_id=='turn' and len(list(stream))==2
+        result.items=[event_item]
+        return result
+    monkeypatch.setattr('openai_codex._run._collect_turn_result',collect)
     class FakeCodex:
         def __init__(self, config): observed['config']=config
         def __enter__(self): return self
@@ -97,7 +108,7 @@ def test_sdk_worker_uses_private_auth_and_retains_permissions(tmp_path, monkeypa
         def account(self): return NS(account=NS(root=NS(type='apiKey')))
         def thread_start(self, **kwargs):
             observed['thread']=kwargs
-            return NS(id='thread', turn=lambda *_,**kw:NS(id='turn',run=lambda:result,interrupt=lambda:None))
+            return NS(id='thread', turn=lambda *_,**kw:NS(id='turn',stream=lambda:iter(events),interrupt=lambda:None))
     monkeypatch.setattr(openai_codex,'Codex',FakeCodex)
     before=signal.getsignal(signal.SIGTERM),signal.getsignal(signal.SIGINT)
     try:
@@ -108,10 +119,50 @@ def test_sdk_worker_uses_private_auth_and_retains_permissions(tmp_path, monkeypa
     assert observed['key']==settings.api_key and config.codex_bin is None
     assert config.env['CODEX_HOME']==str(tmp_path/'codex-home')
     assert 'cli_auth_credentials_store="ephemeral"' in overrides
-    assert 'permissions.lqcd.network.enabled=false' in overrides and 'default_permissions="lqcd"' in overrides
-    assert 'features.shell_tool=false' in overrides and 'project_doc_max_bytes=0' in overrides
-    assert 'OPENAI_API_KEY' not in config.env and observed['thread']['approval_mode']==openai_codex.ApprovalMode.deny_all
+    assert 'permissions.lqcd.network.enabled='+str(network).lower() in overrides and 'default_permissions="lqcd"' in overrides
+    assert not any(entry.startswith(('features.','tools.')) for entry in overrides)
+    assert 'web_search='+json.dumps('live' if network else 'disabled') in overrides and 'project_doc_max_bytes=0' in overrides
+    assert not any(entry.startswith('shell_environment_policy.') for entry in overrides)
+    assert 'OPENAI_API_KEY' not in config.env and observed['thread']['approval_mode']==openai_codex.ApprovalMode.auto_review
+    state=json.loads((tmp_path/'state.json').read_text())
+    assert state['status']=='completed' and state['tool_count']==1
+    assert len(state['tool_events'])==1
+    assert json.loads((tmp_path/'proposal.json').read_text())['items']==[item]
     assert all('private-test-value' not in p.read_text() for p in tmp_path.rglob('*.json'))
+
+
+def test_sdk_tool_count_is_available_before_delivery(tmp_path):
+    from lqcd_agent.code_agent.codex_backend import CodexCodingBackend,ProcessContainment
+    backend=CodexCodingBackend(tmp_path/'jobs',tmp_path/'workspaces')
+    job=backend.job('operation');job.mkdir()
+    (job/'state.json').write_text(json.dumps({'status':'running','tool_count':3}))
+    containment=ProcessContainment(backend)
+    containment.start('operation','workspace')
+    assert containment.observed_tool_count('operation')==3
+    containment.record_tool('operation')
+    assert containment.observed_tool_count('operation')==4
+
+
+@pytest.mark.parametrize('fault',[None,'missing_completion','unobserved','changed_hash'])
+def test_sdk_abandoned_tool_is_charged_without_fabricated_completion(fault):
+    from hashlib import sha256
+    from lqcd_agent.code_agent.codex_backend import sdk_tool_audit
+    from lqcd_agent.control.strict_json import ControlIntegrityError
+    item={'id':'done','type':'commandExecution','status':'completed'}
+    events=[{'id':'done','start_at':1,'end_at':2,'sha256':sha256(json.dumps(item,sort_keys=True).encode()).hexdigest()},
+            {'id':'abandoned','start_at':1.5,'sha256':'a'*64}]
+    items=[item]
+    if fault=='missing_completion':items=[]
+    elif fault=='unobserved':events.pop(0)
+    elif fault=='changed_hash':events[0]['sha256']='b'*64
+    args=({'task_id':'task','tool_policy':[{'spec_id':'sdk','argv':['codex:task']}]},
+          {'workspace_id':'workspace'},events,items)
+    if fault:
+        with pytest.raises(ControlIntegrityError):sdk_tool_audit(*args,stopped_at=3)
+    else:
+        audit=sdk_tool_audit(*args,stopped_at=3)
+        assert [r['status'] for r in audit]==['completed','failed']
+        assert audit[1]['end_at']==3 and sum(r['resource_usage']['tool_calls'] for r in audit)==2
 
 
 def test_real_backend_stop_verifies_pid_and_drains_group(tmp_path):

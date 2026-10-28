@@ -16,6 +16,24 @@ def tree_digest(files):
     return digest({path: sha256(content).hexdigest() for path, content in sorted(files.items())})
 
 
+def create_base_repository(repository, files):
+    """Create one reproducible private Git base for a scoped coding task."""
+    from lqcd_agent.settings import child_environment
+    repository = Path(repository)
+    exclusive_directory(repository)
+    for name, content in files.items():
+        _text_file(name, content)
+        target = repository/name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        publish_exact(target, content)
+    environment = child_environment()
+    environment.update(GIT_CONFIG_GLOBAL='/dev/null', GIT_CONFIG_SYSTEM='/dev/null',
+        GIT_AUTHOR_DATE='2000-01-01T00:00:00+00:00', GIT_COMMITTER_DATE='2000-01-01T00:00:00+00:00')
+    for argv in (('init', '-q'), ('add', '.'), ('-c', 'user.name=Local example', '-c', 'user.email=example@local',
+                 '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'Synthetic base')):
+        subprocess.run(['git', *argv], cwd=repository, env=environment, capture_output=True, check=True, timeout=30)
+
+
 def _text_file(path, content):
     relative_path(path)
     require(not protected_path(path), "Protected workspace content")

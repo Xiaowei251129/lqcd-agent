@@ -117,7 +117,7 @@ def validate_task(value):
     for path in (*value["read_paths"], *value["write_paths"]):
         require(not protected_path(path) and not within(path, value["forbidden_paths"]), "Forbidden task scope")
     closed(value["network_policy"], ("enabled",))
-    require(value["network_policy"]["enabled"] is False, "Task cannot enable network")
+    require(type(value["network_policy"]["enabled"]) is bool, "Network policy must be explicit")
     fs = closed(value["filesystem_policy"], ("binary_changes", "executable_changes", "ephemeral_paths"))
     require(fs["binary_changes"] is False and fs["executable_changes"] is False, "Unsupported filesystem permission")
     _paths(fs["ephemeral_paths"])

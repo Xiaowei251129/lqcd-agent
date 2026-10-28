@@ -56,7 +56,6 @@ class ApplicationSettings:
     coding_model: str = 'gpt-6-luna'
     timeout_seconds: float = 180
     max_output_tokens: int = 2048
-    code_timeout_seconds: float = 240
 
     @classmethod
     def load(cls, path=None):

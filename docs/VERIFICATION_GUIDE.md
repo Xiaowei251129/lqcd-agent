@@ -10,8 +10,11 @@
 | Deployment preflight | `lqcd-agent doctor` |
 | Local CLI timings | `python scripts/measure_cli.py --samples 3` |
 | Portable evidence check | `lqcd-agent verify-archive --archive-path /absolute/archive.zip` |
+| Research case input integrity | `python -m lqcd_agent.research_cases verify` |
 
 Core has 12 critical checks. Integration runs the current scientific, command-policy, durability, storage and CLI tests once, then nine numerical benchmark cases. There are no historical B05 test-count or proof-chain requirements. Old results are not reused as evidence for this version.
+
+The measured C2/Normalization case assessments are separate from those nine lightweight numerical checks. Their input packs, references, generated programs and reports remain local. `tests/test_research_cases.py` verifies source-preserving extraction, replica identities, independent numerical checks and actual sandbox read/write denial without measured data or API calls. Live programming and real-input assessment require the explicit operator actions in the [case guide](RESEARCH_CASES.md); ordinary CI does not spend API credits or depend on the external research project.
 
 A passing check requires a nonempty selection, actual zero exit and JUnit without failures, errors or skips. Reports and raw JUnit go into a fresh root under the approved execution parent (`/private/tmp` on macOS). `check-results/latest.json` and `check-results/integration.json` point to the latest completed targeted/core check and full integration attempt; original failed reports retain their status. Affected checks and a full integration run have distinct scopes. Integration binds source, lock, build inputs and CI configuration before and after execution; ignored bytecode, package metadata and macOS `.DS_Store` files do not participate. Passed tests clean only their own fresh roots; failed roots are retained for diagnosis.
 

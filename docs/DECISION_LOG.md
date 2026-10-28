@@ -2,6 +2,14 @@
 
 Milestone status belongs in [Current state](REPO_CURRENT_STATE.md).
 
+## 2026-10-27 — independent research cases and tool-enabled coding
+
+Use the existing Codex backend and durable CodeHost to generate independent C2/Normalization programs from task specifications and synthetic calibration, without supplying the earlier analysis implementation or measured inputs. Enable normal tools, task-authorized networking and SDK automatic approval review as requested. Keep one final Host-validated proposal, actual tool observations, immutable task deadlines and original ownership/stop rules. Remove the blanket tool/network/approval bans and the separate global coding timeout; the worker follows its frozen task timeout.
+
+Keep measured inputs and withheld comparison results in one ignored private case pack. Independent local assessment binds its exact input, program and case-manifest identities and cannot publish scientific acceptance or advance the canonical Run. Use the pinned runtime's explicit sandbox profile with tested outside-workspace denial; an unqualified low-level command API is not an execution path. The original analysis package is a reference source, not the computation engine. Scope and reproduction are in the [case guide](RESEARCH_CASES.md).
+
+Keep network access enabled for the requested workflows, including assessment. Review exact generated source before measured-input execution; retain failed reports and stop before measured inputs if synthetic calibration fails. Remove the duplicated base Git setup and normalize semantic failure-fingerprint sets without rewriting the original ordered task requirements. The audit and remaining checks are in the [maintenance record](maintenance/RESEARCH_CASES_CODEX.md).
+
 ## 2026-10-27 — native Mac execution
 
 Use the fixed canonical macOS `/private/tmp` execution parent. Delete retired deployment configuration, environment overrides and admission records. Preserve native writable-local-filesystem checks, private Hosts, boot/PID identity, SQLite WAL/FULL durability, checkpoint validation and human confirmation. Unsupported runtime platforms fail closed; Linux CI remains limited to static/numerical/build checks. Qualification evidence is in the [local record](maintenance/LOCAL_MACOS_QUALIFICATION.md).

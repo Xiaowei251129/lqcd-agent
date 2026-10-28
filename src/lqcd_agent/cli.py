@@ -19,7 +19,7 @@ def main(argv=None):
         if name in ("start", "run"):
             command.add_argument("--goal", default=None)
             command.add_argument("--live", action="store_true", help="Opt in to application API calls; coding uses bounded proposals")
-            command.add_argument("--workflow", choices=("no-code", "code", "human"), default="no-code")
+            command.add_argument("--workflow", choices=("no-code", "code", "human", "research-c2", "research-normalization"), default="no-code")
             if name == "run":
                 command.add_argument("--case-config", required=True)
         else:

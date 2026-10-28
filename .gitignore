@@ -19,3 +19,4 @@ outputs/**
 /.runtime/
 /check-results/
 /raw_data/local_qualification.csv
+/raw_data/research_cases/

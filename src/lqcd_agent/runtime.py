@@ -38,6 +38,10 @@ def assemble(coordinator, agent_port=None, *, live=False, workflow='no-code', in
     if workflow == 'code':
         from .examples import prepare_code
         code, analysis = prepare_code(coordinator, live=live, initialize=initialize)
+    if workflow in ('research-c2', 'research-normalization'):
+        from .research_codegen import prepare_research
+        agent_port, code, analysis = prepare_research(coordinator, workflow.removeprefix('research-'),
+            live=live, initialize=initialize)
     if agent_port is None:
         from .examples import SyntheticAgent
         agent_port = SyntheticAgent()

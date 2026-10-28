@@ -15,7 +15,7 @@ from lqcd_agent.settings import child_environment, workspace_root
 from .backend import validate_receipt, validate_result_reference, validate_status
 from .schemas import IDENTITY, relative_path, validate_manifest, validate_task, within
 from .workspace import WorkspaceProvider, canonical_patch, immutable_git_tree, scan_tree, seal_workspace
-from .codex_worker import write_json
+from .codex_worker import is_tool_item, write_json
 
 
 JOBS_DIRECTORY = 'coding_jobs'
@@ -173,7 +173,7 @@ class CodexCodingBackend:
 
 
 class ProcessContainment:
-    """Actual SDK worker process groups; proposed code cannot write the workspace."""
+    """Actual SDK worker process groups and observed SDK/Host tool usage."""
     def __init__(self, backend):
         self.backend = backend
         self.root = backend.root / 'containment'
@@ -223,10 +223,39 @@ class ProcessContainment:
             'post_stop_stability': value['stopped'] and empty}
 
     def observed_tool_count(self, operation):
-        return self._read(operation)['tools']
+        state = self.backend.job(operation) / 'state.json'
+        return self._read(operation)['tools'] + (json.loads(state.read_text()).get('tool_count', 0) if state.exists() else 0)
 
     def never_started(self, operation):
         return not (self.backend.job(operation) / 'process.json').exists()
+
+
+def sdk_tool_audit(task, manifest, observations, items, *, stopped_at):
+    """Project completed or abandoned SDK invocations after the Host verifies stop."""
+    observed = {event['id']: event for event in observations}
+    tools = [item for item in items if is_tool_item(item)]
+    completed = {item['id']: item for item in tools}
+    require(len(observed) == len(observations) and len(completed) == len(tools) and completed.keys() <= observed.keys(),
+            'SDK tool observations and final delivery differ')
+    audit = []
+    for identity, event in observed.items():
+        item = completed.get(identity)
+        if item is not None:
+            require('end_at' in event and event['sha256'] == sha256(json.dumps(item, sort_keys=True).encode()).hexdigest(),
+                    'SDK tool completion evidence changed')
+            end_at, status, output = event['end_at'], 'completed', digest(item)
+        else:
+            require('end_at' not in event, 'Completed SDK tool missing from final delivery')
+            end_at, status = stopped_at, 'failed'
+            output = digest({'started_item_sha256': event['sha256'], 'host_stopped_at': stopped_at})
+        require(end_at >= event['start_at'], 'SDK tool clock order changed')
+        spec = task['tool_policy'][0]
+        audit.append({'tool_event_index': len(audit)+1, 'task_id': task['task_id'],
+            'workspace_id': manifest['workspace_id'], 'tool_id': spec['spec_id'],
+            'argv_digest': digest(spec['argv']), 'cwd': '.', 'start_at': event['start_at'], 'end_at': end_at,
+            'status': status, 'affected_paths': [], 'output_digest': output,
+            'resource_usage': {'llm_calls': 1 if not audit else 0, 'tool_calls': 1, 'active_seconds': 0}})
+    return audit
 
 
 def seal_codex_result(backend, coordinator, producer, repository, containment):
@@ -253,15 +282,15 @@ def _seal_codex_result(backend, coordinator, producer, repository, containment, 
     require(backend.lookup(producer)['status'] == 'completed', 'Coding task is not complete; query status or cancel')
     backend.stop(producer)
     proposal = json.loads((job / 'proposal.json').read_text())
-    require(all(i.get('type') in ('userMessage', 'reasoning', 'agentMessage') for i in proposal['items']),
-            'Proposal mode rejects tool activity')
     base = immutable_git_tree(repository, task['base_revision'])
     provider = WorkspaceProvider(coordinator.root / 'code_workspaces')
     witness = source['prestart']['workspace']
     workspace = provider.verify_identity(manifest, witness)
     files = proposal['files']
     require(isinstance(files, list) and 0 < len(files) <= 32, 'Invalid coding proposal size')
-    expected = dict(base); seen = set(); audit = []
+    expected = dict(base); seen = set()
+    audit = sdk_tool_audit(task, manifest, json.loads((job/'state.json').read_text()).get('tool_events', []),
+                           proposal['items'], stopped_at=coordinator._time().monotonic_seconds)
     for change in files:
         require(set(change) == {'path', 'content'}, 'Invalid coding proposal fields')
         path, text = change['path'], change['content']; relative_path(path)
