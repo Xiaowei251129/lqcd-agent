@@ -2,7 +2,7 @@
 
 An AI Research Partner for LQCD with controlled planning, code/analysis work, scientific review, human decisions and attributable results. Offline mode uses deterministic roles and a Fake coding backend. Explicit live mode uses the Python OpenAI Agents SDK for PI/Postdoc/Reviewer research and the independent Codex SDK backend for bounded coding proposals. Each installation starts with an empty local research library. Software checks do not establish physics readiness.
 
-Scientific validation is shared by offline and model-assisted review: models interpret Host diagnostics and cannot erase numerical warnings. Planner and Reviewer receive validated remediation and relevant history through their retained context bundles. Credentials and live activation belong to application assembly. See the [architecture](docs/ARCHITECTURE.md) for research-role and execution boundaries.
+Scientific validation is shared by offline and model-assisted review: models interpret Host diagnostics and cannot erase numerical warnings. Planner and Reviewer receive validated remediation and the current project research state through retained context bundles; complete history and original evidence remain available through named reads. Credentials and live activation belong to application assembly. See the [architecture](docs/ARCHITECTURE.md) for research-role and execution boundaries.
 
 ## Use
 
@@ -40,7 +40,7 @@ Copy Host, Run and Pause identifiers from the JSON output. Poll `status` until `
 
 The `code` workflow is a small integration example: change `sample.py` so `value()` returns integer 2. The Host checks its exact allowed AST before execution. Codex can use tools, edit its disposable task workspace, test programs and access the network permitted by the frozen task. Extra permission requests use SDK automatic review. The Host validates the final UTF-8 file proposal, scope, sealed tree and verification evidence. General scientific planning still pauses when its installed implementation is missing; the sample program is never substituted for scientific code. The [first research cases](docs/RESEARCH_CASES.md) use separate task profiles and independent local assessment of Codex-written C2/Normalization programs.
 
-Live requests transmit the supplied task and selected context to OpenAI and incur API usage. Codex's private job records contain turn IDs and reported token usage; research SDK model/tool effects are admitted and charged individually, with transport retries disabled. Codex retains its separately bounded backend accounting. SDK jobs have a time limit, not a guaranteed dollar/token cap. Use project spending limits for billing control. See [security boundaries](docs/SECURITY_AND_DATA_POLICY.md).
+Live requests transmit the supplied task and selected context to OpenAI and incur API usage. The current Terra configuration counts each complete explicit model input before generation and enforces a 256,000-token ceiling. Research compaction preserves the initial scientific state verbatim and retains original evidence; count failure or excess stops the request without silent truncation. Research compaction consumes the existing four-call attempt allowance; Codex retains separate backend accounting. These are deployment limits, not universal model capabilities or a cumulative Run cost cap. Use project spending limits for billing control; see [context thresholds and boundaries](docs/ARCHITECTURE.md#research-roles-and-sdk-boundaries) and [security boundaries](docs/SECURITY_AND_DATA_POLICY.md).
 
 ## Evidence lifecycle
 

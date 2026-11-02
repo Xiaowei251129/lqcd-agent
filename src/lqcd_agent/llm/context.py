@@ -25,12 +25,15 @@ def review_context_view(sources):
     view = {key: value for key, value in sources.items() if key not in ('run_result', 'method_plan')}
     for name, fields in (
         ('run_result', ('run_success', 'failure_type')),
-        ('method_plan', ('physics_goal', 'target_observables', 'method_steps', 'code_needed', 'implementation_gaps')),
+        ('method_plan', ('physics_goal', 'target_observables', 'code_needed', 'implementation_gaps')),
     ):
         source = sources[name]
         summary = {'exists': source is not None, 'path': name}
         if source is not None:
             summary.update({key: source[key] for key in ('status', 'warnings', 'errors', *fields) if key in source})
+            if name == 'method_plan':
+                summary['method_step_count'] = len(source.get('method_steps', []))
+                summary['method_steps_source'] = "Read the complete method with read_context(section='method_plan') before judging its validity."
         view[name + '_summary'] = summary
     evidence = view.get('review_evidence')
     if evidence is not None:

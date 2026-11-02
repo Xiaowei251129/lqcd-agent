@@ -6,6 +6,7 @@ from contextlib import suppress
 from dataclasses import dataclass, replace
 import inspect
 import json
+import math
 from typing import Any, Callable, Sequence
 
 from agents import Agent, FunctionTool, Model, ModelSettings, OpenAIResponsesModel, RunConfig, RunHooks, Runner
@@ -49,11 +50,12 @@ class ResearchAgentResult:
 
 
 class _HostHooks(RunHooks):
-    def __init__(self, role, observer, cancel_event):
+    def __init__(self, role, observer, cancel_event, model_call_limit):
         self.role, self.observer, self.cancel_event = role, observer, cancel_event
         self.events = []
         self.usage = Usage()
         self.model_calls = 0
+        self.model_call_limit = model_call_limit
         self.active = None
         self.effect_error = None
         self.stopping = False
@@ -73,17 +75,29 @@ class _HostHooks(RunHooks):
         if self.stopping or (self.cancel_event is not None and self.cancel_event.is_set()):
             raise asyncio.CancelledError()
 
-    async def on_llm_start(self, context, agent, system_prompt, input_items):
+    async def start_model(self, *, operation=None, **request):
+        from lqcd_agent.control.budget import BudgetExhausted
         self.check_cancelled()
+        # A compact call must leave room for the scientific response it enables.
+        required = 2 if operation == "compact" else 1
+        if self.model_calls + required > self.model_call_limit:
+            raise BudgetExhausted("Research role cannot fund this model effect and its conclusion")
         self.model_calls += 1
         fields = {"call_index": self.model_calls}
+        if operation is not None:
+            fields["operation"] = operation
+        await self.emit("model_start", **fields, **request)
+        # A rejected admission must not be reported as an executed model request.
+        self.active = ("model", fields)
+        self.check_cancelled()
+        return fields
+
+    async def on_llm_start(self, context, agent, system_prompt, input_items):
         schema = agent.output_type if isinstance(agent.output_type, AgentOutputSchemaBase) else AgentOutputSchema(agent.output_type)
-        await self.emit("model_start", **fields, instructions=system_prompt, input=input_items,
+        await self.start_model(instructions=system_prompt, input=input_items,
             output_schema=None if schema.is_plain_text() else schema.json_schema(),
             tools=[{"name": tool.name, "description": tool.description, "parameters": tool.params_json_schema}
                    for tool in agent.tools], model_settings=agent.model_settings)
-        # A rejected admission must not be reported as an executed model request.
-        self.active = ("model", fields)
 
     async def on_llm_end(self, context, agent, response):
         self.usage.add(response.usage)
@@ -134,15 +148,20 @@ class ResearchAgentRuntime:
             raise ValueError("max_output_tokens must be a positive integer.")
         self.model, self.max_output_tokens = model, max_output_tokens
         self._client = None
+        self.request_timeout_seconds = None
 
     @classmethod
     def from_openai(cls, *, client, model: str, max_output_tokens: int):
         """Take ownership of an application-created client with transport retries disabled."""
         if client.max_retries != 0:
             raise ValueError("Research model clients must disable unaccounted transport retries.")
+        timeout = getattr(client.timeout, "read", client.timeout)
+        if type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError("Research model clients must provide a finite positive request timeout.")
         runtime = cls(OpenAIResponsesModel(model=model, openai_client=client),
                       max_output_tokens=max_output_tokens)
         runtime._client = client
+        runtime.request_timeout_seconds = timeout
         return runtime
 
     async def aclose(self):
@@ -157,7 +176,7 @@ class ResearchAgentRuntime:
             raise ValueError("A role, instructions and Host observer are required.")
         if type(max_turns) is not int or max_turns <= 0:
             raise ValueError("The Host must provide a finite positive max_turns.")
-        hooks = _HostHooks(role, observer, cancel_event)
+        hooks = _HostHooks(role, observer, cancel_event, max_turns)
         owned_tools = []
         tool_tasks = set()
         for tool in tools:
@@ -167,29 +186,41 @@ class ResearchAgentRuntime:
                 raise ValueError("Nested SDK agents cannot bypass Host model accounting.")
             if (not isinstance(tool.is_enabled, bool) or tool.tool_input_guardrails or tool.tool_output_guardrails):
                 raise ValueError("Tool admission and checks belong to the Host.")
+            if tool.is_enabled is False:
+                continue
             # Copy per invocation; changing a shared tool would affect another project.
-            owned = replace(tool, timeout_behavior="raise_exception")
+            limits = [limit for limit in (self.request_timeout_seconds, tool.timeout_seconds) if limit is not None]
+            tool_timeout = min(limits) if limits else None
+            owned = replace(tool, timeout_seconds=None, timeout_behavior="raise_exception")
             set_function_tool_failure_error_function(owned, None)
             invoke = owned.on_invoke_tool
-            async def invoke_host_tool(context, arguments, invoke=invoke):
+            async def invoke_host_tool(context, arguments, invoke=invoke, timeout_seconds=tool_timeout):
                 # The SDK may detach a cancelled tool while its async cleanup runs.
                 # Retain the complete owning task until Host settlement is safe.
                 tool_tasks.add(asyncio.current_task())
                 try:
-                    return await invoke(context, arguments)
+                    # One timeout owner preserves shorter tool deadlines and
+                    # reports TimeoutError after cooperative tool cleanup.
+                    async with asyncio.timeout(timeout_seconds):
+                        return await invoke(context, arguments)
                 except BaseException as error:
                     hooks.effect_error = error
                     raise
             owned.on_invoke_tool = invoke_host_tool
             owned_tools.append(owned)
-        settings = ModelSettings(max_tokens=self.max_output_tokens, store=False,
-                                 parallel_tool_calls=True, preserve_raw_usage=True,
+        settings = ModelSettings(max_tokens=self.max_output_tokens, store=False, timeout=self.request_timeout_seconds,
+                                 parallel_tool_calls=True, preserve_raw_usage=True, truncation="disabled",
                                  retry=ModelRetrySettings(max_retries=0))
         agent = Agent(name=role, instructions=instructions, model=self.model,
                       model_settings=settings, tools=owned_tools, output_type=output_type)
         config = RunConfig(tracing_disabled=True, trace_include_sensitive_data=False,
                            tool_execution=ToolExecutionConfig(max_function_tool_concurrency=1),
                            tool_name_collision_policy="error")
+        if self._client is not None:
+            from .context_window import ContextWindow
+            pinned = [{'role': 'user', 'content': input}] if isinstance(input, str) else input
+            config.call_model_input_filter = ContextWindow(self._client, self.model, hooks, pinned,
+                                                          request_timeout_seconds=self.request_timeout_seconds)
         run_task = cancel_task = None
         try:
             hooks.check_cancelled()

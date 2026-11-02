@@ -246,7 +246,7 @@ def scientific_agent(host, config, settings, workspace):
         return ScientificAgent(host, config, workspace=workspace)
     from .research.collaboration import CollaborationAgent
     return CollaborationAgent(host, config, runtime_factory=settings.research_runtime, workspace=workspace,
-                              timeout_seconds=settings.timeout_seconds)
+                              request_timeout_seconds=settings.timeout_seconds)
 
 
 def capture_project(snapshot, goal=None):

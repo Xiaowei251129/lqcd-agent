@@ -3,7 +3,7 @@ from contextlib import closing
 from copy import deepcopy
 import json
 from pathlib import Path
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 
 from agents import Model
 from agents.items import ModelResponse
@@ -108,7 +108,7 @@ class CollaborationModel(Model):
 
 
 def execute_collaboration(workspace, *, fail=False, refusal=None, need_information=False, pi_need_information=False,
-                          read_sections=('catalog',), postdoc_read=False):
+                          read_sections=('catalog',), postdoc_read=False, runtime_factory=None, request_timeout_seconds=10):
     host = Path(mkdtemp(prefix='lqcd-agent-host-', dir=execution_scratch_root()))
     calls, closed = [], []
     class ClosingRuntime(ResearchAgentRuntime):
@@ -120,7 +120,7 @@ def execute_collaboration(workspace, *, fail=False, refusal=None, need_informati
     config = {'schema_version': '0.1', 'case_id': 'sdk-collaboration', 'source_kind': 'synthetic_placeholder',
               'physics_goal': 'Inspect synthetic normalization evidence.'}
     with closing(Coordinator(host, clock=FakeClock(100, 0))) as coordinator:
-        agent = CollaborationAgent(host, config, workspace=workspace, runtime_factory=factory, timeout_seconds=10)
+        agent = CollaborationAgent(host, config, workspace=workspace, runtime_factory=runtime_factory or factory, request_timeout_seconds=request_timeout_seconds)
         runtime, actor, _ = assemble(coordinator, agent, workflow='scientific', initialize=True)
         goal = {'goal': config['physics_goal'], 'workflow': 'scientific', 'live': False, 'workspace': str(workspace),
                 'case_config': config, 'dataset_snapshot': snapshot_dataset(config, workspace)}
@@ -190,16 +190,25 @@ def test_roles_share_the_host_call_allowance_without_spending_a_fifth_call(tmp_p
         assert index['current']['review'] is not None and index['current']['terminal'] is None
 
 
-def test_role_without_remaining_calls_refuses_before_sdk_invocation(tmp_path):
-    calls = []
+@pytest.mark.parametrize('exhausted', ['calls', 'deadline'])
+def test_role_without_budget_refuses_before_sdk_invocation(tmp_path, recwarn, exhausted):
+    calls, events = [], []
     runtime = ResearchAgentRuntime(CollaborationModel(calls), max_output_tokens=2048)
     context = {'budget_summary': {'dimensions': {
         'llm_calls_per_attempt': {'remaining': 4}, 'llm_calls_per_run': {'remaining': 32}}}}
-    provider = _RoleProvider(SimpleNamespace(timeout_seconds=10), 'method_planner', context, tmp_path,
-                             runtime, None, SimpleNamespace(model_calls=4))
-    with pytest.raises(BudgetExhausted, match='remaining roles'):
-        provider._run('postdoc', 'Conclude.', [], Discussion, [])
-    assert calls == []
+    class ExhaustedMeter:
+        model_calls = 4 if exhausted == 'calls' else 0
+        def __call__(self, event):
+            events.append(event)
+        def remaining_seconds(self):
+            raise BudgetExhausted('Research attempt deadline exhausted')
+    with asyncio.Runner() as runner:
+        provider = _RoleProvider(SimpleNamespace(request_timeout_seconds=10), 'method_planner', context, tmp_path,
+                                 runtime, runner, ExhaustedMeter())
+        with pytest.raises(BudgetExhausted):
+            provider._run('postdoc', 'Conclude.', [], Discussion, [])
+    assert calls == events == []
+    assert not recwarn.list
 
 
 @pytest.mark.parametrize('failure', [
@@ -266,6 +275,27 @@ def test_unanswered_issues_survive_omission_and_require_response_and_evidence():
         _merge_issues(original, [{**original[0], 'question': 'A different question'}])
 
 
+def test_resolved_host_issue_can_be_revisited_only_with_its_original_question_and_current_evidence():
+    original = _merge_issues([], [issue()])[0]
+    known = MappingProxyType({original['id']: original['question'], 'issue-other': 'A separate resolved question.'})
+    context = {'project_history': {'issues': [], 'resolved': [
+        {'id': key, 'question': value} for key, value in known.items()]}}
+    assert _prior_issues(context) == []
+    assert _merge_issues([], [], known_questions=known) == []
+    answer = {**original, 'status': 'addressed', 'response': 'Rechecked for this Run.',
+              'evidence_references': ['current-evidence']}
+    pending = _merge_issues([], [answer], known_questions=known)
+    assert len(pending) == 1 and pending[0]['status'] == 'open'
+    checked = _merge_issues([], [answer], known_questions=known, known_evidence={'current-evidence'})
+    assert checked == [answer]
+    with pytest.raises(ModelBehaviorError, match='cannot be replaced'):
+        _merge_issues([], [{**answer, 'question': 'A replacement question.'}], known_questions=known,
+                      known_evidence={'current-evidence'})
+    with pytest.raises(ModelBehaviorError, match='cannot invent'):
+        _merge_issues([], [{**answer, 'id': 'issue-invented'}], known_questions=known,
+                      known_evidence={'current-evidence'})
+
+
 @pytest.mark.parametrize('warnings,errors', [([], []), ([{'severity': 'severe'}], []),
     ([{'severity': 'warning'}], []), ([], [{'code': 'failed_check'}])])
 def test_pi_revision_never_overrides_host_warnings_or_errors(warnings, errors):
@@ -297,7 +327,6 @@ def test_planner_requests_missing_information_before_any_analysis(tmp_path, role
 
 def test_pi_checks_and_prior_questions_reach_the_actual_coding_request(tmp_path):
     from lqcd_agent.agents.method_planner import run_method_planner
-    from lqcd_agent.science import ScientificAgent
     class Observer:
         def __init__(self):
             self.events = []
@@ -314,8 +343,9 @@ def test_pi_checks_and_prior_questions_reach_the_actual_coding_request(tmp_path)
                                           'llm_calls_per_run': {'remaining': 32}}},
         'remediation': {'success_criteria': ['Compare the fit windows.', 'All inputs attributable']}}
     output = tmp_path/'output'
-    agent = ScientificAgent(tmp_path/'host', config, workspace=tmp_path)
     runtime = ResearchAgentRuntime(CollaborationModel([], code_needed=True), max_output_tokens=2048)
+    agent = CollaborationAgent(tmp_path/'host', config, workspace=tmp_path,
+        runtime_factory=lambda: runtime, request_timeout_seconds=10)
     with asyncio.Runner() as runner:
         provider = _RoleProvider(agent, 'method_planner', context, output, runtime, runner, Observer())
         result = run_method_planner(user_goal='Analyze the frozen data contract.', case_config=config,
@@ -330,17 +360,15 @@ def test_pi_checks_and_prior_questions_reach_the_actual_coding_request(tmp_path)
     assert result['method_plan']['method_steps'] == requirements
 
 
-def test_conflicting_prior_runs_keep_an_issue_open_independent_of_run_order():
+def test_current_run_answers_inherited_open_issue_only_with_current_evidence():
     opened = _merge_issues([], [issue()])[0]
-    addressed = {**opened, 'status': 'addressed', 'response': 'Checked in a previous Run.',
-                 'evidence_references': ['old-evidence']}
-    for rows in ([opened, addressed], [addressed, opened]):
-        context = {'project_history': [{'collaboration': {'issues': [row]}} for row in rows]}
-        retained = _prior_issues(context)
-        assert retained[0]['status'] == 'open'
-        answered = _merge_issues(retained, [{**addressed, 'evidence_references': ['current-evidence']}],
-                                 known_evidence={'current-evidence'})
-        assert answered[0]['status'] == 'addressed'
+    context = {'project_history': {'issues': [opened]}}
+    retained = _prior_issues(context)
+    answered = _merge_issues(retained, [{**opened, 'status': 'addressed',
+        'response': 'Checked in this Run.', 'evidence_references': ['current-evidence']}],
+        known_evidence={'current-evidence'})
+    assert answered[0]['status'] == 'addressed'
+    assert _prior_issues(context, {'collaboration': {'issues': answered}}) == answered
 
 
 @pytest.mark.parametrize('raw', ['', '{', '{"summary":"a","summary":"b","issues":[],"decision":"recommend_proceed"}',

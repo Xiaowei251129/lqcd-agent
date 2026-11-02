@@ -11,7 +11,7 @@ from pathlib import PurePosixPath
 
 from lqcd_agent.archive import DOMAIN_ARTIFACTS, MAX_BYTES, MAX_MEMBERS
 from lqcd_agent.control.coordinator import component, publish_exact, read_regular, sync_directory
-from lqcd_agent.control.strict_json import canonical_bytes, closed, digest, digest_value, loads, number, require, text
+from lqcd_agent.control.strict_json import ControlIntegrityError, canonical_bytes, closed, digest, digest_value, loads, number, require, text
 from lqcd_agent.inspection import RunSnapshot, read_snapshot
 from .files import WorkspaceFiles
 
@@ -28,6 +28,10 @@ def _relative(value):
     require(not any(part == ".env" or part.startswith(".env.") or part in (".git", ".aws", "auth.json", "credentials.json")
                     for part in path.parts), "Private configuration is not scientific evidence")
     return path
+
+
+class UnregisteredEvidence(ControlIntegrityError):
+    """The requested digest is absent from this project's verified registrations."""
 
 
 class ProjectStore(WorkspaceFiles):
@@ -307,7 +311,8 @@ class ProjectStore(WorkspaceFiles):
                             break
                     if found:
                         break
-            require(found, "Evidence is not registered to this project")
+            if not found:
+                raise UnregisteredEvidence("Evidence is not registered to this project")
             path = self._path(f"projects/{project_id}/evidence/{identifier}")
             require(path.stat().st_size <= MAX_BYTES, "Project evidence is too large")
             raw = read_regular(path)

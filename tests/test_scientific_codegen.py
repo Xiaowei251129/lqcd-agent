@@ -253,7 +253,7 @@ def test_generated_review_keeps_full_production_summary_without_irrelevant_artif
     (outputs/'generated_result.json').write_bytes(canonical_bytes(result))
     run=tmp_path/'run_result.json';run.write_bytes(canonical_bytes({'run_success':True,
         'generated_execution':{'result_kind':'normalization'},'analysis_outputs_dir':str(outputs)}))
-    plan=tmp_path/'method_plan.json';steps=[f'Step {i}: '+('Preserve paired complex resampling, reference identity and explicit failure masks. '*2) for i in range(7)]
+    plan=tmp_path/'method_plan.json';steps=[f'Step {i}: '+('Preserve paired complex resampling, reference identity and explicit failure masks. '*2) for i in range(70)]
     plan.write_bytes(canonical_bytes({'status':'success','physics_goal':'Assess complex normalization.',
         'method_steps':steps,'warnings':[{'message':'Keep the unavailable original resampling plan explicit.'}]}))
     def irrelevant(*_):
@@ -269,7 +269,11 @@ def test_generated_review_keeps_full_production_summary_without_irrelevant_artif
         run_result_path=run,method_plan_path=plan,provider=provider,generated_input=payload)
     assert reviewed['status']=='success',reviewed
     view=json.loads(provider.request.messages[1]['content'])
-    assert view['method_plan_summary']['method_steps']==steps
+    assert 'method_steps' not in view['method_plan_summary']
+    assert view['method_plan_summary']['method_step_count']==len(steps)
+    assert "read_context(section='method_plan')" in view['method_plan_summary']['method_steps_source']
+    from lqcd_agent.llm.context import read_context_evidence
+    assert read_context_evidence(tmp_path,view['evidence_catalog'],'method_plan')['method_steps']==steps
     assert len(view['review_evidence']['findings'])==12
     assert view['review_evidence']['warnings'][0]['code']=='resampling_lineage_unverified'
     assert reviewed['report']['correlator_diagnostics']['status']=='not_applicable'

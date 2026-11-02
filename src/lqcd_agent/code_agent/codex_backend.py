@@ -95,9 +95,8 @@ class CodexCodingBackend:
         job.mkdir(mode=0o700)
         workspace = WorkspaceProvider(self.workspace_root).path(manifest['workspace_id'])
         base = scan_tree(workspace)
-        require(sum(len(v) for v in base.values()) <= 256000, 'First-version coding context exceeds 256 KB')
         request = {'task': task, 'manifest': manifest, 'workspace': str(workspace),
-                   'base_files': {k: v.decode('utf-8') for k, v in base.items()}}
+                   'base_paths': sorted(base)}
         write_json(job / 'request.json', request)
         receipt = {'schema_version': '0.1', 'producer_operation_id': producer_operation_id,
             'task_id': task['task_id'], 'task_digest': task['task_digest'], 'workspace_id': manifest['workspace_id'],

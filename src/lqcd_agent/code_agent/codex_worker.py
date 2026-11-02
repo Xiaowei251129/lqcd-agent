@@ -1,4 +1,5 @@
 """Private tool-enabled SDK worker; the Host validates the final file proposal."""
+from contextlib import ExitStack
 import json
 from hashlib import sha256
 import os
@@ -9,6 +10,8 @@ import threading
 import time
 
 from lqcd_agent.settings import ApplicationSettings, child_environment, workspace_root
+from lqcd_agent.research.context_policy import INPUT_TOKEN_LIMIT, COMPACT_RATIO
+from .context_gateway import CodingContextGateway
 
 
 def write_json(path, value):
@@ -48,7 +51,9 @@ def run(job):
                  'permissions.lqcd.network.enabled=' + str(task['network_policy']['enabled']).lower(),
                  'shell_environment_policy.set=' + json.dumps(tool_environment).replace(': ', ' = '),
                  'project_doc_max_bytes=0',
-                 'openai_base_url=' + json.dumps(settings.api_base))
+                 f'model_context_window={INPUT_TOKEN_LIMIT}',
+                 f'model_auto_compact_token_limit={int(INPUT_TOKEN_LIMIT * .95 * COMPACT_RATIO)}',
+                 'model_auto_compact_token_limit_scope="total"')
     environment = child_environment()
     environment.update(CODEX_HOME=str(home), CODEX_SQLITE_HOME=str(home), TMPDIR=str(temporary))
     state = json.loads((job / 'state.json').read_text())
@@ -56,26 +61,29 @@ def run(job):
     signal.signal(signal.SIGTERM, lambda *_: cancelled.set())
     signal.signal(signal.SIGINT, lambda *_: cancelled.set())
     turn = None
+    gateway = None
     schema = {'type': 'object', 'properties': {'files': {'type': 'array', 'items': {'type': 'object',
         'properties': {'path': {'type': 'string'}, 'content': {'type': 'string'}},
         'required': ['path', 'content'], 'additionalProperties': False}}}, 'required': ['files'], 'additionalProperties': False}
     try:
-        with Codex(CodexConfig(cwd=str(workspace), env=environment, config_overrides=overrides,
-                               client_name='lqcd_agent', client_title='LQCD Agent')) as codex:
-            codex.login_api_key(settings.api_key)
+        with ExitStack() as stack:
+            gateway = stack.enter_context(CodingContextGateway(settings, job))
+            overrides += ('openai_base_url=' + json.dumps(gateway.base_url),)
+            codex = stack.enter_context(Codex(CodexConfig(cwd=str(workspace), env=environment, config_overrides=overrides,
+                               client_name='lqcd_agent', client_title='LQCD Agent')))
+            codex.login_api_key(gateway.token)
             account = codex.account()
             if getattr(getattr(account.account, 'root', account.account), 'type', None) != 'apiKey':
                 raise RuntimeError('Application API-key authentication was not selected')
             thread = codex.thread_start(model=settings.coding_model, cwd=str(workspace), approval_mode=ApprovalMode.auto_review)
             state.update(thread_id=thread.id, status='running')
             write_json(job / 'state.json', state)
-            base = request['base_files']
             prompt = ('Implement and test the requested program. Use tools and network access when useful. '
                       'Never read credentials or modify original research data. Keep temporary test files outside '
                       'the deliverable workspace and avoid bytecode files. Return the complete UTF-8 contents of changed files '
                       'only in the required JSON schema. Only these write paths are permitted: ' + json.dumps(task['write_paths'])
                       + '\nTask: ' + json.dumps(task['requirements']) + '\nAcceptance: ' + json.dumps(task['acceptance_criteria'])
-                      + '\nExisting files: ' + json.dumps(base))
+                      + '\nExisting workspace files (read with tools as needed): ' + json.dumps(request['base_paths']))
             turn = thread.turn(prompt, output_schema=schema)
             state['turn_id'] = turn.id
             write_json(job / 'state.json', state)
@@ -83,8 +91,9 @@ def run(job):
             def stop_watch():
                 deadline = time.monotonic() + task['tool_policy'][0]['timeout_seconds']
                 while not finished.wait(.1):
-                    if cancelled.is_set() or time.monotonic() >= deadline:
-                        cancelled.set()
+                    if gateway.failed.is_set() or cancelled.is_set() or time.monotonic() >= deadline:
+                        if not gateway.failed.is_set():
+                            cancelled.set()
                         try: turn.interrupt()
                         except Exception: pass
                         return
@@ -98,6 +107,10 @@ def run(job):
                             payload = event.payload
                             if payload.turn_id == turn.id:
                                 item = payload.item.model_dump(mode='json', by_alias=True)
+                                if item['type'] == 'contextCompaction':
+                                    state.setdefault('context_compactions', []).append({
+                                        'id': item['id'], 'event': event.method, 'observed_at': time.monotonic()})
+                                    write_json(job / 'state.json', state)
                                 if is_tool_item(item):
                                     observed = tools.setdefault(item['id'], {'id': item['id'], 'type': item['type'],
                                         'start_at': time.monotonic()})
@@ -106,12 +119,17 @@ def run(job):
                                         observed['end_at'] = time.monotonic()
                                     state.update(tool_count=len(tools), tool_events=list(tools.values()))
                                     write_json(job / 'state.json', state)
+                        elif event.method == 'thread/tokenUsage/updated' and event.payload.turn_id == turn.id:
+                            state['usage'] = event.payload.token_usage.model_dump(mode='json', by_alias=True)
+                            write_json(job / 'state.json', state)
                         yield event
                 # Reuse the pinned SDK collector while observing its single event stream.
                 result = _collect_turn_result(observed_events(), turn_id=turn.id)
             finally:
                 finished.set()
                 monitor.join(2)
+            if gateway.failed.is_set():
+                raise RuntimeError(gateway.failure_reason)
             if cancelled.is_set():
                 state.update(status='cancelled', error='coding_cancelled_or_timed_out')
             else:
@@ -127,7 +145,12 @@ def run(job):
     except Exception as error:
         # Persist bounded diagnostics after removing application credentials.
         import re
-        detail = re.sub(r'sk-[A-Za-z0-9_-]+', '[REDACTED]', str(error).replace(settings.api_key, '[REDACTED]'))
+        detail = str(error).replace(settings.api_key, '[REDACTED]')
+        if gateway is not None:
+            detail = detail.replace(gateway.token, '[REDACTED]')
+            if gateway.failed.is_set():
+                detail = gateway.failure_reason
+        detail = re.sub(r'sk-[A-Za-z0-9_-]+', '[REDACTED]', detail)
         state.update(status='cancelled' if cancelled.is_set() else 'failed', error=type(error).__name__, error_message=detail[:2000])
     finally:
         state['finished_at'] = time.monotonic()

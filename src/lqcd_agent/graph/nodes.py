@@ -52,10 +52,25 @@ def product_failure_material(root, source, diagnostic, records, coordinator):
     registrations = {row['artifact_id']: row for row in history if row['event'] == 'registered'}
     registration = registrations[source['artifact_id']]
     scheduled = next((row for row in records if row['record_type'] == 'attempt' and row['event'] == 'scheduled' and (row['attempt_id'] == source['attempt_id'])))
-    call = next((row for row in records if row.get('event') == 'resource_reserved' and row['payload']['attempt_id'] == source['attempt_id'] and (row['payload']['resource_kind'] == 'code_backend_operation' if source['attempt_kind'] == 'code_agent' else row['payload']['resource_operation_id'].endswith(':domain-diagnosis'))))
+    resources = [row for row in records if row.get('event') == 'resource_reserved'
+                 and row['payload']['attempt_id'] == source['attempt_id']]
+    calls = [row for row in resources if (row['payload']['resource_kind'] == 'code_backend_operation'
+             if source['attempt_kind'] == 'code_agent'
+             else row['payload']['resource_operation_id'].endswith(':domain-diagnosis'))]
+    require(len(calls) <= 1, 'Failure has conflicting resource anchors')
+    call = calls[0] if calls else None
+    if call is None:
+        require(source['attempt_kind'] != 'code_agent' and not resources,
+                'Failure lacks its original resource anchor')
+        # Request construction can fail before any external effect. Bind that
+        # failure to the actual started attempt, never an invented model call.
+        anchor, = [row for row in records if row.get('record_type') == 'attempt'
+                   and row['event'] == 'started' and row['attempt_id'] == source['attempt_id']]
+    else:
+        anchor = call
     selected = {}
     for row in history:
-        if row['event_index'] > call['artifact_event_index']:
+        if row['event_index'] > anchor['artifact_event_index']:
             break
         if row['event'] == 'current_set':
             selected[row['slot']] = registrations[row['artifact_id']]
@@ -65,7 +80,9 @@ def product_failure_material(root, source, diagnostic, records, coordinator):
         selected.setdefault(slot, registrations[artifact])
     selected[source['slot']] = registration
     config = {'node': source['attempt_kind'], 'structured_output': True}
-    if source['attempt_kind'] != 'code_agent':
+    if call is None:
+        config['phase'] = 'before_resource'
+    elif source['attempt_kind'] != 'code_agent':
         require(call['payload']['config_digest'] == digest(config), 'Failure configuration changed')
     policy = next((row for row in records if row.get('event') == 'policy_initialized'))
 
@@ -180,8 +197,10 @@ def product_failure_material(root, source, diagnostic, records, coordinator):
         inputs.extend(code_inputs)
     leaves.sort(key=lambda row: row['member_id'])
     scheduled_ref = input_ref('execution_record', digest(scheduled), path=('attempt_kind',))
-    call_ref = input_ref('ordinary_call', digest(call), path=('config',))
-    bindings = {'program_ids': binding('host_ids_v1', [scheduled_ref], [source['attempt_kind']], [source['attempt_kind']]), 'tool_ids': binding('host_ids_v1', [call_ref], ['domain-diagnosis'], ['domain-diagnosis']), 'verification_ids': binding('host_ids_v1', [scheduled_ref], [], []), 'input_members': binding('input_members_v1', inputs, leaves, leaves), 'plan_digest': plan_binding or binding('not_applicable_v1', [], None, None, 'no_plan'), 'code_digest': binding('not_applicable_v1', [], None, None, 'no_code'), 'base_revision': binding('not_applicable_v1', [], None, None, 'no_immutable_base'), 'base_tree_digest': binding('not_applicable_v1', [], None, None, 'no_immutable_base'), 'config_digest': binding('host_config_v1', [call_ref], config, digest(config)), 'policy_digest': binding('policy_v1', [input_ref('execution_record', digest(policy), path=('payload', 'policy'))], policy['payload']['policy'], policy['payload']['policy']['policy_digest']), 'code_task_context_digest': binding('not_applicable_v1', [], None, None, 'no_code'), 'analysis_execution_context_digest': binding('not_applicable_v1', [], None, None, 'no_fresh_analysis')}
+    call_ref = (input_ref('ordinary_call', digest(call), path=('config',)) if call is not None
+                else input_ref('execution_record', digest(anchor), path=('attempt_kind',)))
+    tool_ids = ['domain-diagnosis'] if call is not None else []
+    bindings = {'program_ids': binding('host_ids_v1', [scheduled_ref], [source['attempt_kind']], [source['attempt_kind']]), 'tool_ids': binding('host_ids_v1', [call_ref], tool_ids, tool_ids), 'verification_ids': binding('host_ids_v1', [scheduled_ref], [], []), 'input_members': binding('input_members_v1', inputs, leaves, leaves), 'plan_digest': plan_binding or binding('not_applicable_v1', [], None, None, 'no_plan'), 'code_digest': binding('not_applicable_v1', [], None, None, 'no_code'), 'base_revision': binding('not_applicable_v1', [], None, None, 'no_immutable_base'), 'base_tree_digest': binding('not_applicable_v1', [], None, None, 'no_immutable_base'), 'config_digest': binding('host_config_v1', [call_ref], config, digest(config)), 'policy_digest': binding('policy_v1', [input_ref('execution_record', digest(policy), path=('payload', 'policy'))], policy['payload']['policy'], policy['payload']['policy']['policy_digest']), 'code_task_context_digest': binding('not_applicable_v1', [], None, None, 'no_code'), 'analysis_execution_context_digest': binding('not_applicable_v1', [], None, None, 'no_fresh_analysis')}
     if code_science is not None:
         task_input = next((r for r in code_inputs if r['member'] == 'code_agent_task.json'))
         bindings['code_digest'] = binding('code_causal_v1', code_inputs, code_science, digest(code_science))

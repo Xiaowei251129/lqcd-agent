@@ -7,7 +7,7 @@ import pytest
 from tests.support import command
 from lqcd_agent.control.execution import parse_ledger
 from lqcd_agent.control.integrity import validate_run_root
-from lqcd_agent.control.strict_json import ControlIntegrityError, digest, loads
+from lqcd_agent.control.strict_json import ControlIntegrityError, canonical_bytes, digest, loads
 from lqcd_agent.inspection import host_root
 
 def arguments(result):
@@ -25,6 +25,9 @@ def assert_owned_journals_reject_tampering(host):
             entry = changed[name][-1]
             if field == 'record':
                 entry['record']['previous_execution_head'] = '0' * 64
+                entry['content'] = entry['previous'] + canonical_bytes(entry['record']).decode() + '\n'
+                entry['index'] = canonical_bytes({**loads(entry['previous_index']),
+                    'execution_head': digest(entry['record'])}).decode()
             else:
                 entry[field] += '\n'
             entry['intent_digest'] = digest({k: v for k, v in entry.items() if k not in ('intent_digest', 'published')})

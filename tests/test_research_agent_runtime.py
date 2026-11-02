@@ -232,6 +232,8 @@ def test_openai_adapter_preserves_usage_presence_without_a_network_call(provider
             raise AssertionError("The provider returned a conclusion without calling a tool")
         async def transport(request):
             requests.append(json.loads(request.content))
+            if request.url.path.endswith('/input_tokens'):
+                return httpx.Response(200, json={'object': 'response.input_tokens', 'input_tokens': 7})
             response = Response(id="response-1", created_at=0, model="test-model", object="response",
                 output=[message("Supported under stated conditions.")], parallel_tool_calls=True,
                 tool_choice="auto", tools=[], status="completed", usage=provider_usage)
@@ -241,12 +243,15 @@ def test_openai_adapter_preserves_usage_presence_without_a_network_call(provider
             runtime = ResearchAgentRuntime.from_openai(client=client, model="test-model", max_output_tokens=512)
             result = await runtime.run(**arguments(events.append, [evidence_tool(unused_read)]))
         assert result.output["conclusion"] == "Supported under stated conditions."
-        assert len(requests) == 1 and requests[0]["store"] is False
-        assert requests[0]["max_output_tokens"] == 512 and "temperature" not in requests[0]
-        assert requests[0]["parallel_tool_calls"] is True
-        assert requests[0]["tools"][0]["name"] == "read_evidence"
-        assert requests[0]["text"]["format"]["type"] == "json_schema"
-        assert requests[0]["text"]["format"]["strict"] is True
+        assert len(requests) == 2
+        counted, generated = requests
+        assert counted == {key: generated[key] for key in counted}
+        assert generated["store"] is False and generated["truncation"] == "disabled"
+        assert generated["max_output_tokens"] == 512 and "temperature" not in generated
+        assert generated["parallel_tool_calls"] is True
+        assert generated["tools"][0]["name"] == "read_evidence"
+        assert generated["text"]["format"]["type"] == "json_schema"
+        assert generated["text"]["format"]["strict"] is True
         ended = next(event for event in events if event["event"] == "model_end")
         assert ended["raw_usage"] == provider_usage
         assert result.usage["requests"] == 1
@@ -258,6 +263,8 @@ def test_incomplete_provider_response_cannot_become_a_scientific_result(status):
     async def check():
         events = []
         async def transport(request):
+            if request.url.path.endswith('/input_tokens'):
+                return httpx.Response(200, json={'object': 'response.input_tokens', 'input_tokens': 7})
             response = Response(id="response-1", created_at=0, model="test-model", object="response",
                 output=[message("This valid JSON must still be rejected.")], parallel_tool_calls=False,
                 tool_choice="auto", tools=[], status=status, incomplete_details={"reason": "max_output_tokens"})
@@ -267,7 +274,8 @@ def test_incomplete_provider_response_cannot_become_a_scientific_result(status):
             runtime = ResearchAgentRuntime.from_openai(client=client, model="test-model", max_output_tokens=512)
             with pytest.raises(ModelBehaviorError):
                 await runtime.run(**arguments(events.append))
-        assert [e["event"] for e in events] == ["run_start", "model_start", "model_error", "run_error"]
+        assert [e["event"] for e in events] == ["run_start", "tool_start", "tool_end",
+            "model_start", "model_error", "run_error"]
     asyncio.run(check())
 
 
@@ -340,4 +348,13 @@ def test_caller_cancellation_stops_new_tools_even_if_model_suppresses_cancellati
         assert not invoked
         assert not any(event['event'] in ('tool_start', 'tool_end', 'run_end') for event in events)
         assert events[-1]['event'] == 'run_error' and events[-1]['cancelled'] is True
+    asyncio.run(check())
+
+
+@pytest.mark.parametrize('timeout', [None, 0, float('inf'), float('nan')])
+def test_openai_adapter_requires_a_finite_positive_request_timeout(timeout):
+    async def check():
+        async with AsyncOpenAI(api_key='offline-test', max_retries=0, timeout=timeout) as client:
+            with pytest.raises(ValueError, match='finite positive request timeout'):
+                ResearchAgentRuntime.from_openai(client=client, model='test-model', max_output_tokens=512)
     asyncio.run(check())

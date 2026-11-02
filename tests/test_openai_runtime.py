@@ -50,17 +50,22 @@ def test_sdk_worker_enables_tools_and_review_with_task_network_policy(tmp_path, 
     workspace=tmp_path/'workspace';workspace.mkdir()
     task={'write_paths':['sample.py'],'requirements':['Return 2'],'acceptance_criteria':['value()==2'],
           'network_policy':{'enabled':network},'tool_policy':[{'timeout_seconds':240}]}
-    (tmp_path/'request.json').write_text(json.dumps({'task':task,'manifest':{},'workspace':str(workspace),'base_files':{}}))
+    (tmp_path/'request.json').write_text(json.dumps({'task':task,'manifest':{},'workspace':str(workspace),'base_paths':['sample.py']}))
     (tmp_path/'state.json').write_text('{"status":"accepted"}')
     observed={}
     result=NS(status=NS(value='completed',__str__=lambda _: 'completed'),
         final_response=json.dumps({'files':[{'path':'sample.py','content':'def value():\n    return 2\n'}]}),usage=None,items=[])
     item={'id':'command-1','type':'commandExecution','command':'python --version','status':'completed'}
     event_item=NS(model_dump=lambda **_:item)
-    events=[NS(method=name,payload=NS(turn_id='turn',item=event_item))
-            for name in ('item/started','item/completed')]
+    compact_item=NS(model_dump=lambda **_:{'id':'compact-1','type':'contextCompaction'})
+    usage=NS(model_dump=lambda **_:{'modelContextWindow':243200,'last':{'inputTokens':400}})
+    events=([NS(method=name,payload=NS(turn_id='turn',item=compact_item))
+             for name in ('item/started','item/completed')] +
+            [NS(method='thread/tokenUsage/updated',payload=NS(turn_id='turn',token_usage=usage))] +
+            [NS(method=name,payload=NS(turn_id='turn',item=event_item))
+             for name in ('item/started','item/completed')])
     def collect(stream, *, turn_id):
-        assert turn_id=='turn' and len(list(stream))==2
+        assert turn_id=='turn' and len(list(stream))==5
         result.items=[event_item]
         return result
     monkeypatch.setattr('openai_codex._run._collect_turn_result',collect)
@@ -72,7 +77,10 @@ def test_sdk_worker_enables_tools_and_review_with_task_network_policy(tmp_path, 
         def account(self): return NS(account=NS(root=NS(type='apiKey')))
         def thread_start(self, **kwargs):
             observed['thread']=kwargs
-            return NS(id='thread', turn=lambda *_,**kw:NS(id='turn',stream=lambda:iter(events),interrupt=lambda:None))
+            def turn(prompt, **kwargs):
+                assert 'Existing workspace files (read with tools as needed): ["sample.py"]' in prompt
+                return NS(id='turn',stream=lambda:iter(events),interrupt=lambda:None)
+            return NS(id='thread', turn=turn)
     monkeypatch.setattr(openai_codex,'Codex',FakeCodex)
     before=signal.getsignal(signal.SIGTERM),signal.getsignal(signal.SIGINT)
     try:
@@ -80,7 +88,8 @@ def test_sdk_worker_enables_tools_and_review_with_task_network_policy(tmp_path, 
     finally:
         signal.signal(signal.SIGTERM,before[0]);signal.signal(signal.SIGINT,before[1])
     config=observed['config']; overrides=config.config_overrides
-    assert observed['key']==settings.api_key and config.codex_bin is None
+    assert observed['key'] != settings.api_key and config.codex_bin is None
+    assert any(entry.startswith('openai_base_url="http://127.0.0.1:') for entry in overrides)
     assert config.env['CODEX_HOME']==str(tmp_path/'codex-home')
     temporary=tmp_path/'codex-home/tmp'
     assert config.env['TMPDIR']==str(temporary) and temporary.stat().st_mode & 0o777==0o700
@@ -127,6 +136,9 @@ if (printf changed > "$3") 2>/dev/null; then exit 32; fi
     state=json.loads((tmp_path/'state.json').read_text())
     assert state['status']=='completed' and state['tool_count']==1
     assert len(state['tool_events'])==1
+    assert [(entry['id'],entry['event']) for entry in state['context_compactions']]==[
+        ('compact-1','item/started'),('compact-1','item/completed')]
+    assert state['usage']=={'modelContextWindow':243200,'last':{'inputTokens':400}}
     assert json.loads((tmp_path/'proposal.json').read_text())['items']==[item]
     assert all('private-test-value' not in p.read_text() for p in tmp_path.rglob('*.json'))
 
@@ -237,7 +249,7 @@ def test_backend_dispatch_is_idempotent_conflicts_fail_and_cancel_stops(tmp_path
     monkeypatch.setattr(module,'validate_task',lambda task:NS(value=task))
     monkeypatch.setattr(module,'validate_manifest',lambda manifest,task:NS(value=manifest))
     workspace_root=tmp_path/'workspaces';workspace=workspace_root/'workspace';workspace.mkdir(parents=True)
-    (workspace/'sample.py').write_text('def value(): return 1')
+    (workspace/'sample.py').write_text('def value(): return 1\n#' + 'large base source ' * 20000)
     backend=module.CodexCodingBackend(tmp_path/'jobs',workspace_root)
     task={'producer_operation_id':'operation','coding_backend_kind':'codex','backend_version':backend.version,
           'task_id':'task','task_digest':digest('task')}
@@ -252,6 +264,9 @@ def test_backend_dispatch_is_idempotent_conflicts_fail_and_cancel_stops(tmp_path
     monkeypatch.setattr(module.subprocess,'Popen',worker)
     try:
         receipt=backend.dispatch(task,manifest,'operation')
+        request=json.loads((backend.job('operation')/'request.json').read_text())
+        assert request['base_paths']==['sample.py'] and 'base_files' not in request
+        assert 'large base source' not in json.dumps(request)
         assert backend.dispatch(task,manifest,'operation')==receipt and len(calls)==1
         with pytest.raises(ControlIntegrityError,match='Conflicting Codex dispatch'):
             backend.dispatch({**task,'task_digest':digest('different')},manifest,'operation')
@@ -259,3 +274,31 @@ def test_backend_dispatch_is_idempotent_conflicts_fail_and_cancel_stops(tmp_path
         assert backend.children['operation'].poll() is not None
     finally:
         backend.stop('operation')
+
+
+def test_sdk_worker_redacts_both_upstream_and_local_credentials(tmp_path, monkeypatch):
+    from lqcd_agent.code_agent import codex_worker
+    import openai_codex
+    settings = ApplicationSettings(api_key='private-upstream-test-value')
+    monkeypatch.setattr(codex_worker.ApplicationSettings, 'load', lambda: settings)
+    workspace = tmp_path / 'workspace'; workspace.mkdir()
+    request = {'task': {'network_policy': {'enabled': False}}, 'manifest': {}, 'workspace': str(workspace)}
+    (tmp_path / 'request.json').write_text(json.dumps(request))
+    (tmp_path / 'state.json').write_text('{"status":"accepted"}')
+    observed = {}
+    class FailingCodex:
+        def __init__(self, config): pass
+        def __enter__(self): return self
+        def __exit__(self, *_): pass
+        def login_api_key(self, token):
+            observed['token'] = token
+            raise RuntimeError('credential echo ' + token + ' ' + settings.api_key)
+    monkeypatch.setattr(openai_codex, 'Codex', FailingCodex)
+    before = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+    try:
+        assert codex_worker.run(tmp_path) == 1
+    finally:
+        signal.signal(signal.SIGTERM, before[0]); signal.signal(signal.SIGINT, before[1])
+    state = (tmp_path / 'state.json').read_text()
+    assert settings.api_key not in state and observed['token'] not in state
+    assert json.loads(state)['status'] == 'failed' and '[REDACTED]' in state

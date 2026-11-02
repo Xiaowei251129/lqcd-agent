@@ -11,7 +11,7 @@ from agents.exceptions import ModelBehaviorError, ModelRefusalError
 from pydantic import BaseModel, ConfigDict, StringConstraints
 from openai import APIError
 
-from lqcd_agent.control.budget import BudgetExhausted
+from lqcd_agent.control.budget import BudgetExhausted, policy
 from lqcd_agent.control.strict_json import ControlIntegrityError, digest, loads, require
 from lqcd_agent.llm.base import LLMProviderConfig, LLMResponse
 from lqcd_agent.llm.schemas import validate_proposal
@@ -110,18 +110,18 @@ ROLE_POLICY = (
 )
 
 
-def _merge_issues(previous, proposed, *, known_evidence=frozenset()):
+def _merge_issues(previous, proposed, *, known_evidence=frozenset(), known_questions=None):
     merged = {item['id']: dict(item) for item in previous}
+    questions = {**(known_questions or {}), **{item['id']: item['question'] for item in previous}}
     for value in proposed:
         item = dict(value)
         if not item['question'].strip():
             raise ModelBehaviorError('Research issues require specific questions')
         identifier = item['id'] or 'issue-'+digest({'question': item['question']})[:20]
-        if item['id'] and item['id'] not in merged:
+        if item['id'] and identifier not in questions:
             raise ModelBehaviorError('A new issue cannot invent a Host issue id')
-        if identifier in merged:
-            if item['question'] != merged[identifier]['question']:
-                raise ModelBehaviorError('An existing issue question cannot be replaced')
+        if identifier in questions and item['question'] != questions[identifier]:
+            raise ModelBehaviorError('An existing issue question cannot be replaced')
         item['id'] = identifier
         if item['status'] == 'addressed':
             verified = bool(item['response'] and item['evidence_references']) and all(
@@ -132,6 +132,7 @@ def _merge_issues(previous, proposed, *, known_evidence=frozenset()):
         if merged.get(identifier, {}).get('status') == 'blocked' and item['status'] != 'addressed':
             item['status'] = 'blocked'
         merged[identifier] = item
+        questions[identifier] = item['question']
     return list(merged.values())
 
 
@@ -139,17 +140,10 @@ def _prior_issues(context, plan=None):
     # Cross-Run records have no causal supersession relation. Any unresolved
     # disposition survives until this Run explicitly answers it with evidence.
     inherited = {}
-    for entry in context.get('project_history', []):
-        for issue in (entry.get('collaboration') or {}).get('issues', []):
-            value = Issue.model_validate(issue).model_dump(mode='json')
-            require(value['id'], 'Stored issues must have Host identifiers')
-            previous = inherited.get(value['id'])
-            if previous is not None:
-                require(previous['question'] == value['question'], 'Stored issue identity changed')
-                if previous['status'] != 'addressed':
-                    value = {**previous, 'status': 'blocked' if 'blocked' in
-                             (previous['status'], value['status']) else 'open'}
-            inherited[value['id']] = value
+    for issue in context.get('project_history', {}).get('issues', []):
+        value = Issue.model_validate(issue).model_dump(mode='json')
+        require(value['id'], 'Stored issues must have Host identifiers')
+        inherited[value['id']] = value
     # This Run's content-verified plan has already checked any proposed resolution.
     for issue in (plan or {}).get('collaboration', {}).get('issues', []):
         value = Issue.model_validate(issue).model_dump(mode='json')
@@ -200,7 +194,7 @@ class _RoleProvider:
         self.runtime, self.runner, self.meter = runtime, runner, meter
         self.config = LLMProviderConfig(provider='openai_agents',
             default_model=getattr(runtime.model, 'model', type(runtime.model).__name__),
-            timeout_seconds=agent.timeout_seconds)
+            timeout_seconds=agent.request_timeout_seconds)
         self.failure, self.collaboration = None, None
 
     def _run(self, role, instructions, input, output_type, tools, *, reserve_calls=0):
@@ -214,9 +208,10 @@ class _RoleProvider:
             'structured conclusion. Read known sections directly from the supplied evidence catalog. '
             'If required evidence cannot be obtained within these turns, report need_information.')
         async def invoke():
+            remaining_seconds = self.meter.remaining_seconds()
             return await asyncio.wait_for(self.runtime.run(role=role, instructions=instructions,
                 input=input, tools=tools, output_type=output_type, max_turns=max_turns,
-                observer=self.meter), timeout=self.meter.remaining_seconds())
+                observer=self.meter), timeout=remaining_seconds)
         return self.runner.run(invoke())
 
     def generate(self, request):
@@ -238,12 +233,15 @@ class _RoleProvider:
     def _generate(self, request):
         tools = build_tools(self.agent.workspace, self.context, host=self.agent.host,
                             output_dir=self.output, sources={**request.context_sources,
-                                'project_history': self.context.get('project_history', [])})
+                                'project_history': self.context.get('project_history', {})})
         instructions = '\n'.join(m['content'] for m in request.messages if m['role'] == 'system')
         inputs = [dict(m) for m in request.messages if m['role'] != 'system']
         plan = (self.agent._artifact(self.context, 'method_plan.json')
                 if self.node == 'scientific_reviewer' else None)
         issues = _prior_issues(self.context, plan)
+        # Historical resolutions authorize id reuse, not inclusion or current resolution.
+        known_questions = {item['id']: item['question']
+                           for item in self.context.get('project_history', {}).get('resolved', [])}
         def merge(discussion):
             proposed = list(discussion['issues'])
             if discussion['decision'] == 'need_information':
@@ -257,10 +255,16 @@ class _RoleProvider:
             elif discussion['decision'] == 'revise' and not proposed:
                 proposed.append({'id': '', 'question': discussion['summary'], 'response': None,
                     'evidence_references': [], 'status': 'open'})
-            return _merge_issues(issues, proposed,
+            return _merge_issues(issues, proposed, known_questions=known_questions,
                 known_evidence=_known_evidence(self.context, request.context_sources, self.meter.events))
+        from .history import project_state_view
+        history = self.context.get('project_history')
+        project_state = project_state_view(history) if history is not None else None
+        if project_state is not None:
+            # Current-Run answers are already merged into the canonical issue set.
+            project_state.pop('issues')
         inputs.append({'role': 'user', 'content': json.dumps({'prior_issues': issues,
-            'project_history': self.context.get('project_history')})})
+            'project_state': project_state})})
         exchanges = []
         if self.node == 'method_planner':
             brief = self._run('pi', ROLE_POLICY+'\nFrame the scientific problem before implementation. '
@@ -331,17 +335,22 @@ def _review_recommendation(outcome, collaboration):
 
 
 class CollaborationAgent(ScientificAgent):
-    def __init__(self, host, config, *, runtime_factory, workspace, timeout_seconds):
+    def __init__(self, host, config, *, runtime_factory, workspace, request_timeout_seconds):
         super().__init__(host, config, workspace=workspace)
-        self.runtime_factory, self.timeout_seconds = runtime_factory, timeout_seconds
+        require(request_timeout_seconds > 0, 'A research request needs a positive timeout')
+        self.runtime_factory, self.request_timeout_seconds = runtime_factory, request_timeout_seconds
+        # This requests an invocation window; the Host still applies its frozen
+        # policy, remaining Run/Attempt budget and original deadline.
+        self.timeout_seconds = policy().value['limits']['active_seconds_per_attempt']
 
     def run_scoped(self, node, context, *, timeout_seconds, port):
         if node == 'analysis_engineer':
             from lqcd_agent.graph.nodes import product_resource
             return product_resource(port, resource_kind='tool_call', resource_id='domain-diagnosis',
                 input_digest=digest(context), config_digest=digest({'node': node, 'structured_output': True}),
-                timeout_seconds=timeout_seconds,
-                effect=lambda: super(CollaborationAgent, self).run(node, context, timeout_seconds=timeout_seconds))
+                timeout_seconds=self.request_timeout_seconds,
+                effect=lambda: super(CollaborationAgent, self).run(
+                    node, context, timeout_seconds=self.request_timeout_seconds))
         require(node in ('method_planner', 'scientific_reviewer'), 'Unsupported research collaboration role')
         original_context = context
         if context['root_goal'].get('project_id') is not None:
@@ -356,13 +365,13 @@ class CollaborationAgent(ScientificAgent):
             runtime = self.runtime_factory()
             require(isinstance(runtime, ResearchAgentRuntime), 'The research factory must return the SDK runtime')
             meter = ResearchMeter(port, node=node, context=original_context, output_dir=output,
-                timeout_seconds=timeout_seconds, model=getattr(runtime.model, 'model', type(runtime.model).__name__),
+                request_timeout_seconds=self.request_timeout_seconds, model=getattr(runtime.model, 'model', type(runtime.model).__name__),
                 max_output_tokens=runtime.max_output_tokens)
             provider = _RoleProvider(self, node, context, output, runtime, runner, meter)
             try:
                 # Reuse the numerical checks, canonical artifacts, schema mapping and integrity sealing.
                 agent = ScientificAgent(self.host, self.config, provider=provider, workspace=self.workspace)
-                outcome = agent.run(node, context, timeout_seconds=timeout_seconds)
+                outcome = agent.run(node, context, timeout_seconds=self.request_timeout_seconds)
                 if provider.failure is not None:
                     raise provider.failure
                 if provider.collaboration is not None:

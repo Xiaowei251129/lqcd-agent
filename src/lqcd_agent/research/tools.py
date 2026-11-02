@@ -170,13 +170,24 @@ def build_tools(workspace, context, *, host, output_dir, sources=None):
 
     @function_tool(failure_error_function=None)
     async def read_project_evidence(evidence_sha256: str | None = None, offset: int = 0) -> dict:
-        """Read this Run's bound project history or evidence digest; history is not execution authority."""
-        from .projects import ProjectStore
+        """Read this Run's project catalog, or its registered evidence. Use a catalog member sha256
+        or project_history source.evidence_sha256; ordinary content hashes are not registered members.
+        History is not execution authority.
+        """
+        from .projects import ProjectStore, UnregisteredEvidence
         projects = ProjectStore(workspace)
         if evidence_sha256 is None:
             return page({'project': projects.read(project_id), 'runs': projects.runs(project_id)}, offset)
         digest_value(evidence_sha256)
-        return page(projects.evidence(project_id, evidence_sha256).decode('utf-8'), offset)
+        try:
+            raw = projects.evidence(project_id, evidence_sha256)
+        except UnregisteredEvidence:
+            return {'status': 'not_registered',
+                    'reason': "This digest is not registered evidence in the Run's bound project.",
+                    'next_action': 'Read the project catalog with read_project_evidence() and use a registered '
+                                   'member sha256, or use project_history source.evidence_sha256. '
+                                   'A content or section hash is not a project evidence identifier.'}
+        return page(raw.decode('utf-8'), offset)
 
     tools = [search_library, read_asset, read_method_source, save_candidate, search_literature, read_paper,
              read_context]

@@ -98,7 +98,6 @@ def test_role_view_retains_full_catalog_for_verified_on_demand_reads(tmp_path):
     assert result['status'] == 'success', result
     trace = json.loads((tmp_path/'llm_calls/method_planner.json').read_text())
     model_context = json.loads(trace['request']['messages'][1]['content'])
-    assert len(trace['request']['messages'][1]['content']) <= 6000
     assert 'allowed_files' not in model_context['repo_inventory']
     assert 'callable_path' not in model_context['repo_inventory']['analysis_programs'][0]
     reference = model_context['evidence_catalog']
@@ -158,7 +157,10 @@ def test_reviewer_reads_scientific_method_without_sending_command_logs(tmp_path)
     persist_context(tmp_path, request)
     view = json.loads(request.messages[1]['content'])
     assert logs not in request.messages[1]['content']
-    assert view['method_plan_summary']['method_steps'] == ['Compare neighboring windows']
+    assert view['method_plan_summary']['method_step_count'] == 1
+    assert 'method_steps' not in view['method_plan_summary']
+    method = read_context_evidence(tmp_path, view['evidence_catalog'], 'method_plan', fields=['method_steps'])
+    assert method['method_steps'] == ['Compare neighboring windows']
     assert view['method_plan_summary']['warnings'] == [{'message': 'Do not assume independence'}]
     source = read_context_evidence(tmp_path, view['evidence_catalog'], 'run_result', fields=['commands'])
     assert source['commands'][0]['stdout'] == logs

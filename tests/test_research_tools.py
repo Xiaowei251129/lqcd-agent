@@ -62,7 +62,7 @@ def test_page_has_explicit_remainder_and_content_identity():
 
 
 def test_project_evidence_tool_is_bound_to_the_run_project(tmp_path):
-    from lqcd_agent.research.projects import ProjectStore
+    from lqcd_agent.research.projects import ProjectStore, UnregisteredEvidence
     from tests.test_research_projects import scientific_run
 
     store = ProjectStore(tmp_path)
@@ -77,8 +77,8 @@ def test_project_evidence_tool_is_bound_to_the_run_project(tmp_path):
         tools = build_tools(tmp_path, context, host=snapshot.host, output_dir=tmp_path/'output')
         return next(tool for tool in tools if tool.name == 'read_project_evidence')
 
-    async def read(tool, identifier=None):
-        arguments = json.dumps({'evidence_sha256': identifier, 'offset': 0})
+    async def read(tool, identifier=None, offset=0):
+        arguments = json.dumps({'evidence_sha256': identifier, 'offset': offset})
         result = await tool.on_invoke_tool(ToolContext(context=None, tool_name=tool.name,
             tool_call_id='fixture', tool_arguments=arguments), arguments)
         return json.loads(result) if isinstance(result, str) else result
@@ -87,6 +87,28 @@ def test_project_evidence_tool_is_bound_to_the_run_project(tmp_path):
     assert set(tool.params_json_schema['properties']) == {'evidence_sha256', 'offset'}
     history = json.loads(asyncio.run(read(tool))['text'])
     assert history == {'project': bound, 'runs': []}
-    with pytest.raises(ControlIntegrityError, match='not registered to this project'):
-        asyncio.run(read(tool, identifier))
-    assert asyncio.run(read(tool_for(other), identifier))['text'] == store.evidence(other['id'], identifier).decode()
+    with pytest.raises(UnregisteredEvidence, match='not registered to this project'):
+        store.evidence(bound['id'], identifier)
+    missing = asyncio.run(read(tool, identifier))
+    assert missing == asyncio.run(read(tool, '0' * 64))
+    assert missing['status'] == 'not_registered'
+    assert set(missing) == {'status', 'reason', 'next_action'}
+    assert 'source.evidence_sha256' in missing['next_action']
+    assert identifier not in json.dumps(missing) and other['goal'] not in json.dumps(missing)
+
+    registered = tool_for(other)
+    assert asyncio.run(read(registered, identifier))['text'] == store.evidence(other['id'], identifier).decode()
+    with pytest.raises(ControlIntegrityError, match='offset exceeds'):
+        asyncio.run(read(registered, identifier, offset=10**9))
+    path = tmp_path/'projects'/other['id']/'evidence'/identifier
+    path.write_bytes(b'changed')
+    with pytest.raises(ControlIntegrityError, match='digest changed'):
+        asyncio.run(read(registered, identifier))
+    path.unlink()
+    with pytest.raises(FileNotFoundError):
+        asyncio.run(read(registered, identifier))
+    foreign = tmp_path/'unregistered.json'
+    foreign.write_text('Private material outside the registered evidence store.')
+    path.symlink_to(foreign)
+    with pytest.raises(ControlIntegrityError, match='Redirected research path'):
+        asyncio.run(read(registered, identifier))
