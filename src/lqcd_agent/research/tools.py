@@ -106,6 +106,7 @@ def build_tools(workspace, context, *, host, output_dir, sources=None):
     root = host/context['identity']['case_id']/context['identity']['run_id']
     allowed = {digest(ref): ref for ref in context.get('current_evidence', [])}
     sections = sources if sources is not None else context.get('research_sources', {})
+    project_id = context.get('root_goal', {}).get('project_id')
 
     @function_tool(failure_error_function=None)
     async def search_library(query: str, kind: str | None = None) -> dict:
@@ -168,8 +169,8 @@ def build_tools(workspace, context, *, host, output_dir, sources=None):
         return page(raw.decode(), offset)
 
     @function_tool(failure_error_function=None)
-    async def read_project_evidence(project_id: str, evidence_sha256: str | None = None, offset: int = 0) -> dict:
-        """Read immutable project history or a referenced evidence digest; history is not execution authority."""
+    async def read_project_evidence(evidence_sha256: str | None = None, offset: int = 0) -> dict:
+        """Read this Run's bound project history or evidence digest; history is not execution authority."""
         from .projects import ProjectStore
         projects = ProjectStore(workspace)
         if evidence_sha256 is None:
@@ -177,5 +178,8 @@ def build_tools(workspace, context, *, host, output_dir, sources=None):
         digest_value(evidence_sha256)
         return page(projects.evidence(project_id, evidence_sha256).decode('utf-8'), offset)
 
-    return [search_library, read_asset, read_method_source, save_candidate, search_literature, read_paper,
-            read_context, read_project_evidence]
+    tools = [search_library, read_asset, read_method_source, save_candidate, search_literature, read_paper,
+             read_context]
+    if project_id is not None:
+        tools.append(read_project_evidence)
+    return tools

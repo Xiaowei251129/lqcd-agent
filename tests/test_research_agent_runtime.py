@@ -28,7 +28,7 @@ class ScriptedModel(Model):
                            output_schema, handoffs, tracing, **kwargs):
         assert not handoffs and tracing.is_disabled()
         assert model_settings.store is False
-        assert model_settings.parallel_tool_calls is False
+        assert model_settings.parallel_tool_calls is True
         assert model_settings.preserve_raw_usage is True
         assert model_settings.retry.max_retries == 0
         assert kwargs["previous_response_id"] is None and kwargs["conversation_id"] is None
@@ -228,19 +228,23 @@ def test_application_client_must_disable_transport_retries():
 def test_openai_adapter_preserves_usage_presence_without_a_network_call(provider_usage):
     async def check():
         requests, events = [], []
+        async def unused_read(context, raw):
+            raise AssertionError("The provider returned a conclusion without calling a tool")
         async def transport(request):
             requests.append(json.loads(request.content))
             response = Response(id="response-1", created_at=0, model="test-model", object="response",
-                output=[message("Supported under stated conditions.")], parallel_tool_calls=False,
+                output=[message("Supported under stated conditions.")], parallel_tool_calls=True,
                 tool_choice="auto", tools=[], status="completed", usage=provider_usage)
             return httpx.Response(200, json=response.model_dump(mode="json"))
         async with AsyncOpenAI(api_key="offline-test", max_retries=0,
                 http_client=httpx.AsyncClient(transport=httpx.MockTransport(transport))) as client:
             runtime = ResearchAgentRuntime.from_openai(client=client, model="test-model", max_output_tokens=512)
-            result = await runtime.run(**arguments(events.append))
+            result = await runtime.run(**arguments(events.append, [evidence_tool(unused_read)]))
         assert result.output["conclusion"] == "Supported under stated conditions."
         assert len(requests) == 1 and requests[0]["store"] is False
         assert requests[0]["max_output_tokens"] == 512 and "temperature" not in requests[0]
+        assert requests[0]["parallel_tool_calls"] is True
+        assert requests[0]["tools"][0]["name"] == "read_evidence"
         assert requests[0]["text"]["format"]["type"] == "json_schema"
         assert requests[0]["text"]["format"]["strict"] is True
         ended = next(event for event in events if event["event"] == "model_end")

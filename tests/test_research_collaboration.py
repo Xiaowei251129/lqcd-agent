@@ -3,6 +3,7 @@ from contextlib import closing
 from copy import deepcopy
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from agents import Model
 from agents.items import ModelResponse
@@ -15,6 +16,7 @@ import httpx
 from openai import APIConnectionError, APIStatusError
 
 from lqcd_agent.control.clock import FakeClock
+from lqcd_agent.control.budget import BudgetExhausted
 from lqcd_agent.control.coordinator import Coordinator
 from lqcd_agent.control.execution import parse_ledger
 from lqcd_agent.control.interfaces import StartRunRequest
@@ -49,25 +51,32 @@ def proposal(role):
 
 
 class CollaborationModel(Model):
-    def __init__(self, calls, *, fail=False, refusal=None, need_information=False, code_needed=False, pi_need_information=False):
-        self.calls, self.fail, self.read = calls, fail, False
+    def __init__(self, calls, *, fail=False, refusal=None, need_information=False, code_needed=False,
+                 pi_need_information=False, read_sections=('catalog',), postdoc_read=False):
+        self.calls, self.fail, self.read = calls, fail, 0
+        self.read_sections, self.postdoc_read = read_sections, postdoc_read
         self.need_information, self.code_needed = need_information, code_needed
         self.pi_need_information, self.refusal = pi_need_information, refusal
 
     async def get_response(self, system_instructions, input, model_settings, tools,
                            output_schema, handoffs, tracing, **kwargs):
         assert tracing.is_disabled() and not handoffs
-        self.calls.append({'schema': output_schema.name(), 'input': deepcopy(input)})
+        self.calls.append({'schema': output_schema.name(), 'input': deepcopy(input), 'instructions': system_instructions})
         if self.fail:
             raise self.fail
         name = output_schema.name()
         if self.refusal is not None:
             output = [ResponseOutputMessage(type='message', id='answer', role='assistant', status='completed',
                 content=[ResponseOutputRefusal(type='refusal', refusal=self.refusal)])]
-        elif name == 'ResearchBrief' and not self.read:
-            self.read = True
+        elif name == 'ResearchBrief' and self.read < len(self.read_sections):
+            section = self.read_sections[self.read]
+            self.read += 1
             output = [ResponseFunctionToolCall(type='function_call', name='read_context',
-                arguments='{"section":"catalog","offset":0}', call_id='read-catalog')]
+                arguments=json.dumps({'section': section, 'offset': 0}), call_id='read-'+section)]
+        elif name == 'method_plan_discussion' and self.postdoc_read:
+            self.postdoc_read = False
+            output = [ResponseFunctionToolCall(type='function_call', name='read_context',
+                arguments='{"section":"case_config","offset":0}', call_id='postdoc-read')]
         else:
             if name == 'ResearchBrief':
                 value = {'physics_question': 'PI-BRIEF-PRIVATE-MARKER', 'competing_explanations': ['Missing scale information'],
@@ -98,14 +107,16 @@ class CollaborationModel(Model):
         yield
 
 
-def execute_collaboration(workspace, *, fail=False, refusal=None, need_information=False, pi_need_information=False):
+def execute_collaboration(workspace, *, fail=False, refusal=None, need_information=False, pi_need_information=False,
+                          read_sections=('catalog',), postdoc_read=False):
     host = Path(mkdtemp(prefix='lqcd-agent-host-', dir=execution_scratch_root()))
     calls, closed = [], []
     class ClosingRuntime(ResearchAgentRuntime):
         async def aclose(self):
             closed.append(True)
     def factory():
-        return ClosingRuntime(CollaborationModel(calls, fail=fail, refusal=refusal, need_information=need_information, pi_need_information=pi_need_information), max_output_tokens=2048)
+        return ClosingRuntime(CollaborationModel(calls, fail=fail, refusal=refusal, need_information=need_information,
+            pi_need_information=pi_need_information, read_sections=read_sections, postdoc_read=postdoc_read), max_output_tokens=2048)
     config = {'schema_version': '0.1', 'case_id': 'sdk-collaboration', 'source_kind': 'synthetic_placeholder',
               'physics_goal': 'Inspect synthetic normalization evidence.'}
     with closing(Coordinator(host, clock=FakeClock(100, 0))) as coordinator:
@@ -152,6 +163,43 @@ def test_actual_sdk_collaboration_uses_host_resources_preserves_review_and_stops
     assert any(path.endswith('research_events.jsonl') for path in content['domain_result']['member_digests'])
     assert content['collaboration']['decision'] == 'recommend_proceed'
     assert index['current']['terminal'] is None
+
+
+@pytest.mark.parametrize('postdoc_read', [False, True])
+def test_roles_share_the_host_call_allowance_without_spending_a_fifth_call(tmp_path, postdoc_read):
+    snapshot, calls, _ = execute_collaboration(tmp_path, read_sections=('catalog', 'case_config'),
+                                             postdoc_read=postdoc_read)
+    assert [call['schema'] for call in calls[:4]] == ['ResearchBrief'] * 3 + ['method_plan_discussion']
+    assert 'at most 3 model turns' in calls[0]['instructions']
+    assert 'at most 1 model turns' in calls[3]['instructions']
+    records = parse_ledger((snapshot.root/'execution_history.jsonl').read_bytes()).values
+    first_attempt = next(row['attempt_id'] for row in records if row.get('event') == 'scheduled')
+    reserved = [row['payload'] for row in records if row.get('event') == 'resource_reserved'
+                and row['payload']['attempt_id'] == first_attempt and row['payload']['resource_kind'] == 'llm_call']
+    assert len(reserved) == 4
+    assert all(row['applicable_limits']['llm_calls'] == 4 for row in reserved)
+    index = loads((snapshot.root/'artifact_index.json').read_bytes())
+    if postdoc_read:
+        assert len(calls) == 4 and index['current']['analysis'] is None
+        events = [loads(line, canonical=False) for path in (snapshot.host/'domain').rglob('research_events.jsonl')
+                  for line in path.read_bytes().splitlines()]
+        assert events[-1]['event'] == 'run_error' and events[-1]['error_type'] == 'MaxTurnsExceeded'
+    else:
+        assert snapshot.state['run_status'] == 'paused' and len(calls) == 6
+        assert index['current']['plan']['status'] == 'success'
+        assert index['current']['review'] is not None and index['current']['terminal'] is None
+
+
+def test_role_without_remaining_calls_refuses_before_sdk_invocation(tmp_path):
+    calls = []
+    runtime = ResearchAgentRuntime(CollaborationModel(calls), max_output_tokens=2048)
+    context = {'budget_summary': {'dimensions': {
+        'llm_calls_per_attempt': {'remaining': 4}, 'llm_calls_per_run': {'remaining': 32}}}}
+    provider = _RoleProvider(SimpleNamespace(timeout_seconds=10), 'method_planner', context, tmp_path,
+                             runtime, None, SimpleNamespace(model_calls=4))
+    with pytest.raises(BudgetExhausted, match='remaining roles'):
+        provider._run('postdoc', 'Conclude.', [], Discussion, [])
+    assert calls == []
 
 
 @pytest.mark.parametrize('failure', [
@@ -253,12 +301,17 @@ def test_pi_checks_and_prior_questions_reach_the_actual_coding_request(tmp_path)
     class Observer:
         def __init__(self):
             self.events = []
+            self.model_calls = 0
         def __call__(self, event):
             self.events.append(event)
+            if event['event'] == 'model_start':
+                self.model_calls += 1
         def remaining_seconds(self):
             return 10
     config = {'case_id': 'test', 'generated_program': {'requirements': ['Keep the specified JSON contract.']}}
     context = {'identity': {'case_id': 'test', 'run_id': 'run'},
+        'budget_summary': {'dimensions': {'llm_calls_per_attempt': {'remaining': 4},
+                                          'llm_calls_per_run': {'remaining': 32}}},
         'remediation': {'success_criteria': ['Compare the fit windows.', 'All inputs attributable']}}
     output = tmp_path/'output'
     agent = ScientificAgent(tmp_path/'host', config, workspace=tmp_path)

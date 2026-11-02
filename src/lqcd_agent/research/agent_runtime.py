@@ -183,7 +183,7 @@ class ResearchAgentRuntime:
             owned.on_invoke_tool = invoke_host_tool
             owned_tools.append(owned)
         settings = ModelSettings(max_tokens=self.max_output_tokens, store=False,
-                                 parallel_tool_calls=False, preserve_raw_usage=True,
+                                 parallel_tool_calls=True, preserve_raw_usage=True,
                                  retry=ModelRetrySettings(max_retries=0))
         agent = Agent(name=role, instructions=instructions, model=self.model,
                       model_settings=settings, tools=owned_tools, output_type=output_type)

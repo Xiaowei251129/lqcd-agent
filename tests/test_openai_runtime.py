@@ -45,7 +45,8 @@ def test_sdk_worker_enables_tools_and_review_with_task_network_policy(tmp_path, 
     import openai_codex
     settings=ApplicationSettings(api_key='private-test-value')
     monkeypatch.setattr(codex_worker.ApplicationSettings, 'load', lambda: settings)
-    monkeypatch.setenv('TMPDIR',str(tmp_path))
+    monkeypatch.setenv('TMPDIR','/private/tmp')
+    monkeypatch.setattr(codex_worker, 'workspace_root', lambda: Path(__file__).resolve().parents[1])
     workspace=tmp_path/'workspace';workspace.mkdir()
     task={'write_paths':['sample.py'],'requirements':['Return 2'],'acceptance_criteria':['value()==2'],
           'network_policy':{'enabled':network},'tool_policy':[{'timeout_seconds':240}]}
@@ -81,6 +82,8 @@ def test_sdk_worker_enables_tools_and_review_with_task_network_policy(tmp_path, 
     config=observed['config']; overrides=config.config_overrides
     assert observed['key']==settings.api_key and config.codex_bin is None
     assert config.env['CODEX_HOME']==str(tmp_path/'codex-home')
+    temporary=tmp_path/'codex-home/tmp'
+    assert config.env['TMPDIR']==str(temporary) and temporary.stat().st_mode & 0o777==0o700
     assert 'cli_auth_credentials_store="ephemeral"' in overrides
     assert 'permissions.lqcd.network.enabled='+str(network).lower() in overrides and 'default_permissions="lqcd"' in overrides
     assert not any(entry.startswith(('features.','tools.')) for entry in overrides)
@@ -89,16 +92,38 @@ def test_sdk_worker_enables_tools_and_review_with_task_network_policy(tmp_path, 
     tool_overrides=[entry for entry in overrides if entry.startswith('shell_environment_policy.')]
     assert len(tool_overrides)==1 and tool_overrides[0].startswith('shell_environment_policy.set=')
     tool_environment=tomllib.loads(tool_overrides[0])['shell_environment_policy']['set']
-    assert tool_environment=={'PYTHONDONTWRITEBYTECODE':'1','RUFF_CACHE_DIR':str(tmp_path/'codex-home/cache/ruff')}
+    assert tool_environment=={'PYTHONDONTWRITEBYTECODE':'1','TMPDIR':str(temporary),
+                             'TMPPREFIX':str(temporary/'zsh'),'RUFF_CACHE_DIR':str(temporary/'ruff')}
     assert 'OPENAI_API_KEY' not in config.env and observed['thread']['approval_mode']==openai_codex.ApprovalMode.auto_review
     (workspace/'sample.py').write_text('def value():\n    return 2\n')
-    environment={**child_environment(),**tool_environment}
-    subprocess.run([str(Path(sys.executable).with_name('ruff')),'check','sample.py'],
-        cwd=workspace,env=environment,capture_output=True,check=True,timeout=10)
+    environment={**config.env,**tool_environment}
+    # Exercise the production profile with the pinned native sandbox, without a model call.
+    from codex_cli_bin import bundled_codex_path
+    sentinel=tmp_path/'host-sentinel.txt';sentinel.write_text('owned-public-sentinel')
+    command=[str(bundled_codex_path())]
+    for entry in overrides:
+        command.extend(['--config',entry])
+    script="""set -eu
+printf '\n' >> "$1/sample.py"
+/bin/cat > "$2/tool-scratch" <<'HERE'
+temporary
+HERE
+if /bin/cat "$3" >/dev/null 2>&1; then exit 31; fi
+if (printf changed > "$3") 2>/dev/null; then exit 32; fi
+"$4" check sample.py
+"""
+    command.extend(['sandbox','--permission-profile','lqcd','--cd',str(workspace),'--',
+                    '/bin/zsh','-fc',script,'probe',str(workspace),str(temporary),str(sentinel),
+                    str(Path(sys.executable).with_name('ruff'))])
+    checked=subprocess.run(command,cwd=workspace,env=environment,capture_output=True,text=True,timeout=10)
+    assert checked.returncode==0, checked.stderr
+    assert sentinel.read_text()=='owned-public-sentinel'
+    assert (temporary/'tool-scratch').read_text()=='temporary\n'
+    assert (workspace/'sample.py').read_text()=='def value():\n    return 2\n\n'
     subprocess.run([sys.executable,'-c','import sample; assert sample.value()==2'],
         cwd=workspace,env=environment,capture_output=True,check=True,timeout=10)
     assert sorted(p.name for p in workspace.iterdir())==['sample.py']
-    assert (tmp_path/'codex-home/cache/ruff').is_dir()
+    assert (temporary/'ruff').is_dir()
     state=json.loads((tmp_path/'state.json').read_text())
     assert state['status']=='completed' and state['tool_count']==1
     assert len(state['tool_events'])==1

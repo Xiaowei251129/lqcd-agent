@@ -47,7 +47,8 @@ def test_named_tools_refuse_unknown_files_and_save_only_candidates(tmp_path):
     result = asyncio.run(call('save_candidate', {'kind': 'method', 'asset_id': 'ratio', 'title': 'Ratio',
         'body': 'Keep covariance.', 'applicability': 'fixture only', 'source_urls': [], 'expected_revision': 0}))
     assert result['status'] == 'candidate'
-    assert not {'execute', 'shell', 'approve', 'review'}.intersection(tools)
+    assert not {'execute', 'shell', 'approve', 'review', 'read_project_evidence'}.intersection(tools)
+    assert len(tools) == 7
     with pytest.raises(ControlIntegrityError, match='reusable'):
         asyncio.run(call('read_method_source', {'asset_id': 'ratio', 'offset': 0}))
 
@@ -58,3 +59,34 @@ def test_page_has_explicit_remainder_and_content_identity():
     second = page(value, first['next_offset'])
     assert first['sha256'] == digest(value) == second['sha256']
     assert second['next_offset'] is None
+
+
+def test_project_evidence_tool_is_bound_to_the_run_project(tmp_path):
+    from lqcd_agent.research.projects import ProjectStore
+    from tests.test_research_projects import scientific_run
+
+    store = ProjectStore(tmp_path)
+    bound = store.create('bound', 'Current project', 'Inspect the current scientific question.')
+    other = store.create('other', 'Other project', 'An unrelated scientific question.')
+    snapshot = scientific_run(tmp_path, store, other)
+    captured = store.capture_run(snapshot)
+    identifier = captured['evidence'][0]['sha256']
+
+    def tool_for(project):
+        context = {'identity': snapshot.locator, 'root_goal': {'project_id': project['id']}}
+        tools = build_tools(tmp_path, context, host=snapshot.host, output_dir=tmp_path/'output')
+        return next(tool for tool in tools if tool.name == 'read_project_evidence')
+
+    async def read(tool, identifier=None):
+        arguments = json.dumps({'evidence_sha256': identifier, 'offset': 0})
+        result = await tool.on_invoke_tool(ToolContext(context=None, tool_name=tool.name,
+            tool_call_id='fixture', tool_arguments=arguments), arguments)
+        return json.loads(result) if isinstance(result, str) else result
+
+    tool = tool_for(bound)
+    assert set(tool.params_json_schema['properties']) == {'evidence_sha256', 'offset'}
+    history = json.loads(asyncio.run(read(tool))['text'])
+    assert history == {'project': bound, 'runs': []}
+    with pytest.raises(ControlIntegrityError, match='not registered to this project'):
+        asyncio.run(read(tool, identifier))
+    assert asyncio.run(read(tool_for(other), identifier))['text'] == store.evidence(other['id'], identifier).decode()

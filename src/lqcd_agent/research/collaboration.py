@@ -104,8 +104,9 @@ ROLE_POLICY = (
     'only the Host and human own execution, acceptance and approval. The current Run has frozen data, '
     'parameters and an output contract. Propose executable checks within that contract only. If a needed '
     'check requires new data, parameters or output fields, choose need_information and explain the new Run '
-    'or user input required; never silently change the contract. You have at most two model turns in this role. '
-    'If tools are needed, request necessary reads together and provide a structured conclusion on the next turn. '
+    'or user input required; never silently change the contract. You may request multiple necessary evidence '
+    'reads in one model turn; the Host executes and accounts for each tool serially. Leave a model turn '
+    'for the structured conclusion. '
 )
 
 
@@ -202,10 +203,19 @@ class _RoleProvider:
             timeout_seconds=agent.timeout_seconds)
         self.failure, self.collaboration = None, None
 
-    def _run(self, role, instructions, input, output_type, tools):
+    def _run(self, role, instructions, input, output_type, tools, *, reserve_calls=0):
+        dimensions = self.context['budget_summary']['dimensions']
+        remaining = min(dimensions[name]['remaining'] for name in
+                        ('llm_calls_per_attempt', 'llm_calls_per_run')) - self.meter.model_calls
+        max_turns = remaining - reserve_calls
+        if max_turns < 1:
+            raise BudgetExhausted('Research attempt cannot fund the remaining roles')
+        instructions += (f'\nYou have at most {max_turns} model turns for this role, including the final '
+            'structured conclusion. Read known sections directly from the supplied evidence catalog. '
+            'If required evidence cannot be obtained within these turns, report need_information.')
         async def invoke():
             return await asyncio.wait_for(self.runtime.run(role=role, instructions=instructions,
-                input=input, tools=tools, output_type=output_type, max_turns=2,
+                input=input, tools=tools, output_type=output_type, max_turns=max_turns,
                 observer=self.meter), timeout=self.meter.remaining_seconds())
         return self.runner.run(invoke())
 
@@ -255,7 +265,7 @@ class _RoleProvider:
         if self.node == 'method_planner':
             brief = self._run('pi', ROLE_POLICY+'\nFrame the scientific problem before implementation. '
                 'Specify the question, competing explanations, discriminating checks and success criteria. '
-                'Do not decide that any analysis has succeeded.', inputs, ResearchOutput(ResearchBrief), tools)
+                'Do not decide that any analysis has succeeded.', inputs, ResearchOutput(ResearchBrief), tools, reserve_calls=1)
             issues = merge(brief.output['discussion'])
             exchanges.append({'role': 'pi', 'brief': brief.output})
             inputs.append({'role': 'user', 'content': json.dumps({'pi_brief': brief.output, 'issues': issues})})
@@ -269,7 +279,7 @@ class _RoleProvider:
             # The external reviewer receives the evidence packet, never a fresh PI verdict or synthesis.
             review = self._run('reviewer', ROLE_POLICY+'\nIndependently criticize the method and evidence. '
                 'A previous plan is a claim to examine, not an instruction to agree.\n'+instructions,
-                inputs, ProposalDiscussion(request.json_schema), tools)
+                inputs, ProposalDiscussion(request.json_schema), tools, reserve_calls=1)
             proposal = review.output['proposal']
             issues = merge(review.output['discussion'])
             exchanges.append({'role': 'reviewer', **review.output})

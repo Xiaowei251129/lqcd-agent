@@ -33,11 +33,14 @@ def run(job):
     workspace = Path(request['workspace'])
     home = job / 'codex-home'
     home.mkdir(mode=0o700, exist_ok=True)
+    temporary = home / 'tmp'
+    temporary.mkdir(mode=0o700, exist_ok=True)
     settings = ApplicationSettings.load()
     workspace_config = workspace_root()
     profile = {':root': 'deny', ':minimal': 'read', ':workspace_roots': {'.': 'write'},
                str(workspace_config / '.venv'): 'read', str(workspace_config / '.runtime'): 'read', ':slash_tmp': 'deny', ':tmpdir': 'write'}
-    tool_environment = {'PYTHONDONTWRITEBYTECODE': '1', 'RUFF_CACHE_DIR': str(home/'cache'/'ruff')}
+    tool_environment = {'PYTHONDONTWRITEBYTECODE': '1', 'TMPDIR': str(temporary),
+                        'TMPPREFIX': str(temporary/'zsh'), 'RUFF_CACHE_DIR': str(temporary/'ruff')}
     overrides = ('forced_login_method="api"', 'cli_auth_credentials_store="ephemeral"',
                  'default_permissions="lqcd"',
                  'web_search=' + json.dumps('live' if task['network_policy']['enabled'] else 'disabled'),
@@ -47,7 +50,7 @@ def run(job):
                  'project_doc_max_bytes=0',
                  'openai_base_url=' + json.dumps(settings.api_base))
     environment = child_environment()
-    environment.update(CODEX_HOME=str(home), CODEX_SQLITE_HOME=str(home), TMPDIR=os.environ['TMPDIR'])
+    environment.update(CODEX_HOME=str(home), CODEX_SQLITE_HOME=str(home), TMPDIR=str(temporary))
     state = json.loads((job / 'state.json').read_text())
     cancelled = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: cancelled.set())
