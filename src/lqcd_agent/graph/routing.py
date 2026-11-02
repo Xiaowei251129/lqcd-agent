@@ -2,6 +2,10 @@ from __future__ import annotations
 PRODUCT_ROUTES = {'START': ('method_planner',), 'method_planner': ('analysis_engineer', 'code_agent', 'decision_coordinator'), 'code_agent': ('analysis_engineer', 'decision_coordinator'), 'analysis_engineer': ('scientific_reviewer', 'decision_coordinator'), 'scientific_reviewer': ('decision_coordinator',), 'decision_coordinator': ('scientific_reviewer', 'analysis_engineer', 'code_agent', 'method_planner', 'human_gate', 'memory_report'), 'human_gate': ('decision_coordinator',), 'memory_report': ('end',)}
 PRODUCT_FALLBACKS = {'method_planner': ('replan', 'automatic_replan_per_run'), 'code_agent': ('code_fix', 'automatic_code_fix_per_cycle'), 'analysis_engineer': ('analysis_rerun', 'automatic_analysis_rerun_per_cycle'), 'scientific_reviewer': ('re_review', 'automatic_re_review_per_cycle')}
 
+def is_scientific_revision(diagnostic):
+    """A completed review may request new science without reporting a failure."""
+    return diagnostic['category'] == 'scientific_revision' and diagnostic['status'] == 'success'
+
 def product_budget_decision(state, *, target, trigger, risk, stop_sequence_id=None, proposed_grant=None):
     """Admit an exact route from replayed counters without modifying the input."""
     from lqcd_agent.control.budget import WORK_KINDS, validate_budget_payload
@@ -42,8 +46,12 @@ def select_product_route(view, diagnostic, *, code_needed=False, code_usable=Fal
     node = source['node_name']
     require(node in PRODUCT_ROUTES, 'Legacy node cannot enter the canonical graph')
     success = source['status'] == 'succeeded' and diagnostic['status'] == 'success'
+    revision = is_scientific_revision(diagnostic)
+    revision_ready = success and diagnostic['candidates'] == ['method_planner'] and diagnostic['retryability'] == 'retryable' and diagnostic['confidence'] == 'unique' and diagnostic['risk'] in ('low', 'medium') and diagnostic['human_need'] is None
+    if revision:
+        require(proposed_grant is None and state['budget']['active_grant'] is None, 'Scientific revision cannot borrow a failure grant')
     safety_failure = diagnostic['category'] in ('security', 'policy', 'data') or (diagnostic['category'].startswith('scientific') and diagnostic['status'] != 'success' and (diagnostic['retryability'] != 'retryable'))
-    forward = success and diagnostic['risk'] in ('low', 'medium') and (diagnostic['confidence'] == 'unique') and (diagnostic['human_need'] is None and (not safety_failure))
+    forward = success and not revision and diagnostic['risk'] in ('low', 'medium') and (diagnostic['confidence'] == 'unique') and (diagnostic['human_need'] is None and (not safety_failure))
     trigger = 'forward'
     request = None
     if node == 'method_planner':
@@ -63,12 +71,12 @@ def select_product_route(view, diagnostic, *, code_needed=False, code_usable=Fal
     else:
         from lqcd_agent.control.budget import policy
         candidates = diagnostic['candidates']
-        failure = state['budget']['active_failure']
+        failure = None if revision else state['budget']['active_failure']
         selected_policy = policy(state['budget']['profile_id']).value
         reserve = selected_policy['terminal_reserve']
         dimensions = state['budget']['dimensions']
         repeat = (diagnostic['status'] != 'success' or bool(diagnostic['candidates'])) and failure is not None and (failure['occurrence'] >= 2)
-        needs_human = diagnostic['risk'] in ('high', 'critical') or diagnostic['confidence'] != 'unique' or repeat or (diagnostic['human_need'] is not None) or safety_failure
+        needs_human = (revision and not revision_ready) or diagnostic['risk'] in ('high', 'critical') or diagnostic['confidence'] != 'unique' or repeat or (diagnostic['human_need'] is not None) or safety_failure
         if stop_sequence_id is not None:
             target, trigger = ('memory_report', 'budget_stop')
         elif human_authorization is not None:
@@ -95,7 +103,9 @@ def select_product_route(view, diagnostic, *, code_needed=False, code_usable=Fal
             target_scope = candidates[0] if len(candidates) == 1 and trigger != 'budget_stop' else None
             decisions = ['approve_with_conditions', 'reject_or_hold']
             if target_scope is not None:
-                decisions.extend(['approve_budget_window', 'approve_rerun' if target_scope == 'analysis_engineer' else 'request_code_change' if target_scope == 'code_agent' else 'approve_with_conditions'])
+                decisions.append('approve_rerun' if target_scope == 'analysis_engineer' else 'request_code_change' if target_scope == 'code_agent' else 'approve_with_conditions')
+                if failure is not None:
+                    decisions.append('approve_budget_window')
             decisions = sorted(set(decisions))
             request = {'request_kind': diagnostic['human_need'] or 'approval', 'authorization_scope': {'allowed_decisions': decisions, 'allowed_target_nodes': ['decision_coordinator'], 'decision_transition_routes': dict.fromkeys(decisions, 'decision_coordinator'), 'decision_transition_targets': dict.fromkeys(decisions, 'decision_coordinator'), 'work_target': target_scope, 'failure_fingerprint': failure, 'diagnostic_digest': digest(diagnostic)}}
     require((target or 'end') in PRODUCT_ROUTES[node], 'Undeclared canonical product edge')

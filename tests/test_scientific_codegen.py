@@ -53,7 +53,7 @@ def install_backend(monkeypatch, program):
     def fixture(coordinator, config, **options):
         containment = DeterministicContainment(coordinator.root/'containment')
         def backend(*_):
-            value = SyntheticBackend(coordinator, coordinator.root/'research_repository', containment,
+            value = SyntheticBackend(coordinator, next((coordinator.root/'research_repositories').iterdir()), containment,
                                      files={'analysis.py': program})
             value.kind, value.version = 'fake', '0.1'
             return value
@@ -115,7 +115,7 @@ def test_scientific_codegen_delivers_real_output_to_reviewer_and_human_gate(tmp_
         capabilities=[loads(row[0]) for row in coordinator.connection.execute('SELECT value FROM invocation_capabilities')]
         preparation=next(c['authorization']['target_preparation'] for c in capabilities
             if c['authorization']['identity']['attempt_kind']=='analysis_engineer')
-        handoff=AnalysisHandoff(coordinator,coordinator.root/'research_repository',
+        handoff=AnalysisHandoff(coordinator,next((coordinator.root/'research_repositories').iterdir()),
             allowed_command=[sys.executable,'-I','-B','analysis.py','input.json'],
             expected_outputs=['analysis_outputs/generated_result.json'],generated_program=config['generated_program'],workspace=tmp_path)
         original=execution.interpreter_identity
@@ -268,7 +268,6 @@ def test_generated_review_keeps_full_production_summary_without_irrelevant_artif
     reviewed=reviewer.run_scientific_reviewer(run_id='r',case_id='c',run_output_dir=tmp_path,
         run_result_path=run,method_plan_path=plan,provider=provider,generated_input=payload)
     assert reviewed['status']=='success',reviewed
-    assert provider.request.max_tokens==4096
     view=json.loads(provider.request.messages[1]['content'])
     assert view['method_plan_summary']['method_steps']==steps
     assert len(view['review_evidence']['findings'])==12

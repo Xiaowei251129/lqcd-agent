@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LQCD Research Workbench</title>
+<link rel="stylesheet" href="/static/style.css"><script type="module" src="/static/app.js"></script>
+</head>
+<body>
+<header class="top"><a href="/" class="brand"><span class="brand-mark">λ</span><span>LQCD <strong>Research Workbench</strong></span></a><span id="connection" class="connection">Connecting…</span></header>
+<div id="notice" class="notice" role="status" hidden></div>
+<div id="pending-record" class="notice pending-record" hidden><p>This browser has a saved submission from an earlier research session. Forgetting this browser record does not execute, cancel, retry or remove any investigation or history.</p><button id="forget-pending" type="button" class="secondary">Forget saved browser record</button></div>
+<div class="layout">
+<aside class="sidebar">
+<section><p class="eyebrow">RESEARCH PARTNER</p><h1>Explore. Verify.<br>Decide.</h1><p class="muted">A transparent workspace for your research group.</p></section>
+<section class="project-navigation"><div class="section-heading"><h2>Projects</h2><span id="project-count" class="counter">0</span></div><div id="project-list" class="run-list"></div>
+<details class="project-create"><summary>Create a project</summary><form id="project-create-form">
+<label for="project-id">Short identifier</label><input id="project-id" required maxlength="128" pattern="[A-Za-z0-9_-]+" placeholder="nucleon-mass">
+<label for="project-title-input">Project title</label><input id="project-title-input" required maxlength="500" placeholder="Nucleon ground-state analysis">
+<label for="project-goal-input">Research question</label><textarea id="project-goal-input" rows="3" required maxlength="32000"></textarea>
+<label for="project-case">Starting configuration</label><select id="project-case"><option value="">Add later</option></select>
+<button id="project-create" class="secondary" type="submit">Create project</button></form></details>
+<button id="open-library" class="secondary">Knowledge, skills &amp; methods</button></section>
+<details class="open-run"><summary>Run a configured case</summary><h2>New investigation</h2><form id="start-form">
+<label for="case">Research case</label><select id="case" required><option value="">Select a case…</option></select>
+<label for="goal">Research question</label><textarea id="goal" rows="4" maxlength="4000" placeholder="What would you like to investigate?"></textarea>
+<label class="check"><input id="live" type="checkbox"><span>Use live LLM &amp; Codex<br><small>API charges and authorized tool execution</small></span></label>
+<button id="start" class="primary" type="submit">Start investigation <span>↗</span></button>
+</form><p class="footnote">Scientific acceptance always requires your recorded decision.</p></details>
+<section class="history"><div class="section-heading"><h2 id="history-title">Investigations</h2><span id="run-count" class="counter">0</span></div><div id="run-list" class="run-list"><p class="muted">No investigations yet.</p></div></section>
+<details class="open-run"><summary>Open an existing Run</summary><form id="open-form"><label for="locator">Paste CLI status JSON</label><textarea id="locator" rows="3" required placeholder='{"host":"…","run_locator":{…}}'></textarea><button class="secondary" type="submit">Open verified Run</button></form><p class="footnote">Only Runs belonging to this operator workspace are accessible.</p></details>
+</aside>
+<main>
+<section id="project-panel" class="panel project-panel" hidden>
+<div class="section-heading"><p class="eyebrow">RESEARCH PROJECT</p><button id="refresh-project" class="text-button">Refresh project</button></div><h1 id="project-title"></h1><p id="project-goal" class="muted"></p><p id="project-revision" class="footnote"></p>
+<div class="project-launch"><label class="check"><input id="project-live" type="checkbox"><span>Use live research agents <small>API charges and authorized tool execution</small></span></label><button id="project-start" class="primary">Start a new investigation <span>↗</span></button></div><p id="project-readiness" class="footnote"></p>
+<details id="project-editor"><summary>Edit project question and configuration</summary><form id="project-edit-form">
+<label for="edit-project-title">Title</label><input id="edit-project-title" required maxlength="500">
+<label for="edit-project-goal">Research question</label><textarea id="edit-project-goal" rows="3" required maxlength="32000"></textarea>
+<label for="edit-project-config">Case configuration (JSON)</label><textarea id="edit-project-config" rows="7" spellcheck="false" placeholder="null"></textarea>
+<p class="footnote">Changes create a new project version. Existing investigations retain their original question and configuration.</p><button id="project-save" class="secondary" type="submit">Save project version</button></form></details>
+</section>
+<section id="library-panel" class="panel" hidden><p class="eyebrow">SHARED RESEARCH LIBRARY</p><h1>Knowledge, skills &amp; methods</h1><p class="muted">Your repository starts empty and accumulates reusable work. Every entry shows its review status and scope.</p>
+<form id="library-search-form" class="library-search"><input id="library-query" aria-label="Search library" placeholder="Search research knowledge…"><select id="library-kind" aria-label="Asset type"><option value="">All types</option><option value="wiki">Knowledge</option><option value="skill">Skills</option><option value="method">Methods</option></select><button class="secondary" type="submit">Search</button></form>
+<div id="library-results" class="evidence-list"></div><div id="library-entry" class="preview" hidden><h2 id="library-title"></h2><div id="library-content"></div></div>
+</section>
+<div id="empty" class="empty"><div class="orbit">λ</div><p class="eyebrow">EVIDENCE BEFORE CONCLUSIONS</p><h2>Your research, in view.</h2><p>Create a project to organize a scientific question, run analyses, and retain their evidence across investigations.</p><div class="roles"><span>PI</span><span>Postdoc</span><span>Researcher</span><span>Independent Reviewer</span><span>You</span></div></div>
+<div id="investigation" hidden>
+<div class="run-header"><div><p id="run-mode" class="eyebrow"></p><h1 id="run-title"></h1><p id="run-goal" class="muted"></p></div><span id="run-state" class="state"></span></div>
+<div class="facts"><div><span>SCIENTIFIC ACCEPTANCE</span><strong id="acceptance"></strong></div><div><span>CURRENT ACTIVITY</span><strong id="activity"></strong></div><div><span>CONTROL HEAD</span><strong id="head" class="mono"></strong></div></div>
+<div id="compatibility" class="inline-warning" hidden></div>
+<section class="panel progress-panel"><div class="section-heading"><h2>Research workflow</h2><span id="progress-label" class="muted"></span></div><ol id="timeline" class="timeline"></ol><div id="backend-progress" class="backend-progress" hidden></div><details><summary>Actual budget usage</summary><div id="budget" class="budget"></div></details></section>
+<section class="panel results-panel"><nav id="tabs" class="tabs" aria-label="Research evidence"><button data-tab="overview" class="active">Overview</button><button data-tab="plan">Plan</button><button data-tab="code">Code</button><button data-tab="analysis">Analysis</button><button data-tab="review">Review</button><button data-tab="evidence">All evidence</button></nav>
+<div id="overview"><div class="section-heading"><h2>Scientific evidence</h2><span class="muted">Stored results · no client-side fitting</span></div><div id="collaboration"></div><div id="summary"></div><div id="charts" class="charts"></div></div>
+<div id="evidence-pane" hidden><div id="evidence-list" class="evidence-list"></div><div id="preview" class="preview" hidden><div class="section-heading"><strong id="preview-name"></strong><button id="close-preview" class="text-button">Close</button></div><p id="preview-hash" class="mono muted"></p><pre id="preview-text"></pre></div></div>
+</section>
+<footer class="run-meta"><span id="run-identity" class="mono"></span><span id="refreshed"></span></footer>
+</div>
+</main>
+<aside class="gate-sidebar"><p class="eyebrow">HUMAN GATE</p><h2>Your scientific judgment.</h2><p class="muted">Inspect the evidence before recording a decision. Execution success does not establish scientific validity.</p><section id="gate-empty" class="gate-placeholder">An active request will appear here when the research group needs your decision.</section><section id="gate" hidden><div class="gate-label">Decision requested</div><h3 id="gate-kind"></h3><pre id="gate-prompt" class="request-text"></pre><form id="response-form"><label for="decision">Decision</label><select id="decision" required><option value="">Choose explicitly…</option></select><label for="conditions">Conditions <span class="muted">(one per line)</span></label><textarea id="conditions" rows="3" maxlength="8000"></textarea><label for="reason">Scientific rationale</label><textarea id="reason" rows="4" maxlength="8000" required placeholder="Explain your decision and limitations."></textarea><button id="respond" type="submit" class="primary">Record decision</button></form><p class="footnote">Bound to this exact Pause and control head. Stale decisions are rejected.</p></section><section id="cancel-box" class="cancel-box" hidden><h3>Stop this investigation</h3><p class="muted">Cancel the current Pause using its original control owner and stop proof.</p><button id="cancel" class="danger">Cancel current Pause</button></section><div class="authority-note"><span class="authority-dot"></span><p>One control authority.<br>Immutable evidence.<br>Human scientific acceptance.</p></div></aside>
+</div>
+</body></html>

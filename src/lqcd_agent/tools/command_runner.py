@@ -6,7 +6,6 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
-COMMAND_STATUS_VALUES = {'passed', 'failed', 'blocked', 'timeout'}
 FORBIDDEN_PATH_PARTS = {'raw_data', 'accepted_results'}
 SUMMARY_LIMIT = 4000
 
@@ -73,21 +72,20 @@ def _synthetic_matrix_elements_payload(*, run_id: str, case_id: str) -> dict[str
 
 def _run_mock_command(*, command_id: str, command: str, cwd: Path, output_dir: Path, timeout_seconds: int, started_at: str, run_id: str, case_id: str, force: bool) -> dict[str, Any]:
     completed_at = utc_now()
-    if command in {'mock:success', 'mock:missing_output'}:
+    if command == 'mock:success':
         return {'command_id': command_id, 'command': command, 'command_kind': 'mock', 'working_directory': str(cwd), 'timeout_seconds': timeout_seconds, 'started_at': started_at, 'completed_at': completed_at, 'return_code': 0, 'stdout': 'Mock command completed successfully.\n', 'stderr': '', 'produced_files': [], 'status': 'passed'}
-    if command in {'mock:fail', 'mock:failure', 'mock:command_failure'}:
+    if command == 'mock:fail':
         return {'command_id': command_id, 'command': command, 'command_kind': 'mock', 'working_directory': str(cwd), 'timeout_seconds': timeout_seconds, 'started_at': started_at, 'completed_at': completed_at, 'return_code': 1, 'stdout': '', 'stderr': 'Configured mock command failed.', 'produced_files': [], 'status': 'failed'}
-    writers = {'mock:write_synthetic_matrix_elements': _synthetic_matrix_elements_payload}
-    matching_prefix = next((prefix for prefix in writers if command == prefix or command.startswith(prefix + ':')), None)
-    if matching_prefix:
-        relative_output = command[len(matching_prefix) + 1:] if command.startswith(matching_prefix + ':') else 'analysis_outputs/synthetic_matrix_elements.json'
+    prefix = 'mock:write_synthetic_matrix_elements'
+    if command == prefix or command.startswith(prefix + ':'):
+        relative_output = command[len(prefix) + 1:] if command.startswith(prefix + ':') else 'analysis_outputs/synthetic_matrix_elements.json'
         output_path, error = _safe_output_path(output_dir, relative_output)
         if error or output_path is None:
             return _blocked_result(command_id=command_id, command=command, cwd=cwd, timeout_seconds=timeout_seconds, started_at=started_at, message=error or 'Invalid mock output path.')
         if output_path.exists() and (not force):
             return _blocked_result(command_id=command_id, command=command, cwd=cwd, timeout_seconds=timeout_seconds, started_at=started_at, message='Refusing to overwrite an existing analysis output without force.')
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        payload = writers[matching_prefix](run_id=run_id, case_id=case_id)
+        payload = _synthetic_matrix_elements_payload(run_id=run_id, case_id=case_id)
         output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n', encoding='utf-8')
         return {'command_id': command_id, 'command': command, 'command_kind': 'mock', 'working_directory': str(cwd), 'timeout_seconds': timeout_seconds, 'started_at': started_at, 'completed_at': utc_now(), 'return_code': 0, 'stdout': f'Wrote {output_path}.\n', 'stderr': '', 'produced_files': [str(output_path)], 'status': 'passed'}
     return _blocked_result(command_id=command_id, command=command, cwd=cwd, timeout_seconds=timeout_seconds, started_at=started_at, message='Mock analysis command is not recognized.')

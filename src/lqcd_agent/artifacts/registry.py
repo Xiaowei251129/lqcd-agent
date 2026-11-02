@@ -255,7 +255,7 @@ def _validate_registered_pointer(
     if not isinstance(dependencies, list) or any(not isinstance(value, str) for value in dependencies):
         raise ValueError("Registered artifact pointer dependencies are invalid.")
     state_paths = pointer.get("state_paths")
-    expected_state_fields = set(contracts.state_fields_for_slot(slot, state.get("schema_version")))
+    expected_state_fields = set(contracts.STATE_FIELDS_BY_SLOT[slot])
     if not isinstance(state_paths, dict) or set(state_paths) != expected_state_fields:
         raise ValueError("Registered artifact pointer state paths do not match its slot.")
 
@@ -296,22 +296,17 @@ def _validate_registered_pointer(
             raise ValueError(f"Registered artifact pointer state path escapes its Attempt: {field}")
         if not field.endswith("_dir") and path not in member_paths:
             raise ValueError(f"Registered artifact pointer file is not a bundle member: {field}")
-    if slot == "code" and state.get("schema_version") == "0.4":
-        legacy = attempt_kind == "legacy_codex_handoff"
-        for field in (contracts.CANONICAL_CODE_PATH_FIELDS if legacy else contracts.STATE_FIELDS_BY_SLOT["code"]):
-            if state_paths[field] is not None:
-                raise ValueError("Code pointer crossed its producer path boundary.")
-        if not legacy:
-            for field, name in contracts.CODE_MEMBER_BY_STATE_FIELD.items():
-                if state_paths[field] != str(attempt_root / name):
-                    raise ValueError("Canonical Code pointer has a missing or substituted member path.")
-            from lqcd_agent.code_agent.artifacts import validate_code_result
-            from lqcd_agent.code_agent.schemas import validate_task
-            from lqcd_agent.control.coordinator import read_regular
-            task = validate_task(read_regular(attempt_root / "code_agent_task.json")).value
-            result = validate_code_result(read_regular(attempt_root / "code_agent_result.json"), task).value
-            if result["status"] != pointer["status"] or result["attempt_id"] != attempt_id:
-                raise ValueError("Canonical Code pointer disagrees with its validated result.")
+    if slot == "code":
+        for field, name in contracts.CODE_MEMBER_BY_STATE_FIELD.items():
+            if state_paths[field] != str(attempt_root / name):
+                raise ValueError("Canonical Code pointer has a missing or substituted member path.")
+        from lqcd_agent.code_agent.artifacts import validate_code_result
+        from lqcd_agent.code_agent.schemas import validate_task
+        from lqcd_agent.control.coordinator import read_regular
+        task = validate_task(read_regular(attempt_root / "code_agent_task.json")).value
+        result = validate_code_result(read_regular(attempt_root / "code_agent_result.json"), task).value
+        if result["status"] != pointer["status"] or result["attempt_id"] != attempt_id:
+            raise ValueError("Canonical Code pointer disagrees with its validated result.")
     return deepcopy(pointer)
 
 
@@ -868,7 +863,7 @@ def _validate_history(
             pointer = _validate_registered_pointer(state, record)
             dependencies = pointer["dependencies"]
             base_dependencies = _dependency_ids_from_current(
-                replayed_current, str(slot), schema_version=state.get("schema_version")
+                replayed_current, str(slot)
             )
             extra_dependencies = dependencies[len(base_dependencies) :]
             if (
@@ -1036,6 +1031,8 @@ def _validate_registry_head(
     allow_pending_accepted_protection_artifact_id: str | None = None,
     allow_pending_human_response_id: str | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    if state.get("schema_version") != "0.4":
+        raise ValueError("Unsupported execution state schema")
     index = _read_index(state)
     history = _read_history(_history_path(state))
     registered_ids, replayed_current = _validate_history(
@@ -1092,7 +1089,7 @@ def _validate_registry_head(
 
 def code_scalar_projection(state: dict[str, Any], index: dict[str, Any], *, run_root=None) -> dict[str, Any]:
     if state.get("schema_version") != "0.4":
-        return {}
+        raise ValueError("Unsupported execution state schema")
     pointer = index["current"].get("code")
     if not isinstance(pointer, dict) or pointer.get("attempt_kind") != "code_agent":
         return {"code_agent_status": None, "code_agent_usable": None}
@@ -1175,8 +1172,6 @@ def _registered_artifact_ids(history: list[dict[str, Any]]) -> set[str]:
 def _dependency_ids_from_current(
     current: dict[str, dict[str, Any] | None],
     slot: str,
-    *,
-    schema_version: str | None = None,
 ) -> list[str]:
     if slot == "plan":
         dependency_slots: tuple[str, ...] = ()
@@ -1201,7 +1196,7 @@ def _dependency_ids_from_current(
         "approval": ("decision",),
         "terminal": ("decision",),
     }.get(slot, ())
-    if slot == "decision" and schema_version == "0.4" and current.get("review") is None:
+    if slot == "decision" and current.get("review") is None:
         required = ("plan",)
     missing = [name for name in required if not isinstance(current.get(name), dict)]
     if missing:
@@ -1209,17 +1204,13 @@ def _dependency_ids_from_current(
     return dependencies
 
 
-def _dependency_ids(index: dict[str, Any], slot: str, *, schema_version: str | None = None) -> list[str]:
-    return _dependency_ids_from_current(index["current"], slot, schema_version=schema_version)
-
-
 def _projection_target(run_root: Path, relative_path: str) -> Path:
     relative = Path(relative_path)
     if relative.is_absolute() or ".." in relative.parts:
-        raise ValueError(f"Compatibility projection path is not Run-relative: {relative_path}")
+        raise ValueError(f"Artifact projection path is not Run-relative: {relative_path}")
     target = (run_root / relative_path).resolve()
     if not _is_within(target, run_root) or target == run_root:
-        raise ValueError(f"Compatibility projection escapes the Run root: {relative_path}")
+        raise ValueError(f"Artifact projection escapes the Run root: {relative_path}")
     normalized = target.relative_to(run_root).as_posix()
     if normalized in {
         "artifact_history.jsonl",
@@ -1227,7 +1218,7 @@ def _projection_target(run_root: Path, relative_path: str) -> Path:
         "execution_history.jsonl",
         "graph_state.json",
     }:
-        raise ValueError(f"Compatibility projection targets a protected control path: {relative_path}")
+        raise ValueError(f"Artifact projection targets a protected control path: {relative_path}")
     protected_roots = {
         "attempts",
         "human_responses",
@@ -1237,7 +1228,7 @@ def _projection_target(run_root: Path, relative_path: str) -> Path:
         "accepted_results",
     }
     if Path(normalized).parts[0] in protected_roots:
-        raise ValueError(f"Compatibility projection targets a protected control path: {relative_path}")
+        raise ValueError(f"Artifact projection targets a protected control path: {relative_path}")
     return target
 
 
@@ -1257,10 +1248,10 @@ def preflight_control_registration(
     artifact_id = f"{state['attempt_id']}:{slot}"
     if index["current"][slot] is not None or artifact_id in _registered_artifact_ids(history):
         raise ValueError("Control registration would overwrite an allocated artifact.")
-    if set(state_paths) != set(contracts.state_fields_for_slot(slot, state.get("schema_version"))):
+    if set(state_paths) != set(contracts.STATE_FIELDS_BY_SLOT[slot]):
         raise ValueError("Control registration has incomplete state paths.")
     members = _member_records(state, member_paths)
-    dependencies = _dependency_ids(index, slot, schema_version=state.get("schema_version"))
+    dependencies = _dependency_ids_from_current(index["current"], slot)
     pointer = {"artifact_id": artifact_id, "slot": slot, "cycle_id": state["cycle_id"],
                "attempt_id": state["attempt_id"], "attempt_kind": state["attempt_kind"], "status": status,
                "dependencies": dependencies, "members": members, "state_paths": dict(state_paths)}
@@ -1306,13 +1297,13 @@ def validate_state_artifacts(state: dict[str, Any]) -> None:
         raise ValueError("State current_artifacts does not match artifact_index.json.")
     run_root = _run_root(state)
     for slot in contracts.STATE_FIELDS_BY_SLOT:
-        fields = contracts.state_fields_for_slot(slot, state.get("schema_version"))
+        fields = contracts.STATE_FIELDS_BY_SLOT[slot]
         pointer = index["current"].get(slot)
         expected_paths = pointer.get("state_paths", {}) if isinstance(pointer, dict) else {}
         for field in fields:
             if state.get(field) != expected_paths.get(field):
                 raise ValueError(f"State field {field} does not match current artifact slot {slot}.")
-        if slot == "code" and state.get("schema_version") == "0.4":
+        if slot == "code":
             for field, value in code_scalar_projection(state, index).items():
                 if state.get(field) != value:
                     raise ValueError(f"State field {field} does not match current Code result.")
@@ -1328,9 +1319,7 @@ def validate_state_artifacts(state: dict[str, Any]) -> None:
             projection_path = _projection_target(run_root, projection)
             if not projection_path.is_file():
                 raise ValueError(f"Current artifact projection is missing: {projection_path}")
-            if projection in {"code_change_summary.md", "tests_status.json"} or projection.endswith(
-                "/07_human_decision.yaml"
-            ):
+            if projection.endswith("/07_human_decision.yaml"):
                 continue
             if _sha256_file(projection_path) != member["sha256"]:
                 raise ValueError(f"Current artifact projection changed: {projection_path}")

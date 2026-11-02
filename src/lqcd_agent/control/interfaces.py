@@ -1,8 +1,7 @@
-"""B02 versioned control entry points under construction; not the legacy CLI.
+"""Trusted control entry points for the current execution protocol.
 
 The Host constructs ActorContext only after authentication. Request payloads
 cannot supply authority, filesystem roots, identities or passing decisions.
-The explicit 0.4 adapter is separate from the unchanged default legacy CLI.
 """
 from dataclasses import asdict, dataclass
 import uuid

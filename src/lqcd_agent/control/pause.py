@@ -2343,16 +2343,16 @@ class InterruptedDelivery:
             delivery = asdict(proposed)
         require(delivery["result_semantics"] == PROTOCOL["state_machines"]["control_operation"]["recoverable_code_consumption_contract"]["result"],
                 "Timeout delivery changed its failure semantics")
-        from lqcd_agent.artifacts.contracts import CODE_STATE_PATH_FIELDS
+        from lqcd_agent.artifacts.contracts import CODE_MEMBER_BY_STATE_FIELD
         from lqcd_agent.code_agent.artifacts import timeout_bundle
         from lqcd_agent.code_agent.schemas import validate_manifest, validate_task
         require(type(delivery["member_contents"]) is dict and
-                set(delivery["state_members"]) == set(CODE_STATE_PATH_FIELDS), "Incomplete timeout domain members")
+                set(delivery["state_members"]) == set(CODE_MEMBER_BY_STATE_FIELD), "Incomplete timeout domain members")
         for name, content in delivery["member_contents"].items():
             relative = Path(name)
             require(not relative.is_absolute() and relative.parts and all(p not in (".", "..") for p in relative.parts) and
                     relative.as_posix() == name and type(content) is str, "Invalid frozen timeout member")
-        require(set(name for name in delivery["state_members"].values() if name is not None) <=
+        require(set(delivery["state_members"].values()) <=
                 set(delivery["member_contents"]), "Timeout state member is absent")
         directory = root / "code_agent_control" / value["attempt_id"]
         task = validate_task(read_regular(directory / "code_agent_task.json")).value
@@ -2365,10 +2365,7 @@ class InterruptedDelivery:
             receipt=receipt)
         require(delivery["member_contents"] == {name: raw.decode() for name, raw in expected_members.items()} and
                 delivery["artifact_status"] == expected_result["status"] and
-                delivery["state_members"] == {"code_change_summary_path": None, "tests_status_path": None,
-                    "code_agent_task_path": "code_agent_task.json", "code_agent_result_path": "code_agent_result.json",
-                    "code_change_manifest_path": "change_manifest.json",
-                    "code_verification_results_path": "verification_results.json"},
+                delivery["state_members"] == CODE_MEMBER_BY_STATE_FIELD,
                 "Timeout delivery differs from its original canonical evidence")
         text(delivery["artifact_status"])
         delivery_digest = digest(delivery)
@@ -2476,7 +2473,7 @@ class InterruptedDelivery:
                     exclusive_directory(parent)
                 self.coordinator.materialize_publication(db, operation, "interrupted_code_result_registered", path, name="interrupt.timeout_member")
             output = ArtifactOutput("code", tuple(namespace / name for name in delivery["member_contents"]),
-                {k: str(namespace / name) if name is not None else None for k, name in delivery["state_members"].items()},
+                {k: str(namespace / name) for k, name in delivery["state_members"].items()},
                 delivery["artifact_status"])
             members = [{"path": str(path.relative_to(root)), "sha256": sha256(read_regular(path)).hexdigest()} for path in output.member_paths]
             proof = CodeConsumptionProof(external["producer_operation_id"], external["terminal_evidence_digest"], external["attempt_id"], digest(members), "failed")

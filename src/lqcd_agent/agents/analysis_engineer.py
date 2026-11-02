@@ -1,4 +1,4 @@
-"""Deterministic Analysis Engineer Agent for Phase 4."""
+"""Deterministic analysis execution for the canonical scientific workflow."""
 
 from __future__ import annotations
 
@@ -62,24 +62,17 @@ def _resolve_commands(case_config: dict[str, Any]) -> list[str]:
 
 
 def _resolve_explicit_commands(case_config: dict[str, Any]) -> list[str]:
-    commands = _as_string_list(case_config.get("analysis_commands"))
-    if not commands:
-        commands = _as_string_list(case_config.get("analysis_command"))
-    return commands
+    return _as_string_list(case_config.get("analysis_commands"))
 
 
 def _resolve_allowed_commands(case_config: dict[str, Any], commands: Sequence[str]) -> list[str]:
     allowed = _as_string_list(case_config.get("allowed_analysis_commands"))
-    if not allowed:
-        allowed = _as_string_list(case_config.get("allowed_commands"))
     allowed.extend(command for command in commands if str(command).startswith("mock:"))
     return sorted(set(allowed))
 
 
 def _resolve_expected_outputs(case_config: dict[str, Any], task_config: dict[str, Any]) -> list[str]:
     expected = _as_string_list(case_config.get("expected_outputs"))
-    if not expected:
-        expected = _as_string_list(case_config.get("analysis_expected_outputs"))
     if not expected:
         required_outputs = _as_string_list(task_config.get("required_outputs"))
         expected = [output for output in required_outputs if output.startswith("analysis_outputs/")]

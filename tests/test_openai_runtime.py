@@ -1,4 +1,5 @@
-"""Application credentials, Responses wire contract and bounded SDK lifecycle."""
+"""Application credentials and the bounded Codex SDK lifecycle."""
+import asyncio
 import json
 import os
 import signal
@@ -9,61 +10,6 @@ from types import SimpleNamespace as NS
 
 import pytest
 from lqcd_agent.settings import ApplicationSettings, child_environment, read_env
-from lqcd_agent.llm.base import LLMProviderConfig, LLMRequest
-from lqcd_agent.llm.openai_client import OpenAIResponsesProvider, LiveProviderError
-
-
-def provider(reply=None, error=None):
-    calls = []
-    def create(**options):
-        calls.append(options)
-        if error:
-            raise error
-        return reply
-    config = LLMProviderConfig('0.1', 'openai', api_base='https://api.openai.com/v1', default_model='gpt-6-luna')
-    return OpenAIResponsesProvider(config, api_key='private-test-value', enabled=True,
-        client=NS(responses=NS(create=create))), calls
-
-
-def test_responses_schema_usage_and_no_unsupported_temperature():
-    reply = NS(status='completed', output_text='{"ok":true}', model='gpt-6-luna',
-               usage=NS(model_dump=lambda: {'total_tokens': 12}), id='response-test', _request_id='request-test')
-    p, calls = provider(reply)
-    schema = {'type': 'object', 'properties': {'ok': {'type': 'boolean'}}, 'required': ['ok'], 'additionalProperties': False}
-    result = p.generate(LLMRequest([{'role':'user','content':'Return JSON'}], 'json_schema', schema, max_tokens=32))
-    assert result.usage == {'total_tokens':12} and result.content == '{"ok":true}'
-    assert result.elapsed_seconds >= 0 and result.request_id == 'request-test' and result.response_id == 'response-test'
-    assert calls == [{'model':'gpt-6-luna', 'input':[{'role':'user','content':'Return JSON'}],
-        'max_output_tokens':32, 'store':False, 'text':{'format':{'type':'json_schema','name':'agent_output','schema':schema,'strict':True}}}]
-
-
-@pytest.mark.parametrize('status,content,code', [('incomplete','partial','response_incomplete'),
-    ('failed','','response_incomplete'), ('completed','','response_missing_text')])
-def test_responses_rejects_incomplete_and_refusal(status, content, code):
-    p, _ = provider(NS(status=status,output_text=content))
-    with pytest.raises(LiveProviderError) as failure:
-        p.generate(LLMRequest([{'role':'user','content':'JSON'}]))
-    assert failure.value.code == code
-
-
-@pytest.mark.parametrize('reason',['max_output_tokens','content_filter','private-test-value'])
-def test_incomplete_reason_is_reported_without_partial_content_or_unknown_details(reason):
-    p,calls=provider(NS(status='incomplete',output_text='private-test-value',incomplete_details=NS(reason=reason)))
-    with pytest.raises(LiveProviderError) as failure:
-        p.generate(LLMRequest([{'role':'user','content':'JSON'}]))
-    assert failure.value.code=='response_incomplete' and len(calls)==1
-    assert 'private-test-value' not in json.dumps(failure.value.as_error())
-    if reason in ('max_output_tokens','content_filter'):
-        assert reason in str(failure.value)
-
-
-def test_provider_errors_do_not_persist_credentials():
-    from openai import APIConnectionError
-    import httpx
-    p, _ = provider(error=APIConnectionError(message='private-test-value', request=httpx.Request('POST','https://api.openai.com/v1/responses')))
-    with pytest.raises(LiveProviderError) as failure:
-        p.generate(LLMRequest([{'role':'user','content':'JSON'}]))
-    assert 'private-test-value' not in json.dumps(failure.value.as_error())
 
 
 def test_application_env_is_private_and_not_inherited(tmp_path, monkeypatch):
@@ -73,9 +19,14 @@ def test_application_env_is_private_and_not_inherited(tmp_path, monkeypatch):
     settings = ApplicationSettings.load(path)
     assert settings.api_key == 'private-test-value' and 'private-test-value' not in repr(settings)
     monkeypatch.setenv('OPENAI_API_KEY','personal-test-value')
-    assembled = settings.provider()
-    assert assembled._credentials() == ('private-test-value', 'gpt-6-luna')
-    assert assembled.readiness().live_enabled
+    runtime = settings.research_runtime()
+    try:
+        assert runtime._client.api_key == 'private-test-value'
+        assert runtime.model.model == 'gpt-6-luna'
+        assert runtime._client.max_retries == 0
+    finally:
+        asyncio.run(runtime.aclose())
+    assert runtime._client.is_closed()
     assert os.environ['OPENAI_API_KEY'] == 'personal-test-value'
     monkeypatch.setenv('CODEX_HOME','/personal/codex')
     assert 'OPENAI_API_KEY' not in child_environment() and 'CODEX_HOME' not in child_environment()
@@ -242,20 +193,6 @@ def test_backend_stop_rejects_foreign_identity_before_signalling(tmp_path, field
         assert process.poll() is None
     finally:
         os.killpg(process.pid, signal.SIGKILL); process.wait()
-
-
-@pytest.mark.parametrize('name', ['openai', 'deepseek'])
-def test_injected_live_provider_still_requires_explicit_activation(monkeypatch, name):
-    from lqcd_agent.llm.deepseek_client import DeepSeekChatProvider
-    monkeypatch.setenv('RUN_LIVE_LLM_TESTS', '0')
-    config = LLMProviderConfig('0.1', name, api_base='https://example.invalid', default_model='test-model')
-    adapter = OpenAIResponsesProvider if name == 'openai' else DeepSeekChatProvider
-    p = adapter(config, api_key='private-test-value')
-    assert not p.readiness().live_enabled
-    with pytest.raises(LiveProviderError, match='require|disabled'):
-        p.generate(LLMRequest([{'role': 'user', 'content': 'Return JSON'}]))
-    monkeypatch.setenv('RUN_LIVE_LLM_TESTS', '1')
-    assert p.readiness().ready
 
 
 @pytest.mark.parametrize('source,valid', [('def value(): return 2',True),

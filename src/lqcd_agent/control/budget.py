@@ -3,12 +3,14 @@
 Policy and semantic helpers are pure. Ordinary Host calls use the original
 invocation fence to reserve and settle resources; Agents receive no authority.
 """
+from contextlib import contextmanager
+
 from .protocol import PROTOCOL
 from .strict_json import (ValidatedValue, canonical_bytes, closed, digest, digest_value,
                           number, require, text)
 
 
-WORK_KINDS = ("method_planner", "legacy_codex_handoff", "code_agent", "analysis_engineer", "scientific_reviewer")
+WORK_KINDS = ("method_planner", "code_agent", "analysis_engineer", "scientific_reviewer")
 CONTROL_KINDS = ("decision_coordinator", "human_gate", "memory_report")
 LIMITS = (
     ("cycles_per_run", 2, 2), ("automatic_replan_per_run", 1, 1),
@@ -55,8 +57,17 @@ class BudgetExhausted(ValueError):
     """An ordinary resource cannot fit its immutable invocation window."""
 
 
-def run_resource(port, *, resource_kind, resource_id, input_digest, config_digest, timeout_seconds, effect):
-    """Reserve one Host-controlled call before effects and settle it once."""
+_RESULT_EVIDENCE = object()
+
+
+@contextmanager
+def resource_scope(port, *, resource_kind, resource_id, input_digest, config_digest, timeout_seconds):
+    """Reserve one fenced call and expose its single-use successful settlement.
+
+    Leaving without settlement retains the maximum charge and blocks another
+    resource. The Host may separately settle a call it knows has ended as a
+    failure; an exception or cancellation never authorizes redispatch.
+    """
     from .capabilities import invocation_prefix
     from .coordinator import boundary, read_regular
     from .execution import parse_ledger
@@ -115,17 +126,70 @@ def run_resource(port, *, resource_kind, resource_id, input_digest, config_diges
     leases.require_effect_authority(port.capability_id, port.worker, port.epoch)
     start = coordinator._time()
     clock_epoch = coordinator.clock.epoch_id
-    result = effect()
-    end = coordinator._time()
-    require(coordinator.clock.epoch_id == clock_epoch and end.source == start.source and
-            end.wall_seconds >= start.wall_seconds and 0 <= end.monotonic_seconds - start.monotonic_seconds <= timeout_seconds,
-            "Resource duration is untrusted or exceeds its admitted maximum")
-    operation = coordinator.get(value["authorization"]["producer_operation_id"])
-    actual = {**charge, "active_seconds": end.monotonic_seconds - start.monotonic_seconds}
-    port.append_budget("resource_settled", {"resource_operation_id": stable_id, "actual": actual,
-        "tokens": usage(), "cost": usage(), "evidence_digest": digest(result), "operation_id": operation["operation_id"],
-        "lease_epoch": operation["lease_epoch"], "phase_revision": operation["phase_revision"]})
-    return result
+    active, settled = True, False
+
+    def settle(result, *, evidence=_RESULT_EVIDENCE, tokens=None, cost=None):
+        nonlocal settled
+        require(active and not settled, "Resource settlement is closed or already used")
+        end = coordinator._time()
+        require(coordinator.clock.epoch_id == clock_epoch and end.source == start.source and
+                end.wall_seconds >= start.wall_seconds and 0 <= end.monotonic_seconds - start.monotonic_seconds <= timeout_seconds,
+                "Resource duration is untrusted or exceeds its admitted maximum")
+        operation = coordinator.get(value["authorization"]["producer_operation_id"])
+        actual = {**charge, "active_seconds": end.monotonic_seconds - start.monotonic_seconds}
+        port.append_budget("resource_settled", {"resource_operation_id": stable_id, "actual": actual,
+            "tokens": usage(tokens), "cost": usage(cost),
+            "evidence_digest": digest(result if evidence is _RESULT_EVIDENCE else evidence),
+            "operation_id": operation["operation_id"], "lease_epoch": operation["lease_epoch"],
+            "phase_revision": operation["phase_revision"]})
+        settled = True
+        return result
+
+    try:
+        yield settle
+    finally:
+        active = False
+
+
+def run_resource(port, *, effect, **request):
+    """Run a synchronous effect through the canonical resource scope."""
+    with resource_scope(port, **request) as settle:
+        return settle(effect())
+
+
+async def async_run_resource(port, *, effect, evidence=None, tokens=None, cost=None, **request):
+    """Run one asynchronous effect without hiding model or tool calls.
+
+    Extractors convert SDK results to JSON evidence and measured usage. They
+    must not perform effects. Failures retain the original maximum reservation.
+    """
+    with resource_scope(port, **request) as settle:
+        result = await effect()
+        return settle(result, evidence=result if evidence is None else evidence(result),
+                      tokens=None if tokens is None else tokens(result),
+                      cost=None if cost is None else cost(result))
+
+
+def settle_resource_failure(port, *, resource_id, error):
+    """Conservatively settle an ended call under its original invocation fence."""
+    from .capabilities import invocation_prefix
+    from .execution import parse_ledger
+
+    _, value = port.leases.get(port.capability_id)
+    resource = port.capability_id + ":" + resource_id
+    records = parse_ledger(invocation_prefix(value)["content"].encode()).values
+    reservations = [row for row in records if row.get("event") == "resource_reserved" and
+                    row["payload"]["resource_operation_id"] == resource]
+    settlements = [entry for entry in value.get("budget_intents", []) if
+                   entry["record"].get("event") == "resource_settled" and
+                   entry["record"]["payload"]["resource_operation_id"] == resource]
+    require(len(reservations) == 1 and not settlements, "Failure has no single unsettled resource")
+    evidence = {"schema_version": "0.1", "resource_operation_id": resource,
+                "exception": {"type": type(error).__name__, "message": str(error)}}
+    producer = port.leases.coordinator.get(value["authorization"]["producer_operation_id"])
+    port.append_budget("resource_settled", {"resource_operation_id": resource, "actual": None,
+        "tokens": usage(), "cost": usage(), "evidence_digest": digest(evidence),
+        **{key: producer[key] for key in ("operation_id", "lease_epoch", "phase_revision")}})
 
 
 def usage(value=None):

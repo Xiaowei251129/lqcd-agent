@@ -67,9 +67,10 @@ class ApplicationSettings:
                    model=values.get('OPENAI_MODEL', 'gpt-6-luna'),
                    coding_model=values.get('LQCD_CODE_MODEL', values.get('OPENAI_MODEL', 'gpt-6-luna')))
 
-    def provider(self):
-        from .llm.base import LLMProviderConfig
-        from .llm.openai_client import OpenAIResponsesProvider
-        config = LLMProviderConfig(schema_version='0.1', provider='openai', api_base=self.api_base,
-            default_model=self.model, timeout_seconds=self.timeout_seconds, max_tokens=self.max_output_tokens)
-        return OpenAIResponsesProvider(config, api_key=self.api_key, enabled=True)
+    def research_runtime(self):
+        from openai import AsyncOpenAI
+        from .research.agent_runtime import ResearchAgentRuntime
+        client = AsyncOpenAI(api_key=self.api_key, base_url=self.api_base,
+                             max_retries=0, timeout=self.timeout_seconds)
+        return ResearchAgentRuntime.from_openai(client=client, model=self.model,
+                                                max_output_tokens=self.max_output_tokens)

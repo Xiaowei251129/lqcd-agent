@@ -2,6 +2,7 @@
 from hashlib import sha256
 from pathlib import Path
 
+from lqcd_agent.artifacts.contracts import CODE_MEMBER_BY_STATE_FIELD
 from lqcd_agent.control.capabilities import ArtifactOutput, CodeConsumptionProof, TargetOutcome
 from lqcd_agent.control.coordinator import boundary, read_regular
 from lqcd_agent.control.execution import parse_ledger
@@ -13,14 +14,6 @@ from .ingress import preflight_result
 from .schemas import validate_manifest, validate_task
 from .verification import TrustedVerifier, build_verification_results
 from .workspace import WorkspaceProvider, immutable_git_tree
-
-
-CANONICAL_PATH_MEMBERS = {
-    "code_agent_task_path": "code_agent_task.json",
-    "code_agent_result_path": "code_agent_result.json",
-    "code_change_manifest_path": "change_manifest.json",
-    "code_verification_results_path": "verification_results.json",
-}
 
 
 class CodeAgentSubgraph:
@@ -120,9 +113,8 @@ class CodeAgentSubgraph:
                                   trusted_usage=usage)
         members = bundle_members(task, result, receipt, manifest, seal, changes, verification, audit, patch)
         paths = tuple(port.write_member(name, content) for name, content in members.items())
-        state_paths = {"code_change_summary_path": None, "tests_status_path": None}
-        state_paths.update({key: str(root / "attempts" / task["attempt_id"] / member)
-                            for key, member in CANONICAL_PATH_MEMBERS.items()})
+        state_paths = {key: str(root / "attempts" / task["attempt_id"] / member)
+                       for key, member in CODE_MEMBER_BY_STATE_FIELD.items()}
         index = loads(read_regular(root / "artifact_index.json"))
         refs = {slot: pointer["artifact_id"] for slot, pointer in index["current"].items() if pointer is not None}
         refs["code"] = task["attempt_id"] + ":code"
@@ -145,9 +137,8 @@ class CodeAgentSubgraph:
                                     recommended_action="review Code result", summary="Validated Code delivery",
                                     trusted_usage=self._trusted_usage(root, task["attempt_id"], binding["final"]["resource_actual"]))
         require(result == expected and outcome.artifact.status == result["status"] and
-                outcome.artifact.state_paths == {"code_change_summary_path": None, "tests_status_path": None,
-                    **{key: str(root / "attempts" / task["attempt_id"] / member)
-                       for key, member in CANONICAL_PATH_MEMBERS.items()}},
+                outcome.artifact.state_paths == {key: str(root / "attempts" / task["attempt_id"] / member)
+                                                 for key, member in CODE_MEMBER_BY_STATE_FIELD.items()},
                 "Code result or projection differs from validated delivery")
         expected_members = bundle_members(task, result, receipt, manifest, seal, changes, verification, audit, patch)
         require(actual == expected_members, "Code bundle member set or bytes changed")

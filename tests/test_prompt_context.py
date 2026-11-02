@@ -37,7 +37,7 @@ def test_context_boundary_preserves_goal_constraints_and_schema():
 @pytest.mark.parametrize('agent', ['method_planner', 'scientific_reviewer'])
 def test_oversized_context_records_failure_without_calling_provider(tmp_path, agent):
     class UncalledProvider:
-        config = LLMProviderConfig('0.1', 'uncalled', dry_run_only=True)
+        config = LLMProviderConfig(provider='uncalled')
         calls = 0
 
         def generate(self, request):

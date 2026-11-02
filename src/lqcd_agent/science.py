@@ -36,6 +36,9 @@ class ScientificAgent:
                 from .control.strict_json import require
                 require(result['code_request'] is not None, 'Planner has no structured coding request')
                 content['requirements'] = [*result['code_request']['requirements'], *self.config['generated_program']['requirements']]
+                if self.config['generated_program']['result_kind'] == 'replica_observables':
+                    from .research.observable_contract import CONTRACT
+                    content['requirements'].append(CONTRACT)
         elif node == 'analysis_engineer':
             from .agents.analysis_engineer import run_analysis_engineer
             config = output / 'case.json'

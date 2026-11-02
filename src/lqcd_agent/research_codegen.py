@@ -9,20 +9,22 @@ from .code_agent.workspace import create_base_repository, immutable_git_tree, tr
 from .control.strict_json import digest, require
 
 
-def prepare_research(coordinator, config, *, workspace, live, initialize):
+def prepare_research(coordinator, config, *, workspace, live, initialize, method_sources=()):
     require(live, 'Generated scientific analysis requires explicit live Codex activation')
     program = config['generated_program']
     from .control.strict_json import closed, number
     closed(program, ('python', 'parameters', 'requirements', 'timeout_seconds', 'result_kind'))
-    require(program['result_kind'] in ('c2', 'normalization'), 'Unknown generated scientific output contract')
+    require(program['result_kind'] in ('c2', 'normalization', 'replica_observables'), 'Unknown generated scientific output contract')
     require(type(program['requirements']) is list and program['requirements'] and
             all(type(r) is str and 0 < len(r) <= 4096 for r in program['requirements']), 'Missing bounded programming contract')
     require(type(program['parameters']) is dict, 'Scientific parameters must be an object')
     require(Path(program['python']).is_absolute() and Path(program['python']).is_file(), 'Select an existing absolute scientific interpreter')
     number(program['timeout_seconds'], integer=True, minimum=1)
-    repository = coordinator.root/'research_repository'
-    base_files = {'analysis.py': b'raise NotImplementedError("Implement the research task")\n'}
+    from .research.methods import method_files
+    base_files = {'analysis.py': b'raise NotImplementedError("Implement the research task")\n', **method_files(method_sources)}
+    repository = coordinator.root/'research_repositories'/tree_digest(base_files)
     if initialize and not repository.exists():
+        repository.parent.mkdir(mode=0o700, exist_ok=True)
         create_base_repository(repository, base_files)
     revision = subprocess.check_output(['git', '-C', str(repository), 'rev-parse', 'HEAD'], text=True).strip()
     base = immutable_git_tree(repository, revision)
@@ -33,8 +35,9 @@ def prepare_research(coordinator, config, *, workspace, live, initialize):
             'timeout_seconds': 600, 'required': True, 'expected_exit_codes': [0], 'environment_keys': []}
     policy = {'base_revision': revision, 'base_tree_digest': tree_digest(base),
         'task_summary': 'Implement the current scientific Method Plan',
-        'acceptance_criteria': ['Implement the specified JSON interface and test on synthetic calibration data.'],
-        'read_paths': ['analysis.py'], 'write_paths': ['analysis.py'], 'forbidden_paths': ['.git'],
+        'acceptance_criteria': ['Implement the specified JSON interface and test on synthetic calibration data.',
+            'Use read-only reused/ sources only within their recorded applicability; deliver a self-contained analysis.py.'],
+        'read_paths': sorted(base_files), 'write_paths': ['analysis.py'], 'forbidden_paths': ['.git'],
         'tool_policy': [tool], 'network_policy': {'enabled': True},
         'filesystem_policy': {'binary_changes': False, 'executable_changes': False, 'ephemeral_paths': ['__pycache__']},
         'verification_specs': [{**tool, 'spec_id': 'syntax', 'argv': ['python', '-m', 'compileall', 'analysis.py'],

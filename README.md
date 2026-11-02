@@ -1,8 +1,8 @@
 # LQCD Agent
 
-An AI Research Partner for LQCD with controlled planning, code/analysis work, scientific review, human decisions and attributable results. Offline mode uses deterministic roles and a Fake coding backend. Explicit live mode uses OpenAI Responses for planning/review and an independent Codex SDK backend for bounded coding proposals. Software checks do not establish physics readiness.
+An AI Research Partner for LQCD with controlled planning, code/analysis work, scientific review, human decisions and attributable results. Offline mode uses deterministic roles and a Fake coding backend. Explicit live mode uses the Python OpenAI Agents SDK for PI/Postdoc/Reviewer research and the independent Codex SDK backend for bounded coding proposals. Each installation starts with an empty local research library. Software checks do not establish physics readiness.
 
-Scientific validation is shared by offline and model-assisted review: models interpret Host diagnostics and cannot erase numerical warnings. Planner and Reviewer receive validated remediation and relevant history through their retained context bundles. Provider credentials and live activation belong to application assembly; scientific roles accept constructed providers. See the [architecture maintenance record](docs/maintenance/ARCHITECTURE_SIMPLIFICATION.md).
+Scientific validation is shared by offline and model-assisted review: models interpret Host diagnostics and cannot erase numerical warnings. Planner and Reviewer receive validated remediation and relevant history through their retained context bundles. Credentials and live activation belong to application assembly. See the [architecture](docs/ARCHITECTURE.md) for research-role and execution boundaries.
 
 ## Use
 
@@ -12,12 +12,18 @@ lqcd-agent --help
 lqcd-agent doctor
 lqcd-agent start --key example
 lqcd-agent run --case-config configs/example.json --key science
-lqcd-agent-demo --port 8000
+lqcd-agent-workbench --port 8000
 ```
 
 The operator workspace defaults to the current directory; set the absolute `LQCD_AGENT_WORKSPACE` to use another owned workspace. Case `raw_data_path` values resolve under its `raw_data/`; `.env` and optional `.venv`/`.runtime` belong to that workspace, independently of where the package is installed. Resume, replay and fork require the original workspace. Status and cancellation do not require credentials, and cancellation remains available if the data workspace is unavailable.
 
-The demo binds to `127.0.0.1`. CLI, demo and scientific cases use the same canonical engine. The CLI returns the Host, Run and Pause identifiers needed for resume, cancel, fork and replay; see each subcommand's `--help`.
+The workbench binds to `127.0.0.1`. CLI, workbench and scientific cases use the same canonical engine. The CLI returns the Host, Run and Pause identifiers needed for resume, cancel, fork and replay; see each subcommand's `--help`.
+
+## Projects and a growing local library
+
+Create Projects in the workbench or with `lqcd-agent project-create`. Each Run freezes its project version; plans, code, numerical results and questions accumulate as verified project evidence. `library/wiki`, `library/skills` and `library/methods` begin empty. They never import your private wiki. Research agents can propose new assets; reviewed methods require explicit operator decisions and source-bound validation evidence.
+
+Live planning contains PI → Postdoc; analysis uses the existing Host and optional Codex backend; review contains independent Reviewer → PI synthesis. Concrete scientific questions can trigger a budgeted revision. Unresolved questions, inconclusive outcomes and final human decisions remain visible. See [research contracts and commands](docs/RESEARCH_CONTRACTS.md) and the [workbench guide](docs/WORKBENCH.md).
 
 ## Application API and coding
 
@@ -34,11 +40,11 @@ Copy Host, Run and Pause identifiers from the JSON output. Poll `status` until `
 
 The `code` workflow is a small integration example: change `sample.py` so `value()` returns integer 2. The Host checks its exact allowed AST before execution. Codex can use tools, edit its disposable task workspace, test programs and access the network permitted by the frozen task. Extra permission requests use SDK automatic review. The Host validates the final UTF-8 file proposal, scope, sealed tree and verification evidence. General scientific planning still pauses when its installed implementation is missing; the sample program is never substituted for scientific code. The [first research cases](docs/RESEARCH_CASES.md) use separate task profiles and independent local assessment of Codex-written C2/Normalization programs.
 
-Live requests transmit the supplied task and selected context to OpenAI and incur API usage. Codex's private job records contain turn IDs and reported token usage; control `llm_calls` counts logical invocations, not transport retries. SDK jobs have a time limit, not a guaranteed dollar/token cap. Use project spending limits for billing control. See [security boundaries](docs/SECURITY_AND_DATA_POLICY.md).
+Live requests transmit the supplied task and selected context to OpenAI and incur API usage. Codex's private job records contain turn IDs and reported token usage; research SDK model/tool effects are admitted and charged individually, with transport retries disabled. Codex retains its separately bounded backend accounting. SDK jobs have a time limit, not a guaranteed dollar/token cap. Use project spending limits for billing control. See [security boundaries](docs/SECURITY_AND_DATA_POLICY.md).
 
 ## Evidence lifecycle
 
-Scientific Runs bind the content identity of their raw CSV input, including its absence, before execution. Replay and fork keep that identity; changed data require a new Run. Analysis manifests identify the bytes actually used. Model proposals contain scientific decisions; the Host constructs executable mappings and artifact identity. Provider-backed roles retain complete local context evidence and send bounded role views with verifiable references. See [architecture](docs/ARCHITECTURE.md) and [verification](docs/VERIFICATION_GUIDE.md) for evidence reads and boundaries.
+Scientific Runs bind the content identity of their raw CSV/JSON input, including its absence, before execution. Replay and fork keep that identity; changed data require a new Run. Analysis manifests identify the bytes actually used. Model proposals contain scientific decisions; the Host constructs executable mappings and artifact identity. Research roles retain complete local context evidence and can retrieve named sections through Host-accounted tools. Project histories remain read-only and inspectable if temporary execution storage is lost; raw datasets are not automatically backed up. See [architecture](docs/ARCHITECTURE.md) and [verification](docs/VERIFICATION_GUIDE.md) for evidence reads and boundaries.
 
 ```bash
 lqcd-agent archive --host HOST --case CASE --run RUN
@@ -82,6 +88,6 @@ The runner selects this checkout's `.venv`; it never imports a previous checkout
 
 The qualified development interpreter is Python 3.12; platform qualification is recorded in the current state. Use the qualified native macOS local filesystem and SQLite runtime. `doctor` checks actual storage admission and WAL/FULL/foreign-key settings in its own temporary root, without loading a key or calling a model.
 
-Current control declarations live in [contracts/control.json](contracts/control.json); regenerate with `python scripts/generate_protocol.py`. Only current Runs are supported. Old runtime paths, historical acceptance, ticket archives and old demo/benchmark implementations have been removed.
+Current control declarations live in [contracts/control.json](contracts/control.json); regenerate with `python scripts/generate_protocol.py`. Only current Runs are supported; version-control history retains retired implementations.
 
 [Current state](docs/REPO_CURRENT_STATE.md) · [Architecture](docs/ARCHITECTURE.md) · [Data and security](docs/SECURITY_AND_DATA_POLICY.md)

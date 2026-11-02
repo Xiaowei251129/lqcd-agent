@@ -86,3 +86,13 @@ def test_scientific_roles_receive_frozen_remediation_and_history(tmp_path, monke
         catalog = context_reference(provider.request.context_sources)
         context['remediation']['success_criteria'].append('Do not mutate prior context')
         assert read_context_evidence(output, catalog, 'research_context') == expected
+
+
+@pytest.mark.parametrize('schema', ['0.2', '0.3', None])
+def test_artifact_entry_points_reject_unsupported_execution_state_before_reading(schema):
+    from lqcd_agent.artifacts.registry import code_scalar_projection, validate_state_artifacts
+    state = {'schema_version': schema}
+    with pytest.raises(ValueError, match='Unsupported execution state schema'):
+        validate_state_artifacts(state)
+    with pytest.raises(ValueError, match='Unsupported execution state schema'):
+        code_scalar_projection(state, {})

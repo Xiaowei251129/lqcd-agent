@@ -249,13 +249,14 @@ def product_issue_grant(root, identity, diagnostic, authorization, port, records
     """Issue a validated budget window only in its started Coordinator."""
     from lqcd_agent.control.capabilities import invocation_prefix
     from lqcd_agent.control.strict_json import digest, loads, require
-    from lqcd_agent.graph.routing import PRODUCT_FALLBACKS, select_product_route
+    from lqcd_agent.graph.routing import PRODUCT_FALLBACKS, is_scientific_revision, select_product_route
     from lqcd_agent.control.identity import stable_attempt_id, stable_transition_id
     if authorization is None:
         return None
     response = next((row for row in records if row.get('record_type') == 'human_response' and row['event'] == 'consumed' and (row['human_response_id'] == authorization['human_response_id'])))
     if response['decision'] != 'approve_budget_window':
         return None
+    require(not is_scientific_revision(diagnostic), 'Scientific revision cannot borrow a failure grant')
     require(sequence is None, 'Terminal reserve cannot issue a budget window')
     require(response['authorized_target_attempt_id'] == identity['attempt_id'] and response['cycle_id'] == state['cycle_id'], 'Budget response does not authorize this Coordinator')
     prior = [row for row in records if row.get('event') == 'grant_issued' and row['payload']['human_response_id'] == response['human_response_id']]
@@ -295,42 +296,94 @@ class ProductResourceFailure(RuntimeError):
 
 def product_resource(port, **request):
     """Keep conservative product settlement separate from the resource primitive."""
-    from lqcd_agent.control.budget import BudgetExhausted, usage
-    from lqcd_agent.control.capabilities import invocation_prefix
-    from lqcd_agent.control.execution import parse_ledger
-    from lqcd_agent.control.strict_json import digest
+    from lqcd_agent.control.budget import BudgetExhausted, settle_resource_failure
     effect = request.pop('effect')
-    ended, callee_error = (False, None)
+    ended = False
 
     def call():
-        nonlocal ended, callee_error
+        nonlocal ended
         try:
-            result = effect()
-        except Exception as error:
-            callee_error = error
+            return effect()
+        finally:
             ended = True
-            raise
-        ended = True
-        return result
     try:
         return port.run_resource(**request, effect=call)
     except BudgetExhausted:
         raise
-    except Exception as error:
+    except BaseException as error:
         if not ended:
             raise
-        _, value = port.leases.get(port.capability_id)
-        resource = port.capability_id + ':' + request['resource_id']
-        reservations = [r for r in parse_ledger(invocation_prefix(value)['content'].encode()).values if r.get('event') == 'resource_reserved' and r['payload']['resource_operation_id'] == resource]
-        frozen_settlements = [entry for entry in value.get('budget_intents', []) if entry['record'].get('event') == 'resource_settled' and entry['record']['payload']['resource_operation_id'] == resource]
-        if len(reservations) != 1 or frozen_settlements:
+        settle_resource_failure(port, resource_id=request['resource_id'], error=error)
+        if not isinstance(error, Exception):
             raise
-        evidence = {'type': type(error).__name__, 'message': str(error)}
-        if callee_error is not None:
-            evidence = {'schema_version': '0.1', 'resource_operation_id': resource, 'exception': {'type': type(callee_error).__name__, 'message': str(callee_error)}}
-        producer = port.leases.coordinator.get(value['authorization']['producer_operation_id'])
-        port.append_budget('resource_settled', {'resource_operation_id': resource, 'actual': None, 'tokens': usage(), 'cost': usage(), 'evidence_digest': digest(evidence), **{key: producer[key] for key in ('operation_id', 'lease_epoch', 'phase_revision')}})
         raise ProductResourceFailure(str(error) or type(error).__name__) from error
+
+def product_final_report(root, context, index, classification, response):
+    """Render registered scientific conclusions without adding model judgments."""
+    import json
+    from hashlib import sha256
+    from lqcd_agent.control.coordinator import read_regular
+    from lqcd_agent.control.strict_json import loads, require
+
+    evidence = list(context['current_evidence'])
+    sections = ['# LQCD research report', '## Recorded decision',
+                classification['memory_status'], classification['classification_reason'],
+                '## Research question', context['root_goal'].get('goal', '')]
+    documents = {}
+    for slot, kind in (('plan', 'method_planner'), ('analysis', 'analysis_engineer'),
+                       ('review', 'scientific_reviewer'), ('decision', 'decision_coordinator')):
+        pointer = index['current'][slot]
+        if pointer is None:
+            continue
+        member = next(item for item in pointer['members'] if item['logical_name'] == PRODUCT_FILES[kind][1])
+        raw = read_regular(root / member['canonical_path'])
+        require(sha256(raw).hexdigest() == member['sha256'], 'Final report source changed')
+        documents[slot] = loads(raw)
+        reference = {'artifact_id': pointer['artifact_id'], 'member': member['canonical_path'], 'sha256': member['sha256']}
+        if reference not in evidence:
+            evidence.append(reference)
+
+    def include(title, value):
+        if value:
+            rendered = value if type(value) is str else json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
+            sections.extend(['## ' + title, rendered])
+
+    if response is not None:
+        raw = read_regular(root / response['payload_reference'])
+        require(sha256(raw).hexdigest() == response['payload_sha256'], 'Final report Human response changed')
+        human = loads(raw)
+        include('Human decision and conditions', {key: human[key] for key in ('decision', 'decided_by', 'reason', 'conditions')})
+        sections.append('Human response: `' + response['payload_reference'] + '` · SHA-256 `' + response['payload_sha256'] + '`.')
+    for slot, title, field in (('plan', 'Research plan', 'method_plan'),
+                               ('analysis', 'Analysis result', 'run_result'),
+                               ('review', 'Scientific review with Host diagnostics', 'report')):
+        envelope = documents.get(slot, {})
+        domain = envelope.get('domain_result', envelope)
+        value = domain.get(field, domain)
+        include(title, {key: value[key] for key in ('summary', 'method_steps', 'findings', 'warnings', 'errors',
+                                                   'recommended_checks', 'confidence') if value.get(key)})
+    issues, challenges = {}, []
+    for slot in ('plan', 'review'):
+        collaboration = documents.get(slot, {}).get('collaboration', {})
+        for exchange in collaboration.get('exchanges', []):
+            role = exchange['role']
+            discussion = exchange.get('discussion', exchange.get('brief', {}).get('discussion', {}))
+            label = {'pi': 'PI', 'postdoc': 'Postdoc', 'reviewer': 'Independent Reviewer'}[role]
+            if discussion.get('summary'):
+                include(label + (' — planning' if slot == 'plan' else ' — review'), discussion['summary'])
+            if role == 'reviewer':
+                include('Independent Reviewer conclusion', exchange.get('proposal', {}).get('summary'))
+        include('Collaboration recommendation — ' + slot, collaboration.get('summary'))
+        for issue in collaboration.get('issues', []):
+            issues[issue['id']] = issue
+        if collaboration:
+            challenges = collaboration.get('challenges', [])
+    outstanding = [item for item in issues.values() if item['status'] != 'addressed']
+    include('Open questions and limitations', outstanding or challenges)
+    sections.extend(['## Traceable evidence', '\n'.join('- `' + item['member'] + '` · artifact `' +
+        item['artifact_id'] + '` · SHA-256 `' + item['sha256'] + '`' for item in evidence)])
+    sections.append('This report assembles recorded evidence and recommendations. It does not add an independent physics validation.')
+    return '\n\n'.join(sections) + '\n', evidence
 
 class ProductNode:
     """Host wrapper; the Agent receives only context and returns domain facts."""
@@ -348,7 +401,7 @@ class ProductNode:
         from lqcd_agent.control.coordinator import read_regular
         from lqcd_agent.control.execution import parse_ledger
         from lqcd_agent.control.strict_json import canonical_bytes, closed, digest, loads, require
-        from lqcd_agent.graph.routing import select_product_route
+        from lqcd_agent.graph.routing import is_scientific_revision, select_product_route
         from lqcd_agent.graph.state import product_context
         node = identity['attempt_kind']
         execution = parse_ledger(read_regular(self.root / 'execution_history.jsonl'))
@@ -378,11 +431,14 @@ class ProductNode:
             classification = classify_memory_update({'human_response_status': 'consumed' if response else None, 'human_response_decision': response['decision'] if response else None, 'risk_level': decision['risk'], 'recommended_action': 'accept_mock_result' if decision['status'] == 'success' and (not decision['candidates']) else 'hold', 'human_approval_required': decision['risk'] in ('high', 'critical')})
             if classification['accepted_result'] and any((index['current'][slot] is None or index['current'][slot]['status'] != 'success' for slot in ('analysis', 'review'))):
                 classification.update(memory_status='pending', accepted_result=False, classification_reason='Scientific acceptance requires successful current Analysis and Reviewer evidence.')
+            if is_scientific_revision(decision):
+                classification.update(memory_status='pending', accepted_result=False, classification_reason='Scientific questions still require revision.')
             if inbound['fields'].get('stop_sequence_id') is not None:
                 classification.update(memory_status='pending', accepted_result=False, classification_reason='Deterministic budget stop.')
-            payload = {'schema_version': '0.1', **identity, 'producer': node, 'status': classification['memory_status'], **classification, 'evidence': context['current_evidence']}
+            report_text, report_evidence = product_final_report(self.root, context, index, classification, response)
+            payload = {'schema_version': '0.1', **identity, 'producer': node, 'status': classification['memory_status'], **classification, 'evidence': report_evidence}
             memory = port.write_member('memory_update.json', canonical_bytes(payload))
-            report = port.write_member('final_report.md', ('# Canonical analysis report\n\n' + 'Domain result: ' + classification['memory_status'] + '\n\n' + '\n'.join(('- ' + item['member'] for item in context['current_evidence'])) + '\n').encode())
+            report = port.write_member('final_report.md', report_text.encode())
             terminal_decision = None
             if inbound['fields'].get('stop_sequence_id') is not None:
                 from lqcd_agent.graph.routing import product_budget_decision
@@ -405,6 +461,16 @@ class ProductNode:
             floor = 'critical' if previous['affected_layer'] == 'plan' and previous['status'] != 'success' else 'high' if previous['status'] == 'failed' or previous['candidates'] in (['analysis_engineer'], ['code_agent']) else previous['risk']
             diagnostic = product_coordinator_diagnosis([previous], local_risk_floor=floor)
             content = {'reasons': [diagnostic['category']], 'evidence': diagnostic['evidence'], 'risk_level': diagnostic['risk']}
+            if is_scientific_revision(diagnostic):
+                member = next(item for item in source['members'] if item['logical_name'] == PRODUCT_FILES[source['attempt_kind']][1])
+                raw = read_regular(self.root / member['canonical_path'])
+                require(sha256(raw).hexdigest() == member['sha256'], 'Scientific revision source changed')
+                collaboration = loads(raw).get('collaboration')
+                require(type(collaboration) is dict and type(collaboration.get('challenges')) is list and collaboration['challenges'] and all(type(item) is str and item.strip() for item in collaboration['challenges']), 'Scientific revision requires specific review questions')
+                content['collaboration'] = collaboration
+                reference = {'artifact_id': source['artifact_id'], 'member': member['canonical_path'], 'sha256': member['sha256']}
+                if reference not in diagnostic['evidence']:
+                    diagnostic['evidence'].append(reference)
         else:
 
             if node == 'analysis_engineer' and index['current']['code'] is not None:
@@ -418,7 +484,10 @@ class ProductNode:
             def effect():
                 return self.agent_port.run(node, context, timeout_seconds=timeout)
             try:
-                outcome = product_resource(port, resource_kind='llm_call', resource_id='domain-diagnosis', input_digest=digest(context), config_digest=digest({'node': node, 'structured_output': True}), timeout_seconds=timeout, effect=effect)
+                if hasattr(self.agent_port, 'run_scoped'):
+                    outcome = self.agent_port.run_scoped(node, context, timeout_seconds=timeout, port=port)
+                else:
+                    outcome = product_resource(port, resource_kind='llm_call', resource_id='domain-diagnosis', input_digest=digest(context), config_digest=digest({'node': node, 'structured_output': True}), timeout_seconds=timeout, effect=effect)
                 closed(outcome, ('diagnostic', 'content'))
                 require(type(outcome['content']) is dict and type(outcome['diagnostic']) is dict, 'Unstructured Agent output')
                 diagnostic, content = (outcome['diagnostic'], outcome['content'])
@@ -432,6 +501,8 @@ class ProductNode:
             except BudgetExhausted:
                 diagnostic = {'status': 'failed', 'category': 'budget', 'affected_layer': 'none', 'evidence': [], 'retryability': 'not_retryable', 'candidates': [], 'confidence': 'unique', 'fingerprint': None, 'human_need': 'approval', 'risk': 'high'}
                 content = {'resource_admission': 'denied'}
+                if node == 'method_planner':
+                    content['code_needed'] = False
             if 'analysis_execution' in context:
                 content['execution'] = {k: v for k, v in context['analysis_execution'].items() if k != 'result'}
                 if context['analysis_execution']['returncode'] != 0:
@@ -443,7 +514,7 @@ class ProductNode:
         view = {'source': {'node_name': node, 'attempt_id': identity['attempt_id'], 'status': 'succeeded' if diagnostic['status'] == 'success' else 'failed'}, 'state': state}
         selection = None
         if node == 'decision_coordinator':
-            if authorization is None and sequence is None and (previous['status'] != 'success' or previous['candidates']):
+            if authorization is None and sequence is None and previous['category'] != 'budget' and not is_scientific_revision(previous) and (previous['status'] != 'success' or previous['candidates']):
                 product_observe_failure(self.root, source, previous, port, records)
                 execution = parse_ledger(read_regular(self.root / 'execution_history.jsonl'))
                 records, state = execution.values, execution.projection.value
@@ -457,6 +528,8 @@ class ProductNode:
             target = selection['target_node']
             content['human_authorization'] = authorization
             content['remediation'] = None if target not in ('method_planner', 'code_agent', 'analysis_engineer', 'scientific_reviewer') else {'target_node': target, 'problem': diagnostic['category'], 'evidence': diagnostic['evidence'], 'constraints': ['Preserve the approved scientific method, immutable inputs and path policy.'], 'success_criteria': ['Resolve the diagnosed issue and provide attributable structured evidence.'], 'parent_attempt_id': identity['attempt_id'], 'budget_policy_digest': state['budget']['policy_digest'], 'human_authorization': authorization}
+            if content['remediation'] is not None and is_scientific_revision(diagnostic):
+                content['remediation'].update(problem='Resolve the scientific questions in the cited review.', constraints=['Preserve the research goal, immutable inputs and path policy.', 'Keep prior results and distinguish new evidence from revised interpretations.'], success_criteria=content['collaboration']['challenges'])
         slot, filename, field = PRODUCT_FILES[node]
         path = port.write_member(filename, canonical_bytes({'schema_version': '0.1', **identity, 'producer': node, 'status': diagnostic['status'], **content}))
         reference = {'artifact_id': refs[slot], 'member': str(path.relative_to(self.root)), 'sha256': sha256(read_regular(path)).hexdigest()}

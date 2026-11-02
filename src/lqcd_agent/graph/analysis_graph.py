@@ -105,15 +105,18 @@ class CanonicalProductRuntime:
         return self.app.invoke({'run_locator': locator, 'attempt_id': first['target_attempt_id'], 'transition_id': first['transition_id']}, {'recursion_limit': 128})
 
     def resume(self, request, *, actor):
-        from lqcd_agent.graph.nodes import ProductNode
-        root, _ = self._records(request.run_locator)
         previous = self.coordinator.lookup_key('public_control', request.idempotency_key)
         replay = previous is not None and previous['status'] == 'committed'
-        self.plane.resume_target_adapter = self.external_adapter if request.input_kind == 'external_result' else ProductNode(root, self.agent_port)
-        result = self.plane.resume_run(request, actor=actor)
+        result = self.resume_control(request, actor=actor)
         if not replay and result['operation_status'] == 'committed' and (result['run_status'] == 'running'):
             self.run(request.run_locator)
         return result
+
+    def resume_control(self, request, *, actor):
+        from lqcd_agent.graph.nodes import ProductNode
+        root, _ = self._records(request.run_locator)
+        self.plane.resume_target_adapter = self.external_adapter if request.input_kind == 'external_result' else ProductNode(root, self.agent_port)
+        return self.plane.resume_run(request, actor=actor)
 
     def read_route(self, cursor):
         from lqcd_agent.control.strict_json import require

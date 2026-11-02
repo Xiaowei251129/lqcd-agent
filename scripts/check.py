@@ -18,7 +18,7 @@ if Path(sys.executable).absolute() != PYTHON:
     os.execv(str(PYTHON), [str(PYTHON), "-B", str(Path(__file__).resolve()), *sys.argv[1:]])
 os.chdir(ROOT)
 sys.path.insert(0, str(ROOT))
-os.environ.update(PYTHONDONTWRITEBYTECODE="1", RUN_LIVE_LLM_TESTS="0", PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
+os.environ.update(PYTHONDONTWRITEBYTECODE="1", PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
                   PATH=str(PYTHON.parent) + os.pathsep + os.environ.get("PATH", ""))
 from lqcd_agent.control.storage import execution_scratch_root
 CORE = [

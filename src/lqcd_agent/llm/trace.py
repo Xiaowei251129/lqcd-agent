@@ -24,10 +24,7 @@ def _request_payload(request: LLMRequest | None) -> dict[str, Any] | None:
         return None
     return {
         "messages": [dict(message) for message in request.messages],
-        "response_format": request.response_format,
         "json_schema": request.json_schema,
-        "temperature": request.temperature,
-        "max_tokens": request.max_tokens,
     }
 
 
@@ -41,12 +38,8 @@ def _provider_payload(provider: LLMProvider, response: LLMResponse | None) -> di
     config = provider.config
     return {
         "provider": config.provider,
-        "api_base": config.api_base,
         "model": response.model if response is not None else None,
-        "model_env": config.model_env,
         "default_model": config.default_model,
-        "live_test_env": config.live_test_env,
-        "dry_run_only": config.dry_run_only,
     }
 
 

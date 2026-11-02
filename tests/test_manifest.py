@@ -44,8 +44,9 @@ def test_manifest_includes_required_provenance_fields(tmp_path: Path) -> None:
 
     assert written["run_id"] == "run_a"
     assert written["case_id"] == "case_a"
-    assert written["git_commit"] == written["git"]["commit"]
-    assert "git_status_summary" in written
+    assert written["created_at"]
+    assert "commit" in written["git"]
+    assert set(written["git"]["status_summary"]) == {"dirty", "entry_count", "entries", "truncated"}
     assert written["config_hash"]
     assert written["input_files"][0]["sha256"]
     assert written["output_files"][0]["sha256"]

@@ -84,7 +84,6 @@ def test_scientific_reviewer_prompt_includes_scope_policy() -> None:
     )
     payload = json.loads(request.messages[1]["content"])
 
-    assert request.response_format == "json_schema"
     assert request.json_schema is not None
     assert request.json_schema["name"] == "scientific_review_report"
     assert payload["review_scope"]["requires_matrix_element_validation"] is False

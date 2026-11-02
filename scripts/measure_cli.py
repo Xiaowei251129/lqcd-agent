@@ -15,7 +15,7 @@ def main():
     if args.samples < 1:
         parser.error('samples must be positive')
     rows = []
-    env = {**os.environ, 'RUN_LIVE_LLM_TESTS': '0', 'PYTHONDONTWRITEBYTECODE': '1'}
+    env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'}
     for _ in range(args.samples):
         started = time.perf_counter()
         run = subprocess.run([sys.executable, '-B', '-m', 'lqcd_agent', 'start', '--key', 'measure'],

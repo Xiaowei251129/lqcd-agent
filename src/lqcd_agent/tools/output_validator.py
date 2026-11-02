@@ -60,7 +60,7 @@ def _validate_synthetic_matrix_elements(
     if payload.get("case_id") != case_id:
         errors.append({"field": str(path), "message": "case_id does not match the active case."})
     if payload.get("source_kind") != "synthetic":
-        errors.append({"field": str(path), "message": "source_kind must be synthetic for Phase 4."})
+        errors.append({"field": str(path), "message": "source_kind must be synthetic for the synthetic matrix-element fixture."})
 
     for field in ["z_values", "pz_values", "matrix_elements", "diagnostic_flags"]:
         if field in payload and not isinstance(payload.get(field), list):
@@ -127,7 +127,7 @@ def validate_expected_outputs(
                     )
                 )
         else:
-            warnings.append({"field": str(resolved), "message": "Output exists but has no Phase 4 validator."})
+            warnings.append({"field": str(resolved), "message": "Output exists but has no format-specific validator."})
 
     return {
         "schema_version": "0.1",

@@ -61,18 +61,6 @@ def available_programs() -> list[AnalysisProgram]:
     return list(PROGRAMS)
 
 
-def find_programs(*, category: str | None = None, tags: list[str] | tuple[str, ...] | None = None) -> list[AnalysisProgram]:
-    requested_tags = set(tags or [])
-    matches: list[AnalysisProgram] = []
-    for program in PROGRAMS:
-        if category is not None and program.category != category:
-            continue
-        if requested_tags and not requested_tags.issubset(set(program.tags)):
-            continue
-        matches.append(program)
-    return matches
-
-
 def program_inventory() -> list[dict[str, object]]:
     return [program.to_dict() for program in PROGRAMS]
 
@@ -80,8 +68,8 @@ def program_inventory() -> list[dict[str, object]]:
 def requested_programs(config):
     def values(value):
         return [str(item).strip() for item in value] if isinstance(value, list) else [str(value).strip()] if value else []
-    tags = values(config.get('analysis_program_tags')) or values(config.get('analysis_tags'))
-    outputs = values(config.get('target_observables')) + values(config.get('analysis_outputs'))
+    tags = values(config.get('analysis_program_tags'))
+    outputs = values(config.get('target_observables'))
     return set(filter(None, tags)), set(filter(None, outputs))
 
 

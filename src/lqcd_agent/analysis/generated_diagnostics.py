@@ -109,8 +109,19 @@ def diagnose_generated_output(path, kind, payload):
         raw = read_regular(path)
         result = loads(raw, canonical=False)
         report['evidence'].append({'path': str(path), 'field': 'sha256', 'value': sha256(raw).hexdigest()})
-        require(kind in ('c2', 'normalization'), 'Unknown scientific output contract')
-        (check_c2 if kind == 'c2' else check_normalization)(payload, result)
+        require(kind in ('c2', 'normalization', 'replica_observables'), 'Unknown scientific output contract')
+        if kind == 'replica_observables':
+            from lqcd_agent.research.observable_contract import check_observables
+            checked = check_observables(payload, result)
+            report['findings'].append(f"Checked {checked['valid_observables']} defined observables and retained {checked['failed_replicas']} failed replicas.")
+            warning('observable_physics_not_validated', 'Host checked identities and uncertainty arithmetic only; definitions, fitting, units and original resampling provenance need independent scientific review.')
+            if checked['failed_replicas']:
+                warning('failed_observable_replicas', 'Failed replicas remain explicit; assess selection bias and sensitivity.')
+            if result['status'] == 'needs_more_info':
+                warning('observable_inputs_missing', 'No observable estimate was produced because required information is missing.', 'severe')
+            report['recommended_checks'] = ['Validate the physical method on independent calibration data and assess systematic uncertainties.']
+        else:
+            (check_c2 if kind == 'c2' else check_normalization)(payload, result)
         if kind == 'c2':
             report['findings'].append(f"Input: {len(payload['configurations'])} configurations, Nt={payload['nt']}, Ns={payload['ns']}, pz={payload['pz']}, a={payload['lattice_spacing_fm']} fm, binsize={payload['binsize']}.")
             for fit in result['fits']:
@@ -122,7 +133,7 @@ def diagnose_generated_output(path, kind, payload):
             if payload.get('configuration_id_kind') == 'source_column_index':
                 warning('configuration_identity_limit', 'Source-column identities do not independently establish physical configuration identity or chronological binning order.')
             report['recommended_checks'] = ['Assess fit-window/model stability and covariance regulation before choosing a fit.']
-        else:
+        elif kind == 'normalization':
             for row in result.get('summaries', []):
                 report['findings'].append(f"{row['mode']} bz={row['bz']} {row['component']}: midpoint={row['mean']}, half-width={row['error']}, valid replicas={row['n_valid']}.")
             if payload.get('lineage_limit'):

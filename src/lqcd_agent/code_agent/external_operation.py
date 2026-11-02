@@ -692,6 +692,7 @@ class CodeExternalStop:
             return ExternalControl(coordinator).final_evidence(db, external_id)[0]
 
     def prepare_timeout_delivery(self, view):
+        from lqcd_agent.artifacts.contracts import CODE_MEMBER_BY_STATE_FIELD
         from lqcd_agent.control.pause import TimeoutDelivery
         from .artifacts import timeout_bundle
         value, final = view["external"], view["final"]
@@ -707,10 +708,7 @@ class CodeExternalStop:
         members, result = timeout_bundle(task, manifest, value, final,
             dispatch_phase=view["original_dispatch"]["external_phase"], receipt=receipt)
         return TimeoutDelivery({name: content.decode() for name, content in members.items()},
-            {"code_change_summary_path": None, "tests_status_path": None,
-             "code_agent_task_path": "code_agent_task.json", "code_agent_result_path": "code_agent_result.json",
-             "code_change_manifest_path": "change_manifest.json",
-             "code_verification_results_path": "verification_results.json"}, result["status"],
+            dict(CODE_MEMBER_BY_STATE_FIELD), result["status"],
             dict(PROTOCOL["state_machines"]["control_operation"]["recoverable_code_consumption_contract"]["result"]))
 
 

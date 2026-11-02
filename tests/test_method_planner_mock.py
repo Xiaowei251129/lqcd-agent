@@ -10,7 +10,7 @@ from lqcd_agent.llm.mock_provider import MockLLMProvider
 class StaticProvider:
     def __init__(self, content: str) -> None:
         self.content = content
-        self.config = LLMProviderConfig(schema_version="0.1", provider="static", dry_run_only=True)
+        self.config = LLMProviderConfig(provider="static")
 
     def generate(self, request: LLMRequest) -> LLMResponse:
         return LLMResponse(provider="static", model="static", content=self.content)

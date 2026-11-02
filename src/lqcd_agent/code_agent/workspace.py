@@ -146,7 +146,7 @@ def canonical_patch(base, final, changes):
 
 
 def _ownership_record(witness, device, inode):
-    """Keep legacy bytes or encode an exact large POSIX identity explicitly."""
+    """Encode POSIX identities without exceeding canonical JSON integer precision."""
     require(type(device) is int and type(inode) is int, "Invalid physical workspace identity")
     if max(abs(device), abs(inode)) <= 2**53 - 1:
         return {**witness, "device": device, "inode": inode}

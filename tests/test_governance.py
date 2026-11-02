@@ -57,11 +57,11 @@ import sys
 sys.path.insert(0, {str(source)!r})
 from lqcd_agent.control.identity import stable_attempt_id, stable_cycle_id, canonical_attempt_kind
 from lqcd_agent.control.lifecycle import validate_execution_index_sequence
-from lqcd_agent.artifacts.contracts import state_fields_for_slot, slots_for_target
+from lqcd_agent.artifacts.contracts import STATE_FIELDS_BY_SLOT, slots_for_target
 from lqcd_agent.benchmark import run_benchmark
 assert stable_attempt_id(1) == 'attempt_000001' and stable_cycle_id(1) == 'cycle_0001'
 assert canonical_attempt_kind('human_approval_gate') == 'human_gate'
-assert len(state_fields_for_slot('code', '0.4')) == 6
+assert len(STATE_FIELDS_BY_SLOT['code']) == 4
 assert slots_for_target('memory_report', new_human_request=False) == ('terminal',)
 for identities in ([('attempt_000001', True)], [('attempt_000001', 1), ('attempt_000003', 3)],
                    [('attempt_000001', 1), ('attempt_000001', 1)]):

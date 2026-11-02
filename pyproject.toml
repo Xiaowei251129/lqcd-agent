@@ -13,6 +13,9 @@ dependencies = [
     "langgraph-checkpoint-sqlite>=3.1,<4",
     "PyYAML>=6,<7",
     "openai==3.39.0",
+    "openai-agents==0.24.0",
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.34,<1",
     "openai-codex==0.163.0",
 ]
 
@@ -24,13 +27,14 @@ build = ["setuptools==80.9.0", "wheel==0.45.1"]
 
 [project.scripts]
 lqcd-agent = "lqcd_agent.cli:main"
-lqcd-agent-demo = "lqcd_agent.demo.server:main"
+lqcd-agent-workbench = "lqcd_agent.workbench.server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
 "lqcd_agent" = ["_build_manifest.json"]
+"lqcd_agent.workbench" = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

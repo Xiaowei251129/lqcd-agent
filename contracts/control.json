@@ -510,11 +510,6 @@
       },
       {
         "operation_variant": "replay_run/not_applicable",
-        "source_policy_state": "pre_a06",
-        "selection": "current_balanced_v1"
-      },
-      {
-        "operation_variant": "replay_run/not_applicable",
         "source_policy_state": "supported",
         "selection": "exact_source_canonical_policy_reuse"
       },
@@ -541,15 +536,6 @@
         "runtime_supported_policy_set_digest"
       ],
       "states": [
-        {
-          "source_policy_state": "pre_a06",
-          "allowed_source_schemas": [
-            "0.2",
-            "0.3"
-          ],
-          "required_evidence": "authoritative_policy_absence_proof",
-          "disposition": "accept_with_current_balanced_v1"
-        },
         {
           "source_policy_state": "supported",
           "allowed_source_schemas": [
@@ -7385,10 +7371,7 @@
       "resume_exact_schemas": [
         "0.4"
       ],
-      "source_only_schemas": [
-        "0.2",
-        "0.3"
-      ]
+      "source_only_schemas": []
     },
     {
       "invariant_id": "ADVANCE-001",
@@ -7480,16 +7463,6 @@
     "old_pause_disposition": "retain_consumed_no_reopen"
   },
   "compatibility": [
-    {
-      "execution_schema": "0.2",
-      "contract": "legacy_creation_bytes",
-      "phase_b_0_4_behavior": "no_in_place_resume_or_fork; replay_only_when_root_inputs_validate"
-    },
-    {
-      "execution_schema": "0.3",
-      "contract": "pause_and_run_lifecycle_semantic_predecessor",
-      "phase_b_0_4_behavior": "no_in_place_resume_or_migration; validated source may replay or fork to a new 0.4 child"
-    },
     {
       "execution_schema": "0.4",
       "contract": "full_bootstrap_budget_and_control_protocol",

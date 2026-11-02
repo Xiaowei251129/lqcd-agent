@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 from lqcd_agent.analysis_programs.registry import matching_programs
-from lqcd_agent.llm.base import LLMProviderConfig, LLMRequest, LLMResponse, ProviderReadiness
+from lqcd_agent.llm.base import LLMProviderConfig, LLMRequest, LLMResponse
 
 
 def _as_string_list(value: Any) -> list[str]:
@@ -42,20 +42,8 @@ def mock_proposal(value, role):
 class MockLLMProvider:
     def __init__(self, config: LLMProviderConfig | None = None) -> None:
         self.config = config or LLMProviderConfig(
-            schema_version="0.1",
             provider="mock",
             default_model="deterministic-mock",
-            dry_run_only=True,
-        )
-
-    def readiness(self) -> ProviderReadiness:
-        return ProviderReadiness(
-            provider="mock",
-            ready=True,
-            live_enabled=False,
-            missing_env_vars=[],
-            model_configured=True,
-            api_base_configured=True,
         )
 
     def _request_payload(self, request: LLMRequest) -> dict[str, Any] | None:
@@ -134,6 +122,5 @@ class MockLLMProvider:
             provider="mock",
             model=self.config.default_model or "deterministic-mock",
             content=content,
-            finish_reason="stop",
             usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
         )

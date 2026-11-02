@@ -37,7 +37,12 @@ INVALIDATED_SLOTS_BY_TARGET_KIND = {
 
 STATE_FIELDS_BY_SLOT = {
     "plan": ("method_plan_path", "coder_task_packet_path"),
-    "code": ("code_change_summary_path", "tests_status_path"),
+    "code": (
+        "code_agent_task_path",
+        "code_agent_result_path",
+        "code_change_manifest_path",
+        "code_verification_results_path",
+    ),
     "analysis": ("run_result_path", "analysis_outputs_dir"),
     "review": ("scientific_review_report_path",),
     "decision": ("decision_log_path",),
@@ -46,25 +51,8 @@ STATE_FIELDS_BY_SLOT = {
 }
 
 
-CANONICAL_CODE_PATH_FIELDS = (
-    "code_agent_task_path",
-    "code_agent_result_path",
-    "code_change_manifest_path",
-    "code_verification_results_path",
-)
-
-
-CODE_STATE_PATH_FIELDS = (*STATE_FIELDS_BY_SLOT["code"], *CANONICAL_CODE_PATH_FIELDS)
-
-
-CODE_MEMBER_BY_STATE_FIELD = dict(zip(CANONICAL_CODE_PATH_FIELDS, (
+CODE_MEMBER_BY_STATE_FIELD = dict(zip(STATE_FIELDS_BY_SLOT["code"], (
     "code_agent_task.json", "code_agent_result.json", "change_manifest.json", "verification_results.json")))
-
-
-def state_fields_for_slot(slot: str, schema_version: str) -> tuple[str, ...]:
-    if slot == "code" and schema_version == "0.4":
-        return CODE_STATE_PATH_FIELDS
-    return STATE_FIELDS_BY_SLOT[slot]
 
 
 POINTER_FIELDS = {

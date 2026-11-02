@@ -1,5 +1,5 @@
 """Bounded projections and explicit checkpoint manifests, never authorities."""
-from lqcd_agent.artifacts.contracts import ARTIFACT_SLOTS, STATE_FIELDS_BY_SLOT, state_fields_for_slot
+from lqcd_agent.artifacts.contracts import ARTIFACT_SLOTS, STATE_FIELDS_BY_SLOT
 from lqcd_agent.artifacts.registry import code_scalar_projection
 
 from .execution import ExecutionReplay
@@ -41,7 +41,7 @@ def _bounded_projection(execution, canonical_output_root, *, artifact_index, art
     value.update(artifact_head=artifact_head, artifact_event_index=artifact_event_index,
                  current_artifacts=artifact_index["current"])
     for slot in STATE_FIELDS_BY_SLOT:
-        fields = state_fields_for_slot(slot, value.get("schema_version"))
+        fields = STATE_FIELDS_BY_SLOT[slot]
         pointer = artifact_index["current"][slot]
         paths = pointer["state_paths"] if pointer is not None else {}
         for field in fields:
