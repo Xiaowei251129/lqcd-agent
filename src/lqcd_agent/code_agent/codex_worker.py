@@ -12,6 +12,9 @@ import time
 from lqcd_agent.settings import ApplicationSettings, child_environment, workspace_root
 from lqcd_agent.research.context_policy import INPUT_TOKEN_LIMIT, COMPACT_RATIO
 from .context_gateway import CodingContextGateway
+from .schemas import relative_path, within
+from .workspace import scan_tree
+from lqcd_agent.control.strict_json import loads, require
 
 
 def write_json(path, value):
@@ -26,6 +29,25 @@ def write_json(path, value):
 def is_tool_item(item):
     return item['type'] not in {'userMessage', 'reasoning', 'agentMessage', 'plan',
                                 'contextCompaction', 'enteredReviewMode', 'exitedReviewMode'}
+
+
+def written_file_proposal(workspace, task, response):
+    """Read SDK-written files into the existing proposal; the Host seals independently."""
+    value = loads(response, canonical=False)
+    require(type(value) is dict and set(value) == {'files'} and type(value['files']) is list and
+            0 < len(value['files']) <= 32, 'Invalid changed-file list')
+    paths = []
+    for item in value['files']:
+        require(type(item) is dict and set(item) == {'path'}, 'Return changed paths only')
+        path = item['path']
+        relative_path(path)
+        require(path not in paths and within(path, task['write_paths']) and
+                not within(path, task['forbidden_paths']), 'Changed path escaped task')
+        paths.append(path)
+    observed = scan_tree(workspace)
+    require(all(path in observed and len(observed[path]) <= 128000 for path in paths),
+            'Missing or oversized changed file')
+    return [{'path': path, 'content': observed[path].decode('utf-8')} for path in paths]
 
 
 def run(job):
@@ -63,8 +85,8 @@ def run(job):
     turn = None
     gateway = None
     schema = {'type': 'object', 'properties': {'files': {'type': 'array', 'items': {'type': 'object',
-        'properties': {'path': {'type': 'string'}, 'content': {'type': 'string'}},
-        'required': ['path', 'content'], 'additionalProperties': False}}}, 'required': ['files'], 'additionalProperties': False}
+        'properties': {'path': {'type': 'string'}},
+        'required': ['path'], 'additionalProperties': False}}}, 'required': ['files'], 'additionalProperties': False}
     try:
         with ExitStack() as stack:
             gateway = stack.enter_context(CodingContextGateway(settings, job))
@@ -80,8 +102,11 @@ def run(job):
             write_json(job / 'state.json', state)
             prompt = ('Implement and test the requested program. Use tools and network access when useful. '
                       'Never read credentials or modify original research data. Keep temporary test files outside '
-                      'the deliverable workspace and avoid bytecode files. Return the complete UTF-8 contents of changed files '
-                      'only in the required JSON schema. Only these write paths are permitted: ' + json.dumps(task['write_paths'])
+                      'the deliverable workspace and avoid bytecode files. Write persistent changes with tools, then return '
+                      'only their paths in the required JSON schema; do not copy file contents into the final reply. '
+                      f'You have {task["tool_policy"][0]["timeout_seconds"]} seconds for all tools and the final reply. '
+                      'Choose bounded synthetic test sizes while honoring the full requested input counts in the program. '
+                      'Only these write paths are permitted: ' + json.dumps(task['write_paths'])
                       + '\nTask: ' + json.dumps(task['requirements']) + '\nAcceptance: ' + json.dumps(task['acceptance_criteria'])
                       + '\nExisting workspace files (read with tools as needed): ' + json.dumps(request['base_paths']))
             turn = thread.turn(prompt, output_schema=schema)
@@ -136,9 +161,9 @@ def run(job):
                 if str(result.status.value) != 'completed':
                     raise RuntimeError('Coding turn did not complete')
                 items = [i.model_dump(mode='json', by_alias=True) for i in result.items]
-                proposal = json.loads(result.final_response)
+                files = written_file_proposal(workspace, task, result.final_response)
                 usage = result.usage.model_dump(mode='json', by_alias=True) if result.usage else {}
-                write_json(job / 'proposal.json', {'files': proposal['files'], 'usage': usage,
+                write_json(job / 'proposal.json', {'files': files, 'usage': usage,
                     'thread_id': thread.id, 'turn_id': turn.id, 'status': str(result.status),
                     'items': items})
                 state.update(status='completed')
@@ -153,6 +178,8 @@ def run(job):
         detail = re.sub(r'sk-[A-Za-z0-9_-]+', '[REDACTED]', detail)
         state.update(status='cancelled' if cancelled.is_set() else 'failed', error=type(error).__name__, error_message=detail[:2000])
     finally:
+        if gateway is not None and gateway.generation_usage_unknown.is_set():
+            state['usage_incomplete'] = True
         state['finished_at'] = time.monotonic()
         write_json(job / 'state.json', state)
     return 0 if state['status'] == 'completed' else 1

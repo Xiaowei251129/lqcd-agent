@@ -183,7 +183,7 @@ def test_roles_share_the_host_call_allowance_without_spending_a_fifth_call(tmp_p
         assert len(calls) == 4 and index['current']['analysis'] is None
         events = [loads(line, canonical=False) for path in (snapshot.host/'domain').rglob('research_events.jsonl')
                   for line in path.read_bytes().splitlines()]
-        assert events[-1]['event'] == 'run_error' and events[-1]['error_type'] == 'MaxTurnsExceeded'
+        assert events[-1]['event'] == 'run_error' and events[-1]['error_type'] == 'BudgetExhausted'
     else:
         assert snapshot.state['run_status'] == 'paused' and len(calls) == 6
         assert index['current']['plan']['status'] == 'success'

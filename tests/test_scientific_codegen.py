@@ -96,6 +96,13 @@ def test_scientific_codegen_delivers_real_output_to_reviewer_and_human_gate(tmp_
     assert final['run_status']=='paused' and final['active_pause']['reason']=='human_input',final
     root=host_root(final['host'])/final['run_locator']['case_id']/final['run_locator']['run_id']
     index=loads((root/'artifact_index.json').read_bytes())['current']
+    task=loads((root/'code_agent_control'/index['code']['attempt_id']/'code_agent_task.json').read_bytes())
+    records=[loads(row) for row in (root/'execution_history.jsonl').read_bytes().splitlines()]
+    backend=next(row['payload'] for row in records if row.get('event')=='resource_reserved' and
+        row['payload']['resource_kind']=='code_backend_operation')
+    # Native work must finish inside its original reservation with room to verify and seal.
+    assert task['tool_policy'][0]['timeout_seconds'] + sum(
+        spec['timeout_seconds'] for spec in task['verification_specs']) < backend['maximum_charge']['active_seconds']
     assert all(index[slot]['status']=='success' for slot in ('plan','code','analysis','review'))
     assert index['approval']['status']=='pending' and index['terminal'] is None
     analysis=loads(Path(index['analysis']['state_paths']['run_result_path']).read_bytes())['domain_result']

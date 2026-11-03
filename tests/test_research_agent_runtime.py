@@ -5,7 +5,8 @@ import json
 import pytest
 import httpx
 from agents import Agent, FunctionTool, Model, function_tool
-from agents.exceptions import MaxTurnsExceeded, ModelBehaviorError
+from agents.exceptions import ModelBehaviorError
+from lqcd_agent.control.budget import BudgetExhausted
 from agents.items import ModelResponse
 from agents.usage import Usage
 from openai import AsyncOpenAI
@@ -152,7 +153,7 @@ def test_model_failure_is_reported_without_implicit_retry():
     assert [e["event"] for e in events] == ["run_start", "model_start", "model_error", "run_error"]
 
 
-def test_host_turn_limit_stops_after_completed_tool_without_repeating_it():
+def test_host_rejects_a_tool_requested_despite_the_final_turn_policy():
     invoked = []
     async def read(context, raw):
         invoked.append(context.tool_call_id)
@@ -160,9 +161,9 @@ def test_host_turn_limit_stops_after_completed_tool_without_repeating_it():
     events = []
     model = ScriptedModel([[call()], [message("beyond budget")]])
     options = arguments(events.append, [evidence_tool(read)]) | {"max_turns": 1}
-    with pytest.raises(MaxTurnsExceeded):
+    with pytest.raises(BudgetExhausted):
         ResearchAgentRuntime(model, max_output_tokens=512).run_sync(**options)
-    assert invoked == ["read-1"] and len(model.requests) == 1
+    assert invoked == [] and len(model.requests) == 1
     assert events[-1]["event"] == "run_error" and events[-1]["usage"]["requests"] == 1
 
 

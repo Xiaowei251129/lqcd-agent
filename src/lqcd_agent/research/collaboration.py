@@ -106,7 +106,10 @@ ROLE_POLICY = (
     'check requires new data, parameters or output fields, choose need_information and explain the new Run '
     'or user input required; never silently change the contract. You may request multiple necessary evidence '
     'reads in one model turn; the Host executes and accounts for each tool serially. Leave a model turn '
-    'for the structured conclusion. '
+    'for the structured conclusion. For a generated program, the Host verifies the frozen dataset and merges '
+    'the disjoint generated_program.parameters into the JSON passed as argv[1]; neither role nor user '
+    'needs to edit the original dataset to supply those parameters. During planning, pending coding and '
+    'numerical results do not prevent a fully specified implementation plan. '
 )
 
 
@@ -206,7 +209,10 @@ class _RoleProvider:
             raise BudgetExhausted('Research attempt cannot fund the remaining roles')
         instructions += (f'\nYou have at most {max_turns} model turns for this role, including the final '
             'structured conclusion. Read known sections directly from the supplied evidence catalog. '
-            'If required evidence cannot be obtained within these turns, report need_information.')
+            'If required evidence cannot be obtained within these turns, report need_information. '
+            f'Your output allowance is {self.runtime.max_output_tokens} tokens including reasoning. '
+            'Keep the final JSON concise: state actionable checks and unresolved questions without '
+            'repeating the supplied requirements or evidence catalog.')
         async def invoke():
             remaining_seconds = self.meter.remaining_seconds()
             return await asyncio.wait_for(self.runtime.run(role=role, instructions=instructions,

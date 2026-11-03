@@ -262,3 +262,24 @@ def test_effect_timeout_drains_cleanup_and_prevents_later_requests(small_window,
         assert not failure['cancelled']
         assert events[-1]['event'] == 'run_error' and not events[-1]['cancelled']
     asyncio.run(check())
+
+
+@pytest.mark.parametrize('compact', [False, True])
+def test_final_allowance_forces_conclusion_on_counted_wire_even_after_compact(small_window, compact):
+    async def check():
+        wire = Wire([20, 90, 30] if compact else [20, 30], [[call()], [message('Evidence remains unresolved.')]])
+        events, reads = [], []
+        async def read(context, raw):
+            reads.append(True)
+            return {'finding': 'Unresolved covariance choice.'}
+        async with AsyncOpenAI(api_key='offline-test', max_retries=0,
+                http_client=httpx.AsyncClient(transport=httpx.MockTransport(wire))) as client:
+            runtime = ResearchAgentRuntime.from_openai(client=client, model='test-model', max_output_tokens=512)
+            result = await runtime.run(**(arguments(events.append, [evidence_tool(read)]) |
+                {'input': deepcopy(PINNED), 'max_turns': 3 if compact else 2}))
+        assert result.output['conclusion'] == 'Evidence remains unresolved.' and reads == [True]
+        assert wire.bodies('generate')[-1]['tool_choice'] == 'none'
+        assert wire.bodies('count')[-1] == {key: wire.bodies('generate')[-1][key]
+            for key in wire.bodies('count')[-1]}
+        assert len([event for event in events if event['event']=='model_start']) == (3 if compact else 2)
+    asyncio.run(check())

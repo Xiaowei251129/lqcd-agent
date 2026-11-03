@@ -75,6 +75,10 @@ class _HostHooks(RunHooks):
         if self.stopping or (self.cancel_event is not None and self.cancel_event.is_set()):
             raise asyncio.CancelledError()
 
+    def prepare_model_settings(self, agent):
+        # A final model allowance must produce a conclusion, not another tool loop.
+        agent.model_settings.tool_choice = 'none' if self.model_calls + 1 >= self.model_call_limit else None
+
     async def start_model(self, *, operation=None, **request):
         from lqcd_agent.control.budget import BudgetExhausted
         self.check_cancelled()
@@ -93,6 +97,7 @@ class _HostHooks(RunHooks):
         return fields
 
     async def on_llm_start(self, context, agent, system_prompt, input_items):
+        self.prepare_model_settings(agent)
         schema = agent.output_type if isinstance(agent.output_type, AgentOutputSchemaBase) else AgentOutputSchema(agent.output_type)
         await self.start_model(instructions=system_prompt, input=input_items,
             output_schema=None if schema.is_plain_text() else schema.json_schema(),
@@ -107,7 +112,12 @@ class _HostHooks(RunHooks):
                         request_id=response.request_id, output=response.to_input_items())
 
     async def on_tool_start(self, context, agent, tool):
+        from lqcd_agent.control.budget import BudgetExhausted
         self.check_cancelled()
+        if self.model_calls >= self.model_call_limit:
+            error = BudgetExhausted('Final research turn cannot start another evidence read')
+            self.effect_error = error
+            raise error
         fields = {"tool_name": tool.name, "call_id": context.tool_call_id}
         await self.emit("tool_start", **fields, arguments=context.tool_arguments)
         self.active = ("tool", fields)
@@ -212,7 +222,7 @@ class ResearchAgentRuntime:
                                  parallel_tool_calls=True, preserve_raw_usage=True, truncation="disabled",
                                  retry=ModelRetrySettings(max_retries=0))
         agent = Agent(name=role, instructions=instructions, model=self.model,
-                      model_settings=settings, tools=owned_tools, output_type=output_type)
+                      model_settings=settings, tools=owned_tools, output_type=output_type, reset_tool_choice=False)
         config = RunConfig(tracing_disabled=True, trace_include_sensitive_data=False,
                            tool_execution=ToolExecutionConfig(max_function_tool_concurrency=1),
                            tool_name_collision_policy="error")

@@ -48,13 +48,13 @@ def test_sdk_worker_enables_tools_and_review_with_task_network_policy(tmp_path, 
     monkeypatch.setenv('TMPDIR','/private/tmp')
     monkeypatch.setattr(codex_worker, 'workspace_root', lambda: Path(__file__).resolve().parents[1])
     workspace=tmp_path/'workspace';workspace.mkdir()
-    task={'write_paths':['sample.py'],'requirements':['Return 2'],'acceptance_criteria':['value()==2'],
+    task={'write_paths':['sample.py'],'forbidden_paths':['.git'],'requirements':['Return 2'],'acceptance_criteria':['value()==2'],
           'network_policy':{'enabled':network},'tool_policy':[{'timeout_seconds':240}]}
     (tmp_path/'request.json').write_text(json.dumps({'task':task,'manifest':{},'workspace':str(workspace),'base_paths':['sample.py']}))
     (tmp_path/'state.json').write_text('{"status":"accepted"}')
     observed={}
     result=NS(status=NS(value='completed',__str__=lambda _: 'completed'),
-        final_response=json.dumps({'files':[{'path':'sample.py','content':'def value():\n    return 2\n'}]}),usage=None,items=[])
+        final_response=json.dumps({'files':[{'path':'sample.py'}]}),usage=None,items=[])
     item={'id':'command-1','type':'commandExecution','command':'python --version','status':'completed'}
     event_item=NS(model_dump=lambda **_:item)
     compact_item=NS(model_dump=lambda **_:{'id':'compact-1','type':'contextCompaction'})
@@ -79,6 +79,8 @@ def test_sdk_worker_enables_tools_and_review_with_task_network_policy(tmp_path, 
             observed['thread']=kwargs
             def turn(prompt, **kwargs):
                 assert 'Existing workspace files (read with tools as needed): ["sample.py"]' in prompt
+                assert 'content' not in kwargs['output_schema']['properties']['files']['items']['properties']
+                (workspace/'sample.py').write_text('def value():\n    return 2\n')
                 return NS(id='turn',stream=lambda:iter(events),interrupt=lambda:None)
             return NS(id='thread', turn=turn)
     monkeypatch.setattr(openai_codex,'Codex',FakeCodex)
@@ -302,3 +304,72 @@ def test_sdk_worker_redacts_both_upstream_and_local_credentials(tmp_path, monkey
     state = (tmp_path / 'state.json').read_text()
     assert settings.api_key not in state and observed['token'] not in state
     assert json.loads(state)['status'] == 'failed' and '[REDACTED]' in state
+
+
+@pytest.mark.parametrize('fault', ['escape', 'absolute', 'duplicate', 'missing', 'symlink', 'oversize', 'legacy_content', 'binary'])
+def test_path_only_sdk_proposal_rejects_unsafe_or_unwritten_files(tmp_path, fault):
+    from lqcd_agent.code_agent.codex_worker import written_file_proposal
+    (tmp_path/'analysis.py').write_text('print(1)\n')
+    task = {'write_paths': ['analysis.py'], 'forbidden_paths': ['.git']}
+    value = {'files': [{'path': 'analysis.py'}]}
+    if fault == 'escape': value['files'][0]['path'] = '../secret'
+    elif fault == 'absolute': value['files'][0]['path'] = str(tmp_path/'analysis.py')
+    elif fault == 'duplicate': value['files'].append({'path': 'analysis.py'})
+    elif fault == 'missing': (tmp_path/'analysis.py').unlink()
+    elif fault == 'symlink':
+        (tmp_path/'analysis.py').unlink(); (tmp_path/'analysis.py').symlink_to(tmp_path.parent/'secret')
+    elif fault == 'oversize': (tmp_path/'analysis.py').write_bytes(b'x'*128001)
+    elif fault == 'legacy_content': value['files'][0]['content'] = 'invented content'
+    elif fault == 'binary': (tmp_path/'analysis.py').write_bytes(b'bad\x00')
+    with pytest.raises((ValueError, TypeError)):
+        written_file_proposal(tmp_path, task, json.dumps(value))
+
+
+def test_real_native_sdk_retries_transient_generation_inside_one_worker(tmp_path, monkeypatch):
+    from lqcd_agent.code_agent import codex_worker
+    from tests.test_codex_context_gate import upstream, count_response
+    from openai.types.responses import Response
+    workspace=tmp_path/'workspace';workspace.mkdir()
+    (workspace/'analysis.py').write_text('print(1)\n')
+    job=tmp_path/'job';job.mkdir()
+    task={'write_paths':['analysis.py'],'forbidden_paths':['.git'],'requirements':['Report the path analysis.py.'],
+          'acceptance_criteria':['Report existing text file.'],'network_policy':{'enabled':False},
+          'tool_policy':[{'timeout_seconds':20}]}
+    (job/'request.json').write_text(json.dumps({'task':task,'manifest':{},'workspace':str(workspace),'base_paths':['analysis.py']}))
+    (job/'state.json').write_text('{"status":"accepted"}')
+    text=json.dumps({'files':[{'path':'analysis.py'}]})
+    part={'type':'output_text','text':text,'annotations':[],'logprobs':[]}
+    message={'id':'msg_fixture','type':'message','role':'assistant','status':'completed','content':[part]}
+    response=Response(id='resp_fixture',created_at=0,model='gpt-6.1-terra',object='response',output=[message],
+        parallel_tool_calls=True,tool_choice='auto',tools=[],status='completed',
+        usage={'input_tokens':100,'output_tokens':20,'total_tokens':120,
+               'input_tokens_details':{'cached_tokens':0,'cache_write_tokens':0},'output_tokens_details':{'reasoning_tokens':0}}).model_dump(mode='json',exclude_none=True)
+    common={'item_id':'msg_fixture','output_index':0,'content_index':0}
+    events=[{'type':'response.created','response':{**response,'status':'in_progress','output':[]}},
+        {'type':'response.output_item.added','output_index':0,'item':{**message,'status':'in_progress','content':[]}},
+        {'type':'response.content_part.added',**common,'part':{**part,'text':''}},
+        {'type':'response.output_text.delta',**common,'delta':text},
+        {'type':'response.output_text.done',**common,'text':text,'logprobs':[]},
+        {'type':'response.content_part.done',**common,'part':part},
+        {'type':'response.output_item.done','output_index':0,'item':message},
+        {'type':'response.completed','response':response}]
+    data=b''.join(('event: '+e['type']+'\ndata: '+json.dumps({**e,'sequence_number':i})+'\n\n').encode() for i,e in enumerate(events))
+    generations=[]
+    def respond(route, raw):
+        if route.endswith('/input_tokens'):return count_response(100)
+        generations.append(raw)
+        if len(generations)==1:return 503,b'private provider body','application/json'
+        return 200,data,'text/event-stream'
+    with upstream(respond) as (base, received):
+        settings=ApplicationSettings(api_key='offline-key',api_base=base,coding_model='gpt-6.1-terra')
+        monkeypatch.setattr(codex_worker.ApplicationSettings,'load',lambda:settings)
+        monkeypatch.setattr(codex_worker,'workspace_root',lambda:Path(__file__).resolve().parents[1])
+        before=signal.getsignal(signal.SIGTERM),signal.getsignal(signal.SIGINT)
+        try:assert codex_worker.run(job)==0
+        finally:
+            signal.signal(signal.SIGTERM,before[0]);signal.signal(signal.SIGINT,before[1])
+        assert len(generations)==2
+        assert [route for route,_,_ in received]==['/v1/responses/input_tokens','/v1/responses']*2
+    state=json.loads((job/'state.json').read_text())
+    assert state['status']=='completed' and state['usage_incomplete'] is True
+    assert json.loads((job/'proposal.json').read_text())['files']==[{'path':'analysis.py','content':'print(1)\n'}]

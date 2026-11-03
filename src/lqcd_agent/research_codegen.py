@@ -32,11 +32,12 @@ def prepare_research(coordinator, config, *, workspace, live, initialize, method
     backend = CodexCodingBackend(coordinator.root/JOBS_DIRECTORY, coordinator.root/'code_workspaces')
     containment = ProcessContainment(backend)
     tool = {'spec_id': 'research-codex', 'argv': ['codex:research-task'], 'cwd': '.',
-            'timeout_seconds': 600, 'required': True, 'expected_exit_codes': [0], 'environment_keys': []}
+            'timeout_seconds': 400, 'required': True, 'expected_exit_codes': [0], 'environment_keys': []}
     policy = {'base_revision': revision, 'base_tree_digest': tree_digest(base),
         'task_summary': 'Implement the current scientific Method Plan',
         'acceptance_criteria': ['Implement the specified JSON interface and test on synthetic calibration data.',
-            'Use read-only reused/ sources only within their recorded applicability; deliver a self-contained analysis.py.'],
+            'Use read-only reused/ sources only within their recorded applicability; deliver a self-contained analysis.py.',
+            f'The selected production Python is {program["python"]}; keep the program compatible with its environment.'],
         'read_paths': sorted(base_files), 'write_paths': ['analysis.py'], 'forbidden_paths': ['.git'],
         'tool_policy': [tool], 'network_policy': {'enabled': True},
         'filesystem_policy': {'binary_changes': False, 'executable_changes': False, 'ephemeral_paths': ['__pycache__']},
@@ -46,7 +47,7 @@ def prepare_research(coordinator, config, *, workspace, live, initialize, method
         'backend_runtime_fingerprint': digest('openai-codex-'+backend.version)}
     code = ProductCodeHost(coordinator, repository, backend, containment, task_policy=policy,
         maximum_charge={'llm_calls': 1, 'tool_calls': 32, 'verification_commands': 0},
-        timeout_seconds=600, lease_seconds=660)
+        timeout_seconds=900, lease_seconds=960)
     handoff = AnalysisHandoff(coordinator, repository,
         allowed_command=[program['python'], '-I', '-B', 'analysis.py', 'input.json'],
         expected_outputs=['analysis_outputs/generated_result.json'], generated_program=program, workspace=workspace)

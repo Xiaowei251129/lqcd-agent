@@ -23,6 +23,7 @@ class ContextWindow:
 
     def request(self, data):
         agent = data.agent
+        self.hooks.prepare_model_settings(agent)
         schema = agent.output_type if isinstance(agent.output_type, AgentOutputSchemaBase) else AgentOutputSchema(agent.output_type)
         # Use the pinned SDK's own serializer, not an approximate character/token ratio.
         wire = self.model._build_response_create_kwargs(data.model_data.instructions,

@@ -2,7 +2,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from hashlib import sha256
-from http.client import HTTPConnection
+from http.client import HTTPConnection, HTTPException
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import socket
@@ -18,13 +18,15 @@ from lqcd_agent.settings import ApplicationSettings
 
 
 @contextmanager
-def upstream(respond):
+def upstream(respond, connections=None):
     received = []
     class Handler(BaseHTTPRequestHandler):
         protocol_version = 'HTTP/1.1'
         def log_message(self, *_):
             pass
         def do_POST(self):
+            if connections is not None:
+                connections.add(self.client_address)
             raw = self.rfile.read(int(self.headers['Content-Length']))
             received.append((self.path, raw, self.headers['Authorization']))
             status, content, kind = respond(self.path, raw)
@@ -33,7 +35,9 @@ def upstream(respond):
             self.send_header('Content-Length', str(len(content)))
             self.end_headers()
             self.wfile.write(content)
-    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    class Server(ThreadingHTTPServer):
+        def handle_error(self, *_): pass
+    server = Server(('127.0.0.1', 0), Handler)
     thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': .05}, daemon=True)
     thread.start()
     try:
@@ -225,3 +229,128 @@ def test_concurrent_count_cannot_forward_after_another_request_closes_admission(
         assert [row[0] for row in received] == ['/v1/responses/input_tokens'] * 2
     entries = [json.loads(row) for row in (tmp_path / 'context_requests.jsonl').read_text().splitlines()]
     assert all(entry['admission'] != 'admitted' for entry in entries)
+
+
+@pytest.mark.parametrize('phase', ['count', 'generation'])
+def test_upstream_failure_is_private_and_only_native_generation_can_retry(tmp_path, phase):
+    private = b'private-upstream-body test-secret-key'
+    failed = False
+    def respond(route, raw):
+        nonlocal failed
+        if route.endswith('/input_tokens') and phase == 'generation':
+            return count_response(20)
+        if not failed:
+            failed = True
+            return 429 if phase == 'count' else 503, private, 'application/json'
+        return 200, b'{}', 'application/json'
+    with upstream(respond) as (base, received):
+        with CodingContextGateway(ApplicationSettings(api_key='test-secret-key', api_base=base), tmp_path) as gateway:
+            request = {'model': 'gpt-6-luna', 'input': 'private-input'}
+            status, body = call(gateway, request)
+            assert status == (422 if phase == 'count' else 503)
+            assert gateway.failed.is_set() is (phase == 'count')
+            repeated, _ = call(gateway, request)
+            assert repeated == (422 if phase == 'count' else 200)
+        assert len(received) == (1 if phase == 'count' else 4)
+        if phase == 'generation':
+            assert [route for route, _, _ in received] == ['/v1/responses/input_tokens','/v1/responses']*2
+    trace = (tmp_path/'context_requests.jsonl').read_text()
+    failure = next(json.loads(line) for line in trace.splitlines() if 'diagnostic' in json.loads(line))
+    assert failure['diagnostic']['phase'] == phase
+    assert failure['diagnostic']['upstream_status'] == (429 if phase == 'count' else 503)
+    assert all(value not in trace + body.decode() for value in
+        ('private-upstream-body', 'private-input', 'test-secret-key', gateway.token))
+
+
+def test_worker_reuses_upstream_connection_across_count_and_generation(tmp_path):
+    connections = set()
+    def respond(route, raw):
+        return count_response(20) if route.endswith('/input_tokens') else (200, b'{}', 'application/json')
+    with upstream(respond, connections) as (base, received):
+        with CodingContextGateway(ApplicationSettings(api_key='test-key', api_base=base), tmp_path) as gateway:
+            for text in ('first', 'second'):
+                assert call(gateway, {'model': 'gpt-6-luna', 'input': text})[0] == 200
+        assert len(received) == 4 and len(connections) == 1
+        assert gateway._client.is_closed
+
+
+def test_shutdown_interrupts_upstream_before_response_headers(tmp_path):
+    entered, release = threading.Event(), threading.Event()
+    def respond(route, raw):
+        entered.set()
+        release.wait(5)
+        return count_response(20)
+    with upstream(respond) as (base, received):
+        with CodingContextGateway(ApplicationSettings(api_key='test-key', api_base=base), tmp_path) as gateway:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                pending = pool.submit(call, gateway, {'model': 'gpt-6-luna', 'input': 'pending count'})
+                try:
+                    assert entered.wait(2)
+                    start = time.monotonic()
+                    gateway.close()
+                    with pytest.raises((OSError, HTTPException)):
+                        pending.result(timeout=2)
+                    assert time.monotonic() - start < 2
+                finally:
+                    release.set()
+
+
+@pytest.mark.parametrize('case', ['recover', 'exhaust', 'oversize', 'deadline'])
+def test_only_read_only_count_retries_identical_input_within_its_deadline(tmp_path, case):
+    counts = []
+    def respond(route, raw):
+        if route.endswith('/input_tokens'):
+            counts.append(raw)
+            if case in ('exhaust', 'deadline') or len(counts) == 1:
+                raise ConnectionResetError('fixture closes before headers')
+            return count_response(INPUT_TOKEN_LIMIT + 1 if case == 'oversize' else 20)
+        return 200, b'{}', 'application/json'
+    with upstream(respond) as (base, received):
+        settings = ApplicationSettings(api_key='test-key', api_base=base,
+            timeout_seconds=.05 if case == 'deadline' else 3)
+        with CodingContextGateway(settings, tmp_path) as gateway:
+            status, _ = call(gateway, {'model': 'gpt-6-luna', 'input': 'fixed input'})
+            assert status == {'recover': 200, 'oversize': 413}.get(case, 422)
+            assert gateway.failed.is_set() is (case != 'recover')
+            if case != 'recover':
+                assert call(gateway, {'model': 'gpt-6-luna', 'input': 'retry'})[0] == 422
+        assert len(counts) == {'recover': 2, 'oversize': 2, 'exhaust': 3, 'deadline': 1}[case]
+        assert all(raw == counts[0] for raw in counts)
+        assert sum(route == '/v1/responses' for route, _, _ in received) == (case == 'recover')
+    rows = [json.loads(line) for line in (tmp_path/'context_requests.jsonl').read_text().splitlines()]
+    assert sum(row['admission'] == 'count_retry' for row in rows) == len(counts)-1
+
+
+def test_count_deadline_stops_a_slow_stream_without_generation(tmp_path):
+    stopped = threading.Event()
+    requests = []
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = 'HTTP/1.1'
+        def log_message(self, *_): pass
+        def do_POST(self):
+            requests.append(self.path)
+            self.rfile.read(int(self.headers['Content-Length']))
+            body = count_response(20)[1]
+            self.send_response(200)
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            try:
+                for byte in body:
+                    self.wfile.write(bytes([byte])); self.wfile.flush()
+                    if stopped.wait(.02): break
+            except OSError:
+                pass
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': .01}, daemon=True)
+    thread.start()
+    try:
+        settings = ApplicationSettings(api_key='test-key', api_base=f'http://127.0.0.1:{server.server_port}/v1',
+            timeout_seconds=.1)
+        with CodingContextGateway(settings, tmp_path) as gateway:
+            start = time.monotonic()
+            with pytest.raises((OSError, HTTPException)):
+                call(gateway, {'model': 'gpt-6-luna', 'input': 'pending count'})
+            assert time.monotonic()-start < 1 and gateway.failed.is_set()
+            assert requests == ['/v1/responses/input_tokens']
+    finally:
+        stopped.set(); server.shutdown(); server.server_close(); thread.join(2)
