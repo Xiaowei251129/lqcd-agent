@@ -9,8 +9,8 @@ import sys
 import threading
 import time
 
-from lqcd_agent.settings import ApplicationSettings, child_environment, workspace_root
-from lqcd_agent.research.context_policy import INPUT_TOKEN_LIMIT, COMPACT_RATIO
+from lqcd_agent.settings import (ApplicationSettings, child_environment, workspace_root,
+                                 INPUT_TOKEN_LIMIT, COMPACT_TOKEN_LIMIT)
 from .context_gateway import CodingContextGateway
 from .schemas import relative_path, within
 from .workspace import scan_tree
@@ -74,7 +74,7 @@ def run(job):
                  'shell_environment_policy.set=' + json.dumps(tool_environment).replace(': ', ' = '),
                  'project_doc_max_bytes=0',
                  f'model_context_window={INPUT_TOKEN_LIMIT}',
-                 f'model_auto_compact_token_limit={int(INPUT_TOKEN_LIMIT * .95 * COMPACT_RATIO)}',
+                 f'model_auto_compact_token_limit={COMPACT_TOKEN_LIMIT}',
                  'model_auto_compact_token_limit_scope="total"')
     environment = child_environment()
     environment.update(CODEX_HOME=str(home), CODEX_SQLITE_HOME=str(home), TMPDIR=str(temporary))

@@ -10,7 +10,7 @@ from agents.usage import Usage
 from openai import Omit
 
 from lqcd_agent.llm.prompts import ContextLimitError
-from .context_policy import INPUT_TOKEN_LIMIT, COMPACT_TOKEN_LIMIT
+from lqcd_agent.settings import INPUT_TOKEN_LIMIT, COMPACT_TOKEN_LIMIT
 
 
 class ContextWindow:

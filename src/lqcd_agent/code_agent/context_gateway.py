@@ -17,7 +17,7 @@ import time
 from urllib.parse import urlsplit
 
 from lqcd_agent.control.strict_json import loads
-from lqcd_agent.research.context_policy import INPUT_TOKEN_LIMIT
+from lqcd_agent.settings import INPUT_TOKEN_LIMIT
 
 # The pinned Responses input_tokens API's input-bearing fields. Keep values exact.
 COUNT_FIELDS = frozenset({'model', 'input', 'instructions', 'parallel_tool_calls',

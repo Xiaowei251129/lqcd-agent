@@ -13,8 +13,7 @@ from urllib.parse import urlsplit
 import pytest
 
 from lqcd_agent.code_agent.context_gateway import CodingContextGateway
-from lqcd_agent.research.context_policy import INPUT_TOKEN_LIMIT
-from lqcd_agent.settings import ApplicationSettings
+from lqcd_agent.settings import ApplicationSettings, INPUT_TOKEN_LIMIT
 
 
 @contextmanager

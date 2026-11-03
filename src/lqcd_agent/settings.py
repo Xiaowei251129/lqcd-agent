@@ -4,6 +4,15 @@ import os
 from pathlib import Path
 import stat
 
+# Canonical deployment token policy for research and Code. Derived thresholds are
+# not independent settings; native Codex retains its own generation output budget.
+INPUT_TOKEN_LIMIT = 256_000
+RESEARCH_OUTPUT_TOKEN_LIMIT = 32_768
+# Both paths compact at 76% of the input ceiling: 80% of Codex's 95% effective window.
+COMPACT_RATIO = .76
+COMPACT_TOKEN_LIMIT = int(INPUT_TOKEN_LIMIT * COMPACT_RATIO)
+
+
 def workspace_root(path=None):
     """Resolve the operator's workspace, independently of package installation."""
     root = Path(path) if path is not None else Path(os.environ.get('LQCD_AGENT_WORKSPACE', str(Path.cwd())))
@@ -55,7 +64,6 @@ class ApplicationSettings:
     model: str = 'gpt-6-luna'
     coding_model: str = 'gpt-6-luna'
     timeout_seconds: float = 180
-    max_output_tokens: int = 8192
 
     @classmethod
     def load(cls, path=None):
@@ -73,4 +81,4 @@ class ApplicationSettings:
         client = AsyncOpenAI(api_key=self.api_key, base_url=self.api_base,
                              max_retries=0, timeout=self.timeout_seconds)
         return ResearchAgentRuntime.from_openai(client=client, model=self.model,
-                                                max_output_tokens=self.max_output_tokens)
+                                                max_output_tokens=RESEARCH_OUTPUT_TOKEN_LIMIT)

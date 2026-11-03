@@ -95,6 +95,9 @@ def test_sdk_worker_enables_tools_and_review_with_task_network_policy(tmp_path, 
     assert config.env['CODEX_HOME']==str(tmp_path/'codex-home')
     temporary=tmp_path/'codex-home/tmp'
     assert config.env['TMPDIR']==str(temporary) and temporary.stat().st_mode & 0o777==0o700
+    assert 'model_context_window=256000' in overrides
+    assert 'model_auto_compact_token_limit=194560' in overrides
+    assert 'model_auto_compact_token_limit_scope="total"' in overrides
     assert 'cli_auth_credentials_store="ephemeral"' in overrides
     assert 'permissions.lqcd.network.enabled='+str(network).lower() in overrides and 'default_permissions="lqcd"' in overrides
     assert not any(entry.startswith(('features.','tools.')) for entry in overrides)

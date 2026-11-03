@@ -12,6 +12,7 @@ import pytest
 from lqcd_agent.llm.prompts import ContextLimitError
 from lqcd_agent.research.agent_runtime import ResearchAgentRuntime
 from lqcd_agent.research import context_window
+from lqcd_agent.settings import ApplicationSettings
 from tests.test_research_agent_runtime import arguments, call, evidence_tool, message
 
 
@@ -282,4 +283,27 @@ def test_final_allowance_forces_conclusion_on_counted_wire_even_after_compact(sm
         assert wire.bodies('count')[-1] == {key: wire.bodies('generate')[-1][key]
             for key in wire.bodies('count')[-1]}
         assert len([event for event in events if event['event']=='model_start']) == (3 if compact else 2)
+    asyncio.run(check())
+
+
+@pytest.mark.parametrize('next_input_tokens,compact', [(194_560, False), (194_561, True)])
+def test_application_token_policy_reaches_actual_sdk_requests(monkeypatch, next_input_tokens, compact):
+    wire = Wire([20, next_input_tokens, 20], [[call()], [message('Scientific evidence remains unresolved.')]])
+    monkeypatch.setattr('openai.AsyncOpenAI', lambda **kwargs: AsyncOpenAI(**kwargs,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(wire))))
+    async def check():
+        async def read(context, raw):
+            return {'finding': 'Scientific evidence remains unresolved.'}
+        runtime = ApplicationSettings(api_key='offline-test', model='test-model').research_runtime()
+        try:
+            result = await runtime.run(**arguments(lambda event: None, [evidence_tool(read)]))
+        finally:
+            await runtime.aclose()
+        assert result.output == {'conclusion': 'Scientific evidence remains unresolved.'}
+        assert len(wire.bodies('compact')) == int(compact)
+        assert [kind for kind, _ in wire.requests] == (
+            ['count', 'generate', 'count', 'compact', 'count', 'generate'] if compact else
+            ['count', 'generate', 'count', 'generate'])
+        assert all(body['max_output_tokens'] == 32_768 and body['truncation'] == 'disabled'
+                   for body in wire.bodies('generate'))
     asyncio.run(check())
