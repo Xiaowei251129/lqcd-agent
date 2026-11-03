@@ -3,11 +3,12 @@ from hashlib import sha256
 from pathlib import PurePosixPath
 
 from lqcd_agent.configuration import read_config
-from lqcd_agent.control.coordinator import publish_exact, read_regular, sync_directory
-from lqcd_agent.control.strict_json import canonical_bytes, digest, loads, require
+from lqcd_agent.control.coordinator import read_regular
+from lqcd_agent.control.strict_json import loads, require
 from lqcd_agent.settings import workspace_root
 from .library import Library
 from .projects import ProjectStore
+from .methods import assess_method
 
 
 COMMANDS = ("project-create", "project-list", "project-show", "library-search", "library-save",
@@ -32,23 +33,8 @@ def _project_reference(library, relative):
     return {"path": relative, "sha256": sha256(raw).hexdigest()}
 
 
-def _receipt(library, request, *, kind, status, evidence):
-    """The explicit CLI action owns this decision; models cannot call this path."""
-    current = library.read(kind, request["id"])
-    require(current["revision"] == request["expected_revision"], "Stale scientific asset revision")
-    value = {"kind": kind, "id": request["id"], "revision": current["revision"], "status": status,
-             "actor": "operator", "rationale": request["rationale"], "evidence": evidence}
-    relative = f"library/reviews/{digest(value)}.json"
-    path = library._path(relative)
-    with library._locked(write=True):
-        path.parent.mkdir(mode=0o700, exist_ok=True)
-        sync_directory(path.parent.parent)
-        publish_exact(path, canonical_bytes(value))
-    return library.reference(relative)
-
-
 def execute_workspace(request):
-    """Dispatch only operator commands; no credentials, Host or SDK is loaded."""
+    """Dispatch operator actions; method checks use the sandbox without model calls."""
     command = request["command"]
     require(command in COMMANDS, "Unsupported workspace command")
     workspace = workspace_root()
@@ -77,12 +63,9 @@ def execute_workspace(request):
                      for url in request.get("source_url", [])], expected_revision=request["expected_revision"])
     evidence = [_project_reference(library, path) for path in request.get("evidence", [])]
     if command == "library-review":
-        receipt = _receipt(library, request, kind=request["kind"], status=request["status"], evidence=evidence)
         return library.review(request["kind"], request["id"], status=request["status"], actor="operator",
-            rationale=request["rationale"], evidence=evidence, review_record=receipt,
-            expected_revision=request["expected_revision"])
+            rationale=request["rationale"], evidence=evidence, expected_revision=request["expected_revision"])
     source = _project_reference(library, request["source"])
-    validation = [_project_reference(library, path) for path in request["validation"]]
-    receipt = _receipt(library, request, kind="method", status="reviewed", evidence=[source, *validation])
-    return library.register_method(request["id"], source=source, validation=validation, actor="operator",
-        rationale=request["rationale"], review_record=receipt, expected_revision=request["expected_revision"])
+    assessment = assess_method(library._evidence(source), request["family"], request["python"])
+    return library.register_method(request["id"], source=source, assessment=assessment, actor="operator",
+        rationale=request["rationale"], expected_revision=request["expected_revision"])

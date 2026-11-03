@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from lqcd_agent.control.strict_json import ControlIntegrityError, canonical_bytes, loads
+from lqcd_agent.control.strict_json import digest, ControlIntegrityError, canonical_bytes, loads
 from lqcd_agent.research_evaluation import calibration
 from lqcd_agent.runtime import ApplicationRequest, execute
 from lqcd_agent.inspection import host_root
@@ -52,7 +52,7 @@ def install_backend(monkeypatch, program):
     prepare = research_codegen.prepare_research
     def fixture(coordinator, config, **options):
         containment = DeterministicContainment(coordinator.root/'containment')
-        def backend(*_):
+        def backend(*_, coordinator):
             value = SyntheticBackend(coordinator, next((coordinator.root/'research_repositories').iterdir()), containment,
                                      files={'analysis.py': program})
             value.kind, value.version = 'fake', '0.1'
@@ -84,16 +84,17 @@ def start_case(tmp_path, monkeypatch, family):
 def deliver(start):
     return execute(ApplicationRequest('resume',host=start['host'],**{
         'case':start['run_locator']['case_id'],'run':start['run_locator']['run_id']},
-        pause=start['active_pause']['pause_id'],key='delivery'))
+        pause=start['active_pause']['pause_id'],
+        key='delivery-'+digest([start['run_locator'],start['active_pause']['pause_id']])))
 
 
 @pytest.mark.parametrize('family',['c2','normalization'])
-def test_scientific_codegen_delivers_real_output_to_reviewer_and_human_gate(tmp_path,monkeypatch,family):
+def test_scientific_codegen_delivers_real_output_to_autonomous_report(tmp_path,monkeypatch,family):
     start,source,config=start_case(tmp_path,monkeypatch,family)
     assert start['active_pause']['reason']=='external_result'
     before=source.read_bytes()
     final=deliver(start)
-    assert final['run_status']=='paused' and final['active_pause']['reason']=='human_input',final
+    assert final['run_status']=='completed' and final['active_pause'] is None,final
     root=host_root(final['host'])/final['run_locator']['case_id']/final['run_locator']['run_id']
     index=loads((root/'artifact_index.json').read_bytes())['current']
     task=loads((root/'code_agent_control'/index['code']['attempt_id']/'code_agent_task.json').read_bytes())
@@ -104,7 +105,8 @@ def test_scientific_codegen_delivers_real_output_to_reviewer_and_human_gate(tmp_
     assert task['tool_policy'][0]['timeout_seconds'] + sum(
         spec['timeout_seconds'] for spec in task['verification_specs']) < backend['maximum_charge']['active_seconds']
     assert all(index[slot]['status']=='success' for slot in ('plan','code','analysis','review'))
-    assert index['approval']['status']=='pending' and index['terminal'] is None
+    assert index['approval'] is None and index['terminal']['status']=='accepted'
+    assert not any(row['record_type']=='human_response' for row in records)
     analysis=loads(Path(index['analysis']['state_paths']['run_result_path']).read_bytes())['domain_result']
     observed=analysis['run_result']['generated_execution']
     assert observed['dataset_snapshot']['exists'] and observed['execution']['input_sha256']
@@ -135,13 +137,33 @@ def test_scientific_codegen_delivers_real_output_to_reviewer_and_human_gate(tmp_
 
 
 def test_changed_json_is_refused_before_generated_program_execution(tmp_path,monkeypatch):
+    from lqcd_agent.inspection import read_snapshot
     start,source,_=start_case(tmp_path,monkeypatch,'normalization')
+    host=host_root(start['host'])
+    locator=start['run_locator']
+    root=host/locator['case_id']/locator['run_id']
+    original=loads((root/'root_goal.json').read_bytes())['dataset_snapshot']
     source.write_text('{}')
-    final=deliver(start)
-    root=host_root(final['host'])/final['run_locator']['case_id']/final['run_locator']['run_id']
+    with pytest.raises(ControlIntegrityError,match='Scientific dataset changed before consumption'):
+        deliver(start)
+    final=execute(ApplicationRequest('status',host=start['host'],case=locator['case_id'],run=locator['run_id']))
+    snapshot=read_snapshot(host,locator)
+    failed=next(row for row in reversed(snapshot.records.values) if row['record_type']=='attempt')
+    assert failed['event']=='finished' and failed['status']=='failed' and failed['error']['type']=='ControlIntegrityError'
+    assert not snapshot.can_advance
+    assert final['run_status']=='failed' and final['active_pause'] is None
+    assert snapshot.closure['terminal_closure']=='committed' and snapshot.closure['run_status']=='failed'
+    assert final['execution_failure']['source']=='committed_control_closure'
+    assert final['execution_failure']['closure_sha256']==digest(snapshot.closure)
+    assert final['execution_failure']['scientific_outcome']=='inconclusive'
+    assert final['execution_failure']['decision_origin']=='system'
+    assert loads((root/'root_goal.json').read_bytes())['dataset_snapshot']==original
     index=loads((root/'artifact_index.json').read_bytes())['current']
-    assert index['analysis'] is None and index['review'] is None and index['terminal'] is None
-    assert final['run_status'] in ('failed','paused')
+    assert all(index[slot] is None for slot in ('analysis','review','terminal','approval'))
+    starts=[row for row in snapshot.records.values if row.get('record_type')=='attempt'
+        and row['event']=='started' and row['attempt_kind']=='analysis_engineer']
+    assert len(starts)==1
+    assert not any(row['record_type'] in ('human_request','human_response') for row in snapshot.records.values)
 
 
 def test_json_input_identity_rejects_duplicates_and_binds_parameters(tmp_path):
@@ -179,7 +201,12 @@ def test_nonzero_analysis_exit_cannot_be_overridden_by_agent_success(monkeypatch
     root=host_root(final['host'])/final['run_locator']['case_id']/final['run_locator']['run_id']
     current=loads((root/'artifact_index.json').read_bytes())['current']
     assert current['analysis']['status']=='failed'
-    assert current['terminal'] is None and final['run_status']=='paused'
+    assert final['run_status']=='completed' and final['active_pause'] is None
+    assert current['terminal']['status']=='rejected' and current['approval'] is None
+    conclusion=loads(Path(current['terminal']['state_paths']['memory_update_path']).read_bytes())
+    assert conclusion['scientific_outcome']=='inconclusive' and conclusion['decision_origin']=='system'
+    records=[loads(row) for row in (root/'execution_history.jsonl').read_bytes().splitlines()]
+    assert not any(row['record_type']=='human_response' for row in records)
 
 
 def test_pending_implementation_plan_is_retained_without_starting_code(tmp_path,monkeypatch):
@@ -191,7 +218,8 @@ def test_pending_implementation_plan_is_retained_without_starting_code(tmp_path,
         'root_goal':{'goal':'Plan the implementation','dataset_snapshot':None}},timeout_seconds=1)
     assert outcome['content']['code_needed'] is False
     assert outcome['content']['domain_result']['status']=='pending'
-    assert outcome['diagnostic']['human_need']=='approval'
+    assert outcome['diagnostic']['status']=='failed' and outcome['diagnostic']['category']=='implementation_gap'
+    assert outcome['diagnostic']['human_need'] is None
 
 
 def test_generated_scientific_cancel_restores_stop_adapter_without_execution_dependencies(tmp_path,monkeypatch):

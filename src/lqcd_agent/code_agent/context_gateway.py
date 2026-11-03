@@ -3,7 +3,7 @@
 Native compaction is advisory. Count each actual wire input before forwarding it;
 never estimate tokens, truncate a request, or reuse a count for a different body.
 """
-from contextlib import contextmanager
+from contextlib import ExitStack, closing, contextmanager
 from hashlib import sha256
 import hmac
 import httpx
@@ -12,12 +12,13 @@ import json
 import os
 import secrets
 import socket
+import sqlite3
 import threading
 import time
 from urllib.parse import urlsplit
 
-from lqcd_agent.control.strict_json import loads
-from lqcd_agent.settings import INPUT_TOKEN_LIMIT
+from lqcd_agent.control.strict_json import closed, loads, require
+from lqcd_agent.settings import INPUT_TOKEN_LIMIT, CODE_OUTPUT_TOKEN_LIMIT
 
 # The pinned Responses input_tokens API's input-bearing fields. Keep values exact.
 COUNT_FIELDS = frozenset({'model', 'input', 'instructions', 'parallel_tool_calls',
@@ -60,10 +61,56 @@ def _validate(body, model):
     inspect(body.get('input'))
 
 
+class _UsageReader:
+    """Inspect only one bounded JSON/SSE record in memory; never persist model content."""
+    def __init__(self, content_type):
+        self.streaming = content_type.split(';', 1)[0] == 'text/event-stream'
+        self.buffer = bytearray()
+        self.complete, self.tokens, self.overflow = False, None, False
+
+    def _read(self, raw):
+        try:
+            value = loads(bytes(raw), canonical=False)
+        except ValueError:
+            return
+        if type(value) is not dict:
+            return
+        if self.streaming:
+            if value.get('type') != 'response.completed' or type(value.get('response')) is not dict:
+                return
+            value = value['response']
+        elif value.get('object') != 'response.compaction' and value.get('status') != 'completed':
+            return
+        self.complete = True
+        usage = value.get('usage')
+        if type(usage) is dict:
+            fields = [usage.get(key) for key in ('input_tokens', 'output_tokens', 'total_tokens')]
+            if all(type(n) is int and n >= 0 for n in fields) and fields[0] + fields[1] == fields[2]:
+                self.tokens = fields[2]
+
+    def feed(self, chunk):
+        if self.complete:
+            return
+        self.buffer.extend(chunk)
+        if self.streaming:
+            while b'\n' in self.buffer:
+                raw, _, remaining = self.buffer.partition(b'\n')
+                self.buffer = bytearray(remaining)
+                if not self.overflow and raw.startswith(b'data:'):
+                    self._read(raw[5:].strip())
+                self.overflow = False
+        if len(self.buffer) > 4 * 1024 * 1024:
+            self.buffer.clear()
+            self.overflow = True
+        if not self.streaming and not self.overflow:
+            self._read(bytes(self.buffer))
+
+
 class CodingContextGateway:
     """Own the loopback endpoint and all its sockets for exactly one worker run."""
-    def __init__(self, settings, job):
+    def __init__(self, settings, job, *, producer_authority=None, task=None):
         self.settings, self.job = settings, job
+        self.producer_authority, self.task = producer_authority, task
         self.token = secrets.token_urlsafe(32)
         self.upstream = urlsplit(settings.api_base.rstrip('/'))
         if (self.upstream.scheme not in ('http', 'https') or not self.upstream.hostname or
@@ -142,7 +189,45 @@ class CodingContextGateway:
         self.close()
 
     @contextmanager
-    def _request(self, path, raw, *, timeout_seconds, input_tokens=None):
+    def _model_budget(self):
+        """One SQLite connection per HTTP thread, fenced by the original producer."""
+        from lqcd_agent.control.coordinator import Coordinator
+        from lqcd_agent.control.research_budget import ResearchBudget
+        from .external_operation import ExternalDispatch
+        if self.producer_authority is None:
+            if (self.job.parent.parent / '.lqcd/control_operations.sqlite').exists():
+                raise _Rejected(422, 'context_producer_authority_missing')
+            yield None, None
+            return
+        try:
+            closed(self.producer_authority, ('worker_owner_id', 'lease_epoch'))
+            require(type(self.producer_authority['worker_owner_id']) is str and
+                    bool(self.producer_authority['worker_owner_id']) and
+                    type(self.producer_authority['lease_epoch']) is int and
+                    self.producer_authority['lease_epoch'] > 0, 'Invalid native dispatch owner')
+            require(self.task is not None and self.task['coding_backend_kind'] == 'codex' and
+                    self.job.name == self.task['producer_operation_id'] and
+                    self.job == self.job.resolve(), 'Native job identity changed')
+            host = self.job.parent.parent
+            require((host / '.lqcd/control_operations.sqlite').is_file(), 'Original native Host is absent')
+            with closing(Coordinator(host)) as coordinator:
+                locator = {key: self.task[key] for key in ('case_id', 'run_id')}
+                budget = ResearchBudget.for_run(coordinator, locator)
+                require(budget is not None, 'Application Native producer lacks its research quota')
+                dispatch = ExternalDispatch(coordinator, self.task['producer_operation_id'],
+                    self.producer_authority['worker_owner_id'], self.producer_authority['lease_epoch'],
+                    None, None, None, None)
+                def fence(db):
+                    require(coordinator._time().monotonic_seconds < budget.binding['deadline'],
+                            'Research task deadline exhausted before native model egress')
+                    _, _, _, task, _ = dispatch.model_authority(db)
+                    require(task == self.task, 'Native model task changed')
+                yield budget, fence
+        except (ValueError, KeyError, TypeError, OSError, sqlite3.Error):
+            raise _Rejected(422, 'context_research_authority_or_quota_failed') from None
+
+    @contextmanager
+    def _request(self, path, raw, *, timeout_seconds, input_tokens=None, admit=None):
         if self.failed.is_set() or self._closed:
             raise _Rejected(422, 'context_gateway_failed')
         writing = False
@@ -159,6 +244,8 @@ class CodingContextGateway:
                     self._admission.release()
                     raise _Rejected(422, 'context_gateway_failed')
                 writing = True
+                if admit is not None:
+                    admit()
                 if input_tokens is not None:
                     self._trace('/v1' + path, raw, input_tokens, 'admitted')
             elif writing and event in ('http11.send_request_body.complete', 'http11.send_request_body.failed',
@@ -215,6 +302,7 @@ class CodingContextGateway:
         tokens = None
         traced = False
         phase = upstream_status = error_type = None
+        resources = ExitStack()
         try:
             authorization = handler.headers.get_all('Authorization', [])
             if len(authorization) != 1 or not hmac.compare_digest(
@@ -238,6 +326,22 @@ class CodingContextGateway:
             except ValueError:
                 raise _Rejected(400, 'context_invalid_json') from None
             _validate(body, self.settings.coding_model)
+            output_limit = CODE_OUTPUT_TOKEN_LIMIT
+            if handler.path == '/v1/responses':
+                output_limit = body.get('max_output_tokens', CODE_OUTPUT_TOKEN_LIMIT)
+                if type(output_limit) is not int or not 0 < output_limit <= CODE_OUTPUT_TOKEN_LIMIT:
+                    raise _Rejected(413, 'context_output_token_limit_exceeded')
+                if 'max_output_tokens' not in body:
+                    body['max_output_tokens'] = output_limit
+                    raw = json.dumps(body, separators=(',', ':'), ensure_ascii=False).encode()
+            budget, fence = resources.enter_context(self._model_budget())
+            def count_admit():
+                if budget is not None:
+                    try:
+                        with budget.coordinator.transaction() as db:
+                            fence(db)
+                    except (ValueError, OSError, sqlite3.Error):
+                        raise _Rejected(422, 'context_research_authority_or_quota_failed') from None
             count_body = {key: value for key, value in body.items() if key in COUNT_FIELDS}
             phase = 'count'
             def expire_count():
@@ -258,7 +362,7 @@ class CodingContextGateway:
                             if remaining <= 0:
                                 raise httpx.ReadTimeout('Input count deadline exhausted')
                             with self._request('/responses/input_tokens', json.dumps(count_body).encode(),
-                                               timeout_seconds=remaining) as response:
+                                               timeout_seconds=remaining, admit=count_admit) as response:
                                 upstream_status = response.status_code
                                 if response.status_code != 200:
                                     raise ValueError('Invalid count status')
@@ -304,29 +408,63 @@ class CodingContextGateway:
                 handler.wfile.write(encoded)
                 return
             phase, upstream_status = 'generation', None
-            with self._request(handler.path.removeprefix('/v1'), raw, input_tokens=tokens,
-                               timeout_seconds=self.settings.timeout_seconds) as response:
-                upstream_status = response.status_code
-                traced = True
-                if not 200 <= response.status_code < 300:
-                    # Never pass redirect locations or provider error bodies to Codex.
-                    raise _Rejected(response.status_code if response.status_code in (408, 409, 429) or
-                                    response.status_code >= 500 else 422, 'context_upstream_request_failed')
-                handler.close_connection = True
-                handler.send_response(response.status_code)
-                handler.send_header('Content-Type', response.headers.get('Content-Type', 'application/json'))
-                handler.send_header('Connection', 'close')
-                handler.end_headers()
-                response_started = True
-                for chunk in response.iter_raw():
-                    handler.wfile.write(chunk)
-                    handler.wfile.flush()
+            ticket, settled = None, False
+            def admit():
+                nonlocal ticket
+                if budget is not None:
+                    try:
+                        ticket = budget.reserve(self.task['producer_operation_id'] + ':' + secrets.token_hex(16),
+                            tokens, output_limit, fence=fence)
+                    except (ValueError, OSError, sqlite3.Error):
+                        raise _Rejected(422, 'context_research_authority_or_quota_failed') from None
+            def settle(usage, *, check_authority=True):
+                nonlocal settled
+                if ticket is not None and not settled:
+                    if usage is None:
+                        self.generation_usage_unknown.set()
+                    try:
+                        budget.settle(ticket, usage, fence=fence if check_authority else None)
+                    except (ValueError, OSError, sqlite3.Error):
+                        raise _Rejected(422, 'context_research_authority_or_quota_failed') from None
+                    settled = True
+            try:
+                with self._request(handler.path.removeprefix('/v1'), raw, input_tokens=tokens,
+                                   timeout_seconds=self.settings.timeout_seconds, admit=admit) as response:
+                    upstream_status = response.status_code
+                    traced = True
+                    if not 200 <= response.status_code < 300:
+                        # Never pass redirect locations or provider error bodies to Codex.
+                        raise _Rejected(response.status_code if response.status_code in (408, 409, 429) or
+                                        response.status_code >= 500 else 422, 'context_upstream_request_failed')
+                    content_type = response.headers.get('Content-Type', 'application/json')
+                    usage = _UsageReader(content_type)
+                    handler.close_connection = True
+                    handler.send_response(response.status_code)
+                    handler.send_header('Content-Type', content_type)
+                    handler.send_header('Connection', 'close')
+                    handler.end_headers()
+                    response_started = True
+                    for chunk in response.iter_raw():
+                        usage.feed(chunk)
+                        # Settle before Codex can consume a completed SSE event.
+                        if usage.complete:
+                            settle(usage.tokens)
+                        handler.wfile.write(chunk)
+                        handler.wfile.flush()
+                    usage.feed(b'\n' if usage.streaming else b'')
+                    settle(usage.tokens if usage.complete else None)
+            finally:
+                if ticket is not None and not settled:
+                    self.generation_usage_unknown.set()
+                    settle(None, check_authority=False)
         except _Rejected as error:
             retryable = (error.message == 'context_upstream_request_failed' and
                          (error.code in (408, 409, 429) or error.code >= 500))
             if retryable:
                 self.generation_usage_unknown.set()
-            if error.message in ('context_token_count_failed', 'context_input_token_limit_exceeded') or (
+            if error.message in ('context_token_count_failed', 'context_input_token_limit_exceeded',
+                    'context_output_token_limit_exceeded', 'context_producer_authority_missing',
+                    'context_research_authority_or_quota_failed') or (
                     error.message == 'context_upstream_request_failed' and not retryable):
                 self._fail(error.message)
             if raw is not None and (not traced or error.message == 'context_upstream_request_failed'):
@@ -349,3 +487,5 @@ class CodingContextGateway:
                     'phase': phase, 'upstream_status': upstream_status, 'error_type': type(error).__name__})
             if not response_started:
                 self._error(handler, 502 if retryable else 422, 'context_upstream_request_failed')
+        finally:
+            resources.close()

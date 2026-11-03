@@ -8,7 +8,7 @@ const notice = (message, kind = '') => { state.noticeKind = kind; text('notice',
 const runEndpoint = locator => '/api/runs/'+[locator.host, locator.run_locator.case_id, locator.run_locator.run_id].map(encodeURIComponent).join('/');
 const projectEndpoint = id => '/api/projects/'+encodeURIComponent(id);
 const endpoint = locator => locator.project_id && locator.project_run_key ? projectEndpoint(locator.project_id)+'/runs/'+encodeURIComponent(locator.project_run_key) : runEndpoint(locator);
-const roleNames = {pi: 'PI', postdoc: 'Postdoc', reviewer: 'Independent Reviewer', method_planner: 'PI & Postdoc', code_agent: 'Code Researcher', analysis_engineer: 'Analysis Researcher', scientific_reviewer: 'Reviewer & PI', human_gate: 'You'};
+const roleNames = {pi: 'PI', postdoc: 'Postdoc', reviewer: 'Independent Reviewer', method_planner: 'PI & Postdoc', code_agent: 'Code Researcher', analysis_engineer: 'Analysis Researcher', scientific_reviewer: 'Reviewer & PI', human_gate: 'Authorization', memory_report: 'Report'};
 
 async function api(path, body) {
   const response = await fetch(path, {method: body === undefined ? 'GET' : 'POST', cache: 'no-store',
@@ -24,7 +24,7 @@ async function select(locator) {
   if (locator.project_id) {
     if (state.project?.id !== locator.project_id) await loadProject(locator.project_id);
   } else {
-    state.project = null; $('project-panel').hidden = true;
+    state.project = null; $('project-panel').hidden = true; $('participation').hidden = true;
     localStorage.removeItem(storage+'project');
   }
   $('project-panel').hidden = !state.project;
@@ -105,6 +105,7 @@ async function loadProject(identifier) {
   $('project-live').checked = false;
   $('project-start').disabled = state.busy || !state.project.case_config;
   text('project-readiness', state.project.case_config ? 'Each investigation starts with this project question and configuration.' : 'Add a case configuration below before starting an investigation.');
+  await contributions(true);
 }
 
 async function chooseProject(identifier) {
@@ -126,6 +127,35 @@ function projectList(projects) {
     item.addEventListener('click', () => chooseProject(project.id).catch(error => notice(error.message)));
     return item;
   }) : [node('p', 'Create your first research project.', 'muted')]);
+}
+
+async function contributions(restore = false) {
+  $('participation').hidden = !state.project || state.libraryOpen;
+  if (!state.project || state.libraryOpen) return;
+  const project = state.project;
+  const entries = await api(projectEndpoint(project.id)+'/contributions');
+  if (state.project !== project) return;
+  rows($('contribution-list'), entries.map(entry => {
+    const item = node('article', undefined, 'contribution');
+    item.append(node('strong', readable(entry.kind)+' · '+readable(entry.author)),
+      node('p', entry.body), node('small', 'Project version '+entry.project_revision+' · input '+entry.revision+
+        (entry.run ? ' · Run '+entry.run.run_id.slice(-8) : ' · project-wide')),
+      node('small', entry.evidence_sha256.length ? ' · evidence '+entry.evidence_sha256.join(', ') : ''));
+    return item;
+  }));
+  const selected = state.selected?.project_id === project.id && state.verified;
+  $('contribution-run-option').hidden = !selected;
+  text('contribution-scope', selected && ['completed', 'halted', 'failed'].includes(state.view.run_status) ?
+    'Attach to the selected closed investigation' : 'Limit to the selected investigation');
+  if (!selected) $('contribution-run').checked = false;
+  const pending = JSON.parse(localStorage.getItem(storage+'contribution') || 'null');
+  $('forget-contribution').hidden = !pending;
+  if (restore && pending?.project === project.id) {
+    $('contribution-kind').value = pending.payload.kind;
+    $('contribution-body').value = pending.payload.body;
+    $('contribution-evidence').value = pending.payload.evidence_sha256.join('\n');
+    $('contribution-run').checked = Boolean(pending.payload.run);
+  }
 }
 
 async function searchLibrary() {
@@ -264,6 +294,7 @@ function summaries(view) {
     if (value.findings?.length) values.push(summaryLine('FINDINGS', value.findings));
   }
   rows($('summary'), values.length ? values : [node('p', 'Verified scientific summaries will appear as artifacts are committed.', 'muted')]);
+  if (view.execution_failure) $('summary').append(node('p', view.execution_failure.summary+' · '+view.execution_failure.source, 'muted'));
   const result = view.summaries['generated_result.json'];
   const charts = [];
   if (result?.fits) {
@@ -295,13 +326,14 @@ function render(view) {
   $('empty').hidden = true; $('investigation').hidden = false;
   text('run-mode', view.live ? 'LIVE LLM RESEARCH'+(view.coding ? ' · CODEX' : '') : view.synthetic ? 'OFFLINE SYNTHETIC · ENGINEERING EXERCISE' : 'OFFLINE PLANNER & REVIEWER · SCIENTIFIC PROGRAM');
   text('run-title', view.run_locator.case_id); text('run-goal', view.goal); text('run-state', readable(view.run_status));
-  text('acceptance', view.synthetic ? 'Synthetic fixture only' : ['accepted', 'accepted_with_conditions'].includes(view.scientific_acceptance) ? 'Accepted by recorded decision' : 'Awaiting scientific acceptance');
-  text('activity', view.archived ? 'Saved project evidence' : closed ? 'Run closed · '+readable(view.run_status) : view.active_pause?.reason === 'human_input' ? 'Waiting for your decision' : readable(view.attempts.at(-1)?.kind));
+  text('acceptance', view.scientific_outcome ? readable(view.scientific_outcome)+' · '+readable(view.decision_origin)+' conclusion' : closed ? 'No recorded research outcome' : 'Research in progress');
+  text('activity', view.archived ? 'Saved project evidence' : closed ? 'Run closed · '+readable(view.run_status) : view.active_pause?.reason === 'human_input' ? 'Waiting for extra authorization' : readable(view.attempts.at(-1)?.kind));
   text('head', view.execution_head.slice(0, 14)+'…');
   text('run-identity', view.host+' / '+view.run_locator.run_id); text('refreshed', 'Verified '+new Date().toLocaleTimeString());
   $('compatibility').hidden = view.compatible && !view.needs_recovery && view.managed;
   text('compatibility', view.archived ? 'Saved project evidence. The original execution directory is no longer available; this record cannot resume work or accept decisions. Start a new investigation from the project to continue.' : !view.compatible ? 'Historical runtime build. Evidence remains inspectable; new work requires its original supported build. No migration or replay is performed.' : !view.managed ? 'Imported Run: read-only evidence. Use the original CLI for its control actions.' : 'An invocation started without a committed completion. Inspect its original recovery state; the workbench will not repeat uncertain work.');
-  const roles = ['method_planner', 'code_agent', 'analysis_engineer', 'scientific_reviewer', 'human_gate'];
+  const roles = ['method_planner', 'code_agent', 'analysis_engineer', 'scientific_reviewer',
+    ...(view.attempts.some(a => a.kind === 'human_gate') ? ['human_gate'] : []), 'memory_report'];
   rows($('timeline'), roles.map(kind => {
     const attempt = view.attempts.filter(a => a.kind === kind).at(-1);
     const success = attempt?.status === 'succeeded', failure = attempt?.status === 'failed';
@@ -314,14 +346,25 @@ function render(view) {
   const job = view.coding_backend;
   $('backend-progress').hidden = !job;
   if (job) text('backend-progress', 'Codex: '+readable(job.status)+' · '+(job.tool_count ?? '—')+' observed tool calls · original timeout and budget apply');
-  rows($('budget'), Object.entries(view.budget.dimensions).filter(([name]) => ['active_seconds_per_run','llm_calls_per_run','tool_calls_per_run','transitions_per_run'].includes(name)).map(([name, value]) => {
-    const item = node('div'); item.append(node('span', readable(name)), node('strong', value.used+' used · '+value.remaining+' remaining')); return item;
-  }));
+  const budget = Object.entries(view.budget.dimensions).filter(([name]) => ['active_seconds_per_run','llm_calls_per_run','tool_calls_per_run','transitions_per_run'].includes(name)).map(([name, value]) => {
+    const item = node('div'); item.append(node('span', 'Run · '+readable(name)), node('strong', value.used+' used · '+value.remaining+' remaining')); return item;
+  });
+  if (view.research_task) {
+    const quota = view.research_task;
+    for (const [label, remaining, limit] of [['model calls', quota.remaining_model_calls, quota.limits.model_calls],
+      ['tokens', quota.remaining_tokens, quota.limits.tokens], ['Runs', quota.remaining_runs, quota.limits.runs]]) {
+      const item = node('div'); item.append(node('span', 'Shared research task · '+label), node('strong', remaining+' remaining / '+limit)); budget.unshift(item);
+    }
+    if (quota.unknown_requests) budget.push(summaryLine('Reserved usage', quota.unknown_requests+' model requests retain conservative usage reservations.'));
+    const unexecuted = Object.values(quota.unexecuted_experiments);
+    if (unexecuted.length) budget.push(summaryLine('Additional checks not executed', unexecuted.map(item => item.parent.run_id+': '+readable(item.reason))));
+  }
+  rows($('budget'), budget);
   const request = view.human_request;
   $('gate').hidden = !request; $('gate-empty').hidden = Boolean(request); $('cancel-box').hidden = !view.actions.cancel;
   if (request) {
     text('gate-kind', readable(request.request_kind));
-    text('gate-prompt', request.prompt ?? request.summary ?? 'Review the committed plan, analysis, independent scientific review and their limitations.');
+    text('gate-prompt', request.prompt ?? request.summary ?? 'Inspect the requested action and its exact authorization scope.');
     if (changed) {
       $('response-form').reset();
       rows($('decision'), [node('option', 'Choose explicitly…'), ...request.authorization_scope.allowed_decisions.map(decision => {
@@ -346,6 +389,7 @@ async function refresh() {
     const selected = state.selected;
     if (selected && !state.libraryOpen) { const view = await api(endpoint(selected)); if (selected === state.selected) render(view); }
     $('project-start').disabled = state.busy || !state.project?.case_config;
+    await contributions();
     text('connection', 'Connected · local control'); $('connection').classList.remove('offline');
   } catch (error) {
     state.verified = false; $('respond').disabled = true; $('cancel').disabled = true;
@@ -362,6 +406,39 @@ $('forget-pending').addEventListener('click', () => {
   localStorage.removeItem(storage+'pending');
   $('pending-record').hidden = true;
   notice('This browser record was forgotten. No investigation, decision or history was changed.');
+});
+$('forget-contribution').addEventListener('click', () => {
+  localStorage.removeItem(storage+'contribution');
+  $('forget-contribution').hidden = true;
+  notice('Unconfirmed browser form forgotten. Existing scientific input remains recorded.');
+});
+$('contribution-form').addEventListener('submit', async event => {
+  event.preventDefault(); if (!state.project) return;
+  const selected = state.selected?.project_id === state.project.id && state.verified;
+  const run = $('contribution-run').checked && selected ? {host: state.view.host,
+    ...state.view.run_locator, execution_head: state.view.execution_head} : null;
+  const payload = {expected_digest: state.project.sha256, kind: $('contribution-kind').value,
+    body: $('contribution-body').value, evidence_sha256: $('contribution-evidence').value.split('\n').map(s => s.trim()).filter(Boolean), run};
+  let pending = JSON.parse(localStorage.getItem(storage+'contribution') || 'null');
+  if (pending && (pending.project !== state.project.id || Boolean(pending.payload.run) !== Boolean(run) ||
+      run && pending.payload.run && ['host', 'case_id', 'run_id'].some(k => pending.payload.run[k] !== run[k]) || ['kind', 'body', 'evidence_sha256'].some(k => JSON.stringify(pending.payload[k]) !== JSON.stringify(payload[k])))) {
+    notice('An unconfirmed scientific input is retained. Restore its Project to retry, or forget its browser form before submitting a new input.'); return;
+  }
+  if (!pending) {
+    pending = {project: state.project.id, payload: {...payload, key: crypto.randomUUID()}};
+    localStorage.setItem(storage+'contribution', JSON.stringify(pending));
+  }
+  $('contribution-save').disabled = true;
+  try {
+    await api(projectEndpoint(pending.project)+'/contributions', pending.payload);
+    localStorage.removeItem(storage+'contribution'); $('contribution-form').reset();
+    notice('Scientific input recorded for the next research checkpoint. It does not grant additional authority.');
+    await contributions();
+  } catch (error) {
+    if (error.status && error.status < 500) localStorage.removeItem(storage+'contribution');
+    notice(error.status === 409 ? 'The Project or Run changed. Refresh before submitting again.' : error.message);
+    $('forget-contribution').hidden = !localStorage.getItem(storage+'contribution');
+  } finally { $('contribution-save').disabled = false; }
 });
 $('project-create-form').addEventListener('submit', async event => {
   event.preventDefault(); $('project-create').disabled = true;
@@ -389,7 +466,7 @@ $('project-start').addEventListener('click', () => {
 });
 $('refresh-project').addEventListener('click', () => { if (state.project) loadProject(state.project.id).catch(error => notice(error.message)); });
 $('open-library').addEventListener('click', () => {
-  state.libraryOpen = true; $('library-panel').hidden = false; $('project-panel').hidden = true;
+  state.libraryOpen = true; $('library-panel').hidden = false; $('project-panel').hidden = true; $('participation').hidden = true;
   $('investigation').hidden = true; $('empty').hidden = true; $('gate').hidden = true; $('gate-empty').hidden = false; $('cancel-box').hidden = true;
   searchLibrary().catch(error => notice(error.message));
 });

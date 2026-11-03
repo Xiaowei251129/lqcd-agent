@@ -218,6 +218,17 @@ class ExternalDispatch:
                 task["backend_version"] == value["backend_version"], "Backend source changed")
         return value, root, directory, task, manifest
 
+    def model_authority(self, db):
+        """Fence each native model effect inside the original producer reservation."""
+        value, root, directory, task, manifest = self._source(db)
+        require(value['operation_phase'] in ('dispatch_authorized', 'dispatch_receipt_committed') and
+                value['operation_status'] == 'active', 'Native model producer is no longer active')
+        aggregate = value['prestart']['aggregate']['request']
+        require(self.coordinator._time().monotonic_seconds <
+                value['dispatch_started_at'] + aggregate['timeout_seconds'],
+                'Native model exceeded its original Backend reservation')
+        return value, root, directory, task, manifest
+
     def authorize(self):
         with self.coordinator.transaction() as db:
             value, _, _, _, _ = self._source(db)
@@ -733,7 +744,19 @@ class CodeWatchdog:
         maximum = self._maximum(value) if value.get("reservation_id") is not None else None
         backend_deadline = dispatch_at + maximum["active_seconds"] if dispatch_at is not None and maximum is not None else None
         reason = None
-        if maximum is not None and not self.containment.never_started(producer_operation_id):
+        root = self.coordinator.root / value['run_locator']['case_id'] / value['run_locator']['run_id']
+        goal = loads(read_regular(root / 'root_goal.json'))
+        if goal.get('research_task') is not None and now >= goal['research_task']['deadline']:
+            reason = 'policy_stop'
+        if reason is None and dispatch_at is not None and value['backend_kind'] == 'codex':
+            observed = validate_status(self.backend.lookup(producer_operation_id)).value
+            require(observed['producer_operation_id'] == producer_operation_id and
+                    observed['backend_kind'] == value['backend_kind'] and
+                    observed['backend_version'] == value['backend_version'],
+                    'Native watchdog observation changed identity')
+            if observed['status'] in ('failed', 'cancelled'):
+                reason = 'policy_stop'
+        if reason is None and maximum is not None and not self.containment.never_started(producer_operation_id):
             try:
                 tools = self.containment.observed_tool_count(producer_operation_id)
             except ControlIntegrityError:
@@ -793,8 +816,19 @@ class CodeWatchdog:
         locator = value["run_locator"]
         root = coordinator.root / locator["case_id"] / locator["run_id"]
         trigger = {"run_locator": locator, "producer_operation_id": producer_operation_id, "reason": reason}
+        failure_snapshot = None
+        if reason == 'policy_stop' and value['backend_kind'] == 'codex':
+            observed = validate_status(self.backend.lookup(producer_operation_id)).value
+            if observed['status'] in ('failed', 'cancelled'):
+                raw = read_regular(self.backend.job(producer_operation_id) / 'state.json')
+                failure_snapshot = (root / ('watchdog_' + producer_operation_id + '_worker_state.json'), raw)
+                trigger['backend_failure'] = {'status': observed['status'],
+                    'state_reference': failure_snapshot[0].relative_to(root).as_posix(),
+                    'state_sha256': sha256(raw).hexdigest()}
         path = root / ("watchdog_" + producer_operation_id + "_trigger.json")
         with coordinator.transaction():
+            if failure_snapshot is not None:
+                publish_exact(*failure_snapshot)
             publish_exact(path, canonical_bytes(trigger))
         request = ResolveExternalInterruptRequest(locator, producer_operation_id, reason,
             path.relative_to(root).as_posix(), sha256(canonical_bytes(trigger)).hexdigest())

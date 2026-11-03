@@ -12,7 +12,7 @@ from tests.test_research_collaboration import execute_collaboration
 
 
 @pytest.mark.parametrize('role', ['method_planner', 'scientific_reviewer'])
-def test_request_failure_before_model_reaches_human_with_real_evidence(tmp_path, monkeypatch, role):
+def test_request_failure_before_model_concludes_with_real_evidence(tmp_path, monkeypatch, role):
     from lqcd_agent.agents import method_planner, scientific_reviewer
 
     def reject_request(**kwargs):
@@ -22,15 +22,18 @@ def test_request_failure_before_model_reaches_human_with_real_evidence(tmp_path,
                        else (scientific_reviewer, 'build_scientific_reviewer_request'))
     monkeypatch.setattr(module, builder, reject_request)
     snapshot, calls, _ = execute_collaboration(tmp_path)
-    assert snapshot.state['run_status'] == 'paused'
-    assert snapshot.state['active_pause']['reason'] == 'human_input'
+    assert snapshot.state['run_status'] == 'completed' and snapshot.state.get('active_pause') is None
     assert [call['schema'] for call in calls] == ([] if role == 'method_planner' else
         ['ResearchBrief', 'ResearchBrief', 'method_plan_discussion'])
     index = loads((snapshot.root/'artifact_index.json').read_bytes())
     source = index['current']['plan' if role == 'method_planner' else 'review']
     assert source['status'] == 'failed'
-    assert index['current']['decision'] is not None and index['current']['terminal'] is None
-    assert not any(row['record_type'] == 'human_response' for row in snapshot.records.values)
+    assert index['current']['decision'] is not None and index['current']['terminal']['status'] == 'rejected'
+    terminal_member = next(member for member in index['current']['terminal']['members']
+        if member['logical_name'] == 'memory_update.json')
+    terminal = loads((snapshot.root/terminal_member['canonical_path']).read_bytes())
+    assert terminal['scientific_outcome'] == 'inconclusive' and terminal['decision_origin'] == 'system'
+    assert not any(row['record_type'] in ('human_request', 'human_response') for row in snapshot.records.values)
     records = snapshot.records.values
     assert not any(row.get('event') == 'resource_reserved'
                    and row['payload']['attempt_id'] == source['attempt_id'] for row in records)

@@ -63,7 +63,8 @@ def run(job):
     settings = ApplicationSettings.load()
     workspace_config = workspace_root()
     profile = {':root': 'deny', ':minimal': 'read', ':workspace_roots': {'.': 'write'},
-               str(workspace_config / '.venv'): 'read', str(workspace_config / '.runtime'): 'read', ':slash_tmp': 'deny', ':tmpdir': 'write'}
+               str(workspace_config / '.venv'): 'read', str(workspace_config / '.runtime'): 'read',
+               str(Path(sys.base_prefix).resolve()): 'read', ':slash_tmp': 'deny', ':tmpdir': 'write'}
     tool_environment = {'PYTHONDONTWRITEBYTECODE': '1', 'TMPDIR': str(temporary),
                         'TMPPREFIX': str(temporary/'zsh'), 'RUFF_CACHE_DIR': str(temporary/'ruff')}
     overrides = ('forced_login_method="api"', 'cli_auth_credentials_store="ephemeral"',
@@ -71,6 +72,10 @@ def run(job):
                  'web_search=' + json.dumps('live' if task['network_policy']['enabled'] else 'disabled'),
                  'permissions.lqcd.filesystem=' + json.dumps(profile).replace(': ', ' = '),
                  'permissions.lqcd.network.enabled=' + str(task['network_policy']['enabled']).lower(),
+                 'features.network_proxy=true',
+                 'permissions.lqcd.network.domains={"*"="allow"}',
+                 'permissions.lqcd.network.proxy_url="http://127.0.0.1:0"',
+                 'permissions.lqcd.network.enable_socks5=false',
                  'shell_environment_policy.set=' + json.dumps(tool_environment).replace(': ', ' = '),
                  'project_doc_max_bytes=0',
                  f'model_context_window={INPUT_TOKEN_LIMIT}',
@@ -89,7 +94,8 @@ def run(job):
         'required': ['path'], 'additionalProperties': False}}}, 'required': ['files'], 'additionalProperties': False}
     try:
         with ExitStack() as stack:
-            gateway = stack.enter_context(CodingContextGateway(settings, job))
+            gateway = stack.enter_context(CodingContextGateway(settings, job,
+                producer_authority=request.get('producer_authority'), task=task))
             overrides += ('openai_base_url=' + json.dumps(gateway.base_url),)
             codex = stack.enter_context(Codex(CodexConfig(cwd=str(workspace), env=environment, config_overrides=overrides,
                                client_name='lqcd_agent', client_title='LQCD Agent')))
@@ -97,7 +103,7 @@ def run(job):
             account = codex.account()
             if getattr(getattr(account.account, 'root', account.account), 'type', None) != 'apiKey':
                 raise RuntimeError('Application API-key authentication was not selected')
-            thread = codex.thread_start(model=settings.coding_model, cwd=str(workspace), approval_mode=ApprovalMode.auto_review)
+            thread = codex.thread_start(model=settings.coding_model, cwd=str(workspace), approval_mode=ApprovalMode.deny_all)
             state.update(thread_id=thread.id, status='running')
             write_json(job / 'state.json', state)
             prompt = ('Implement and test the requested program. Use tools and network access when useful. '
@@ -113,8 +119,14 @@ def run(job):
             state['turn_id'] = turn.id
             write_json(job / 'state.json', state)
             finished = threading.Event()
+            deadline = time.monotonic() + task['tool_policy'][0]['timeout_seconds']
+            if request.get('producer_authority') is not None:
+                from lqcd_agent.control.coordinator import component, read_regular
+                host = job.parent.parent
+                root = host / component(task['case_id']) / component(task['run_id'])
+                goal = loads(read_regular(root / 'root_goal.json'))
+                deadline = min(deadline, goal['research_task']['deadline'])
             def stop_watch():
-                deadline = time.monotonic() + task['tool_policy'][0]['timeout_seconds']
                 while not finished.wait(.1):
                     if gateway.failed.is_set() or cancelled.is_set() or time.monotonic() >= deadline:
                         if not gateway.failed.is_set():

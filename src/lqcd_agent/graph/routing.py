@@ -38,22 +38,28 @@ def product_budget_decision(state, *, target, trigger, risk, stop_sequence_id=No
     return result
 
 def select_product_route(view, diagnostic, *, code_needed=False, code_usable=False, human_response=None, human_authorization=None, stop_sequence_id=None, proposed_grant=None):
-    """Select a canonical edge from verified outcomes; Agents cannot select it."""
+    """Select work or closure from evidence; only extra authority can require a person."""
     from lqcd_agent.agents.decision_coordinator import validate_product_diagnostic
+    from lqcd_agent.control.budget import policy
     from lqcd_agent.control.strict_json import digest, require
     diagnostic = validate_product_diagnostic(diagnostic)
-    source, state = (view['source'], view['state'])
+    source, state = view['source'], view['state']
     node = source['node_name']
     require(node in PRODUCT_ROUTES, 'Legacy node cannot enter the canonical graph')
     success = source['status'] == 'succeeded' and diagnostic['status'] == 'success'
     revision = is_scientific_revision(diagnostic)
-    revision_ready = success and diagnostic['candidates'] == ['method_planner'] and diagnostic['retryability'] == 'retryable' and diagnostic['confidence'] == 'unique' and diagnostic['risk'] in ('low', 'medium') and diagnostic['human_need'] is None
+    authorization_needed = diagnostic['category'] == 'authorization' and diagnostic['human_need'] in ('approval', 'external_action')
+    hard_failure = any(diagnostic['category'] == name or diagnostic['category'].startswith((name + '.', name + '_'))
+                       for name in ('security', 'policy', 'data', 'integrity'))
+    revision_ready = (success and diagnostic['candidates'] == ['method_planner'] and
+        diagnostic['retryability'] == 'retryable' and diagnostic['confidence'] == 'unique' and
+        diagnostic['human_need'] is None)
     if revision:
-        require(proposed_grant is None and state['budget']['active_grant'] is None, 'Scientific revision cannot borrow a failure grant')
-    safety_failure = diagnostic['category'] in ('security', 'policy', 'data') or (diagnostic['category'].startswith('scientific') and diagnostic['status'] != 'success' and (diagnostic['retryability'] != 'retryable'))
-    forward = success and not revision and diagnostic['risk'] in ('low', 'medium') and (diagnostic['confidence'] == 'unique') and (diagnostic['human_need'] is None and (not safety_failure))
-    trigger = 'forward'
-    request = None
+        require(proposed_grant is None and state['budget']['active_grant'] is None,
+                'Scientific revision cannot borrow a failure grant')
+    forward = (success and not revision and not authorization_needed and not hard_failure and
+               diagnostic['confidence'] == 'unique' and diagnostic['human_need'] is None)
+    trigger, request, sequence = 'forward', None, stop_sequence_id
     if node == 'method_planner':
         target = ('code_agent' if code_needed else 'analysis_engineer') if forward else 'decision_coordinator'
     elif node == 'code_agent':
@@ -63,61 +69,75 @@ def select_product_route(view, diagnostic, *, code_needed=False, code_usable=Fal
     elif node == 'scientific_reviewer':
         target = 'decision_coordinator'
     elif node == 'human_gate':
-        require(human_response is not None and human_response['status'] == 'validated' and (human_response['validator_attempt_id'] == source['attempt_id']) and (human_response['authorized_transition_target'] == 'decision_coordinator'), 'Human edge requires an exact validated response')
-        target, trigger = ('decision_coordinator', 'human_response')
+        require(human_response is not None and human_response['status'] == 'validated' and
+                human_response['validator_attempt_id'] == source['attempt_id'] and
+                human_response['authorized_transition_target'] == 'decision_coordinator',
+                'Human edge requires an exact validated response')
+        target, trigger = 'decision_coordinator', 'human_response'
     elif node == 'memory_report':
         require(success, 'END requires a completed deterministic terminal sink')
         target = None
     else:
-        from lqcd_agent.control.budget import policy
         candidates = diagnostic['candidates']
         failure = None if revision else state['budget']['active_failure']
+        dimensions = state['budget']['dimensions']
         selected_policy = policy(state['budget']['profile_id']).value
         reserve = selected_policy['terminal_reserve']
-        dimensions = state['budget']['dimensions']
-        repeat = (diagnostic['status'] != 'success' or bool(diagnostic['candidates'])) and failure is not None and (failure['occurrence'] >= 2)
-        needs_human = (revision and not revision_ready) or diagnostic['risk'] in ('high', 'critical') or diagnostic['confidence'] != 'unique' or repeat or (diagnostic['human_need'] is not None) or safety_failure
-        if stop_sequence_id is not None:
-            target, trigger = ('memory_report', 'budget_stop')
+        repeat = failure is not None and failure['occurrence'] >= 2
+        if sequence is not None or diagnostic['category'] == 'budget':
+            target, trigger = 'memory_report', 'budget_stop'
+        elif hard_failure:
+            target = 'memory_report'
         elif human_authorization is not None:
-            require(human_authorization['target_node'] in candidates or human_authorization['target_node'] == 'memory_report', 'Human authorization does not match the diagnosed work scope')
-            require(diagnostic['category'] not in ('security', 'policy', 'data'), 'Authorization cannot override a hard safety gate')
+            require(human_authorization['target_node'] in candidates or
+                    human_authorization['target_node'] == 'memory_report',
+                    'Human authorization does not match the diagnosed work scope')
             target = human_authorization['target_node']
-        elif candidates and (not needs_human) and (diagnostic['retryability'] == 'retryable'):
-            require(len(candidates) == 1, 'Ambiguous fallback cannot dispatch work')
-            target = candidates[0]
-        elif needs_human or candidates:
+        elif authorization_needed:
             target = 'human_gate'
+        elif revision:
+            target = 'method_planner' if revision_ready else 'memory_report'
+        elif (len(candidates) == 1 and diagnostic['confidence'] == 'unique' and
+              diagnostic['retryability'] == 'retryable' and not repeat and
+              diagnostic['human_need'] not in ('clarification', 'external_action')):
+            target = candidates[0]
         else:
             target = 'memory_report'
         if target in PRODUCT_FALLBACKS:
             trigger = PRODUCT_FALLBACKS[target][0]
-            decision = product_budget_decision(state, target=target, trigger=trigger, risk=diagnostic['risk'], proposed_grant=proposed_grant)
+            decision = product_budget_decision(state, target=target, trigger=trigger,
+                risk=diagnostic['risk'], proposed_grant=proposed_grant)
             if decision['decision'] != 'allow':
-                route_dimension = PRODUCT_FALLBACKS[target][1]
-                grant_possible = human_authorization is None and failure is not None and (state['budget']['active_grant'] is None) and (not safety_failure) and (diagnostic['confidence'] == 'unique') and (diagnostic['retryability'] == 'retryable') and (dimensions[route_dimension]['remaining'] == 0) and all((row['projected_after'] - row['used'] <= row['remaining'] for key, row in decision['dimensions'].items() if key != route_dimension)) and (dimensions['control_attempts_per_run']['remaining'] >= 3 + reserve['control_attempts']) and (dimensions['transitions_per_run']['remaining'] >= 4 + reserve['transitions'])
-                target, trigger = ('human_gate', 'forward' if grant_possible else 'budget_stop')
+                target, trigger = 'memory_report', 'budget_stop'
         if target == 'human_gate':
-            if any((dimensions[key]['remaining'] < 2 + reserve[reserve_key] for key, reserve_key in (('control_attempts_per_run', 'control_attempts'), ('transitions_per_run', 'transitions')))):
-                trigger = 'budget_stop'
-            target_scope = candidates[0] if len(candidates) == 1 and trigger != 'budget_stop' else None
+            # This packet grants an exact additional action, never scientific acceptance.
+            target_scope = candidates[0] if len(candidates) == 1 else None
             decisions = ['approve_with_conditions', 'reject_or_hold']
             if target_scope is not None:
-                decisions.append('approve_rerun' if target_scope == 'analysis_engineer' else 'request_code_change' if target_scope == 'code_agent' else 'approve_with_conditions')
+                decisions.append('approve_rerun' if target_scope == 'analysis_engineer' else
+                                 'request_code_change' if target_scope == 'code_agent' else
+                                 'approve_with_conditions')
                 if failure is not None:
                     decisions.append('approve_budget_window')
             decisions = sorted(set(decisions))
-            request = {'request_kind': diagnostic['human_need'] or 'approval', 'authorization_scope': {'allowed_decisions': decisions, 'allowed_target_nodes': ['decision_coordinator'], 'decision_transition_routes': dict.fromkeys(decisions, 'decision_coordinator'), 'decision_transition_targets': dict.fromkeys(decisions, 'decision_coordinator'), 'work_target': target_scope, 'failure_fingerprint': failure, 'diagnostic_digest': digest(diagnostic)}}
+            request = {'request_kind': diagnostic['human_need'], 'authorization_scope': {
+                'allowed_decisions': decisions, 'allowed_target_nodes': ['decision_coordinator'],
+                'decision_transition_routes': dict.fromkeys(decisions, 'decision_coordinator'),
+                'decision_transition_targets': dict.fromkeys(decisions, 'decision_coordinator'),
+                'work_target': target_scope, 'failure_fingerprint': failure,
+                'diagnostic_digest': digest(diagnostic)}}
+            if any(dimensions[key]['remaining'] < 2 + reserve[reserve_key] for key, reserve_key in
+                   (('control_attempts_per_run', 'control_attempts'), ('transitions_per_run', 'transitions'))):
+                target, trigger, request = 'memory_report', 'budget_stop', None
     require((target or 'end') in PRODUCT_ROUTES[node], 'Undeclared canonical product edge')
-    sequence = stop_sequence_id
-    if target == 'human_gate' and sequence is None and (trigger == 'budget_stop'):
+    if trigger == 'budget_stop' and sequence is None:
         sequence = digest({'run_id': state['run_id'], 'source_attempt_id': source['attempt_id'], 'reason': 'budget_stop'})
-    decision = product_budget_decision(state, target=target, trigger=trigger, risk=diagnostic['risk'], stop_sequence_id=sequence, proposed_grant=proposed_grant)
-    if sequence is not None and target == 'human_gate' and any((state['budget']['dimensions'][key]['remaining'] < needed for key, needed in (('control_attempts_per_run', 4), ('transitions_per_run', 5)))):
-        decision.update(decision='halt', reason_code='terminal_tail_capacity', next_control_action='close_run')
-        decision['decision_digest'] = digest({k: v for k, v in decision.items() if k != 'decision_digest'})
-    if decision['decision'] != 'allow' and node != 'decision_coordinator' and (target not in (None, 'decision_coordinator')):
-        target, trigger = ('decision_coordinator', 'budget_stop')
+    decision = product_budget_decision(state, target=target, trigger=trigger,
+        risk=diagnostic['risk'], stop_sequence_id=sequence, proposed_grant=proposed_grant)
+    if decision['decision'] != 'allow' and node != 'decision_coordinator' and target not in (None, 'decision_coordinator'):
+        target, trigger = 'decision_coordinator', 'budget_stop'
         sequence = digest({'run_id': state['run_id'], 'source_attempt_id': source['attempt_id'], 'reason': 'budget_stop'})
-        decision = product_budget_decision(state, target=target, trigger=trigger, risk=diagnostic['risk'], stop_sequence_id=sequence)
-    return {'target_node': target, 'route': target or 'end', 'trigger_reason': trigger, 'budget_decision': decision, 'human_request': request, 'stop_sequence_id': sequence}
+        decision = product_budget_decision(state, target=target, trigger=trigger,
+            risk=diagnostic['risk'], stop_sequence_id=sequence)
+    return {'target_node': target, 'route': target or 'end', 'trigger_reason': trigger,
+            'budget_decision': decision, 'human_request': request, 'stop_sequence_id': sequence}

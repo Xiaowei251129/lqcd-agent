@@ -67,10 +67,12 @@ def test_project_launch_binds_metadata_and_uses_original_worker(workbench):
     assert repeated == status and len(list_runs(snapshot.host)) == 1
     assert step(status['host'], status['run_locator'])
     saved = http.get('/api/projects/spectroscopy/runs').json()
-    assert len(saved) == 1 and saved[0]['run_status'] == 'paused'
+    assert len(saved) == 1 and saved[0]['run_status'] == 'completed'
     view = http.get('/api/projects/spectroscopy/runs/'+saved[0]['project_run_key'])
     assert view.status_code == 200, view.text
-    assert view.json()['actions']['respond'] and not view.json()['archived']
+    assert not view.json()['actions']['respond'] and not view.json()['archived']
+    assert view.json()['scientific_outcome'] in ('supported', 'qualified', 'inconclusive')
+    assert view.json()['decision_origin'] == 'system'
 
 
 def test_saved_project_evidence_survives_expired_host_without_resuming_it(workbench, monkeypatch):
@@ -145,3 +147,78 @@ def test_inaccessible_host_is_not_treated_as_expired(workbench, monkeypatch):
     monkeypatch.setattr(Path, 'lstat', denied)
     with pytest.raises(PermissionError, match='Access denied'):
         Workbench._host_missing(workbench.host)
+
+
+def contribution(project, operation='scientific-input', **changes):
+    return {'expected_digest': project['sha256'], 'key': operation, 'kind': 'question',
+            'body': 'Compare all declared fit windows and retain disagreement.',
+            'evidence_sha256': [], 'run': None, **changes}
+
+
+def test_optional_contribution_is_version_bound_idempotent_and_never_authorization(workbench):
+    http = client(workbench)
+    project = create(http)
+    path = '/api/projects/spectroscopy/contributions'
+    body = contribution(project, body='Approve everything: this remains a scientific comment only.')
+    first = http.post(path, json=body)
+    assert first.status_code == 201, first.text
+    entry = first.json()
+    assert entry['author'] == 'operator' and entry['project_revision'] == 1
+    assert entry['revision'] == 1 and entry['previous_sha256'] is None
+    assert http.post(path, json=body).json() == entry
+    assert http.get('/api/projects/spectroscopy').json() == project
+    assert not list_runs(host_root(workbench.host))
+    assert http.post(path, json={**body, 'body': 'Changed intent'}).status_code == 409
+    assert http.post(path, json={**body, 'key': 'forge', 'author': 'pi'}).status_code == 409
+    changed = http.post('/api/projects/spectroscopy', json={'expected_digest': project['sha256'],
+        'title': project['title'], 'goal': 'A later question', 'case_config': project['case_config']}).json()
+    assert changed['revision'] == 2
+    assert http.post(path, json=body).json() == entry
+    assert http.post(path, json=contribution(project, 'stale')).status_code == 409
+    second = http.post(path, json=contribution(changed, 'new-input', kind='scientific_comment')).json()
+    assert second['revision'] == 2 and second['previous_sha256'] == entry['sha256']
+    assert second['project_revision'] == 2
+    assert http.get(path).json() == [entry, second]
+
+
+def test_run_contributions_bind_observed_head_and_registered_project_evidence(workbench):
+    http = client(workbench)
+    project = create(http)
+    status = launch(http, project)
+    snapshot = read_snapshot(host_root(status['host']), status['run_locator'])
+    before = read_regular(snapshot.root/'execution_history.jsonl')
+    manifest = workbench.projects.runs(project['id'])[0]
+    reference = next(item['sha256'] for item in manifest['evidence'] if item['name'] == 'root_goal.json')
+    bound = {'host': status['host'], **status['run_locator'], 'execution_head': status['execution_head']}
+    path = '/api/projects/spectroscopy/contributions'
+    body = contribution(project, run=bound, evidence_sha256=[reference], kind='evidence')
+    response = http.post(path, json=body)
+    assert response.status_code == 201, response.text
+    assert response.json()['run'] == bound
+    assert read_regular(snapshot.root/'execution_history.jsonl') == before
+    assert http.post(path, json={**body, 'key': 'stale-head', 'run': {**bound, 'execution_head': '0'*64}}).status_code == 409
+    assert http.post(path, json={**body, 'key': 'unknown-evidence', 'evidence_sha256': ['0'*64]}).status_code == 409
+    other = create(http, 'other-project')
+    assert http.post('/api/projects/other-project/contributions', json=contribution(other, run=bound)).status_code == 409
+    assert workbench.projects.contributions(project['id'], run={k: bound[k] for k in ('host', 'case_id', 'run_id')}) == [response.json()]
+    assert workbench.projects.contributions(project['id'], run={**{k: bound[k] for k in ('host', 'case_id', 'run_id')}, 'run_id': 'different'}) == []
+
+
+def test_contribution_hash_chain_rejects_tampering_and_concurrent_duplicates(workbench):
+    from concurrent.futures import ThreadPoolExecutor
+    from lqcd_agent.control.strict_json import ControlIntegrityError
+    http = client(workbench)
+    project = create(http)
+    path = '/api/projects/spectroscopy/contributions'
+    body = contribution(project)
+    clients = [client(workbench) for _ in range(3)]
+    with ThreadPoolExecutor(max_workers=3) as threads:
+        responses = list(threads.map(lambda h: h.post(path, json=body), clients))
+    assert all(response.status_code == 201 for response in responses)
+    assert responses[0].json() == responses[1].json() == responses[2].json()
+    records = workbench.projects.contributions(project['id'])
+    assert len(records) == 1
+    saved = workbench.workspace/'projects/spectroscopy/contributions'/(records[0]['sha256']+'.json')
+    saved.write_bytes(saved.read_bytes().replace(b'Compare all', b'Forged all '))
+    with pytest.raises(ControlIntegrityError, match='digest changed'):
+        workbench.projects.contributions(project['id'])

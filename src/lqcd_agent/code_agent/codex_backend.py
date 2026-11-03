@@ -71,7 +71,8 @@ class CodexCodingBackend:
     kind = 'codex'
     version = '0.163.0'
 
-    def __init__(self, root, workspace_root):
+    def __init__(self, root, workspace_root, *, coordinator=None):
+        self.coordinator = coordinator
         self.root, self.workspace_root = Path(root), Path(workspace_root)
         self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
         require(self.root == self.root.resolve(), 'Backend root was redirected')
@@ -92,11 +93,28 @@ class CodexCodingBackend:
             saved = json.loads((job / 'request.json').read_text())
             require(saved['task'] == task and saved['manifest'] == manifest, 'Conflicting Codex dispatch')
             return self.read_receipt('codex-receipt:' + producer_operation_id)
+        producer_authority = None
+        if self.coordinator is not None:
+            from .external_operation import ExternalDispatch
+            from lqcd_agent.control.operations import ExternalControl
+            require(self.coordinator.root == self.root.parent and self.coordinator.connection.in_transaction,
+                    'Native dispatch requires its original producer transaction')
+            value = ExternalControl(self.coordinator).read(self.coordinator.connection, producer_operation_id)
+            dispatch = ExternalDispatch(self.coordinator, producer_operation_id,
+                value['worker_owner_id'], value['lease_epoch'], self, None, None, None)
+            observed, _, _, original_task, original_manifest = dispatch.model_authority(self.coordinator.connection)
+            require(original_task == task and original_manifest == manifest, 'Native dispatch source changed')
+            producer_authority = {key: observed[key] for key in ('worker_owner_id', 'lease_epoch')}
+        else:
+            require(not (self.root.parent / '.lqcd/control_operations.sqlite').exists(),
+                    'Application Native dispatch requires the original Coordinator')
         job.mkdir(mode=0o700)
         workspace = WorkspaceProvider(self.workspace_root).path(manifest['workspace_id'])
         base = scan_tree(workspace)
         request = {'task': task, 'manifest': manifest, 'workspace': str(workspace),
                    'base_paths': sorted(base)}
+        if producer_authority is not None:
+            request['producer_authority'] = producer_authority
         write_json(job / 'request.json', request)
         receipt = {'schema_version': '0.1', 'producer_operation_id': producer_operation_id,
             'task_id': task['task_id'], 'task_digest': task['task_digest'], 'workspace_id': manifest['workspace_id'],

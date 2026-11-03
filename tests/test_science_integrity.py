@@ -24,7 +24,7 @@ def test_changed_scientific_member_is_rejected(tmp_path):
 
 
 @pytest.mark.parametrize('declared_risk', [None, 'low'])
-def test_scientific_confirmation_is_host_policy_not_a_reviewer_risk_field(tmp_path, monkeypatch, declared_risk):
+def test_scientific_completion_does_not_depend_on_a_model_or_human_approval_field(tmp_path, monkeypatch, declared_risk):
     from lqcd_agent.agents import scientific_reviewer
     from lqcd_agent.llm.prompts import build_scientific_reviewer_request
     schema = build_scientific_reviewer_request().json_schema['schema']
@@ -43,8 +43,8 @@ def test_scientific_confirmation_is_host_policy_not_a_reviewer_risk_field(tmp_pa
     monkeypatch.setattr(scientific_reviewer, 'run_scientific_reviewer', review)
     result = agent.run('scientific_reviewer', {'identity': {
         'attempt_id': 'attempt', 'case_id': 'case', 'run_id': 'run'}}, timeout_seconds=1)
-    assert result['diagnostic']['risk'] == 'high'
-    assert result['diagnostic']['human_need'] == 'approval'
+    assert result['diagnostic']['risk'] == 'low'
+    assert result['diagnostic']['human_need'] is None
     assert result['diagnostic']['category'] == 'scientific_review'
 
 
@@ -81,7 +81,7 @@ def test_scientific_roles_receive_frozen_remediation_and_history(tmp_path, monke
         expected = {key: deepcopy(context[key]) for key in ('remediation', 'relevant_history')}
         assert payload['research_context'] == expected
         if node == 'scientific_reviewer':
-            assert result['diagnostic']['risk'] == 'high' and result['diagnostic']['human_need'] == 'approval'
+            assert result['diagnostic']['risk'] == 'low' and result['diagnostic']['human_need'] is None
         output = tmp_path / 'domain' / attempt / 'case' / 'run'
         catalog = context_reference(provider.request.context_sources)
         context['remediation']['success_criteria'].append('Do not mutate prior context')

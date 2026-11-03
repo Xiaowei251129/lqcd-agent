@@ -29,8 +29,12 @@ class MaterializationSnapshotError(ControlIntegrityError):
         super().__init__("Missing operation materialization snapshot" if missing else "Operation materialization snapshot changed")
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 TABLES = {
+    "research_tasks": "task_id TEXT PRIMARY KEY, value BLOB NOT NULL",
+    "research_requests": ("request_id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES research_tasks(task_id), "
+                          "run_locator BLOB NOT NULL, reserved_tokens INTEGER NOT NULL, "
+                          "input_digest TEXT NOT NULL, charged_tokens INTEGER"),
     "control_metadata": "key TEXT PRIMARY KEY, value TEXT NOT NULL",
     "control_operations": (
         "operation_id TEXT PRIMARY KEY, idempotency_scope TEXT NOT NULL, idempotency_key TEXT NOT NULL, "

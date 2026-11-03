@@ -1,5 +1,6 @@
 """Independent resampling arithmetic never stands in for physics validation."""
 from copy import deepcopy
+from hashlib import sha256
 import math
 
 import pytest
@@ -86,10 +87,20 @@ print(json.dumps({'status':'ok','observables':[r],'assumptions':[],'limitations'
     start = execute(ApplicationRequest('run', project='ratios', project_digest=project['sha256'], key='observable-start'))
     assert start['active_pause']['reason'] == 'external_result'
     result = deliver(start)
-    assert result['active_pause']['reason'] == 'human_input'
+    assert result['run_status'] == 'completed' and result['active_pause'] is None, result
     root = host_root(result['host'])/'observables'/result['run_locator']['run_id']
     index = loads((root/'artifact_index.json').read_bytes())['current']
+    assert index['approval'] is None and index['terminal']['status'] == 'accepted'
+    conclusion = loads(Path(index['terminal']['state_paths']['memory_update_path']).read_bytes())
+    assert conclusion['scientific_outcome'] == 'qualified' and conclusion['decision_origin'] == 'system'
+    analysis = loads(Path(index['analysis']['state_paths']['run_result_path']).read_bytes())['domain_result']
+    execution = analysis['run_result']['generated_execution']
+    assert analysis['run_success'] and execution['execution']['program_sha256'] == sha256(program).hexdigest()
+    assert execution['dataset_snapshot']['exists'] and execution['execution']['input_sha256']
     review = loads(Path(index['review']['state_paths']['scientific_review_report_path']).read_bytes())['domain_result']['report']
     assert any(w['code']=='observable_physics_not_validated' for w in review['warnings'])
+    records = [loads(row) for row in (root/'execution_history.jsonl').read_bytes().splitlines()]
+    assert not any(row['record_type'] == 'human_response' for row in records)
     history = projects.runs('ratios')
-    assert len(history) == 1 and history[0]['preliminary'] and not history[0]['resumable']
+    assert len(history) == 1 and not history[0]['preliminary'] and not history[0]['resumable']
+    assert history[0]['scientific_outcome'] == 'qualified' and history[0]['decision_origin'] == 'system'

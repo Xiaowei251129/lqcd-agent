@@ -102,8 +102,10 @@ def evaluate(host, case, run, family, python):
         'validator_sha256': sha256(Path(__file__).read_bytes()).hexdigest(),
         'validator_runtime_fingerprint': runtime_fingerprint(),
         'case_manifest_digest': manifest['manifest_digest'], 'checks': results, 'numerical_checks_passed': passed,
-        'scientific_acceptance': 'pending_human_review', 'physics_accepted': False,
-        'scope': 'Independent case assessment; this report does not advance or close the canonical Run.'}
+        'scientific_acceptance': 'not_system_reviewed', 'assessment_kind': 'independent_check_only',
+        'physics_accepted': False,
+        'scope': 'Independent numerical checks only; no system acceptance or physical-validity claim. '
+                 'This report cannot advance or close the canonical Run.'}
     destination = pack_root()/f'{family}-{sha256(canonical_bytes(report)).hexdigest()}-assessment.json'
     publish_exact(destination, canonical_bytes(report))
     return {'report': str(destination), 'numerical_checks_passed': passed, 'physics_accepted': False}

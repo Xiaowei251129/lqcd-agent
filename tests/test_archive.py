@@ -35,14 +35,17 @@ def test_scientific_archive_requires_closure_and_retains_hash_bound_domain(tmp_p
     case = tmp_path/'case.json'
     case.write_text(json.dumps({'schema_version':'0.1','case_id':'archive_science',
         'source_kind':'synthetic_placeholder','physics_goal':'Inspect mock scientific evidence.'}))
-    paused = command('run', '--case-config', str(case), '--key', 'archive-science')
-    root = host_root(paused['host'])
+    from lqcd_agent.runtime import ApplicationRequest, advance, submit
+    from tests.support import own
+    admitted = submit(ApplicationRequest('run', case_config=str(case), key='archive-science')).status
+    root = own(host_root(admitted['host']))
+    assert admitted['run_status'] == 'running'
     with pytest.raises(ControlIntegrityError, match='Only a terminated Run'):
-        archive_run(root, paused['run_locator'])
+        archive_run(root, admitted['run_locator'])
     assert not (root/'archives').exists()
+    closed = advance(admitted['host'], admitted['run_locator'])
+    assert closed['run_status'] == 'completed' and closed['active_pause'] is None
     monkeypatch.setenv('LQCD_AGENT_WORKSPACE', str(tmp_path/'missing-workspace'))
-    closed = command('cancel', *arguments(paused), '--pause', paused['active_pause']['pause_id'], '--key', 'cancel-archive')
-    assert closed['run_status'] == 'halted'
     archived = archive_run(root, closed['run_locator'])
     assert verify_archive(archived['archive'])['valid']
     with zipfile.ZipFile(archived['archive']) as bundle:

@@ -11,7 +11,7 @@ from lqcd_agent.control.clock import FakeClock
 from lqcd_agent.control.coordinator import Coordinator
 from lqcd_agent.control.interfaces import StartRunRequest
 from lqcd_agent.control.storage import execution_scratch_root
-from lqcd_agent.control.strict_json import ControlIntegrityError, canonical_bytes, digest
+from lqcd_agent.control.strict_json import ControlIntegrityError, canonical_bytes, digest, loads
 from lqcd_agent.inspection import read_snapshot
 from lqcd_agent.research.projects import ProjectStore
 from lqcd_agent.science import ScientificAgent
@@ -58,15 +58,20 @@ def test_project_metadata_is_versioned_without_run_status(tmp_path):
         store.create("oversize", "Title", "x" * 32001)
 
 
-def test_pending_run_capture_is_scoped_idempotent_and_readable_without_host(tmp_path, monkeypatch):
+def test_closed_run_capture_is_scoped_idempotent_and_readable_without_host(tmp_path, monkeypatch):
     store = ProjectStore(tmp_path)
     project = store.create("ratio-study", "Ratio study", "Inspect synthetic normalization evidence.")
     snapshot = scientific_run(tmp_path, store, project)
-    assert snapshot.state["run_status"] == "paused"
+    assert snapshot.state["run_status"] == "completed"
     (snapshot.host / ".env").write_text("DO_NOT_CAPTURE=secret")
     (snapshot.root / "unregistered.json").write_text('{"private":"unregistered"}')
     captured = store.capture_run(snapshot)
-    assert captured["preliminary"] and captured["scientific_acceptance"] == "pending"
+    index = loads((snapshot.root/'artifact_index.json').read_bytes())
+    terminal = loads(Path(index['current']['terminal']['state_paths']['memory_update_path']).read_bytes())
+    assert not captured['preliminary'] and captured['outcome_source'] == 'scientific_terminal'
+    assert captured['scientific_outcome'] == terminal['scientific_outcome']
+    assert captured['decision_origin'] == terminal['decision_origin'] == 'system'
+    assert terminal['authorization_decision'] is None
     assert captured["resumable"] is False
     assert any(item["source"] == "scientific" for item in captured["evidence"])
     assert not any(".env" in item["name"] or "unregistered" in item["name"] for item in captured["evidence"])

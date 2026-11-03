@@ -125,6 +125,23 @@ class CanonicalProductRuntime:
         require(transition['status'] == 'committed', 'Conditional reader requires a committed Transition')
         return transition['route']
 
+    def _close_failed_attempt(self, locator, attempt_id):
+        """Close only a committed failed target with no registered result."""
+        from lqcd_agent.artifacts.contracts import SLOT_BY_ATTEMPT_KIND
+        from lqcd_agent.control.coordinator import read_regular
+        from lqcd_agent.control.operations import CloseRunRequest
+        from lqcd_agent.control.strict_json import loads
+        root, execution = self._records(locator)
+        failed = execution.values[-1]
+        if (failed['record_type'] != 'attempt' or failed['event'] != 'finished' or
+                failed['attempt_id'] != attempt_id or failed['status'] != 'failed' or failed['error'] is None):
+            return None
+        index = loads(read_regular(root / 'artifact_index.json'))
+        if index['current'][SLOT_BY_ATTEMPT_KIND[failed['attempt_kind']]] is not None:
+            return None
+        return self.plane.close_run(CloseRunRequest(locator, execution.projection.value['execution_head']),
+                                    actor=self.actor)
+
     def node(self, node_name, cursor):
         from langgraph.types import interrupt
         from lqcd_agent.control.capabilities import InvocationLeases
@@ -179,7 +196,14 @@ class CanonicalProductRuntime:
             else:
                 leased = leases.acquire(capability_id, self.worker_id, expected_epoch=capability['invocation_epoch'], lease_seconds=max(30, getattr(self.agent_port, 'timeout_seconds', 1) + (self.analysis_handoff.timeout_seconds if node_name == 'analysis_engineer' and self.analysis_handoff is not None else 0) + 30))
                 preparation = capability['authorization'].get('target_preparation')
-                state = leases.invoke(capability_id, self.worker_id, leased['invocation_epoch'], ProductNode(root, self.agent_port, analysis_handoff=self.analysis_handoff, preparation=preparation))
+                try:
+                    state = leases.invoke(capability_id, self.worker_id, leased['invocation_epoch'], ProductNode(root, self.agent_port, analysis_handoff=self.analysis_handoff, preparation=preparation))
+                except Exception as error:
+                    try:
+                        self._close_failed_attempt(locator, attempt_id)
+                    except Exception as closure_error:
+                        raise error from closure_error
+                    raise
             _, execution = self._records(locator)
             records = execution.values
             life = [row for row in records if row['record_type'] == 'attempt' and row['attempt_id'] == attempt_id]
@@ -187,10 +211,8 @@ class CanonicalProductRuntime:
             result = self.plane.close_run(CloseRunRequest(locator, digest(records[-1])), actor=self.actor)
             interrupt(result)
         if life[-1]['event'] == 'finished' and life[-1]['status'] == 'failed':
-            from lqcd_agent.artifacts.contracts import SLOT_BY_ATTEMPT_KIND
-            index = loads((root / 'artifact_index.json').read_bytes())
-            if index['current'][SLOT_BY_ATTEMPT_KIND[life[-1]['attempt_kind']]] is None:
-                result = self.plane.close_run(CloseRunRequest(locator, execution.projection.value['execution_head']), actor=self.actor)
+            result = self._close_failed_attempt(locator, attempt_id)
+            if result is not None:
                 interrupt(result)
         if node_name == 'human_gate' and life[-1]['status'] == 'pending':
             state = execution.projection.value

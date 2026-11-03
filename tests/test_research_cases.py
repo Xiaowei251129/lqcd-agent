@@ -1,7 +1,7 @@
 """Private case extraction, independent oracles and real SDK sandbox boundaries."""
 from hashlib import sha256
+from pathlib import Path
 import json
-import socket
 import sys
 
 import pytest
@@ -48,7 +48,7 @@ def test_extract_preserves_sources_replica_ids_and_withholds_references(tmp_path
     extract(project, raw, workspace=tmp_path)
     root = tmp_path/'raw_data/research_cases'
     manifest = verify_pack(root)
-    assert len(manifest['cases']) == 4 and manifest['scientific_acceptance'] == 'pending_human_review'
+    assert len(manifest['cases']) == 4 and manifest['scientific_acceptance'] == 'not_system_reviewed'
     c2 = json.loads((root/'inputs/c2.json').read_text())
     assert len(c2['configurations']) == 20 and all(len(row) == 64 for row in c2['configurations'])
     norm = json.loads((root/'inputs/normalization.json').read_text())
@@ -134,7 +134,7 @@ def test_fixed_energy_cannot_be_claimed_as_independent_dispersion_evidence():
     with pytest.raises(ControlIntegrityError,match='independent dispersion'):check_c2(payload,result)
 
 
-def test_multistep_code_task_failure_reaches_human_gate(monkeypatch):
+def test_multistep_code_task_failure_concludes_without_required_human_input(monkeypatch):
     from lqcd_agent.examples import SyntheticAgent
     from lqcd_agent.runtime import ApplicationRequest,execute
     original=SyntheticAgent.run
@@ -149,7 +149,13 @@ def test_multistep_code_task_failure_reaches_human_gate(monkeypatch):
     locator=start['run_locator']
     result=execute(ApplicationRequest('resume',host=start['host'],case=locator['case_id'],run=locator['run_id'],
         pause=start['active_pause']['pause_id'],key='multistep-delivery'))
-    assert result['run_status']=='paused' and result['active_pause']['reason']=='human_input'
+    assert result['run_status']=='completed' and result['active_pause'] is None
+    from lqcd_agent.inspection import host_root, read_snapshot
+    snapshot=read_snapshot(host_root(start['host']),locator)
+    index=json.loads((snapshot.root/'artifact_index.json').read_text())
+    terminal=json.loads(Path(index['current']['terminal']['state_paths']['memory_update_path']).read_text())
+    assert terminal['scientific_outcome']=='inconclusive' and terminal['decision_origin']=='system'
+    assert snapshot.state['active_human_request_id'] is None
 
 
 @pytest.mark.integration
@@ -163,9 +169,10 @@ def test_local_sdk_command_isolation_without_model_or_credentials(tmp_path):
             ' except PermissionError: pass\n'
             ' else: raise RuntimeError("sandbox escape")\n'
             'print("isolated")\n')
-    with socket.socket() as server:
-        server.bind(('127.0.0.1',0));server.listen(1)
-        script += 'import socket\ns=socket.create_connection(("127.0.0.1",'+str(server.getsockname()[1])+'),timeout=2);s.close()\n'
+    from tests.test_sandbox_network import operator_service, network_probe
+    with operator_service(work) as (port, unix_path, hits):
+        script += network_probe(port,unix_path,managed=False)
         reply=sandbox_command([sys.executable,'-I','-B','-c',script],work,[sys.prefix,sys.base_prefix],timeout=15)
+        assert hits == []
     assert reply.exit_code==0 and reply.stdout.strip()=='isolated',reply.stderr
     assert outside.read_text()=='private sentinel'

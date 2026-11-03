@@ -1,11 +1,10 @@
 """Operator commands create local assets and bind review to exact project evidence."""
-import hashlib
 import json
+import sys
 
 import pytest
 
 from lqcd_agent.cli import main
-from lqcd_agent.control.strict_json import canonical_bytes
 from tests.support import command
 
 
@@ -43,27 +42,25 @@ def test_operator_project_and_library_lifecycle(tmp_path, monkeypatch):
     assert edited["status"] == "candidate" and edited["review"] is None
 
 
-def test_operator_method_registration_never_executes_source(tmp_path, monkeypatch):
+def test_operator_method_registration_executes_independent_calibration(tmp_path, monkeypatch):
+    from tests.test_research_library import method_program
     monkeypatch.setenv("LQCD_AGENT_WORKSPACE", str(tmp_path))
-    (tmp_path / "note.md").write_text("Demonstration method for an artificial fixture.")
+    (tmp_path / "note.md").write_text("Method for the stated finite normalization contract.")
     command(*save_arguments("method"))
     project = tmp_path / "projects" / "ratio"
     project.mkdir(parents=True)
-    source = b"raise RuntimeError('must never execute during registration')\n"
+    source = method_program()
     (project / "method.py").write_bytes(source)
-    source_sha = hashlib.sha256(source).hexdigest()
-    (project / "validation.json").write_bytes(canonical_bytes({"source_sha256": source_sha, "passed": True,
-        "checks": [{"name": "Registration boundary fixture only, not physics validation", "passed": True}]}))
     registered = command("library-register-method", "--id", "correlated-ratio", "--source", "projects/ratio/method.py",
-                         "--validation", "projects/ratio/validation.json", "--rationale", "Test registration only",
-                         "--expected-revision", "1")
-    assert registered["status"] == "reviewed"
-    assert (tmp_path / registered["implementation"]["path"]).read_bytes() == source
-    receipt = json.loads((tmp_path / registered["review"]["record"]["path"]).read_bytes())
-    assert receipt["evidence"][0]["sha256"] == source_sha
-    assert len(receipt["evidence"]) == 2
+                         "--family", "normalization", "--python", sys.executable,
+                         "--rationale", "Finite executed registration", "--expected-revision", "1")
+    assert registered['registered'] and registered['asset']['status']=="reviewed"
+    asset = registered['asset']
+    assert (tmp_path / asset["implementation"]["path"]).read_bytes() == source
+    receipt = json.loads((tmp_path / asset["review"]["record"]["path"]).read_bytes())
+    assert receipt['origin']=='human' and len(receipt['evidence'])==2
     command("library-register-method", "--id", "correlated-ratio", "--source", "note.md",
-            "--validation", "projects/ratio/validation.json", "--rationale", "Wrong scope",
+            "--family", "normalization", "--python", sys.executable, "--rationale", "Wrong scope",
             "--expected-revision", "2", expected_exit=1, rejection="project file")
 
 

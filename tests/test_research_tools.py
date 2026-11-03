@@ -1,4 +1,5 @@
 """Research tools use bounded public transport and scoped evidence, not broad file access."""
+from contextlib import nullcontext
 import asyncio
 import json
 
@@ -36,7 +37,7 @@ def test_named_tools_refuse_unknown_files_and_save_only_candidates(tmp_path):
     output = host/'domain'; output.mkdir()
     context = {'identity': {'case_id': 'case', 'run_id': 'run'}, 'current_evidence': []}
     tools = {tool.name: tool for tool in build_tools(tmp_path, context, host=host, output_dir=output,
-                                                  sources={'definitions': {'unit': 'lattice'}})}
+                                                  sources={'definitions': {'unit': 'lattice'}}, write_scope=nullcontext)}
     async def call(name, arguments):
         result = await tools[name].on_invoke_tool(ToolContext(context=None, tool_name=name, tool_call_id='fixture', tool_arguments=json.dumps(arguments)), json.dumps(arguments))
         return json.loads(result) if isinstance(result, str) else result
@@ -112,3 +113,18 @@ def test_project_evidence_tool_is_bound_to_the_run_project(tmp_path):
     path.symlink_to(foreign)
     with pytest.raises(ControlIntegrityError, match='Redirected research path'):
         asyncio.run(read(registered, identifier))
+
+
+def test_mutation_tools_without_original_host_authority_cannot_publish(tmp_path):
+    host=tmp_path/'host';host.mkdir()
+    tools={t.name:t for t in build_tools(tmp_path,{'identity':{'case_id':'case','run_id':'run'}},
+        host=host,output_dir=host/'domain')}
+    value={'kind':'wiki','asset_id':'unscoped','title':'Unscoped claim','body':'Candidate only.',
+           'applicability':'fixture','source_urls':[],'expected_revision':0}
+    raw=json.dumps(value)
+    async def check():
+        with pytest.raises(ControlIntegrityError,match='original Host write authority'):
+            await tools['save_candidate'].on_invoke_tool(ToolContext(context=None,tool_name='save_candidate',
+                tool_call_id='unscoped',tool_arguments=raw),raw)
+    asyncio.run(check())
+    assert not (tmp_path/'library').exists()

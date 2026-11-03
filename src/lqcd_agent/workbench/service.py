@@ -6,8 +6,6 @@ import os
 import re
 import fcntl
 import stat
-import subprocess
-import sys
 import threading
 import tempfile
 
@@ -18,9 +16,10 @@ from lqcd_agent.control.storage import execution_scratch_root
 from lqcd_agent.control.strict_json import ControlIntegrityError, canonical_bytes, closed, digest, loads, require
 from lqcd_agent.inspection import host_root, list_runs, read_operation, read_snapshot
 from lqcd_agent.runtime import ApplicationRequest, create_host, submit
-from lqcd_agent.settings import child_environment, workspace_root
+from lqcd_agent.settings import workspace_root
 from lqcd_agent.research.projects import ProjectStore
 from lqcd_agent.research.library import Library
+from .worker import launch_worker, worker_active
 
 
 class RequestError(ValueError):
@@ -109,6 +108,25 @@ class Workbench:
         closed(body, ('expected_digest', 'title', 'goal', 'case_config'))
         return self.projects.revise(project_id, **body)
 
+    def contribute(self, project_id, body):
+        closed(body, ('expected_digest', 'key', 'kind', 'body', 'evidence_sha256', 'run'))
+        if any(row['key'] == body['key'] for row in self.projects.contributions(project_id)):
+            return self.projects.contribute(project_id, **body)
+        if body['run'] is not None:
+            run = closed(body['run'], ('host', 'case_id', 'run_id', 'execution_head'))
+            locator = {name: run[name] for name in ('case_id', 'run_id')}
+            if not self._host_missing(run['host']):
+                snapshot = self.snapshot(run['host'], locator)
+                goal = loads(read_regular(snapshot.root/'root_goal.json'))
+                require(goal.get('project_id') == project_id, 'Contribution Run belongs to another Project')
+                require(snapshot.state['execution_head'] == run['execution_head'], 'Stale contribution Run view')
+            else:
+                saved = next((row for row in self.projects.runs(project_id) if row['host'] == run['host'] and
+                              row['run_locator'] == locator), None)
+                require(saved is not None and saved['execution_head'] == run['execution_head'],
+                        'Unknown saved contribution Run')
+        return self.projects.contribute(project_id, **body)
+
     def project_runs(self, project_id):
         return [{key: value for key, value in self._project_record(row).items()
                  if key not in ('state', 'evidence')} for row in self.projects.runs(project_id)]
@@ -142,7 +160,7 @@ class Workbench:
             'artifacts': [], 'evidence': entries, 'summaries': {}, 'collaboration': [], 'budget': state['budget']}
         for item in entries:
             name = Path(item['name']).name
-            if name in ('method_plan.json', 'run_result.json', 'scientific_review_report.json', 'generated_result.json'):
+            if name in ('method_plan.json', 'run_result.json', 'scientific_review_report.json', 'generated_result.json', 'memory_update.json'):
                 value = loads(self.projects.evidence(project_id, item['sha256']), canonical=False)
                 self._summary(result, item, name, value)
         return result
@@ -168,28 +186,13 @@ class Workbench:
 
     @staticmethod
     def _summary(result, item, name, value):
+        if item['current'] and item['slot'] == 'terminal' and name == 'memory_update.json':
+            result.update(scientific_outcome=value['scientific_outcome'], decision_origin=value['decision_origin'])
         if item['current'] and 'domain_result' not in value:
             result['summaries'][name] = value
         if item['source'] == 'artifact' and isinstance(value.get('collaboration'), dict):
             result['collaboration'].append({**value['collaboration'], 'artifact_id': item['artifact_id'],
                 'slot': item['slot'], 'current': item['current']})
-
-    def worker_active(self):
-        path = host_root(self.host)/'workbench-worker.lock'
-        if not path.exists():
-            return False
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-        try:
-            info = os.fstat(descriptor)
-            require(stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid() and info.st_nlink == 1 and
-                    info.st_mode & 0o077 == 0, 'Unsafe worker lock')
-            try:
-                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                return True
-            return False
-        finally:
-            os.close(descriptor)
 
     def catalog(self):
         from lqcd_agent.research_cases import CASES
@@ -291,7 +294,7 @@ class Workbench:
                            r['human_request_id'] == pause['input_contract']['human_request_id'] and r['event'] == 'created')
         result = {**status, 'inspection': 'verified', 'goal': goal['goal'], 'live': goal['live'], 'compatible': compatible,
             'managed': host == self.host, 'can_advance': snapshot.can_advance and compatible,
-            'needs_recovery': host == self.host and snapshot.state['run_status'] == 'running' and not snapshot.can_advance and not self.worker_active(),
+            'needs_recovery': host == self.host and snapshot.state['run_status'] == 'running' and not snapshot.can_advance and not worker_active(self.host),
             'synthetic': goal.get('case_config', {}).get('source_kind', 'synthetic_placeholder') == 'synthetic_placeholder',
             'coding': goal['workflow'] == 'code' or bool(goal.get('case_config', {}).get('generated_program')),
             'human_request': request, 'actions': {'cancel': host == self.host and pause is not None and pause['status'] == 'opened',
@@ -302,7 +305,9 @@ class Workbench:
         index = loads(read_regular(snapshot.root/'artifact_index.json'))
         result['artifacts'] = [{'slot': slot, 'status': p['status'], 'artifact_id': p['artifact_id']}
                                for slot, p in index['current'].items() if p is not None]
-        result['scientific_acceptance'] = 'accepted' if index['current']['terminal'] is not None and index['current']['terminal']['status'] == 'accepted' else 'not_accepted'
+        failure = status.get('execution_failure', {})
+        result.update(scientific_outcome=failure.get('scientific_outcome'),
+                      decision_origin=failure.get('decision_origin'))
         attempts = {}
         for row in snapshot.records.values:
             if row['record_type'] == 'attempt':
@@ -313,7 +318,7 @@ class Workbench:
         result['evidence'] = [{k: v for k, v in item.items() if k not in ('path', 'scope')} for item in entries.values()]
         result['summaries'], result['collaboration'] = {}, []
         for item in entries.values():
-            if item['name'] in ('method_plan.json', 'run_result.json', 'scientific_review_report.json', 'analysis_outputs/generated_result.json'):
+            if item['name'] in ('method_plan.json', 'run_result.json', 'scientific_review_report.json', 'analysis_outputs/generated_result.json', 'memory_update.json'):
                 value = loads(self._member(item['path'], item['scope'], item['sha256']), canonical=False)
                 self._summary(result, item, Path(item['name']).name, value)
         result['budget'] = snapshot.state['budget']
@@ -388,28 +393,6 @@ class Workbench:
 
     def ensure_worker(self):
         with self._lock:
-            if self.worker_active():
+            if self._process is not None and self._process.poll() is None:
                 return
-            if self._process is not None:
-                status = self._process.poll()
-                if status is None:
-                    return
-            root = host_root(self.host)
-            pending = False
-            for locator in list_runs(root):
-                snapshot = self.snapshot(self.host, locator)
-                if snapshot.fingerprint == runtime_fingerprint() and (snapshot.can_advance or
-                    snapshot.state['active_pause'] is not None and snapshot.state['active_pause']['reason'] == 'external_result'):
-                    pending = True
-                    break
-            if not pending:
-                return
-            environment = child_environment()
-            environment.update(LQCD_AGENT_WORKSPACE=str(self.workspace), PYTHONDONTWRITEBYTECODE='1')
-            descriptor = os.open(root/'workbench-worker.log', os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
-            with os.fdopen(descriptor, 'ab') as log:
-                info = os.fstat(log.fileno())
-                require(stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid() and info.st_nlink == 1 and
-                        info.st_mode & 0o077 == 0, 'Unsafe worker log')
-                self._process = subprocess.Popen([sys.executable, '-B', '-m', 'lqcd_agent.workbench.worker', self.host],
-                    cwd=self.workspace, env=environment, stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
+            self._process = launch_worker(self.host, self.workspace)

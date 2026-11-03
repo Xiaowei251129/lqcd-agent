@@ -7,7 +7,7 @@ from lqcd_agent.control.storage import execution_scratch_root
 from lqcd_agent.control.coordinator import Coordinator, component, read_regular
 from lqcd_agent.control.strict_json import digest, loads, require
 from .inspection import host_root, read_snapshot
-from lqcd_agent.settings import workspace_root
+from lqcd_agent.settings import workspace_root, RESEARCH_TASK_LIMITS
 
 
 @dataclass
@@ -73,24 +73,27 @@ def submit(request: ApplicationRequest):
         return Submission(read_snapshot(host_root(args.host), {'case_id': args.case, 'run_id': args.run}).status())
     intent = {field: getattr(args, field) for field in
               ('command', 'case', 'goal', 'workflow', 'live', 'case_config', 'project', 'project_digest')}
+    original_inputs = None
     if args.command in ('start', 'run') and args.host is not None:
         from .inspection import read_operation
         original = read_operation(host_root(args.host), args.key)
-        if original is not None and original['status'] == 'committed':
+        if original is not None and original['status'] in ('in_progress', 'committed'):
             require(original['operation_type'] == 'start_run', 'Operation key belongs to another action')
             frozen = original['request']['root_inputs']['root_goal']
             require(frozen.get('request_intent') == intent, 'Operation key conflicts with the original research request')
             require(frozen['workspace'] == str(workspace_root()), 'Select the original operator workspace')
             require(original['request_digest'] == digest({key: original[key] for key in
                     ('operation_type', 'operation_variant', 'request')}), 'Original operation request changed')
-            locator = original['reservation']['reserved_run_locator']
-            snapshot = read_snapshot(host_root(args.host), locator)
-            creation = next(row for row in snapshot.records.values if row['record_type'] == 'run_lifecycle'
-                            and row['from_status'] == 'initializing')
-            require(creation['operation_id'] == original['operation_id'], 'Operation points to another Run')
-            require(original['request']['root_inputs'] == {name: loads(read_regular(snapshot.root/(name+'.json')))
-                    for name in ('root_goal', 'input_snapshot')}, 'Original Run inputs changed')
-            return Submission(snapshot.status())
+            if original['status'] == 'committed':
+                locator = original['reservation']['reserved_run_locator']
+                snapshot = read_snapshot(host_root(args.host), locator)
+                creation = next(row for row in snapshot.records.values if row['record_type'] == 'run_lifecycle'
+                                and row['from_status'] == 'initializing')
+                require(creation['operation_id'] == original['operation_id'], 'Operation points to another Run')
+                require(original['request']['root_inputs'] == {name: loads(read_regular(snapshot.root/(name+'.json')))
+                        for name in ('root_goal', 'input_snapshot')}, 'Original Run inputs changed')
+                return Submission(snapshot.status())
+            original_inputs = original['request']['root_inputs']
     from lqcd_agent.control.children import ForkRunRequest, ReplayRunRequest
     from lqcd_agent.control.clock import FakeClock
     from lqcd_agent.control.interfaces import StartRunRequest
@@ -98,7 +101,14 @@ def submit(request: ApplicationRequest):
     config = None
     workspace = workspace_root() if args.command != 'cancel' else None
     project = None
-    if args.project is not None:
+    if original_inputs is not None:
+        # Resume the admitted request, including its original deadline and reuse
+        # snapshots. Mutable project/config/library heads cannot replace it.
+        frozen = original_inputs['root_goal']
+        args.command, args.case = 'start', original['request']['case_id']
+        args.goal, args.workflow, args.live = frozen['goal'], frozen['workflow'], frozen['live']
+        config = frozen.get('case_config')
+    elif args.project is not None:
         require(args.command == 'run', 'Use run --project to bind a scientific Project')
         from .research.projects import ProjectStore
         project = ProjectStore(workspace).read(args.project)
@@ -130,6 +140,8 @@ def submit(request: ApplicationRequest):
         args.workflow = goal['workflow']
         config, live = goal.get('case_config'), goal['live']
         method_sources = goal.get('method_sources', [])
+    elif original_inputs is not None:
+        method_sources = original_inputs['root_goal'].get('method_sources', [])
     elif config is not None:
         from .research.methods import snapshot_methods
         method_sources = snapshot_methods(config, workspace)
@@ -144,15 +156,22 @@ def submit(request: ApplicationRequest):
             live=live, workflow=args.workflow, initialize=args.command == 'start', method_sources=method_sources)
         plane = runtime.plane
         if args.command == 'start':
-            inputs = {'root_goal': {'goal': args.goal, 'workflow': args.workflow, 'live': live, 'workspace': str(workspace), 'request_intent': intent}, 'input_snapshot': {'kind': 'current_mock' if config is None else 'scientific_case', 'case_config': config}}
-            if project is not None:
-                inputs['root_goal'].update(project_id=project['id'], project_revision=project['revision'],
-                                          project_sha256=project['sha256'], project_snapshot=project)
-            if config is not None:
-                inputs['root_goal']['case_config'] = config
-                inputs['root_goal']['method_sources'] = method_sources
-                from .tools.dataset import snapshot_dataset
-                inputs['root_goal']['dataset_snapshot'] = snapshot_dataset(config, workspace)
+            inputs = original_inputs
+            if inputs is None:
+                inputs = {'root_goal': {'goal': args.goal, 'workflow': args.workflow, 'live': live, 'workspace': str(workspace), 'request_intent': intent}, 'input_snapshot': {'kind': 'current_mock' if config is None else 'scientific_case', 'case_config': config}}
+                if project is not None:
+                    inputs['root_goal'].update(project_id=project['id'], project_revision=project['revision'],
+                                              project_sha256=project['sha256'], project_snapshot=project)
+                if config is not None:
+                    inputs['root_goal']['case_config'] = config
+                    inputs['root_goal']['method_sources'] = method_sources
+                    from .tools.dataset import snapshot_dataset
+                    inputs['root_goal']['dataset_snapshot'] = snapshot_dataset(config, workspace)
+                inputs['root_goal']['research_task'] = {
+                    'id': digest({'host': str(root), 'key': args.key, 'intent': intent}),
+                    'limits': dict(RESEARCH_TASK_LIMITS),
+                    'deadline': coordinator._time().monotonic_seconds + RESEARCH_TASK_LIMITS['seconds'],
+                    'parent': None}
             result = plane.start_run(StartRunRequest(args.case, inputs, digest(inputs), args.key), actor=actor)
             locator = result['result']['run_locator']
             advance_work = not replay and result['operation_status'] == 'committed' and result['run_status'] == 'running'
@@ -224,20 +243,39 @@ def advance(host, locator):
     workspace = workspace_root()
     require(goal['workspace'] == str(workspace), 'Select the original operator workspace before advancing this Run')
     settings = ApplicationSettings.load() if goal['live'] else None
-    with closing(Coordinator(root, clock=HostClock() if goal['live'] else FakeClock(100, 0))) as coordinator:
-        agent = scientific_agent(root, goal['case_config'], settings, workspace) if goal.get('case_config') is not None else None
-        runtime, _, _ = assemble(coordinator, agent, live=goal['live'], workflow=goal['workflow'],
-                                 method_sources=goal.get('method_sources', []))
-        runtime.run(locator)
-    snapshot = read_snapshot(root, locator)
-    capture_project(snapshot)
-    return snapshot.status()
+    import sys
+    try:
+        with closing(Coordinator(root, clock=HostClock() if goal['live'] else FakeClock(100, 0))) as coordinator:
+            agent = scientific_agent(root, goal['case_config'], settings, workspace) if goal.get('case_config') is not None else None
+            runtime, _, _ = assemble(coordinator, agent, live=goal['live'], workflow=goal['workflow'],
+                                     method_sources=goal.get('method_sources', []))
+            runtime.run(locator)
+    finally:
+        failure = sys.exception()
+        try:
+            snapshot = read_snapshot(root, locator)
+            capture_project(snapshot)
+        except Exception as capture_error:
+            if failure is not None:
+                raise failure from capture_error
+            raise
+    from .research.experiments import continue_research
+    child = continue_research(host, locator)
+    return advance(host, child) if child is not None else snapshot.status()
 
 
 def execute(request: ApplicationRequest):
     """Preserve synchronous CLI behavior over submission and controlled work."""
     result = submit(request)
-    return advance(result.status['host'], result.status['run_locator']) if result.advance else result.status
+    status = advance(result.status['host'], result.status['run_locator']) if result.advance else result.status
+    if request.command not in ('status', 'archive', 'verify-archive', 'cancel') and status.get('run_locator') is not None:
+        root = host_root(status['host'])
+        locator = status['run_locator']
+        goal = loads(read_regular(root/locator['case_id']/locator['run_id']/'root_goal.json'))
+        if goal['live'] and goal['workflow'] == 'scientific':
+            from .workbench.worker import launch_worker
+            launch_worker(status['host'], Path(goal['workspace']))
+    return status
 
 
 def scientific_agent(host, config, settings, workspace):

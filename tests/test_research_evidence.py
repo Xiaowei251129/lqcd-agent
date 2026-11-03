@@ -134,15 +134,32 @@ def test_scientific_replay_keeps_original_dataset_identity(tmp_path, monkeypatch
     root, _, index = persisted(first)
     goal = json.loads((root/'root_goal.json').read_text())
     assert goal['dataset_snapshot'] == inventory['dataset_snapshot']
-    assert first['run_status'] == 'paused' and index['current']['terminal'] is None
+    assert first['run_status'] == 'completed' and index['current']['terminal'] is not None
+    terminal = json.loads(Path(index['current']['terminal']['state_paths']['memory_update_path']).read_text())
+    assert terminal['decision_origin'] == 'system' and terminal['authorization_decision'] is None
     raw.write_bytes(raw.read_bytes().replace(b'.7', b'.6'))
     child = command('replay', *arguments(first), '--source-digest', first['root_inputs_digest'], '--key', 'changed-data')
-    child_root, _, child_index = persisted(child)
+    child_root, child_execution, child_index = persisted(child)
     assert json.loads((child_root/'root_goal.json').read_text())['dataset_snapshot'] == goal['dataset_snapshot']
     result = json.loads(Path(child_index['current']['analysis']['state_paths']['run_result_path']).read_text())['domain_result']
     assert result['run_success'] is False
-    assert 'frozen Run input' in Path(result['run_result_path']).read_text()
-    assert child_index['current']['terminal'] is None
+    run_result = json.loads(Path(result['run_result_path']).read_text())
+    assert 'frozen Run input' in json.dumps(run_result)
+    assert run_result['commands'] and all(command['status'] == 'blocked' and command['return_code'] is None
+        and command['produced_files'] == [] for command in run_result['commands'])
+    assert child['run_status'] == 'halted' and child['active_pause'] is None
+    from lqcd_agent.control.strict_json import digest
+    from lqcd_agent.inspection import read_snapshot
+    snapshot = read_snapshot(child_root.parent.parent, child['run_locator'])
+    assert snapshot.closure['terminal_closure'] == 'committed' and snapshot.closure['run_status'] == 'halted'
+    failure = child['execution_failure']
+    assert failure['source'] == 'committed_control_closure' and failure['closure_sha256'] == digest(snapshot.closure)
+    assert failure['scientific_outcome'] == 'inconclusive' and failure['decision_origin'] == 'system'
+    terminal = json.loads(Path(child_index['current']['terminal']['state_paths']['memory_update_path']).read_text())
+    assert terminal['scientific_outcome'] == 'inconclusive' and terminal['decision_origin'] == 'system'
+    assert terminal['accepted_result'] is False
+    assert child_index['current']['terminal']['status'] == 'rejected' and child_index['current']['approval'] is None
+    assert not any(row['record_type'] in ('human_request', 'human_response') for row in child_execution.values)
 
 
 def test_reviewer_reads_scientific_method_without_sending_command_logs(tmp_path):

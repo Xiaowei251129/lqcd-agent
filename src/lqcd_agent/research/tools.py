@@ -1,5 +1,7 @@
 """Named research capabilities; no shell, arbitrary file read or model-owned approval."""
+import asyncio
 from hashlib import sha256
+import threading
 from html.parser import HTMLParser
 from pathlib import Path
 import re
@@ -98,15 +100,35 @@ class Literature:
         return {'evidence_id': identifier, 'source': url, 'scope': 'HTML text; embedded figures are not inspected', **page(content, offset)}
 
 
-def build_tools(workspace, context, *, host, output_dir, sources=None):
+def build_tools(workspace, context, *, host, output_dir, sources=None, write_scope=None):
     """Construct only capabilities authorized for this particular research attempt."""
     library = Library(workspace)
     literature = Literature(output_dir)
     host, output_dir = Path(host), Path(output_dir)
     root = host/context['identity']['case_id']/context['identity']['run_id']
     allowed = {digest(ref): ref for ref in context.get('current_evidence', [])}
-    sections = sources if sources is not None else context.get('research_sources', {})
+    sections = dict(sources if sources is not None else context.get('research_sources', {}))
     project_id = context.get('root_goal', {}).get('project_id')
+    identity = context['identity']
+    actor = 'system:' + '/'.join(str(value) for value in
+        (host.name, identity['case_id'], identity['run_id'], identity.get('attempt_id', 'unscoped')))
+    observed = {}
+
+    def observe(value):
+        identifier = value.get('evidence_id') or value.get('sha256')
+        if identifier is not None:
+            observed[identifier] = value
+        return value
+
+    def registered(filename):
+        references = [ref for ref in allowed.values() if Path(ref['member']).name == filename]
+        require(len(references) == 1, 'Method review needs exact registered ' + filename)
+        reference = references[0]
+        target = root/reference['member']
+        require(target == target.resolve() and target.is_relative_to(root), 'Method evidence escaped Run')
+        raw = read_regular(target)
+        require(sha256(raw).hexdigest() == reference['sha256'], 'Method evidence changed')
+        return loads(raw)
 
     @function_tool(failure_error_function=None)
     async def search_library(query: str, kind: str | None = None) -> dict:
@@ -131,17 +153,19 @@ def build_tools(workspace, context, *, host, output_dir, sources=None):
                              source_urls: list[str], expected_revision: int = 0) -> dict:
         """Save an explicitly provisional wiki/skill/method description, never approve or execute it."""
         require(len(body) <= 60000 and len(title) <= 300, 'Candidate is too large')
-        record = library.save(kind, asset_id, title=title, body=body,
-                              scope={'applicability': applicability},
-                              sources=[{'url': url, 'locator': 'Agent-proposed source; verify before review'} for url in source_urls],
-                              expected_revision=expected_revision)
+        require(write_scope is not None, 'Research asset mutation needs original Host write authority')
+        with write_scope():
+            record = library.save(kind, asset_id, title=title, body=body,
+                                  scope={'applicability': applicability},
+                                  sources=[{'url': url, 'locator': 'Agent-proposed source; verify before review'} for url in source_urls],
+                                  expected_revision=expected_revision, actor=actor)
         return {key: record[key] for key in ('kind', 'id', 'revision', 'sha256', 'status')}
 
     @function_tool(failure_error_function=None)
     async def search_literature(query: str, limit: int = 5) -> dict:
         """Search public INSPIRE literature metadata and abstracts; query must contain no private data."""
         try:
-            return await literature.search(query, limit)
+            return observe(await literature.search(query, limit))
         except httpx.HTTPError as error:
             return {'status': 'unavailable', 'reason': type(error).__name__, 'evidence': None}
 
@@ -149,7 +173,7 @@ def build_tools(workspace, context, *, host, output_dir, sources=None):
     async def read_paper(arxiv_id: str, offset: int = 0) -> dict:
         """Read a paginated public arXiv HTML paper; unavailable HTML is an explicit failure."""
         try:
-            return await literature.read(arxiv_id, offset)
+            return observe(await literature.read(arxiv_id, offset))
         except httpx.HTTPError as error:
             return {'status': 'unavailable', 'reason': type(error).__name__, 'evidence': None}
 
@@ -159,14 +183,14 @@ def build_tools(workspace, context, *, host, output_dir, sources=None):
         if section == 'catalog':
             return {'sections': sorted(sections), 'registered_evidence': allowed}
         if section in sections:
-            return page(sections[section], offset)
+            return observe(page(sections[section], offset))
         require(section in allowed, 'Unknown research evidence section')
         ref = allowed[section]
         target = root/ref['member']
         require(target == target.resolve() and target.is_relative_to(root), 'Research evidence escaped Run')
         raw = read_regular(target)
         require(sha256(raw).hexdigest() == ref['sha256'], 'Research evidence changed')
-        return page(raw.decode(), offset)
+        return observe(page(raw.decode(), offset))
 
     @function_tool(failure_error_function=None)
     async def read_project_evidence(evidence_sha256: str | None = None, offset: int = 0) -> dict:
@@ -187,10 +211,105 @@ def build_tools(workspace, context, *, host, output_dir, sources=None):
                     'next_action': 'Read the project catalog with read_project_evidence() and use a registered '
                                    'member sha256, or use project_history source.evidence_sha256. '
                                    'A content or section hash is not a project evidence identifier.'}
-        return page(raw.decode('utf-8'), offset)
+        return observe(page(raw.decode('utf-8'), offset))
+
+    @function_tool(failure_error_function=None)
+    async def review_asset(kind: str, asset_id: str, expected_revision: int,
+                           rationale: str, evidence_ids: list[str]) -> dict:
+        """Independently review a prior-attempt candidate using evidence actually read here.
+
+        Methods additionally execute Host calibration of the exact current sealed program.
+        Generic contracts stay candidates; passing finite tests is not universal physics validation.
+        """
+        require(write_scope is not None, 'Research asset mutation needs original Host write authority')
+        asset = library.read(kind, asset_id)
+        require(asset['revision'] == expected_revision, 'Stale scientific asset revision')
+        if asset.get('proposed_by') is None:
+            return {'asset': asset, 'reviewed': False,
+                    'reason': 'Save a version with attributable proposer identity before automatic review.'}
+        if asset['proposed_by'] == actor:
+            return {'asset': asset, 'reviewed': False,
+                    'reason': 'A candidate needs a different-attempt independent reviewer.'}
+        if asset['status'] != 'candidate':
+            return {'asset': asset, 'reviewed': False, 'reason': 'Only a current candidate needs automatic review.'}
+        if not evidence_ids or any(identifier not in observed for identifier in evidence_ids):
+            return {'asset': asset, 'reviewed': False,
+                    'reason': 'Read the supporting context or literature before citing its returned evidence ID.'}
+        def evidence_references():
+            evidence = []
+            library.initialize()
+            for identifier in dict.fromkeys(evidence_ids):
+                value = observed[identifier]
+                relative = 'library/evidence/' + digest(value) + '.json'
+                path = library._path(relative)
+                path.parent.mkdir(mode=0o700, exist_ok=True)
+                publish_exact(path, canonical_bytes(value))
+                evidence.append(library.reference(relative))
+            return evidence
+        if kind != 'method':
+            with write_scope():
+                record = library.review(kind, asset_id, status='reviewed', rationale=rationale,
+                    evidence=evidence_references(), actor=actor, expected_revision=expected_revision)
+            return {'asset': record, 'reviewed': True,
+                    'reason': 'Independent scoped system review; cited source claims remain attributable.'}
+        config = context.get('root_goal', {}).get('case_config', {})
+        program_config = config.get('generated_program') or {}
+        family = program_config.get('result_kind')
+        if project_id is None or family not in ('c2', 'normalization'):
+            return {'asset': asset, 'reviewed': False,
+                    'reason': 'Automatic method review needs a linked Project and a supported independent calibration contract.'}
+        from .methods import assess_method, executed_assessment
+        from .agent_runtime import _drain_tasks
+        from lqcd_agent.code_agent.workspace import WorkspaceProvider
+        result = registered('code_agent_result.json')
+        require(result['status'] == 'success' and result['usable'] is True, 'Method review needs usable sealed Code')
+        manifest, seal = registered('workspace_manifest.json'), registered('workspace_seal.json')
+        provider = WorkspaceProvider(host/'code_workspaces')
+        files = provider.verify_sealed(manifest, provider._public_witness(manifest), seal['final_tree_digest'])
+        program = files['analysis.py']
+        analysis = registered('run_result.json')['domain_result']
+        require(analysis['run_success'] is True and
+                analysis['run_result']['generated_execution']['execution']['program_sha256'] == sha256(program).hexdigest(),
+                'Method must match the actually executed successful Analysis')
+        cancelled = threading.Event()
+        validation = asyncio.create_task(asyncio.to_thread(assess_method, program, family,
+            program_config['python'], cancel_event=cancelled))
+        try:
+            assessment = await asyncio.shield(validation)
+        except BaseException:
+            cancelled.set()
+            await _drain_tasks([validation])
+            raise
+        with write_scope():
+            require(registered('code_agent_result.json') == result and
+                    registered('workspace_manifest.json') == manifest and registered('workspace_seal.json') == seal and
+                    registered('run_result.json')['domain_result'] == analysis,
+                    'Run evidence changed during method calibration')
+            current = provider.verify_sealed(manifest, provider._public_witness(manifest), seal['final_tree_digest'])
+            require(current['analysis.py'] == program, 'Sealed method source changed during calibration')
+            report = executed_assessment(assessment, sha256(program).hexdigest())
+            identifier = sha256(assessment.record).hexdigest()
+            section = 'method_validation:' + identifier
+            destination = output_dir/'method_validations'/(identifier+'.json')
+            require(destination == destination.resolve() and destination.is_relative_to(output_dir),
+                    'Method calibration report escaped its producing attempt')
+            destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            publish_exact(destination, assessment.record)
+            sections[section] = report
+            relative = f'projects/{project_id}/methods/{sha256(program).hexdigest()}.py'
+            source_path = library._path(relative)
+            source_path.parent.mkdir(mode=0o700, exist_ok=True)
+            publish_exact(source_path, program)
+            reviewed = library.register_method(asset_id, source=library.reference(relative), assessment=assessment,
+                actor=actor, rationale=rationale, expected_revision=expected_revision, evidence=evidence_references())
+            return {**reviewed, 'evidence_id': identifier, 'section': section,
+                    'checks': [{'name': row['name'], 'passed': row['passed']} for row in report['checks']],
+                    'limitations': report['limitations']}
 
     tools = [search_library, read_asset, read_method_source, save_candidate, search_literature, read_paper,
              read_context]
+    if identity.get('attempt_kind') == 'scientific_reviewer':
+        tools.append(review_asset)
     if project_id is not None:
         tools.append(read_project_evidence)
     return tools

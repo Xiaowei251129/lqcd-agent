@@ -71,9 +71,15 @@ def test_wheel_installs_and_runs_outside_source(tmp_path):
         cwd=workspace, env=env, capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr
     result = json.loads(run.stdout)
-    assert result['run_status'] == 'paused' and result['next_action'] == 'provide_human_response'
+    assert result['run_status'] == 'completed' and result['next_action'] == 'archive'
+    assert result['active_pause'] is None
     from lqcd_agent.inspection import host_root
     from tests.support import own
     host = own(host_root(result['host']))
+    locator = result['run_locator']
+    index = json.loads((host/locator['case_id']/locator['run_id']/'artifact_index.json').read_text())
+    terminal = json.loads(Path(index['current']['terminal']['state_paths']['memory_update_path']).read_text())
+    assert terminal['decision_origin'] == 'system' and terminal['authorization_decision'] is None
+    assert index['current']['approval'] is None
     assert not (host/'example_repository').exists()
     assert not (host/'code_workspaces').exists()

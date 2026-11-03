@@ -43,6 +43,4 @@ def product_coordinator_diagnosis(diagnostics, *, local_risk_floor):
     result["candidates"] = candidates
     if len(candidates) > 1 or any(value["confidence"] != "unique" for value in values):
         result["confidence"] = "ambiguous"
-    if result["risk"] in ("high", "critical") and result["human_need"] is None:
-        result["human_need"] = "approval"
     return validate_product_diagnostic(result)

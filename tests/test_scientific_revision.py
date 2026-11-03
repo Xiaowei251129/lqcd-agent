@@ -12,7 +12,6 @@ from lqcd_agent.control.coordinator import Coordinator
 from lqcd_agent.control.execution import parse_ledger
 from lqcd_agent.control.integrity import validate_run_root
 from lqcd_agent.control.interfaces import ActorContext, StartRunRequest
-from lqcd_agent.control.pause import ResumeRunRequest
 from lqcd_agent.control.storage import execution_scratch_root
 from lqcd_agent.control.strict_json import digest, loads
 from lqcd_agent.graph.analysis_graph import CanonicalProductRuntime
@@ -53,24 +52,20 @@ def test_revision_ignores_old_failure_but_never_borrows_its_budget():
     limits = view['state']['budget']['dimensions']
     limits['automatic_replan_per_run'] = {'used': policy().value['limits']['automatic_replan_per_run'], 'remaining': 0}
     selected = select_product_route(view, diagnostic())
-    assert selected['target_node'] == 'human_gate' and selected['trigger_reason'] == 'budget_stop'
-    scope = selected['human_request']['authorization_scope']
-    assert scope['failure_fingerprint'] is None
-    assert 'approve_budget_window' not in scope['allowed_decisions']
+    assert selected['target_node'] == 'memory_report' and selected['trigger_reason'] == 'budget_stop'
+    assert selected['human_request'] is None
     assert selected['stop_sequence_id'] is not None
 
 
 @pytest.mark.parametrize('changes', [
-    {'risk': 'high'}, {'confidence': 'ambiguous'}, {'human_need': 'clarification'},
+    {'confidence': 'ambiguous'}, {'human_need': 'clarification'},
     {'retryability': 'new_evidence_required'}, {'candidates': ['analysis_engineer']},
     {'candidates': []},
 ])
 def test_revision_requires_the_exact_safe_shape_for_automatic_work(changes):
     selected = select_product_route(route_view(), diagnostic(**changes))
-    assert selected['target_node'] == 'human_gate'
-    scope = selected['human_request']['authorization_scope']
-    assert scope['failure_fingerprint'] is None
-    assert 'approve_budget_window' not in scope['allowed_decisions']
+    assert selected['target_node'] == 'memory_report'
+    assert selected['human_request'] is None
 
 
 class ReviewFixture:
@@ -119,7 +114,7 @@ class ReviewFixture:
             'review_context': 'The first fit and its covariance must remain inspectable.'}}
 
 
-def execute_review(agent, *, approve=False):
+def execute_review(agent, *, expected_error=None):
     host = Path(mkdtemp(prefix='lqcd-revision-', dir=execution_scratch_root()))
     with closing(Coordinator(host, clock=FakeClock(100, 0))) as coordinator:
         actor = ActorContext('operator', 'human', ('control.internal', 'resume', 'start'))
@@ -128,16 +123,11 @@ def execute_review(agent, *, approve=False):
                   'input_snapshot': {'kind': 'offline_revision_fixture'}}
         started = runtime.plane.start_run(StartRunRequest('case', inputs, digest(inputs), 'revision'), actor=actor)
         locator = started['result']['run_locator']
-        runtime.run(locator)
-        if approve:
-            _, execution = runtime._records(locator)
-            state = execution.projection.value
-            response = {**locator, 'cycle_id': state['cycle_id'],
-                'human_request_id': state['active_human_request_id'], 'decision': 'approve_with_conditions',
-                'conditions': ['Report all remaining systematic limitations.'],
-                'reason': 'Approve the recorded offline fixture with its stated limitations.', 'decided_by': 'operator'}
-            runtime.resume(ResumeRunRequest(locator, state['active_pause']['pause_id'], 'approve',
-                'human_response', response, digest(response)), actor=actor)
+        if expected_error is None:
+            runtime.run(locator)
+        else:
+            with pytest.raises(expected_error):
+                runtime.run(locator)
         root = host / locator['case_id'] / locator['run_id']
         control = loads(coordinator.connection.execute('SELECT value FROM run_controls').fetchone()[0])
         validate_run_root(root, manifest=control['manifest'], projection=control['projection'])
@@ -145,11 +135,11 @@ def execute_review(agent, *, approve=False):
 
 
 @pytest.mark.parametrize('resolved', [True, False])
-def test_scoped_review_replans_with_questions_and_stops_at_human_gate(resolved):
+def test_scoped_review_replans_with_questions_and_closes_without_a_person(resolved):
     agent = ReviewFixture(resolved=resolved)
     root, execution, index = execute_review(agent)
     state, records = execution.projection.value, execution.values
-    assert state['run_status'] == 'paused' and state['cycle_index'] == 2
+    assert state['run_status'] == ('completed' if resolved else 'halted') and state['cycle_index'] == 2
     assert len(agent.plans) == agent.reviews == 2
     assert not any(row.get('event') == 'failure_observed' for row in records)
     assert state['budget']['dimensions']['automatic_replan_per_run']['used'] == 1
@@ -168,36 +158,35 @@ def test_scoped_review_replans_with_questions_and_stops_at_human_gate(resolved):
     raw = (root / original['canonical_path']).read_bytes()
     assert sha256(raw).hexdigest() == original['sha256']
     assert loads(raw)['review_context'].startswith('The first fit')
-    assert index['current']['terminal'] is None and index['current']['approval']['status'] == 'pending'
-    request = next(row for row in reversed(records) if row['record_type'] == 'human_request')
-    assert 'approve_budget_window' not in request['authorization_scope']['allowed_decisions']
+    assert index['current']['terminal'] is not None and index['current']['approval'] is None
+    assert not any(row['record_type'] in ('human_request', 'human_response') for row in records)
     if resolved:
         decision = loads(Path(index['current']['decision']['state_paths']['decision_log_path']).read_bytes())
         assert decision['risk_level'] == 'high'
     else:
         inbound = next(row for row in records if row['record_type'] == 'transition'
-                       and row['target_attempt_id'] == index['current']['approval']['attempt_id'])
+                       and row['target_attempt_id'] == index['current']['terminal']['attempt_id'])
         assert inbound['trigger_reason'] == 'budget_stop'
 
 
 def test_actual_scoped_review_failure_keeps_its_original_failure_anchor():
     agent = ReviewFixture(failed=True)
     _, execution, _ = execute_review(agent)
-    assert execution.projection.value['run_status'] == 'paused'
+    assert execution.projection.value['run_status'] == 'completed'
     failures = [row for row in execution.values if row.get('event') == 'failure_observed']
     assert len(failures) == 1 and failures[0]['payload']['occurrence'] == 1
     assert len(agent.plans) == 1
 
 
-def test_final_report_preserves_independent_review_questions_and_human_conditions():
-    root, execution, index = execute_review(ReviewFixture(), approve=True)
+def test_system_final_report_preserves_independent_review_and_unresolved_limitations():
+    root, execution, index = execute_review(ReviewFixture())
     assert execution.projection.value['run_status'] == 'completed'
     terminal = index['current']['terminal']
     assert terminal['status'] == 'accepted'
     report = Path(terminal['state_paths']['final_report_path']).read_text()
     for required in ('PI recommends reporting the limitation explicitly.',
                      'Independent conclusion: inspect the covariance.', QUESTIONS[0],
-                     'Finite-volume study remains outstanding.', 'Report all remaining systematic limitations.'):
+                     'Finite-volume study remains outstanding.', 'Decision origin: system.'):
         assert required in report
     for slot in ('plan', 'analysis', 'review'):
         pointer = index['current'][slot]
@@ -223,7 +212,7 @@ def test_first_model_budget_denial_has_no_fabricated_execution_or_failure():
                 effect=lambda: calls.append('should not execute'))
 
     _, execution, index = execute_review(DeniedResearch())
-    assert execution.projection.value['run_status'] == 'paused'
+    assert execution.projection.value['run_status'] == 'halted'
     assert not calls
     assert not any(row.get('event') in ('resource_reserved', 'resource_settled', 'failure_observed')
                    for row in execution.values)
@@ -232,7 +221,102 @@ def test_first_model_budget_denial_has_no_fabricated_execution_or_failure():
     assert planner['code_needed'] is False
     decision = loads(Path(index['current']['decision']['state_paths']['decision_log_path']).read_bytes())
     assert decision['reasons'] == ['budget'] and decision['risk_level'] == 'high'
-    request = next(row for row in reversed(execution.values) if row['record_type'] == 'human_request')
-    assert request['authorization_scope']['failure_fingerprint'] is None
-    assert 'approve_budget_window' not in request['authorization_scope']['allowed_decisions']
+    assert not any(row['record_type'] in ('human_request', 'human_response') for row in execution.values)
+    terminal = index['current']['terminal']
+    conclusion = loads(Path(terminal['state_paths']['memory_update_path']).read_bytes())
+    assert terminal['status'] == 'rejected' and conclusion['scientific_outcome'] == 'inconclusive'
+
+
+@pytest.mark.parametrize('risk', ['high', 'critical'])
+def test_scientific_risk_alone_does_not_require_permission(risk):
+    selected = select_product_route(route_view(), diagnostic(risk=risk))
+    assert selected['target_node'] == 'method_planner' and selected['human_request'] is None
+
+
+@pytest.mark.parametrize('category', ['data', 'security', 'policy', 'integrity.seal'])
+def test_hard_failure_cannot_be_overridden_by_an_approval(category):
+    selected = select_product_route(route_view(), diagnostic(category=category),
+        human_authorization={'target_node': 'method_planner'})
+    assert selected['target_node'] == 'memory_report' and selected['human_request'] is None
+
+
+def test_only_explicit_host_authorization_opens_a_human_gate():
+    selected = select_product_route(route_view(), diagnostic(category='authorization',
+        human_need='approval', risk='high'))
+    assert selected['target_node'] == 'human_gate'
+    assert selected['human_request']['request_kind'] == 'approval'
+    assert selected['human_request']['authorization_scope']['work_target'] == 'method_planner'
+
+
+@pytest.mark.parametrize('occurrence,target', [(1, 'analysis_engineer'), (2, 'memory_report')])
+def test_confirmed_failure_retries_once_without_requesting_scientific_approval(occurrence, target):
+    view = route_view()
+    view['state']['budget']['active_failure']['occurrence'] = occurrence
+    selected = select_product_route(view, diagnostic(status='failed', category='analysis_execution',
+        candidates=['analysis_engineer'], affected_layer='analysis', risk='high',
+        evidence=[{'artifact_id': 'analysis', 'member': 'result.json', 'sha256': '1' * 64}]))
+    assert selected['target_node'] == target and selected['human_request'] is None
+
+
+@pytest.mark.parametrize('resource_kind,resource_id', [
+    ('llm_call', 'domain-diagnosis'), ('tool_call', 'research-context-count')])
+def test_ended_execution_failure_concludes_with_real_failure_evidence(resource_kind, resource_id):
+    calls = []
+    class FailedResearch:
+        timeout_seconds = 1
+        def run_scoped(self, node, context, *, timeout_seconds, port):
+            def fail():
+                calls.append(node)
+                raise RuntimeError('Offline failure: no scientific output was produced.')
+            return product_resource(port, resource_kind=resource_kind, resource_id=resource_id,
+                input_digest=digest(context), config_digest=digest({'node': node, 'structured_output': True}),
+                timeout_seconds=1, effect=fail)
+    root, execution, index = execute_review(FailedResearch())
+    assert calls == ['method_planner']
+    assert execution.projection.value['run_status'] == 'completed'
+    assert index['current']['analysis'] is None and index['current']['review'] is None
+    assert not any(row['record_type'] in ('human_request', 'human_response') for row in execution.values)
+    terminal = index['current']['terminal']
+    conclusion = loads(Path(terminal['state_paths']['memory_update_path']).read_bytes())
+    assert terminal['status'] == 'rejected' and conclusion['scientific_outcome'] == 'inconclusive'
+    assert conclusion['decision_origin'] == 'system' and not conclusion['accepted_result']
+    report = Path(terminal['state_paths']['final_report_path']).read_text()
+    assert 'Offline failure: no scientific output was produced.' in report
+    planner = loads(Path(index['current']['plan']['state_paths']['method_plan_path']).read_bytes())
+    assert planner['status'] == 'failed' and planner['code_needed'] is False
+    reservations = [row['payload'] for row in execution.values if row.get('event') == 'resource_reserved']
+    assert len(reservations) == 1 and reservations[0]['resource_kind'] == resource_kind
+    assert reservations[0]['resource_operation_id'].endswith(':' + resource_id)
+    settlements = [row['payload'] for row in execution.values if row.get('event') == 'resource_settled']
+    assert len(settlements) == 1 and settlements[0]['actual'] is None
+
+
+def test_integrity_failure_is_not_reclassified_as_an_ordinary_research_result():
+    from lqcd_agent.control.strict_json import ControlIntegrityError
+    class CorruptResearch:
+        timeout_seconds = 1
+        def run_scoped(self, node, context, *, timeout_seconds, port):
+            def fail():
+                raise ControlIntegrityError('Fixture evidence identity changed.')
+            return product_resource(port, resource_kind='llm_call', resource_id='domain-diagnosis',
+                input_digest=digest(context), config_digest=digest({'fixture': 'integrity_failure'}),
+                timeout_seconds=1, effect=fail)
+    _, execution, index = execute_review(CorruptResearch(), expected_error=ControlIntegrityError)
+    assert execution.projection.value['run_status'] == 'failed'
+    failed = next(row for row in reversed(execution.values) if row['record_type'] == 'attempt')
+    assert failed['event'] == 'finished' and failed['status'] == 'failed'
+    assert failed['error'] == {'type': 'ControlIntegrityError', 'message': 'Fixture evidence identity changed.'}
     assert index['current']['terminal'] is None
+    assert not any(row['record_type'] == 'human_response' for row in execution.values)
+
+
+@pytest.mark.parametrize('permission', [None, 'approve_with_conditions', 'reject_or_hold'])
+def test_permission_choice_does_not_change_a_supported_scientific_conclusion(permission):
+    from lqcd_agent.memory.store import classify_memory_update
+    result = classify_memory_update(complete_evidence=True, blocked=False, limitations=True,
+                                   authorization_decision=permission)
+    assert result['scientific_outcome'] == 'qualified' and result['accepted_result']
+    assert result['decision_origin'] == 'system' and result['authorization_decision'] == permission
+    missing = classify_memory_update(complete_evidence=False, blocked=True, limitations=True,
+                                    authorization_decision=permission)
+    assert missing['scientific_outcome'] == 'inconclusive' and not missing['accepted_result']

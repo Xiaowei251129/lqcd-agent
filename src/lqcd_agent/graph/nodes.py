@@ -23,7 +23,7 @@ def product_diagnostic(root, pointer):
         result = validate_code_result(values['code_agent_result.json'], task).value
         member = members['code_agent_result.json']
         usable = result['status'] == 'success' and result['usable'] is True
-        return {'status': 'success' if usable else 'failed', 'category': result['status'], 'affected_layer': 'code', 'evidence': [{'artifact_id': pointer['artifact_id'], 'member': member['canonical_path'], 'sha256': member['sha256']}], 'retryability': 'retryable' if result['status'] in ('failed', 'no_change') else 'not_retryable', 'candidates': [] if usable else ['code_agent'], 'confidence': 'unique', 'fingerprint': None, 'human_need': None if usable else 'approval', 'risk': 'low' if usable else 'high'}
+        return {'status': 'success' if usable else 'failed', 'category': result['status'], 'affected_layer': 'code', 'evidence': [{'artifact_id': pointer['artifact_id'], 'member': member['canonical_path'], 'sha256': member['sha256']}], 'retryability': 'retryable' if result['status'] in ('failed', 'no_change') else 'not_retryable', 'candidates': [] if usable else ['code_agent'], 'confidence': 'unique', 'fingerprint': None, 'human_need': None, 'risk': 'low' if usable else 'high'}
     name = pointer['attempt_kind'] + '_diagnostic.json'
     member = next((item for item in pointer['members'] if item['logical_name'] == name), None)
     require(member is not None, 'Source lacks structured canonical diagnostics')
@@ -60,7 +60,8 @@ def product_failure_material(root, source, diagnostic, records, coordinator):
     require(len(calls) <= 1, 'Failure has conflicting resource anchors')
     call = calls[0] if calls else None
     if call is None:
-        require(source['attempt_kind'] != 'code_agent' and not resources,
+        require(source['attempt_kind'] != 'code_agent' and all(
+                row['payload']['resource_kind'] == 'tool_call' for row in resources),
                 'Failure lacks its original resource anchor')
         # Request construction can fail before any external effect. Bind that
         # failure to the actual started attempt, never an invented model call.
@@ -346,7 +347,8 @@ def product_final_report(root, context, index, classification, response):
 
     evidence = list(context['current_evidence'])
     sections = ['# LQCD research report', '## Recorded decision',
-                classification['memory_status'], classification['classification_reason'],
+                classification['scientific_outcome'], classification['classification_reason'],
+                'Decision origin: ' + classification['decision_origin'] + '.',
                 '## Research question', context['root_goal'].get('goal', '')]
     documents = {}
     for slot, kind in (('plan', 'method_planner'), ('analysis', 'analysis_engineer'),
@@ -371,8 +373,8 @@ def product_final_report(root, context, index, classification, response):
         raw = read_regular(root / response['payload_reference'])
         require(sha256(raw).hexdigest() == response['payload_sha256'], 'Final report Human response changed')
         human = loads(raw)
-        include('Human decision and conditions', {key: human[key] for key in ('decision', 'decided_by', 'reason', 'conditions')})
-        sections.append('Human response: `' + response['payload_reference'] + '` · SHA-256 `' + response['payload_sha256'] + '`.')
+        include('Authorization decision and conditions', {key: human[key] for key in ('decision', 'decided_by', 'reason', 'conditions')})
+        sections.append('Authorization response: `' + response['payload_reference'] + '` · SHA-256 `' + response['payload_sha256'] + '`.')
     for slot, title, field in (('plan', 'Research plan', 'method_plan'),
                                ('analysis', 'Analysis result', 'run_result'),
                                ('review', 'Scientific review with Host diagnostics', 'report')):
@@ -419,7 +421,7 @@ class ProductNode:
         from lqcd_agent.control.capabilities import ArtifactOutput, HumanResponseVerdict, TargetOutcome
         from lqcd_agent.control.coordinator import read_regular
         from lqcd_agent.control.execution import parse_ledger
-        from lqcd_agent.control.strict_json import canonical_bytes, closed, digest, loads, require
+        from lqcd_agent.control.strict_json import ControlIntegrityError, canonical_bytes, closed, digest, loads, require
         from lqcd_agent.graph.routing import is_scientific_revision, select_product_route
         from lqcd_agent.graph.state import product_context
         node = identity['attempt_kind']
@@ -447,13 +449,31 @@ class ProductNode:
             inbound = next((r for r in records if r['record_type'] == 'transition' and r['target_attempt_id'] == identity['attempt_id']))
             decision = product_diagnostic(self.root, index['current']['decision'])
             response = next((row for row in reversed(records) if row['record_type'] == 'human_response' and row['status'] == 'consumed'), None)
-            classification = classify_memory_update({'human_response_status': 'consumed' if response else None, 'human_response_decision': response['decision'] if response else None, 'risk_level': decision['risk'], 'recommended_action': 'accept_mock_result' if decision['status'] == 'success' and (not decision['candidates']) else 'hold', 'human_approval_required': decision['risk'] in ('high', 'critical')})
-            if classification['accepted_result'] and any((index['current'][slot] is None or index['current'][slot]['status'] != 'success' for slot in ('analysis', 'review'))):
-                classification.update(memory_status='pending', accepted_result=False, classification_reason='Scientific acceptance requires successful current Analysis and Reviewer evidence.')
-            if is_scientific_revision(decision):
-                classification.update(memory_status='pending', accepted_result=False, classification_reason='Scientific questions still require revision.')
-            if inbound['fields'].get('stop_sequence_id') is not None:
-                classification.update(memory_status='pending', accepted_result=False, classification_reason='Deterministic budget stop.')
+            complete = all(index['current'][slot] is not None and index['current'][slot]['status'] == 'success'
+                           for slot in ('plan', 'analysis', 'review'))
+            review = {}
+            if index['current']['review'] is not None:
+                pointer = index['current']['review']
+                member = next(item for item in pointer['members'] if item['logical_name'] == PRODUCT_FILES['scientific_reviewer'][1])
+                raw = read_regular(self.root / member['canonical_path'])
+                require(sha256(raw).hexdigest() == member['sha256'], 'Closure Review source changed')
+                review = loads(raw)
+            domain = review.get('domain_result', review)
+            report = domain.get('report', domain)
+            warnings = report.get('warnings', [])
+            issues = review.get('collaboration', {}).get('issues', [])
+            blocked = (decision['status'] != 'success' or
+                bool(decision['candidates']) and decision['category'] != 'authorization' or
+                decision['human_need'] == 'clarification' or decision['category'] == 'budget' or
+                any(decision['category'] == name or decision['category'].startswith((name + '.', name + '_'))
+                    for name in ('security', 'policy', 'data', 'integrity')) or
+                bool(report.get('errors')) or any(item.get('status') == 'blocked' for item in issues) or
+                any(type(item) is dict and (item.get('decision_coordinator_flag') is True or
+                    item.get('severity') in ('severe', 'critical')) for item in warnings) or
+                inbound['fields'].get('stop_sequence_id') is not None)
+            classification = classify_memory_update(complete_evidence=complete, blocked=blocked,
+                limitations=bool(warnings or any(item.get('status') != 'addressed' for item in issues)),
+                authorization_decision=response['decision'] if response else None)
             report_text, report_evidence = product_final_report(self.root, context, index, classification, response)
             payload = {'schema_version': '0.1', **identity, 'producer': node, 'status': classification['memory_status'], **classification, 'evidence': report_evidence}
             memory = port.write_member('memory_update.json', canonical_bytes(payload))
@@ -493,16 +513,18 @@ class ProductNode:
         else:
 
             if node == 'analysis_engineer' and index['current']['code'] is not None:
-                require(self.analysis_handoff is not None and self.preparation is not None, 'Verified Code requires a fresh Analysis preparation')
-                try:
-                    context['analysis_execution'] = product_resource(port, resource_kind='tool_call', resource_id='analysis-subprocess', input_digest=digest(self.preparation), config_digest=self.preparation['runtime_policy_digest'], timeout_seconds=self.analysis_handoff.timeout_seconds, effect=lambda: self.analysis_handoff.execute(self.preparation))
-                except ProductResourceFailure as error:
-                    current = {slot: pointer['artifact_id'] for slot, pointer in index['current'].items() if pointer is not None}
-                    return TargetOutcome('failed', {'current_artifact_ids': current}, {'type': 'OrdinaryResourceFailure', 'message': str(error)})
+                require(self.analysis_handoff is not None and self.preparation is not None,
+                        'Verified Code requires a fresh Analysis preparation')
             timeout = getattr(self.agent_port, 'timeout_seconds', 1)
             def effect():
                 return self.agent_port.run(node, context, timeout_seconds=timeout)
             try:
+                if node == 'analysis_engineer' and index['current']['code'] is not None:
+                    context['analysis_execution'] = product_resource(port, resource_kind='tool_call',
+                        resource_id='analysis-subprocess', input_digest=digest(self.preparation),
+                        config_digest=self.preparation['runtime_policy_digest'],
+                        timeout_seconds=self.analysis_handoff.timeout_seconds,
+                        effect=lambda: self.analysis_handoff.execute(self.preparation))
                 if hasattr(self.agent_port, 'run_scoped'):
                     outcome = self.agent_port.run_scoped(node, context, timeout_seconds=timeout, port=port)
                 else:
@@ -514,11 +536,24 @@ class ProductNode:
                 require(not reserved & content.keys(), 'Agent content includes reserved Host fields')
                 require(diagnostic.get('fingerprint') is None, 'Agent cannot assign a failure fingerprint')
             except ProductResourceFailure as error:
-                index = loads(read_regular(self.root / 'artifact_index.json'))
-                current = {slot: pointer['artifact_id'] for slot, pointer in index['current'].items() if pointer is not None}
-                return TargetOutcome('failed', {'current_artifact_ids': current}, {'type': 'OrdinaryResourceFailure', 'message': str(error)})
+                cause = error
+                while cause is not None:
+                    if isinstance(cause, ControlIntegrityError):
+                        raise cause
+                    cause = cause.__cause__
+                # Only an ended, conservatively settled effect reaches this branch.
+                # Publish the actual failure so closure can report it without rerunning it.
+                diagnostic = {'status': 'failed', 'category': 'execution_failure',
+                    'affected_layer': {'method_planner': 'plan', 'analysis_engineer': 'analysis',
+                                       'scientific_reviewer': 'review'}[node],
+                    'evidence': [], 'retryability': 'not_retryable', 'candidates': [],
+                    'confidence': 'unique', 'fingerprint': None, 'human_need': None, 'risk': 'high'}
+                content = {'summary': 'The scoped execution failed; no successful scientific result is asserted.',
+                    'errors': [{'type': 'OrdinaryResourceFailure', 'message': str(error)}]}
+                if node == 'method_planner':
+                    content['code_needed'] = False
             except BudgetExhausted:
-                diagnostic = {'status': 'failed', 'category': 'budget', 'affected_layer': 'none', 'evidence': [], 'retryability': 'not_retryable', 'candidates': [], 'confidence': 'unique', 'fingerprint': None, 'human_need': 'approval', 'risk': 'high'}
+                diagnostic = {'status': 'failed', 'category': 'budget', 'affected_layer': 'none', 'evidence': [], 'retryability': 'not_retryable', 'candidates': [], 'confidence': 'unique', 'fingerprint': None, 'human_need': None, 'risk': 'high'}
                 content = {'resource_admission': 'denied'}
                 if node == 'method_planner':
                     content['code_needed'] = False

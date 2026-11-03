@@ -146,11 +146,12 @@ class Library(WorkspaceFiles):
         self._atomic(directory / "current.json", canonical_bytes({"revision": record["revision"], "sha256": digest(record)}))
         return self._view(record)
 
-    def save(self, kind, asset_id, *, title, body, scope, sources, dependencies=(), expected_revision=0):
+    def save(self, kind, asset_id, *, title, body, scope, sources, dependencies=(), expected_revision=0, actor="operator"):
         """Store a candidate. Editing reviewed content always returns it to candidate."""
         self.initialize()
         with self._locked(write=True):
             current = self._current(kind, asset_id, expected_revision)
+            self._origin(actor)
             text(title)
             text(body)
             require(type(scope) in (dict, list) and bool(scope), "Asset applicability is required")
@@ -162,32 +163,43 @@ class Library(WorkspaceFiles):
             record = {"schema_version": "1", "kind": kind, "id": asset_id,
                       "revision": expected_revision + 1, "previous_sha256": digest(current) if current else None,
                       "title": title, "body": body, "scope": scope, "sources": sources,
-                      "dependencies": list(dependencies), "status": "candidate", "review": None,
+                      "dependencies": list(dependencies), "status": "candidate", "review": None, "proposed_by": actor,
                       "implementation": current["implementation"] if current else None,
                       "updated_at": datetime.now(timezone.utc).isoformat()}
             return self._publish(record)
 
-    def _review(self, current, *, status, rationale, evidence, actor, review_record):
-        require(status in STATUSES - {"candidate"}, "Invalid scientific asset review state")
+    @staticmethod
+    def _origin(actor):
         text(actor)
+        require(actor == "operator" or actor.startswith("system:"), "Unknown asset reviewer identity")
+        return "human" if actor == "operator" else "system"
+
+    def _review(self, current, *, status, rationale, evidence, actor):
+        require(status in STATUSES - {"candidate"}, "Invalid scientific asset review state")
+        origin = self._origin(actor)
         text(rationale)
         for reference in _list(evidence, "review evidence"):
             self._evidence(reference)
-        receipt = loads(self._evidence(review_record))
-        expected = {"kind": current["kind"], "id": current["id"], "revision": current["revision"],
-                    "status": status, "actor": actor, "rationale": rationale, "evidence": evidence}
-        require(receipt == expected, "Review receipt does not match the scientific asset decision")
         if status == "reviewed":
             require(bool(current["sources"] or evidence), "Reviewed knowledge needs supporting sources or evidence")
             require(not self._changes(current), "Asset dependencies need review")
             if current["kind"] == "method":
                 require(current["implementation"] is not None, "Method must be registered with numerical validation")
+        receipt = {"kind": current["kind"], "id": current["id"], "revision": current["revision"],
+                   "status": status, "actor": actor, "origin": origin, "rationale": rationale, "evidence": evidence}
+        relative = "library/reviews/" + digest(receipt) + ".json"
+        path = self._path(relative)
+        path.parent.mkdir(mode=0o700, exist_ok=True)
+        sync_directory(path.parent.parent)
+        publish_exact(path, canonical_bytes(receipt))
+        review_record = self.reference(relative)
         return {**current, "revision": current["revision"] + 1, "previous_sha256": digest(current),
                 "status": status, "updated_at": datetime.now(timezone.utc).isoformat(),
-                "review": {"actor": actor, "rationale": rationale, "evidence": evidence, "record": review_record}}
+                "review": {"actor": actor, "origin": origin, "rationale": rationale,
+                           "evidence": evidence, "record": review_record}}
 
-    def review(self, kind, asset_id, *, status, rationale, evidence, actor, review_record, expected_revision):
-        """Apply a Host-owned review receipt; this storage API does not grant authority."""
+    def review(self, kind, asset_id, *, status, rationale, evidence, actor, expected_revision):
+        """Record the actual caller's review; a system receipt never impersonates a human."""
         with self._locked(write=True):
             current = self._current(kind, asset_id, expected_revision)
             require(current is not None, "Unknown scientific asset")
@@ -195,41 +207,45 @@ class Library(WorkspaceFiles):
                 implementation = current["implementation"]
                 self._evidence({key: implementation[key] for key in ("path", "sha256")})
                 self._validation(implementation["validation"], implementation["sha256"])
-            return self._publish(self._review(current, status=status, rationale=rationale, evidence=evidence,
-                                              actor=actor, review_record=review_record))
+            return self._publish(self._review(current, status=status, rationale=rationale, evidence=evidence, actor=actor))
 
     def _validation(self, references, source_digest):
-        require(type(references) is list and references, "Method needs numerical validation evidence")
+        from .methods import validate_assessment_record
+        require(type(references) is list and references, "Method needs executed numerical validation evidence")
         for reference in references:
-            report = loads(self._evidence(reference))
-            require(type(report) is dict and report.get("source_sha256") == source_digest and
-                    report.get("passed") is True and type(report.get("checks")) is list and report["checks"] and
-                    all(type(check) is dict and bool(check.get("name")) and check.get("passed") is True
-                        for check in report["checks"]), "Method validation does not pass for this exact source")
+            validate_assessment_record(loads(self._evidence(reference)), source_digest)
 
-    def register_method(self, asset_id, *, source, validation, actor, review_record, rationale, expected_revision):
-        """Publish one current implementation after a bound validation/review decision."""
+    def register_method(self, asset_id, *, source, assessment, actor, rationale, expected_revision, evidence=()):
+        """Register exact code only with an in-process, Host-executed assessment."""
+        from .methods import executed_assessment
         with self._locked(write=True):
             current = self._current("method", asset_id, expected_revision)
             require(current is not None, "Create the method candidate before registration")
             code = self._evidence(source)
             require(PurePosixPath(source["path"]).parts[0] == "projects" and source["path"].endswith(".py"),
                     "Method source must be project Python code")
-            try:
-                compile(code, source["path"], "exec")
-            except SyntaxError as error:
-                raise ValueError("Method source is not valid Python") from error
-            self._validation(validation, source["sha256"])
+            report = executed_assessment(assessment, source["sha256"])
+            relative = "library/validations/" + digest(report) + ".json"
+            validation_path = self._path(relative)
+            validation_path.parent.mkdir(mode=0o700, exist_ok=True)
+            sync_directory(validation_path.parent.parent)
+            publish_exact(validation_path, canonical_bytes(report))
+            reference = self.reference(relative)
+            if not report["passed"]:
+                return {"asset": self._view(current), "registered": False, "validation": reference,
+                        "reason": "Independent Host calibration failed; the method remains a candidate."}
+            self._validation([reference], source["sha256"])
             destination = self._directory("method", asset_id) / "implementation.py"
             implementation = {"path": str(destination.relative_to(self.workspace)), "sha256": source["sha256"],
-                              "source": source, "validation": validation}
+                              "source": source, "validation": [reference], "family": report["family"],
+                              "limitations": report["limitations"]}
+            require(type(evidence) in (list, tuple), "Invalid independent review evidence")
             checked = {**current, "implementation": implementation}
-            record = self._review(checked, status="reviewed", rationale=rationale, evidence=[source, *validation],
-                                  actor=actor, review_record=review_record)
-            # The previous version is the original candidate, not the prepared implementation.
+            record = self._review(checked, status="reviewed", rationale=rationale, evidence=[source, reference, *evidence], actor=actor)
             record["previous_sha256"] = digest(current)
             self._atomic(destination, code)
-            return self._publish(record)
+            return {"asset": self._publish(record), "registered": True, "validation": reference,
+                    "reason": "Passed the recorded finite calibration and independent scoped review."}
 
     def method_snapshot(self, asset_id):
         """Read one reviewed record and its verified bytes under the same shared lock."""

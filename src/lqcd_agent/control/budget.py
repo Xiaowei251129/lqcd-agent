@@ -17,7 +17,7 @@ LIMITS = (
     ("automatic_code_fix_per_cycle", 1, 1), ("automatic_analysis_rerun_per_cycle", 1, 1),
     ("automatic_re_review_per_cycle", 1, 1), ("work_attempts_per_run", 16, 8),
     ("control_attempts_per_run", 16, 8), ("transitions_per_run", 40, 20),
-    ("llm_calls_per_attempt", 4, 2), ("llm_calls_per_run", 32, 8),
+    ("llm_calls_per_attempt", 8, 2), ("llm_calls_per_run", 64, 8),
     ("tool_calls_per_attempt", 32, 4), ("tool_calls_per_run", 128, 16),
     ("verification_commands_per_code_attempt", 8, 2),
     ("active_seconds_per_attempt", 900, 30), ("active_seconds_per_run", 3600, 120),
@@ -107,6 +107,10 @@ def resource_scope(port, *, resource_kind, resource_id, input_digest, config_dig
         charge = dict.fromkeys(RESOURCE_DIMENSIONS, 0)
         charge["llm_calls" if resource_kind == "llm_call" else "tool_calls"] = 1
         charge["active_seconds"] = timeout_seconds
+        goal = loads(read_regular(root / 'root_goal.json'))
+        task_deadline = goal.get('research_task', {}).get('deadline', value['deadline'])
+        if now.monotonic_seconds + timeout_seconds > task_deadline:
+            raise BudgetExhausted('Research task cannot fund this effect window')
         if any(charge[k] > remaining[k] for k in charge) or now.monotonic_seconds + timeout_seconds > min(value["deadline"], value["expires_at"]):
             raise BudgetExhausted("Resource exceeds its remaining budget or invocation lease")
         payload = {"resource_operation_id": stable_id, "resource_kind": resource_kind, "attempt_id": state["attempt_id"],

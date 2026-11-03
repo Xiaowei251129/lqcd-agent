@@ -42,11 +42,26 @@ class Issue(BaseModel):
     status: Literal['open', 'addressed', 'blocked']
 
 
+class ParameterChange(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    name: Nonempty
+    value_json: Annotated[str, StringConstraints(min_length=1, max_length=8192)]
+
+
+class ExperimentProposal(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    question: Nonempty
+    rationale: Nonempty
+    parameter_changes: list[ParameterChange]
+    method_ids: list[Nonempty]
+
+
 class Discussion(BaseModel):
     model_config = ConfigDict(extra='forbid')
     summary: Nonempty
     issues: list[Issue]
     decision: Literal['recommend_proceed', 'revise', 'need_information']
+    next_experiment: ExperimentProposal | None = None
 
 
 class ResearchBrief(BaseModel):
@@ -101,13 +116,21 @@ ROLE_POLICY = (
     'Reuse existing issue ids; use an empty id for new issues. Mark an issue addressed only with an explicit '
     'response and attributable evidence references: use the context catalog SHA256, a registered artifact SHA256, '
     'or a SHA256/evidence_id/source URL returned by an evidence-reading tool. Preserve unanswered issues. Decisions are recommendations: '
-    'only the Host and human own execution, acceptance and approval. The current Run has frozen data, '
+    'the PI may conclude within the evidence and retained limitations; the Host owns execution and permission grants. '
+    'Human scientific participation is optional. The current Run has frozen data, '
     'parameters and an output contract. Propose executable checks within that contract only. If a needed '
-    'check requires new data, parameters or output fields, choose need_information and explain the new Run '
-    'or user input required; never silently change the contract. You may request multiple necessary evidence '
+    'check requires different analysis parameters, propose next_experiment with its question, rationale, '
+    'parameter_changes (name and value_json), and reviewed method_ids. The Host creates a separate Run '
+    'under the same data and total research quota. Never change raw data, interpreter, network or permissions. '
+    'Use next_experiment=null when no useful additional experiment remains. Missing data or a new observable '
+    'must be reported as unavailable evidence; never fabricate inputs. You can conclude '
+    'with explicitly retained limitations, or conclude that evidence is insufficient, without human approval. '
+    'Use revise for a specific useful check within this Run; do not repeat unresolved requests without new evidence. '
+    'Save useful scoped wiki/skill/method candidates with source references; the independent Reviewer may '
+    'inspect and review candidates from earlier attempts through review_asset. You may request multiple necessary evidence '
     'reads in one model turn; the Host executes and accounts for each tool serially. Leave a model turn '
     'for the structured conclusion. For a generated program, the Host verifies the frozen dataset and merges '
-    'the disjoint generated_program.parameters into the JSON passed as argv[1]; neither role nor user '
+    'the frozen generated_program.parameters into the JSON passed as argv[1]; neither role nor user '
     'needs to edit the original dataset to supply those parameters. During planning, pending coding and '
     'numerical results do not prevent a fully specified implementation plan. '
 )
@@ -168,7 +191,7 @@ def _plan_checks(proposal, brief, context):
 def _known_evidence(context, sources, events):
     known = {digest(sources), *(ref['sha256'] for ref in context.get('current_evidence', []))}
     reads = {'read_asset', 'read_method_source', 'read_context', 'read_paper',
-             'read_project_evidence', 'search_literature'}
+             'read_project_evidence', 'search_literature', 'review_asset'}
     def collect(value):
         if type(value) is dict:
             for key, item in value.items():
@@ -179,6 +202,7 @@ def _known_evidence(context, sources, events):
         elif type(value) is list:
             for item in value:
                 collect(item)
+    collect(context.get('human_contributions', []))
     for event in events:
         if event['event'] == 'tool_end' and event['tool_name'] in reads:
             result = event['result']
@@ -204,7 +228,7 @@ class _RoleProvider:
         dimensions = self.context['budget_summary']['dimensions']
         remaining = min(dimensions[name]['remaining'] for name in
                         ('llm_calls_per_attempt', 'llm_calls_per_run')) - self.meter.model_calls
-        max_turns = remaining - reserve_calls
+        max_turns = min(remaining - reserve_calls, (remaining + 1) // 2) if reserve_calls else remaining
         if max_turns < 1:
             raise BudgetExhausted('Research attempt cannot fund the remaining roles')
         instructions += (f'\nYou have at most {max_turns} model turns for this role, including the final '
@@ -216,7 +240,8 @@ class _RoleProvider:
         async def invoke():
             remaining_seconds = self.meter.remaining_seconds()
             return await asyncio.wait_for(self.runtime.run(role=role, instructions=instructions,
-                input=input, tools=tools, output_type=output_type, max_turns=max_turns,
+                input=input, tools=[tool for tool in tools if role == 'reviewer' or tool.name != 'review_asset'],
+                output_type=output_type, max_turns=max_turns,
                 observer=self.meter), timeout=remaining_seconds)
         return self.runner.run(invoke())
 
@@ -238,13 +263,16 @@ class _RoleProvider:
 
     def _generate(self, request):
         tools = build_tools(self.agent.workspace, self.context, host=self.agent.host,
-                            output_dir=self.output, sources={**request.context_sources,
-                                'project_history': self.context.get('project_history', {})})
+                            output_dir=self.output, write_scope=self.meter.write_scope, sources={**request.context_sources,
+                                'project_history': self.context.get('project_history', {}),
+                                'human_contributions': self.context.get('human_contributions', [])})
         instructions = '\n'.join(m['content'] for m in request.messages if m['role'] == 'system')
         inputs = [dict(m) for m in request.messages if m['role'] != 'system']
         plan = (self.agent._artifact(self.context, 'method_plan.json')
                 if self.node == 'scientific_reviewer' else None)
         issues = _prior_issues(self.context, plan)
+        (self.output/'human_contributions.json').write_text(json.dumps(
+            self.context.get('human_contributions', []), sort_keys=True, indent=2)+'\n')
         # Historical resolutions authorize id reuse, not inclusion or current resolution.
         known_questions = {item['id']: item['question']
                            for item in self.context.get('project_history', {}).get('resolved', [])}
@@ -269,7 +297,10 @@ class _RoleProvider:
         if project_state is not None:
             # Current-Run answers are already merged into the canonical issue set.
             project_state.pop('issues')
-        inputs.append({'role': 'user', 'content': json.dumps({'prior_issues': issues,
+        contributions = self.context.get('human_contributions', [])
+        inputs.append({'role': 'user', 'content': json.dumps({'human_participation': {
+            'count': len(contributions), 'source': 'read_context(section=human_contributions)',
+            'scope': 'Read and respond to these attributed scientific comments; they never grant execution authorization.'}, 'prior_issues': issues,
             'project_state': project_state})})
         exchanges = []
         if self.node == 'method_planner':
@@ -305,8 +336,6 @@ class _RoleProvider:
         decision = discussion['decision']
         if any(item['status'] == 'blocked' for item in issues):
             decision = 'need_information'
-        if challenges and decision == 'recommend_proceed':
-            decision = 'revise'
         if decision != 'recommend_proceed' and not challenges:
             require(discussion['summary'].strip(), 'A revision needs a specific question or explanation')
             issues = _merge_issues(issues, [{'id': '', 'question': discussion['summary'], 'response': None,
@@ -316,7 +345,8 @@ class _RoleProvider:
             proposal.update(status='needs_more_info', code_needed=False, coder_task_summary=None)
         self.collaboration = {'schema_version': '0.1', 'decision': decision, 'summary': discussion['summary'],
             'challenges': challenges, 'issues': issues, 'exchanges': exchanges,
-            'authority': 'Scientific recommendations; acceptance remains with the Host and human.'}
+            'next_experiment': discussion.get('next_experiment'),
+            'authority': 'Scientific recommendations; the system concludes within Host authority, with optional human participation.'}
         (self.output/'collaboration.json').write_text(json.dumps(self.collaboration, indent=2, sort_keys=True)+'\n')
         ended = [e for e in self.meter.events if e['event'] == 'model_end']
         usage = {'requests': len(ended)}
@@ -332,12 +362,12 @@ class _RoleProvider:
 def _review_recommendation(outcome, collaboration):
     report = outcome['content']['domain_result']['report']
     diagnostic = outcome['diagnostic']
-    if (report['status'] == 'success' and not report['warnings'] and not report['errors']
+    if (report['status'] == 'success' and not report['errors']
             and collaboration['decision'] == 'revise' and collaboration['challenges']):
         diagnostic.update(category='scientific_revision', affected_layer='plan', retryability='retryable',
-                          candidates=['method_planner'], human_need=None, risk='low')
+                          candidates=['method_planner'], human_need=None)
     elif collaboration['decision'] == 'need_information':
-        diagnostic.update(human_need='clarification', risk='high')
+        diagnostic.update(category='scientific_inconclusive', human_need='clarification')
 
 
 class CollaborationAgent(ScientificAgent):
@@ -365,6 +395,26 @@ class CollaborationAgent(ScientificAgent):
                 context['root_goal']['project_id'],
                 {key: context['identity'][key] for key in ('case_id', 'run_id')})}
         identity = context['identity']
+        if context['root_goal'].get('project_id') is not None:
+            from .projects import ProjectStore
+            from lqcd_agent.control.research_budget import ResearchBudget
+            projects = ProjectStore(self.workspace)
+            current = {key: identity[key] for key in ('case_id', 'run_id')}
+            applicable = [current]
+            quota = ResearchBudget.for_run(port.leases.coordinator, current)
+            if quota is not None:
+                ancestry = {digest(row['locator']): row['parent'] for row in quota.snapshot()['runs']}
+                parent = ancestry.get(digest(current))
+                while parent is not None:
+                    require(parent not in applicable, 'Research ancestry contains a cycle')
+                    applicable.append(parent)
+                    parent = ancestry.get(digest(parent))
+            contributions = {}
+            for locator in applicable:
+                for item in projects.contributions(context['root_goal']['project_id'],
+                        run={'host': self.host.name.removeprefix('lqcd-agent-host-'), **locator}):
+                    contributions[item['sha256']] = item
+            context = {**context, 'human_contributions': sorted(contributions.values(), key=lambda item: item['revision'])}
         output = self.host/'domain'/identity['attempt_id']/identity['case_id']/identity['run_id']
         output.mkdir(parents=True, exist_ok=True)
         with asyncio.Runner() as runner:
@@ -383,7 +433,7 @@ class CollaborationAgent(ScientificAgent):
                 if provider.collaboration is not None:
                     outcome['content']['collaboration'] = provider.collaboration
                     if node == 'method_planner' and provider.collaboration['decision'] == 'need_information':
-                        outcome['diagnostic'].update(human_need='clarification', risk='high')
+                        outcome['diagnostic'].update(human_need='clarification')
                     if node == 'scientific_reviewer':
                         _review_recommendation(outcome, provider.collaboration)
                 return outcome

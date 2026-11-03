@@ -164,7 +164,7 @@ def extract(project, correlator, *, workspace=None):
     for item in sources:
         require(sha256(read_regular(item['path'])).hexdigest() == item['sha256'], 'Original source changed during extraction')
     manifest = {'schema_version': '0.1', 'cases': list(CASES), 'assets': assets, 'sources': sources,
-                'scientific_acceptance': 'pending_human_review',
+                'scientific_acceptance': 'not_system_reviewed',
                 'reference_status': 'comparison_only_not_certified_truth',
                 'generation_context': 'Task definitions and synthetic calibration only; measured inputs and references withheld.'}
     manifest['manifest_digest'] = digest(manifest)

@@ -133,6 +133,14 @@ def create_app(workbench=None):
     async def edit_project(request: Request, project_id: str):
         return await run_in_threadpool(service.edit_project, project_id, await body(request))
 
+    @app.get('/api/projects/{project_id}/contributions')
+    def contributions(project_id: str):
+        return service.projects.contributions(project_id)
+
+    @app.post('/api/projects/{project_id}/contributions', status_code=201)
+    async def contribute(request: Request, project_id: str):
+        return await run_in_threadpool(service.contribute, project_id, await body(request))
+
     @app.get('/api/projects/{project_id}/runs')
     def project_runs(project_id: str):
         return service.project_runs(project_id)

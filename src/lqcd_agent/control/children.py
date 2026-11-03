@@ -95,6 +95,9 @@ class ChildOperations:
 
                 def reserve(operation_id, stamp):
                     value = {'reserved_child_run_locator': {'case_id': request.source_run_locator['case_id'], 'run_id': 'run_' + uuid.uuid4().hex}, 'source_snapshot_proof': proof, 'canonical_child_policy_bytes': canonical_bytes(selected).decode(), 'child_policy_digest': selected['policy_digest'], 'child_policy_profile': selected['profile_id'], 'child_policy_version': selected['schema_version'], 'child_policy_selection_authority': 'authenticated_host_profile_selection' if fork else 'validated_source_policy', 'initial_invocation_capability_inputs': {'attempt_id': 'attempt_000001', 'target_kind': 'method_planner'}}
+                    from .research_budget import admit_research_run
+                    admit_research_run(db, source_inputs['root_goal'], value['reserved_child_run_locator'],
+                                       operation_id, stamp, parent=request.source_run_locator)
                     if not fork:
                         value['source_policy_classification_proof'] = classification
                     return value

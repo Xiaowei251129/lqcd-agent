@@ -2,7 +2,7 @@ from __future__ import annotations
 import hashlib
 from copy import deepcopy
 from pathlib import Path
-PRODUCT_CONTEXT_SLOTS = {'method_planner': ('plan',), 'code_agent': ('plan', 'code'), 'analysis_engineer': ('plan', 'code', 'analysis'), 'scientific_reviewer': ('plan', 'analysis', 'review'), 'decision_coordinator': ('plan', 'code', 'analysis', 'review', 'decision', 'approval'), 'human_gate': ('decision', 'approval'), 'memory_report': ('review', 'decision', 'approval')}
+PRODUCT_CONTEXT_SLOTS = {'method_planner': ('plan',), 'code_agent': ('plan', 'code'), 'analysis_engineer': ('plan', 'code', 'analysis'), 'scientific_reviewer': ('plan', 'code', 'analysis', 'review'), 'decision_coordinator': ('plan', 'code', 'analysis', 'review', 'decision', 'approval'), 'human_gate': ('decision', 'approval'), 'memory_report': ('review', 'decision', 'approval')}
 
 def product_context(root, identity, execution, index):
     """Resolve bounded input references for one fenced canonical invocation."""

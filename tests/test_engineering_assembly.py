@@ -54,4 +54,5 @@ def test_failed_review_is_a_failed_domain_diagnostic(tmp_path, monkeypatch):
         {'run_result_path': 'result.json', 'analysis_outputs_dir': 'analysis_outputs'}})
     value = agent.run('scientific_reviewer', {'identity': {'attempt_id': 'a', 'case_id': 'c', 'run_id': 'r'}}, timeout_seconds=1)
     assert value['diagnostic']['status'] == 'failed'
-    assert value['diagnostic']['human_need'] == 'approval' and value['diagnostic']['risk'] == 'high'
+    assert value['diagnostic']['category'] == 'scientific_review'
+    assert value['diagnostic']['affected_layer'] == 'review' and value['diagnostic']['human_need'] is None

@@ -18,7 +18,7 @@ def project_history(workspace, project_id, exclude_locator=None):
         reviews = [entry for entry in entries if entry['slot'] == 'review']
         for entry in reviews or [entry for entry in entries if entry['slot'] == 'plan']:
             source = {'run_locator': run['run_locator'], 'host': run['host'],
-                      'manifest_sha256': run['sha256'], 'scientific_acceptance': run['scientific_acceptance'],
+                      'manifest_sha256': run['sha256'], 'scientific_outcome': run.get('scientific_outcome'), 'decision_origin': run.get('decision_origin'),
                       'project_revision': run['project_revision'], 'evidence_sha256': entry['sha256']}
             evidence.append(source)
             collaboration = loads(projects.evidence(project_id, entry['sha256']), canonical=False)
@@ -32,10 +32,11 @@ def project_history(workspace, project_id, exclude_locator=None):
                 bucket.append({'issue': issue, 'source': source})
             # Only the verified capture may label a claim accepted. A model's
             # decision/summary cannot promote pending or held evidence.
-            if run['scientific_acceptance'] == 'accepted_with_conditions' and collaboration.get('summary'):
-                key = digest({'statement': collaboration['summary'], 'project_revision': run['project_revision']})
+            if run.get('scientific_outcome') in ('supported', 'qualified') and collaboration.get('summary'):
+                key = digest({'statement': collaboration['summary'], 'project_revision': run['project_revision'],
+                              'scientific_outcome': run['scientific_outcome'], 'decision_origin': run['decision_origin']})
                 value = conclusions.setdefault(key, {'statement': collaboration['summary'],
-                    'scientific_acceptance': 'accepted_with_conditions', 'project_revision': run['project_revision'],
+                    'scientific_outcome': run['scientific_outcome'], 'decision_origin': run['decision_origin'], 'project_revision': run['project_revision'],
                     'sources': []})
                 value['sources'].append(source)
 
@@ -80,7 +81,7 @@ def project_state_view(state):
     """Keep current questions and conditional accepted claims, not every exchange."""
     return {'issues': state['issues'], 'counts': state['counts'],
             'conclusions': [{'statement': value['statement'],
-                'scientific_acceptance': value['scientific_acceptance'],
+                'scientific_outcome': value['scientific_outcome'], 'decision_origin': value['decision_origin'],
                 'project_revision': value['project_revision'],
                 'representative_evidence': min(source['evidence_sha256'] for source in value['sources']),
                 'source_count': len(value['sources'])}
@@ -88,4 +89,4 @@ def project_state_view(state):
             'conflicts': [{'id': value['id'], 'question': value['question'],
                            'variant_count': len(value['variants'])} for value in state['conflicts']],
             'history_source': "Read full resolutions, conflicting responses and source identities with read_context(section='project_history'); read the original evidence with read_project_evidence(evidence_sha256=...).",
-            'scope': 'Prior accepted claims retain their original inputs and human conditions. Read those sources before reuse; no historical claim grants execution or current scientific acceptance.'}
+            'scope': 'Prior accepted claims retain their original inputs, scope, limitations and actual review provenance. Read those sources before reuse; no historical claim grants execution or current scientific acceptance.'}

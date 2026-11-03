@@ -5,9 +5,11 @@ from pathlib import Path
 import stat
 
 # Canonical deployment token policy for research and Code. Derived thresholds are
-# not independent settings; native Codex retains its own generation output budget.
+# not independent settings. Every model request also consumes the shared task quota.
 INPUT_TOKEN_LIMIT = 256_000
 RESEARCH_OUTPUT_TOKEN_LIMIT = 32_768
+CODE_OUTPUT_TOKEN_LIMIT = 128_000
+RESEARCH_TASK_LIMITS = {'runs': 4, 'model_calls': 128, 'tokens': 8_000_000, 'seconds': 3600}
 # Both paths compact at 76% of the input ceiling: 80% of Codex's 95% effective window.
 COMPACT_RATIO = .76
 COMPACT_TOKEN_LIMIT = int(INPUT_TOKEN_LIMIT * COMPACT_RATIO)

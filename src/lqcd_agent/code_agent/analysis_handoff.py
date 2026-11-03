@@ -46,7 +46,7 @@ class AnalysisHandoff:
         self.timeout_seconds = generated_program['timeout_seconds'] if generated_program is not None else 10
 
     def _environment(self, locator):
-        policy = {'network': 'enabled', 'inherited_environment': False, 'python_isolated': True,
+        policy = {'network': 'disabled', 'inherited_environment': False, 'python_isolated': True,
                   'timeout_seconds': self.timeout_seconds}
         if self.generated_program is not None:
             from .execution import interpreter_identity

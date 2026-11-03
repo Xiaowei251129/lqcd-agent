@@ -29,7 +29,7 @@ def prepare_research(coordinator, config, *, workspace, live, initialize, method
     revision = subprocess.check_output(['git', '-C', str(repository), 'rev-parse', 'HEAD'], text=True).strip()
     base = immutable_git_tree(repository, revision)
     require(base == base_files, 'Research coding base changed')
-    backend = CodexCodingBackend(coordinator.root/JOBS_DIRECTORY, coordinator.root/'code_workspaces')
+    backend = CodexCodingBackend(coordinator.root/JOBS_DIRECTORY, coordinator.root/'code_workspaces', coordinator=coordinator)
     containment = ProcessContainment(backend)
     tool = {'spec_id': 'research-codex', 'argv': ['codex:research-task'], 'cwd': '.',
             'timeout_seconds': 400, 'required': True, 'expected_exit_codes': [0], 'environment_keys': []}

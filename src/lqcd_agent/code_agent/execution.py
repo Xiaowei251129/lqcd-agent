@@ -21,11 +21,18 @@ def interpreter_identity(python):
         env=child_environment(), timeout=15), canonical=False)
 
 
+# Numerical controls may vary in a new, separately sealed Run. Measured values,
+# sample identities, units and physical definitions remain immutable source data.
+ANALYSIS_PARAMETERS = frozenset({'binsize', 'bootstrap_samples', 'seed', 'tmins', 'tmax',
+                                 'fixed_ground_energy', 'omit_reference'})
+
+
 def read_scientific_input(workspace, snapshot, parameters):
     from lqcd_agent.tools.dataset import read_dataset
     record, payload = read_dataset(workspace, snapshot['path'], values=True)
     require(record == snapshot, 'Scientific dataset changed before consumption')
-    require(not parameters.keys() & payload.keys(), 'Scientific parameters replace source data fields')
+    require(not (parameters.keys() & payload.keys()) - ANALYSIS_PARAMETERS,
+            'Scientific parameters replace source data fields')
     return {**payload, **parameters}
 
 
@@ -41,7 +48,7 @@ def sandbox_command(command, cwd, interpreter_roots, *, timeout=120):
     environment = child_environment()
     environment.update(CODEX_HOME=str(home), CODEX_SQLITE_HOME=str(home), TMPDIR=str(cwd))
     overrides = ('permissions.research_grade.filesystem='+json.dumps(profile).replace(': ', ' = '),
-        'permissions.research_grade.network.enabled=true')
+        'permissions.research_grade.network.enabled=false')
     argv = [str(bundled_codex_path())]
     for override in overrides:
         argv.extend(['--config', override])

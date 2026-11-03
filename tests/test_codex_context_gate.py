@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 import pytest
 
 from lqcd_agent.code_agent.context_gateway import CodingContextGateway
-from lqcd_agent.settings import ApplicationSettings, INPUT_TOKEN_LIMIT
+from lqcd_agent.settings import ApplicationSettings, INPUT_TOKEN_LIMIT, CODE_OUTPUT_TOKEN_LIMIT
 
 
 @contextmanager
@@ -72,6 +72,8 @@ def test_actual_input_count_admits_exact_boundary_and_preserves_wire(tmp_path, p
                 'parallel_tool_calls': True, 'text': {'format': {'type': 'json_object'}},
                 'reasoning': {'effort': 'high'}, 'personality': 'pragmatic', 'truncation': 'disabled',
                 'stream': True, 'store': False, 'client_metadata': {'run': 'test'}, 'include': []}
+    if path == '/responses':
+        original['max_output_tokens'] = CODE_OUTPUT_TOKEN_LIMIT
     raw = json.dumps(original, indent=2).encode()
     response_bytes = b'event: response.completed\ndata: {"usage":{"input_tokens":256000}}\n\n'
     def respond(route, body):
@@ -353,3 +355,200 @@ def test_count_deadline_stops_a_slow_stream_without_generation(tmp_path):
             assert requests == ['/v1/responses/input_tokens']
     finally:
         stopped.set(); server.shutdown(); server.server_close(); thread.join(2)
+
+
+@pytest.fixture
+def native_producer(tmp_path, monkeypatch):
+    """A real fenced native producer with its worker replaced by an owned idle process."""
+    import subprocess
+    import sys
+    from pathlib import Path
+    from contextlib import closing
+    from lqcd_agent.control.coordinator import Coordinator
+    from lqcd_agent.control.interfaces import ActorContext, StartRunRequest
+    from lqcd_agent.control.storage import execution_scratch_root
+    from lqcd_agent.control.strict_json import digest, loads
+    from lqcd_agent.examples import prepare_code, SyntheticAgent
+    from lqcd_agent.graph.analysis_graph import CanonicalProductRuntime
+    from tests.support import mkdtemp
+    launch = subprocess.Popen
+    def idle(argv, **kwargs):
+        if isinstance(argv, (list, tuple)) and 'lqcd_agent.code_agent.codex_worker' in argv:
+            return launch([sys.executable, '-I', '-S', '-c', 'import time;time.sleep(120)'], **kwargs)
+        return launch(argv, **kwargs)
+    monkeypatch.setattr(subprocess, 'Popen', idle)
+    workspace = tmp_path / 'operator'
+    workspace.mkdir()
+    monkeypatch.setenv('LQCD_AGENT_WORKSPACE', str(workspace))
+    host = Path(mkdtemp(prefix='lqcd-agent-host-', dir=execution_scratch_root()))
+    with closing(Coordinator(host)) as coordinator:
+        code, analysis = prepare_code(coordinator, live=True, initialize=True)
+        actor = ActorContext('operator', 'human', ('control.internal', 'resume', 'start'))
+        runtime = CanonicalProductRuntime(coordinator, worker_id='quota-fixture', actor=actor,
+            agent_port=SyntheticAgent(), code_host=code, analysis_handoff=analysis)
+        inputs = {'root_goal': {'goal': 'Inspect native model admission.', 'workflow': 'code', 'live': True,
+            'workspace': str(workspace), 'research_task': {'id': digest(str(host)),
+                'limits': {'runs': 1, 'model_calls': 2, 'tokens': 1_000_000, 'seconds': 3600},
+                'deadline': coordinator._time().monotonic_seconds + 60, 'parent': None}},
+            'input_snapshot': {'kind': 'offline_quota_fixture'}}
+        created = runtime.plane.start_run(StartRunRequest('case', inputs, digest(inputs), 'quota-fixture'), actor=actor)
+        locator = created['result']['run_locator']
+        runtime.run(locator)
+        producer = loads(coordinator.connection.execute('SELECT value FROM external_operations').fetchone()[0])
+        job = code.backend.job(producer['producer_operation_id'])
+        request = json.loads((job / 'request.json').read_text())
+        assert request['producer_authority'] == {key: producer[key] for key in ('worker_owner_id', 'lease_epoch')}
+        try:
+            yield coordinator, locator, producer, job, request
+        finally:
+            code.backend.stop(producer['producer_operation_id'])
+
+
+@pytest.mark.parametrize('chunk_size', [1, 19, 4096])
+def test_completed_sse_usage_is_read_from_chunked_private_records(chunk_size):
+    from lqcd_agent.code_agent.context_gateway import _UsageReader
+    event = {'type': 'response.completed', 'response': {'id': 'response-fixture',
+        'object': 'response', 'status': 'completed',
+        'usage': {'input_tokens': 100, 'output_tokens': 20, 'total_tokens': 120}}}
+    raw = ('event: response.completed\ndata: ' + json.dumps(event) + '\n\n').encode()
+    reader = _UsageReader('text/event-stream; charset=utf-8')
+    for offset in range(0, len(raw), chunk_size):
+        reader.feed(raw[offset:offset + chunk_size])
+    assert reader.complete and reader.tokens == 120
+
+
+def test_native_repeats_share_real_quota_and_failed_usage_is_not_refunded(native_producer):
+    from lqcd_agent.control.research_budget import ResearchBudget
+    coordinator, locator, producer, job, request = native_producer
+    generations = []
+    def respond(path, raw):
+        if path.endswith('/input_tokens'):
+            return count_response(100)
+        generations.append(json.loads(raw))
+        if len(generations) == 1:
+            return 503, b'private failed body', 'application/json'
+        result = {'type': 'response.completed', 'response': {'id': 'response-fixture',
+            'object': 'response', 'status': 'completed', 'usage': {
+                'input_tokens': 100, 'output_tokens': 20, 'total_tokens': 120}}}
+        return 200, ('event: response.completed\ndata: '+json.dumps(result)+'\n\n').encode(), 'text/event-stream'
+    with upstream(respond) as (base, received):
+        settings = ApplicationSettings(api_key='offline-key', api_base=base)
+        with CodingContextGateway(settings, job, producer_authority=request['producer_authority'],
+                task=request['task']) as gateway:
+            assert call(gateway, {'model': settings.coding_model, 'input': 'fixture'})[0] == 503
+            assert call(gateway, {'model': settings.coding_model, 'input': 'fixture'})[0] == 200
+            assert call(gateway, {'model': settings.coding_model, 'input': 'fixture'})[0] == 422
+            assert gateway.failed.is_set() and gateway.generation_usage_unknown.is_set()
+        assert len(generations) == 2
+        assert all(row['max_output_tokens'] == CODE_OUTPUT_TOKEN_LIMIT for row in generations)
+        counts = [json.loads(raw) for path, raw, _ in received if path.endswith('/input_tokens')]
+        assert len(counts) == 3 and all('max_output_tokens' not in row for row in counts)
+    snapshot = ResearchBudget(coordinator, locator).snapshot()
+    assert snapshot['model_calls'] == 2 and snapshot['unknown_requests'] == 1
+    assert snapshot['charged_tokens'] == 100 + CODE_OUTPUT_TOKEN_LIMIT + 120
+    assert 'private failed body' not in (job / 'context_requests.jsonl').read_text()
+
+
+@pytest.mark.parametrize('fault', ['epoch', 'backend_deadline', 'task_deadline', 'missing_authority'])
+def test_native_stale_authority_cannot_spend_quota_or_forward(native_producer, fault, monkeypatch):
+    from lqcd_agent.control.research_budget import ResearchBudget
+    from lqcd_agent.control.strict_json import canonical_bytes
+    coordinator, locator, producer, job, request = native_producer
+    if fault == 'task_deadline':
+        from lqcd_agent.control import coordinator as coordinator_module
+        from lqcd_agent.control.clock import Timestamp
+        original_clock = coordinator.clock
+        class LaterClock:
+            epoch_id = original_clock.epoch_id
+            def now(self):
+                stamp = original_clock.now()
+                return Timestamp(stamp.source, stamp.wall_seconds + 61, stamp.monotonic_seconds + 61)
+        monkeypatch.setattr(coordinator_module, 'HostClock', LaterClock)
+    elif fault != 'missing_authority':
+        changed = dict(producer)
+        if fault == 'epoch':
+            changed['lease_epoch'] += 1
+        else:
+            changed['dispatch_started_at'] = (coordinator._time().monotonic_seconds -
+                changed['prestart']['aggregate']['request']['timeout_seconds'] - 1)
+        changed['phase_revision'] += 1
+        with coordinator.transaction() as db:
+            db.execute('UPDATE external_operations SET revision=?,value=? WHERE external_operation_id=?',
+                (changed['phase_revision'], canonical_bytes(changed), changed['producer_operation_id']))
+    with upstream(lambda path, raw: count_response(100)) as (base, received):
+        settings = ApplicationSettings(api_key='offline-key', api_base=base)
+        with CodingContextGateway(settings, job,
+                producer_authority=None if fault == 'missing_authority' else request['producer_authority'],
+                task=request['task']) as gateway:
+            assert call(gateway, {'model': settings.coding_model, 'input': 'fixture'})[0] == 422
+            assert gateway.failed.is_set()
+        assert received == []
+    assert ResearchBudget(coordinator, locator).snapshot()['model_calls'] == 0
+
+
+@pytest.mark.parametrize('limit', [True, 0, -1, CODE_OUTPUT_TOKEN_LIMIT + 1])
+def test_native_output_limit_is_a_real_pre_dispatch_bound(tmp_path, limit):
+    with upstream(lambda path, raw: count_response(100)) as (base, received):
+        settings = ApplicationSettings(api_key='offline-key', api_base=base)
+        with CodingContextGateway(settings, tmp_path) as gateway:
+            status, _ = call(gateway, {'model': settings.coding_model, 'input': 'fixture',
+                                       'max_output_tokens': limit})
+            assert status == 413 and gateway.failed.is_set()
+        assert received == []
+
+
+def test_native_compaction_is_charged_without_unsupported_output_field(native_producer):
+    from lqcd_agent.control.research_budget import ResearchBudget
+    coordinator, locator, producer, job, request = native_producer
+    def respond(path, raw):
+        if path.endswith('/input_tokens'):
+            return count_response(100)
+        assert 'max_output_tokens' not in json.loads(raw)
+        result = {'object': 'response.compaction', 'usage': {
+            'input_tokens': 100, 'output_tokens': 10, 'total_tokens': 110}, 'output': []}
+        return 200, json.dumps(result).encode(), 'application/json'
+    with upstream(respond) as (base, received):
+        settings = ApplicationSettings(api_key='offline-key', api_base=base)
+        with CodingContextGateway(settings, job, producer_authority=request['producer_authority'],
+                task=request['task']) as gateway:
+            assert call(gateway, {'model': settings.coding_model, 'input': []}, path='/responses/compact')[0] == 200
+            assert not gateway.failed.is_set()
+        assert len(received) == 2
+    snapshot = ResearchBudget(coordinator, locator).snapshot()
+    assert snapshot['model_calls'] == 1 and snapshot['charged_tokens'] == 110
+
+
+@pytest.mark.parametrize('terminal_status', ['failed', 'cancelled'])
+def test_native_terminal_failure_is_promptly_stopped_with_real_proof(native_producer, terminal_status):
+    from lqcd_agent.code_agent.codex_backend import CodexCodingBackend
+    from lqcd_agent.control.operations import ExternalControl
+    from lqcd_agent.control.strict_json import loads
+    from lqcd_agent.inspection import read_snapshot
+    from lqcd_agent.workbench.worker import step
+    coordinator, locator, producer, job, _ = native_producer
+    state_path = job / 'state.json'
+    state = json.loads(state_path.read_text())
+    state.update(status=terminal_status, error='OfflineNativeFailure',
+                 error_message='Owned test worker failed without a scientific result.', finished_at=time.monotonic())
+    state_path.write_text(json.dumps(state))
+    failed_bytes = state_path.read_bytes()
+    assert coordinator._time().monotonic_seconds < (producer['dispatch_started_at'] +
+        producer['prestart']['aggregate']['request']['timeout_seconds'])
+    identifier = coordinator.root.name.removeprefix('lqcd-agent-host-')
+    assert step(identifier, locator)
+    snapshot = read_snapshot(coordinator.root, locator)
+    assert snapshot.state['run_status'] == 'halted' and snapshot.state['active_pause'] is None
+    current = loads((snapshot.root / 'artifact_index.json').read_bytes())['current']
+    assert current['terminal'] is None  # No successful code or scientific report is fabricated.
+    final, proof = ExternalControl(coordinator).final_evidence(coordinator.connection,
+        producer['producer_operation_id'])
+    assert final['resolution_owner'] == 'interrupt' and proof['proof_kind'] == 'safe_stop'
+    trigger = loads((snapshot.root / ('watchdog_' + producer['producer_operation_id'] + '_trigger.json')).read_bytes())
+    failure = trigger['backend_failure']
+    assert failure['status'] == terminal_status and failure['state_sha256'] == sha256(failed_bytes).hexdigest()
+    assert (snapshot.root / failure['state_reference']).read_bytes() == failed_bytes
+    backend = CodexCodingBackend(coordinator.root / 'coding_jobs', coordinator.root / 'code_workspaces')
+    assert backend.lookup(producer['producer_operation_id'])['status'] == 'cancelled'
+    before = (snapshot.root / 'execution_history.jsonl').read_bytes()
+    assert not step(identifier, locator)
+    assert (snapshot.root / 'execution_history.jsonl').read_bytes() == before

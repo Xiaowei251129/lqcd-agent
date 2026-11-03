@@ -134,6 +134,89 @@ class ProjectStore(WorkspaceFiles):
                       "updated_at": datetime.now(timezone.utc).isoformat()}
             return self._publish(record)
 
+    def _contributions(self, project_id):
+        directory = self._path(f"projects/{project_id}/contributions")
+        if not directory.exists():
+            return []
+        head = closed(loads(read_regular(directory / "current.json")), ("revision", "sha256"))
+        number(head["revision"], integer=True, minimum=1)
+        digest_value(head["sha256"])
+        records, identifier = [], head["sha256"]
+        for revision in range(head["revision"], 0, -1):
+            raw = read_regular(self._path(f"projects/{project_id}/contributions/{identifier}.json"))
+            require(len(raw) <= 65536 and sha256(raw).hexdigest() == identifier,
+                    "Scientific contribution digest changed")
+            record = closed(loads(raw), ("schema_version", "project_id", "project_revision", "project_sha256",
+                "revision", "previous_sha256", "key", "author", "kind", "body", "evidence_sha256", "run", "created_at"))
+            require(record["schema_version"] == "1" and record["project_id"] == project_id and
+                    record["revision"] == revision and record["author"] == "operator",
+                    "Scientific contribution chain changed")
+            project = self._read(project_id, record["project_revision"])
+            require(digest(project) == record["project_sha256"], "Scientific contribution Project changed")
+            records.append({**record, "sha256": identifier})
+            identifier = record["previous_sha256"]
+            digest_value(identifier, nullable=True)
+        require(identifier is None, "Scientific contribution chain changed")
+        return list(reversed(records))
+
+    def contribute(self, project_id, *, expected_digest, key, kind, body, evidence_sha256=(), run=None):
+        """Record operator scientific input; this never grants execution authority."""
+        digest_value(expected_digest)
+        component(key)
+        require(len(key) <= 128 and kind in ("scientific_comment", "question", "evidence"),
+                "Invalid scientific contribution")
+        text(body)
+        require(body.strip() and len(body) <= 16000, "Scientific contribution needs bounded text")
+        require(type(evidence_sha256) in (list, tuple) and len(evidence_sha256) <= 16 and
+                all(type(value) is str for value in evidence_sha256), "Invalid contribution evidence")
+        require(len(set(evidence_sha256)) == len(evidence_sha256), "Duplicate contribution evidence")
+        references = sorted(evidence_sha256)
+        require(kind != "evidence" or bool(references), "Evidence input needs registered references")
+        for identifier in references:
+            # Registered project evidence is immutable; no arbitrary path or URL is read.
+            self.evidence(project_id, identifier)
+        if run is not None:
+            closed(run, ("host", "case_id", "run_id", "execution_head"))
+            for name in ("host", "case_id", "run_id"):
+                component(run[name])
+            digest_value(run["execution_head"])
+        intent = {"project_sha256": expected_digest, "key": key, "kind": kind, "body": body,
+                  "evidence_sha256": references, "run": run}
+        with self._locked(write=True):
+            current = self._read(project_id)
+            records = self._contributions(project_id)
+            original = next((row for row in records if row["key"] == key), None)
+            if original is not None:
+                require(all(original[name] == value for name, value in intent.items()),
+                        "Contribution key conflicts with the original input")
+                return original
+            require(digest(current) == expected_digest, "Stale project revision")
+            if run is not None:
+                run_key = digest({name: run[name] for name in ("host", "case_id", "run_id")})
+                self._run_manifest(project_id, run_key)
+            record = {"schema_version": "1", "project_id": project_id,
+                "project_revision": current["revision"], **intent, "revision": len(records) + 1,
+                "previous_sha256": records[-1]["sha256"] if records else None,
+                "author": "operator", "created_at": datetime.now(timezone.utc).isoformat()}
+            require(len(canonical_bytes(record)) <= 65536, "Scientific contribution is too large")
+            directory = self._path(f"projects/{project_id}/contributions")
+            directory.mkdir(mode=0o700, exist_ok=True)
+            identifier = digest(record)
+            publish_exact(directory / (identifier + ".json"), canonical_bytes(record))
+            self._atomic(directory / "current.json", canonical_bytes({"revision": record["revision"], "sha256": identifier}))
+            sync_directory(directory.parent)
+            return {**record, "sha256": identifier}
+
+    def contributions(self, project_id, *, run=None):
+        """Read attributed input for the next attempt, leaving existing Run artifacts unchanged."""
+        if run is not None:
+            closed(run, ("host", "case_id", "run_id"))
+        with self._locked():
+            self._read(project_id)
+            records = self._contributions(project_id)
+            return [row for row in records if run is None or row["run"] is None or
+                    all(row["run"][name] == value for name, value in run.items())]
+
     @staticmethod
     def _source(path, scope, expected, remaining):
         digest_value(expected)
@@ -212,21 +295,27 @@ class ProjectStore(WorkspaceFiles):
                 "Run changed during project capture; inspect again")
         for path, (scope, expected) in sources.items():
             self._source(path, scope, expected, MAX_BYTES)
-        decision = snapshot.state.get("human_response_decision")
-        consumed = snapshot.state.get("human_response_status") == "consumed"
-        accepted = (snapshot.state["run_status"] == "completed" and consumed and
-                    decision == "approve_with_conditions" and snapshot.closure is not None and
-                    snapshot.closure.get("terminal_closure") == "committed" and
-                    index["current"]["terminal"] is not None and
-                    index["current"]["terminal"]["status"] == "accepted")
-        acceptance = "accepted_with_conditions" if accepted else (
-            "rejected_or_held" if consumed and decision == "reject_or_hold" else "pending")
+        outcome, origin = None, None
+        terminal = index['current']['terminal']
+        if terminal is not None:
+            member = next(item for item in terminal['members'] if item['logical_name'] == 'memory_update.json')
+            raw = read_regular(snapshot.root / member['canonical_path'])
+            require(sha256(raw).hexdigest() == member['sha256'], 'Terminal research outcome changed')
+            classification = loads(raw)
+            outcome, origin = classification['scientific_outcome'], classification['decision_origin']
+            require(outcome in ('supported', 'qualified', 'inconclusive') and origin in ('system', 'human'),
+                    'Invalid research conclusion provenance')
+        closed_run = snapshot.state['run_status'] in ('completed', 'failed', 'halted') and snapshot.closure is not None
+        if terminal is None and closed_run:
+            outcome, origin = 'inconclusive', 'system'
         manifest = {"schema_version": "1", "kind": "project_run_snapshot", "project_id": project_id,
                     "project_revision": project["revision"], "project_sha256": digest(project),
                     "host": snapshot.host.name.removeprefix("lqcd-agent-host-"), "run_locator": snapshot.locator,
                     "run_status": snapshot.state["run_status"], "execution_head": snapshot.state["execution_head"],
                     "execution_event_index": snapshot.records.values[-1]["event_index"],
-                    "scientific_acceptance": acceptance, "preliminary": acceptance != "accepted_with_conditions",
+                    "scientific_outcome": outcome, "decision_origin": origin, "preliminary": not closed_run,
+                    "outcome_source": "scientific_terminal" if terminal is not None else "control_closure" if closed_run else None,
+                    "research_task": goal.get("research_task"),
                     "resumable": False, "state": snapshot.state, "evidence": entries,
                     "limitations": ["Read-only evidence copy; no execution authority or recovery database.",
                                     "Raw numerical datasets are not automatically backed up."]}

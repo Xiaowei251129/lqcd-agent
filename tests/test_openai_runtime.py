@@ -100,15 +100,23 @@ def test_sdk_worker_enables_tools_and_review_with_task_network_policy(tmp_path, 
     assert 'model_auto_compact_token_limit_scope="total"' in overrides
     assert 'cli_auth_credentials_store="ephemeral"' in overrides
     assert 'permissions.lqcd.network.enabled='+str(network).lower() in overrides and 'default_permissions="lqcd"' in overrides
-    assert not any(entry.startswith(('features.','tools.')) for entry in overrides)
+    assert 'features.network_proxy=true' in overrides
+    assert 'permissions.lqcd.network.domains={"*"="allow"}' in overrides
+    assert 'permissions.lqcd.network.proxy_url="http://127.0.0.1:0"' in overrides
+    assert 'permissions.lqcd.network.enable_socks5=false' in overrides
+    assert not any(entry.startswith('tools.') for entry in overrides)
     assert 'web_search='+json.dumps('live' if network else 'disabled') in overrides and 'project_doc_max_bytes=0' in overrides
     import tomllib
+    filesystem=tomllib.loads(next(entry for entry in overrides if entry.startswith('permissions.lqcd.filesystem=')))[
+        'permissions']['lqcd']['filesystem']
+    assert filesystem[str(Path(sys.base_prefix).resolve())] == 'read'
+    assert filesystem[':root'] == 'deny' and str(Path.home()) not in filesystem
     tool_overrides=[entry for entry in overrides if entry.startswith('shell_environment_policy.')]
     assert len(tool_overrides)==1 and tool_overrides[0].startswith('shell_environment_policy.set=')
     tool_environment=tomllib.loads(tool_overrides[0])['shell_environment_policy']['set']
     assert tool_environment=={'PYTHONDONTWRITEBYTECODE':'1','TMPDIR':str(temporary),
                              'TMPPREFIX':str(temporary/'zsh'),'RUFF_CACHE_DIR':str(temporary/'ruff')}
-    assert 'OPENAI_API_KEY' not in config.env and observed['thread']['approval_mode']==openai_codex.ApprovalMode.auto_review
+    assert 'OPENAI_API_KEY' not in config.env and observed['thread']['approval_mode']==openai_codex.ApprovalMode.deny_all
     (workspace/'sample.py').write_text('def value():\n    return 2\n')
     environment={**config.env,**tool_environment}
     # Exercise the production profile with the pinned native sandbox, without a model call.
@@ -129,8 +137,16 @@ if (printf changed > "$3") 2>/dev/null; then exit 32; fi
     command.extend(['sandbox','--permission-profile','lqcd','--cd',str(workspace),'--',
                     '/bin/zsh','-fc',script,'probe',str(workspace),str(temporary),str(sentinel),
                     str(Path(sys.executable).with_name('ruff'))])
-    checked=subprocess.run(command,cwd=workspace,env=environment,capture_output=True,text=True,timeout=10)
-    assert checked.returncode==0, checked.stderr
+    from tests.test_sandbox_network import operator_service, network_probe
+    with operator_service(temporary) as (port, unix_path, hits):
+        # Reuse the actual worker profile, not a parallel test-only permission policy.
+        checked=subprocess.run(command,cwd=workspace,env=environment,capture_output=True,text=True,timeout=10)
+        assert checked.returncode==0, checked.stderr
+        probe=command[:command.index('--')+1]+[sys.executable,'-I','-B','-c',
+            network_probe(port,unix_path,managed=network)]
+        blocked=subprocess.run(probe,cwd=workspace,env=environment,capture_output=True,text=True,timeout=10)
+        assert blocked.returncode==0, blocked.stderr
+        assert hits == []
     assert sentinel.read_text()=='owned-public-sentinel'
     assert (temporary/'tool-scratch').read_text()=='temporary\n'
     assert (workspace/'sample.py').read_text()=='def value():\n    return 2\n\n'
@@ -376,3 +392,49 @@ def test_real_native_sdk_retries_transient_generation_inside_one_worker(tmp_path
     state=json.loads((job/'state.json').read_text())
     assert state['status']=='completed' and state['usage_incomplete'] is True
     assert json.loads((job/'proposal.json').read_text())['files']==[{'path':'analysis.py','content':'print(1)\n'}]
+
+
+def test_native_worker_interrupts_at_shared_task_deadline(tmp_path, monkeypatch):
+    import threading
+    import time
+    from lqcd_agent.code_agent import codex_worker
+    import openai_codex
+    workspace = tmp_path / 'workspace'
+    workspace.mkdir()
+    job = tmp_path / 'coding_jobs' / 'producer'
+    job.mkdir(parents=True)
+    root = tmp_path / 'case' / 'run'
+    root.mkdir(parents=True)
+    task = {'case_id': 'case', 'run_id': 'run', 'write_paths': ['analysis.py'], 'forbidden_paths': ['.git'],
+        'requirements': ['A bounded fixture only.'], 'acceptance_criteria': ['Do not exceed task deadline.'],
+        'network_policy': {'enabled': False}, 'tool_policy': [{'timeout_seconds': 20}]}
+    (job / 'request.json').write_text(json.dumps({'task': task, 'manifest': {}, 'workspace': str(workspace),
+        'base_paths': [], 'producer_authority': {'worker_owner_id': 'fixture', 'lease_epoch': 1}}))
+    (job / 'state.json').write_text('{"status":"accepted"}')
+    from lqcd_agent.control.strict_json import canonical_bytes
+    (root / 'root_goal.json').write_bytes(canonical_bytes({'research_task': {'deadline': time.monotonic()+.05}}))
+    interrupted = threading.Event()
+    class FakeCodex:
+        def __init__(self, config): pass
+        def __enter__(self): return self
+        def __exit__(self, *_): pass
+        def login_api_key(self, key): pass
+        def account(self): return NS(account=NS(root=NS(type='apiKey')))
+        def thread_start(self, **kwargs):
+            def stream():
+                interrupted.wait(1)
+                return iter(())
+            return NS(id='thread', turn=lambda *args, **kwargs:
+                NS(id='turn', stream=stream, interrupt=interrupted.set))
+    monkeypatch.setattr(openai_codex, 'Codex', FakeCodex)
+    monkeypatch.setattr(codex_worker.ApplicationSettings, 'load', lambda: ApplicationSettings(api_key='offline-key'))
+    monkeypatch.setattr(codex_worker, 'workspace_root', lambda: Path(__file__).resolve().parents[1])
+    before = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+    started = time.monotonic()
+    try:
+        assert codex_worker.run(job) == 1
+    finally:
+        signal.signal(signal.SIGTERM, before[0]); signal.signal(signal.SIGINT, before[1])
+    state = json.loads((job / 'state.json').read_text())
+    assert interrupted.is_set() and state['status'] == 'cancelled', state
+    assert time.monotonic() - started < 2

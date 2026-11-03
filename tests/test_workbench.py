@@ -18,7 +18,7 @@ from lqcd_agent.inspection import host_root, list_runs, read_snapshot
 from lqcd_agent.runtime import ApplicationRequest, advance, assemble, execute, submit
 from lqcd_agent.workbench.server import create_app
 from lqcd_agent.workbench.service import Workbench
-from lqcd_agent.workbench.worker import step
+from lqcd_agent.workbench.worker import step, worker_active, launch_worker
 from tests.support import own
 
 
@@ -145,7 +145,7 @@ def test_external_cancel_uses_original_owner_without_workspace_or_credentials(wo
         assert response.json()['run_status'] == 'halted'
         assert http.post(url(status)+'/cancel', json=body).json() == response.json()
         snapshot = read_snapshot(host_root(workbench.host), status['run_locator'])
-        assert snapshot.state['active_pause'] is None and snapshot.closure['terminal_closure'] == 'committed'
+        assert snapshot.state.get('active_pause') is None and snapshot.closure['terminal_closure'] == 'committed'
     finally:
         relocated.rename(workbench.workspace)
 
@@ -175,31 +175,67 @@ def test_evidence_inventory_hash_scope_and_workspace_are_enforced(workbench, tmp
     assert http.get(url(status)+'/evidence/'+item['id']).status_code == 409
 
 
-def test_worker_reopens_admitted_run_and_stops_at_original_human_gate(workbench):
+def test_worker_reopens_admitted_run_and_concludes_without_human_response(workbench):
     body = {'case':'example','goal':'Offline browser acceptance','live':False,'key':'restart-worker'}
     status = client(workbench).post('/api/runs', json=body).json()
     command = [sys.executable,'-B','-m','lqcd_agent.workbench.worker',workbench.host]
     descriptor = os.open(host_root(workbench.host)/'workbench-worker.lock', os.O_CREAT | os.O_RDWR, 0o600)
     try:
         fcntl.flock(descriptor, fcntl.LOCK_EX)
-        assert workbench.worker_active()
+        assert worker_active(workbench.host)
         assert subprocess.run(command,capture_output=True,timeout=30).returncode == 0
         assert read_snapshot(host_root(workbench.host), status['run_locator']).capability['started_intent'] is None
     finally:
         os.close(descriptor)
-    assert not workbench.worker_active()
+    assert not worker_active(workbench.host)
     processes = [subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.PIPE) for _ in range(2)]
     for process in processes:
         stdout, stderr = process.communicate(timeout=120)
         assert process.returncode == 0, stderr.decode()+stdout.decode()
     snapshot = read_snapshot(host_root(workbench.host), status['run_locator'])
-    assert snapshot.state['run_status'] == 'paused' and snapshot.state['active_pause']['reason'] == 'human_input'
+    assert snapshot.state['run_status'] == 'completed' and snapshot.state.get('active_pause') is None
     assert not any(r['record_type'] == 'human_response' for r in snapshot.records.values)
+    assert launch_worker(workbench.host, workbench.workspace) is None
     before = read_regular(snapshot.root/'execution_history.jsonl')
     assert subprocess.run([sys.executable,'-B','-m','lqcd_agent.workbench.worker',workbench.host],capture_output=True,timeout=30).returncode == 0
     assert read_regular(snapshot.root/'execution_history.jsonl') == before
     view = client(workbench).get(url(status))
     assert view.status_code == 200 and view.json()['summaries']['method_plan.json']['summary']
+    assert view.json()['decision_origin'] == 'system'
+    assert view.json()['scientific_outcome'] in ('supported', 'qualified', 'inconclusive')
+    assert not view.json()['actions']['respond']
+
+
+def test_worker_closes_ended_integrity_failure_and_captures_actual_project_outcome(workbench, monkeypatch):
+    from lqcd_agent import runtime
+    from lqcd_agent.research.projects import ProjectStore
+    from lqcd_agent.science import ScientificAgent
+    projects = ProjectStore(workbench.workspace)
+    project = projects.create('failed-study', 'Failed study', 'Preserve the original integrity boundary.',
+        case_config={'schema_version': '0.1', 'case_id': 'failed-study', 'source_kind': 'synthetic_placeholder'})
+    admitted = submit(ApplicationRequest('run', host=workbench.host, project=project['id'], key='ended-integrity'))
+    calls = []
+    class Corrupt(ScientificAgent):
+        def run(self, node, context, **kwargs):
+            calls.append(node)
+            raise ControlIntegrityError('Fixture evidence identity changed.')
+    monkeypatch.setattr(runtime, 'scientific_agent',
+        lambda host, config, settings, workspace: Corrupt(host, config, workspace=workspace))
+    locator = admitted.status['run_locator']
+    with pytest.raises(ControlIntegrityError, match='Fixture evidence identity changed'):
+        step(workbench.host, locator)
+    snapshot = read_snapshot(host_root(workbench.host), locator)
+    assert snapshot.state['run_status'] == 'failed' and snapshot.closure['terminal_closure'] == 'committed'
+    index = loads(read_regular(snapshot.root/'artifact_index.json'))['current']
+    assert all(pointer is None for pointer in index.values())
+    assert not any(row['record_type'] in ('human_request', 'human_response') for row in snapshot.records.values)
+    captured, = projects.runs(project['id'])
+    assert captured['run_status'] == 'failed' and not captured['preliminary']
+    assert captured['scientific_outcome'] == 'inconclusive' and captured['decision_origin'] == 'system'
+    assert captured['outcome_source'] == 'control_closure'
+    original = read_regular(snapshot.root/'execution_history.jsonl')
+    assert step(workbench.host, locator) is False and calls == ['method_planner']
+    assert read_regular(snapshot.root/'execution_history.jsonl') == original
 
 
 def test_worker_never_replays_uncertain_started_invocation(workbench):
@@ -217,6 +253,8 @@ def test_worker_never_replays_uncertain_started_invocation(workbench):
     original = read_regular(root/'execution_history.jsonl')
     with pytest.raises(ControlIntegrityError):
         step(workbench.host, admitted.status['run_locator'])
+    with pytest.raises(ControlIntegrityError):
+        launch_worker(workbench.host, workbench.workspace)
     assert read_regular(root/'execution_history.jsonl') == original
     http = client(workbench)
     assert http.get(url(admitted.status)).status_code == 409
@@ -232,3 +270,48 @@ def test_workspace_and_imported_run_control_boundaries(workbench, tmp_path, monk
     own(host_root(isolated.host))
     assert client(isolated).get(url(status)).status_code == 403
     assert client(isolated).post(url(status)+'/cancel', json={k:v for k,v in request(status).items() if k in ('pause','head','key')}).status_code == 403
+
+
+def test_cli_and_workbench_share_native_driver_launch_and_credential_boundary(workbench, monkeypatch):
+    admitted = submit(ApplicationRequest('run', host=workbench.host,
+        case_config=str(workbench.workspace/'configs/example.json'), key='shared-driver'))
+    observed = []
+    class Process:
+        def poll(self):
+            return None
+    def spawn(argv, **options):
+        observed.append((argv, options))
+        return Process()
+    monkeypatch.setattr('lqcd_agent.workbench.worker.Popen', spawn)
+    monkeypatch.setenv('OPENAI_API_KEY', 'must-not-be-exported')
+    monkeypatch.setenv('LQCD_AGENT_API_KEY', 'also-must-not-be-exported')
+    process = launch_worker(workbench.host, workbench.workspace)
+    assert isinstance(process, Process) and len(observed) == 1
+    argv, options = observed[0]
+    assert argv == [sys.executable, '-B', '-m', 'lqcd_agent.workbench.worker', workbench.host]
+    assert options['cwd'] == workbench.workspace and options['start_new_session']
+    assert options['env']['LQCD_AGENT_WORKSPACE'] == str(workbench.workspace)
+    assert 'OPENAI_API_KEY' not in options['env'] and 'LQCD_AGENT_API_KEY' not in options['env']
+    with monkeypatch.context() as patch:
+        patch.setattr('lqcd_agent.workbench.worker.worker_active', lambda host: True)
+        assert launch_worker(workbench.host, workbench.workspace) is None
+    snapshot = read_snapshot(host_root(workbench.host), admitted.status['run_locator'])
+    assert snapshot.capability['started_intent'] is None
+    assert not any(r.get('event') == 'resource_reserved' for r in snapshot.records.values)
+
+
+def test_driver_launcher_refuses_foreign_workspace_and_incompatible_build(workbench, tmp_path, monkeypatch):
+    admitted = submit(ApplicationRequest('start', host=workbench.host, key='driver-scope'))
+    other = tmp_path/'foreign'; other.mkdir()
+    with pytest.raises(ControlIntegrityError, match='workspace'):
+        launch_worker(workbench.host, other)
+    snapshot = read_snapshot(host_root(workbench.host), admitted.status['run_locator'])
+    assert snapshot.capability['started_intent'] is None
+    monkeypatch.setattr('lqcd_agent.workbench.worker.Popen', lambda *args, **kwargs:
+        (_ for _ in ()).throw(AssertionError('Unexpected worker launch')))
+    # An incompatible build is never scheduled by this launcher.
+    from dataclasses import replace
+    original = read_snapshot
+    monkeypatch.setattr('lqcd_agent.workbench.worker.read_snapshot', lambda host, locator:
+        replace(original(host, locator), fingerprint={**snapshot.fingerprint, 'application_build': '0'*64}))
+    assert launch_worker(workbench.host, workbench.workspace) is None

@@ -22,7 +22,7 @@ class SyntheticAgent:
         if node == 'method_planner':
             content = {'code_needed': workflow == 'code', 'requirements': [context['root_goal']['goal']]}
         if node == 'scientific_reviewer' and workflow == 'human' and (context['remediation'] is None):
-            diagnostic.update(risk='critical', human_need='approval')
+            diagnostic.update(category='authorization', risk='critical', human_need='approval')
         return {'diagnostic': diagnostic, 'content': content}
 
 class SyntheticBackend(FakeCodingBackend):
@@ -77,7 +77,7 @@ def prepare_code(coordinator, *, live, initialize):
     policy = {'base_revision': revision, 'base_tree_digest': tree_digest(base), 'task_summary': 'Implement the synthetic observable', 'acceptance_criteria': ['Trusted syntax check passes'], 'read_paths': ['sample.py'], 'write_paths': ['sample.py'], 'forbidden_paths': ['.git'], 'tool_policy': [tool], 'network_policy': {'enabled': False}, 'filesystem_policy': {'binary_changes': False, 'executable_changes': False, 'ephemeral_paths': ['__pycache__']}, 'verification_specs': [{**tool, 'spec_id': 'syntax', 'argv': ['python', '-m', 'compileall', 'sample.py']}], 'coding_backend_kind': 'fake', 'backend_version': '0.1', 'backend_runtime_fingerprint': digest('fake-0.1')}
     if live:
         from lqcd_agent.code_agent.codex_backend import CodexCodingBackend, ProcessContainment, JOBS_DIRECTORY
-        backend = CodexCodingBackend(coordinator.root / JOBS_DIRECTORY, coordinator.root / 'code_workspaces')
+        backend = CodexCodingBackend(coordinator.root / JOBS_DIRECTORY, coordinator.root / 'code_workspaces', coordinator=coordinator)
         containment = ProcessContainment(backend)
         tool = {**tool, 'spec_id': 'codex-task', 'argv': ['codex:task'], 'timeout_seconds': 240}
         policy.update(coding_backend_kind=backend.kind, backend_version=backend.version,

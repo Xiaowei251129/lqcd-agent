@@ -16,7 +16,7 @@ import httpx
 from openai import APIConnectionError, APIStatusError
 
 from lqcd_agent.control.clock import FakeClock
-from lqcd_agent.control.budget import BudgetExhausted
+from lqcd_agent.control.budget import BudgetExhausted, policy
 from lqcd_agent.control.coordinator import Coordinator
 from lqcd_agent.control.execution import parse_ledger
 from lqcd_agent.control.interfaces import StartRunRequest
@@ -131,9 +131,9 @@ def execute_collaboration(workspace, *, fail=False, refusal=None, need_informati
     return read_snapshot(host, locator), calls, closed
 
 
-def test_actual_sdk_collaboration_uses_host_resources_preserves_review_and_stops_for_human(tmp_path):
+def test_actual_sdk_collaboration_uses_host_resources_preserves_review_and_concludes(tmp_path):
     snapshot, calls, closed = execute_collaboration(tmp_path)
-    assert snapshot.state['run_status'] == 'paused' and len(closed) == 2
+    assert snapshot.state['run_status'] == 'completed' and snapshot.state.get('active_pause') is None and len(closed) == 2
     assert [call['schema'] for call in calls] == ['ResearchBrief', 'ResearchBrief', 'method_plan_discussion',
                                               'scientific_review_report_discussion', 'Discussion']
     reviewer = calls[3]['input']
@@ -162,32 +162,31 @@ def test_actual_sdk_collaboration_uses_host_resources_preserves_review_and_stops
     assert any(path.endswith('collaboration.json') for path in content['domain_result']['member_digests'])
     assert any(path.endswith('research_events.jsonl') for path in content['domain_result']['member_digests'])
     assert content['collaboration']['decision'] == 'recommend_proceed'
-    assert index['current']['terminal'] is None
+    terminal = loads(Path(index['current']['terminal']['state_paths']['memory_update_path']).read_bytes())
+    assert terminal['decision_origin'] == 'system' and terminal['authorization_decision'] is None
+    assert not any(row['record_type'] in ('human_request', 'human_response') for row in records)
 
 
 @pytest.mark.parametrize('postdoc_read', [False, True])
-def test_roles_share_the_host_call_allowance_without_spending_a_fifth_call(tmp_path, postdoc_read):
+def test_roles_share_the_host_call_allowance_preserving_the_second_role(tmp_path, postdoc_read):
     snapshot, calls, _ = execute_collaboration(tmp_path, read_sections=('catalog', 'case_config'),
                                              postdoc_read=postdoc_read)
+    allowance = policy().value['limits']['llm_calls_per_attempt']
     assert [call['schema'] for call in calls[:4]] == ['ResearchBrief'] * 3 + ['method_plan_discussion']
-    assert 'at most 3 model turns' in calls[0]['instructions']
-    assert 'at most 1 model turns' in calls[3]['instructions']
+    assert f'at most {(allowance + 1)//2} model turns' in calls[0]['instructions']
+    assert f'at most {allowance - 3} model turns' in calls[3]['instructions']
     records = parse_ledger((snapshot.root/'execution_history.jsonl').read_bytes()).values
     first_attempt = next(row['attempt_id'] for row in records if row.get('event') == 'scheduled')
     reserved = [row['payload'] for row in records if row.get('event') == 'resource_reserved'
                 and row['payload']['attempt_id'] == first_attempt and row['payload']['resource_kind'] == 'llm_call']
-    assert len(reserved) == 4
-    assert all(row['applicable_limits']['llm_calls'] == 4 for row in reserved)
+    assert len(reserved) == (5 if postdoc_read else 4) <= allowance
+    assert all(row['applicable_limits']['llm_calls'] == allowance for row in reserved)
     index = loads((snapshot.root/'artifact_index.json').read_bytes())
-    if postdoc_read:
-        assert len(calls) == 4 and index['current']['analysis'] is None
-        events = [loads(line, canonical=False) for path in (snapshot.host/'domain').rglob('research_events.jsonl')
-                  for line in path.read_bytes().splitlines()]
-        assert events[-1]['event'] == 'run_error' and events[-1]['error_type'] == 'BudgetExhausted'
-    else:
-        assert snapshot.state['run_status'] == 'paused' and len(calls) == 6
-        assert index['current']['plan']['status'] == 'success'
-        assert index['current']['review'] is not None and index['current']['terminal'] is None
+    assert snapshot.state['run_status'] == 'completed' and len(calls) == (7 if postdoc_read else 6)
+    assert index['current']['plan']['status'] == index['current']['review']['status'] == 'success'
+    terminal = loads(Path(index['current']['terminal']['state_paths']['memory_update_path']).read_bytes())
+    assert terminal['decision_origin'] == 'system' and terminal['authorization_decision'] is None
+    assert not any(row['record_type'] in ('human_request', 'human_response') for row in records)
 
 
 @pytest.mark.parametrize('exhausted', ['calls', 'deadline'])
@@ -298,11 +297,13 @@ def test_resolved_host_issue_can_be_revisited_only_with_its_original_question_an
 
 @pytest.mark.parametrize('warnings,errors', [([], []), ([{'severity': 'severe'}], []),
     ([{'severity': 'warning'}], []), ([], [{'code': 'failed_check'}])])
-def test_pi_revision_never_overrides_host_warnings_or_errors(warnings, errors):
-    outcome = {'diagnostic': {'status': 'success', 'category': 'scientific_review', 'risk': 'high', 'human_need': 'approval'},
+def test_pi_revision_preserves_warnings_and_cannot_override_errors(warnings, errors):
+    outcome = {'diagnostic': {'status': 'success', 'category': 'scientific_review', 'risk': 'high', 'human_need': None},
                'content': {'domain_result': {'report': {'status': 'success', 'warnings': warnings, 'errors': errors}}}}
     _review_recommendation(outcome, {'decision': 'revise', 'challenges': ['Inspect a second window.']})
-    if not warnings and not errors:
+    assert outcome['content']['domain_result']['report']['warnings'] == warnings
+    assert outcome['content']['domain_result']['report']['errors'] == errors
+    if not errors:
         assert outcome['diagnostic']['category'] == 'scientific_revision'
         assert outcome['diagnostic']['candidates'] == ['method_planner']
     else:
@@ -315,12 +316,14 @@ def test_planner_requests_missing_information_before_any_analysis(tmp_path, role
     # That omission must not authorize an analysis with the missing input.
     snapshot, calls, closed = execute_collaboration(tmp_path, need_information=role == 'postdoc',
                                                    pi_need_information=role == 'pi')
-    assert snapshot.state['run_status'] == 'paused' and len(closed) == 1
+    assert snapshot.state['run_status'] == 'completed' and snapshot.state.get('active_pause') is None and len(closed) == 1
     assert not any(call['schema'] == 'scientific_review_report_discussion' for call in calls)
     records = parse_ledger((snapshot.root/'execution_history.jsonl').read_bytes()).values
     assert not any(row.get('event') == 'scheduled' and row.get('attempt_kind') == 'analysis_engineer' for row in records)
-    request = next(row for row in records if row['record_type'] == 'human_request')
-    assert request['request_kind'] == 'clarification'
+    assert not any(row['record_type'] in ('human_request', 'human_response') for row in records)
+    index = loads((snapshot.root/'artifact_index.json').read_bytes())
+    terminal = loads(Path(index['current']['terminal']['state_paths']['memory_update_path']).read_bytes())
+    assert terminal['scientific_outcome'] == 'inconclusive' and terminal['decision_origin'] == 'system'
     plan = loads(next((snapshot.host/'domain').rglob('method_plan.json')).read_bytes(), canonical=False)
     assert plan['status'] == 'needs_more_info' and plan['code_needed'] is False
 
@@ -331,6 +334,7 @@ def test_pi_checks_and_prior_questions_reach_the_actual_coding_request(tmp_path)
         def __init__(self):
             self.events = []
             self.model_calls = 0
+            self.write_scope = None  # This direct read-only fixture has no Host publication authority.
         def __call__(self, event):
             self.events.append(event)
             if event['event'] == 'model_start':

@@ -42,7 +42,8 @@ def main(argv=None):
                 asset.add_argument("--evidence", action="append", default=[], help="Workspace-relative project evidence")
             else:
                 asset.add_argument("--source", required=True, help="Workspace-relative project Python file")
-                asset.add_argument("--validation", action="append", required=True, help="Project validation JSON")
+                asset.add_argument("--family", choices=("c2", "normalization"), required=True, help="Host independent calibration contract")
+                asset.add_argument("--python", required=True, help="Absolute trusted scientific interpreter")
     for name in ("start", "run", "resume", "replay", "fork", "cancel", "status", "archive"):
         command = commands.add_parser(name)
         command.add_argument("--host", required=name not in ("start", "run"))

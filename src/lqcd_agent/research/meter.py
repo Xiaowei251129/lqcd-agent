@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from pathlib import Path
 
 from lqcd_agent.control.budget import BudgetExhausted, resource_scope, settle_resource_failure
 from lqcd_agent.control.strict_json import digest, require
+from lqcd_agent.control.research_budget import ResearchBudget
+from lqcd_agent.settings import INPUT_TOKEN_LIMIT, CODE_OUTPUT_TOKEN_LIMIT
 
 
 class ResearchMeter:
@@ -17,6 +20,22 @@ class ResearchMeter:
         self.model, self.max_output_tokens = model, max_output_tokens
         self.events, self.active = [], None
         self.ordinal, self.model_calls = 0, 0
+        self.counted_input = INPUT_TOKEN_LIMIT
+        self.ticket = None
+        self.research_budget = ResearchBudget.for_run(port.leases.coordinator,
+            {key: context['identity'][key] for key in ('case_id', 'run_id')})
+
+    def _fence(self, db):
+        self.port.leases._effect_authority(db, self.port.capability_id, self.port.worker, self.port.epoch)
+
+    @contextmanager
+    def write_scope(self):
+        """Fence immediate library publication in the existing writer transaction."""
+        with self.port.leases.coordinator.transaction() as db:
+            self._fence(db)
+            if self.research_budget is not None and self.port.leases.coordinator._time().monotonic_seconds >= self.research_budget.binding['deadline']:
+                raise BudgetExhausted('Research task deadline exhausted before publication')
+            yield
 
     def remaining_seconds(self):
         # The lease, not the SDK, owns the ultimate dispatch window.
@@ -24,7 +43,10 @@ class ResearchMeter:
         now = self.port.leases.coordinator._time().monotonic_seconds
         # Keep the graph's existing 30-second settlement allowance inside the
         # original Host window; an HTTP timeout is not an attempt deadline.
-        remaining = min(invocation['deadline'], invocation['expires_at']) - now - 30
+        deadline = min(invocation['deadline'], invocation['expires_at'])
+        if self.research_budget is not None:
+            deadline = min(deadline, self.research_budget.binding['deadline'])
+        remaining = deadline - now - 30
         if remaining <= 0:
             raise BudgetExhausted('Research attempt deadline exhausted')
         return remaining
@@ -58,6 +80,15 @@ class ResearchMeter:
                 timeout_seconds=min(self.request_timeout_seconds, self.remaining_seconds()))
             settle = scope.__enter__()
             self.active = (identifier, scope, settle)
+            if model_call and self.research_budget is not None:
+                try:
+                    self.ticket = self.research_budget.reserve(
+                        digest([self.port.capability_id, identifier]), self.counted_input,
+                        CODE_OUTPUT_TOKEN_LIMIT if event.get('operation') == 'compact' else self.max_output_tokens,
+                        fence=self._fence)
+                except BaseException as error:
+                    self.fail_active(error)
+                    raise
         elif kind in ('model_end', 'tool_end'):
             require(self.active is not None, 'An ended research effect has no Host reservation')
             identifier, scope, settle = self.active
@@ -76,6 +107,11 @@ class ResearchMeter:
                 raise
             scope.__exit__(None, None, None)
             self.active = None
+            if self.ticket is not None:
+                self.research_budget.settle(self.ticket, tokens, fence=self._fence)
+                self.ticket = None
+            if event.get('tool_name') == 'context_token_count':
+                self.counted_input = event['result']['input_tokens']
         elif kind in ('model_error', 'tool_error'):
             self._record(event)
             self.fail_active(RuntimeError(event['error_type']))
@@ -87,5 +123,6 @@ class ResearchMeter:
         if self.active is not None:
             identifier, scope, _ = self.active
             self.active = None
+            self.ticket = None
             scope.__exit__(type(error), error, error.__traceback__)
             settle_resource_failure(self.port, resource_id=identifier, error=error)

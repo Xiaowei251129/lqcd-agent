@@ -146,6 +146,9 @@ class ControlPlane:
 
         def reserve(operation_id, stamp):
             locator = {"case_id": request.case_id, "run_id": "run_" + uuid.uuid4().hex}
+            from .research_budget import admit_research_run
+            admit_research_run(self.coordinator.connection, canonical['root_inputs']['root_goal'],
+                               locator, operation_id, stamp)
             return {"target_run_identity": locator, "reserved_run_locator": locator,
                     "canonical_budget_policy_bytes": selected.canonical.decode(),
                     "budget_policy_digest": selected.value["policy_digest"], "budget_policy_profile": request.profile_id,

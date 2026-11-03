@@ -52,6 +52,15 @@ class RunSnapshot:
         result = {'host': self.host.name.removeprefix('lqcd-agent-host-'), 'run_locator': self.locator,
             'run_status': self.state['run_status'], 'execution_head': self.state['execution_head'],
             'root_inputs_digest': digest(inputs), 'active_pause': active, 'next_action': next_action}
+        if self.state['run_status'] in ('failed', 'halted') and self.closure is not None:
+            result['execution_failure'] = {
+                'scientific_outcome': 'inconclusive', 'decision_origin': 'system',
+                'source': 'committed_control_closure', 'closure_sha256': digest(self.closure),
+                'summary': 'Execution ended without establishing a scientific final conclusion.',
+                'run_status': self.state['run_status']}
+        if 'research_task' in inputs['root_goal']:
+            from .control.research_budget import inspect_budget
+            result['research_task'] = inspect_budget(self.host, self.locator)
         if inputs['root_goal']['live']:
             result['coding_backend'] = None
             if active and active['reason'] == 'external_result':
