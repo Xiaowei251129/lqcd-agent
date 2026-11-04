@@ -35,6 +35,43 @@ def assert_owned_journals_reject_tampering(host):
                 invocation_prefix(changed)
         assert invocation_prefix(value)['content'] == value[name][-1]['content']
 
+    verification = deepcopy(next(v for v in values if v.get('verification_intents')))
+    ordinary = next(v for v in values if v.get('budget_intents'))
+    verification['budget_intents'] = deepcopy(ordinary['budget_intents'])
+    with pytest.raises(ControlIntegrityError, match='Mixed invocation publication owners'):
+        invocation_prefix(verification)
+
+    # Recompute every subsequent publication after corrupting an intermediate
+    # reservation. Its later successful settlement must not erase the violation.
+    settled = {entry['record']['payload']['resource_operation_id'] for entry in ordinary['budget_intents']
+               if entry['record']['event'] == 'resource_settled'}
+    position = next(i for i, entry in enumerate(ordinary['budget_intents'])
+                    if entry['record']['event'] == 'resource_reserved' and
+                    entry['record']['payload']['resource_operation_id'] in settled)
+    for fault, message in (('overspend', 'Reservation exceeds frozen available window'),
+                           ('clock_regression', 'Ledger clock regression')):
+        changed = deepcopy(ordinary)
+        record = changed['budget_intents'][position]['record']
+        if fault == 'overspend':
+            payload = record['payload']
+            payload['maximum_charge']['active_seconds'] = payload['remaining_before']['active_seconds'] + 1
+        else:
+            source = loads(changed['budget_intents'][position]['previous'].splitlines()[-1])
+            record['created_at']['wall_seconds'] = source['created_at']['wall_seconds'] - 1
+        previous = changed['started_intent']
+        for entry in changed['budget_intents']:
+            record = entry['record']
+            record['previous_execution_head'] = digest(loads(previous['content'].splitlines()[-1]))
+            entry['previous'], entry['previous_index'] = previous['content'], previous['index']
+            entry['content'] = previous['content'] + canonical_bytes(record).decode() + '\n'
+            entry['index'] = canonical_bytes({**loads(previous['index']), 'execution_head': digest(record)}).decode()
+            entry['intent_digest'] = digest({key: value for key, value in entry.items()
+                                             if key not in ('intent_digest', 'published')})
+            previous = entry
+        with pytest.raises(ControlIntegrityError, match=message):
+            invocation_prefix(changed)
+    assert invocation_prefix(ordinary)['content'] == ordinary['budget_intents'][-1]['content']
+
 def persisted(result):
     root = host_root(result['host'])
     run = root / result['run_locator']['case_id'] / result['run_locator']['run_id']

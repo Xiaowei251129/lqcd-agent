@@ -1,5 +1,6 @@
 """Exercise the actual SDK runner with deterministic model responses, never live API calls."""
 import asyncio
+from dataclasses import replace
 import json
 
 import pytest
@@ -281,11 +282,19 @@ def test_incomplete_provider_response_cannot_become_a_scientific_result(status):
 
 
 
-def test_nested_sdk_agents_cannot_hide_model_calls_from_host():
+def test_sdk_extensions_cannot_hide_effects_from_host():
     model = ScriptedModel([[message("Must not be called.")]])
     nested = Agent(name="hidden-worker", model=model).as_tool(tool_name="nested", tool_description="Nested agent.")
-    with pytest.raises(ValueError, match="Nested SDK agents"):
-        ResearchAgentRuntime(model, max_output_tokens=512).run_sync(**arguments(lambda event: None, [nested]))
+    async def unexpected(context, raw):
+        raise AssertionError('A rejected SDK extension must not execute')
+    plain = evidence_tool(unexpected)
+    extensions = [(nested, 'Nested SDK agents'),
+        (replace(plain, custom_data_extractor=lambda context: None), 'Tool admission'),
+        (replace(plain, output_json_schema={'type': 'object', 'properties': {'value': {'type': 'string'}},
+            'required': ['value'], 'additionalProperties': False}), 'Tool admission')]
+    for tool, reason in extensions:
+        with pytest.raises(ValueError, match=reason):
+            ResearchAgentRuntime(model, max_output_tokens=512).run_sync(**arguments(lambda event: None, [tool]))
     assert model.requests == []
 
 

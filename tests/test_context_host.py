@@ -156,3 +156,103 @@ def test_count_failure_before_any_model_closes_without_a_fabricated_model_anchor
     assert terminal['scientific_outcome'] == 'inconclusive' and terminal['decision_origin'] == 'system'
     reports = list((snapshot.host/'domain').rglob('method_plan.json'))
     assert len(reports) == 1 and loads(reports[0].read_bytes(), canonical=False)['status'] == 'failed'
+
+
+@pytest.mark.parametrize('closing_reason', ['tools', 'time'])
+def test_batched_tools_leave_real_reviewer_and_pi_counts_and_conclusions(tmp_path, monkeypatch, closing_reason):
+    """Use actual SDK batches and Host effects; refused calls are never evidence."""
+    monkeypatch.setattr(context_window, 'INPUT_TOKEN_LIMIT', 100)
+    monkeypatch.setattr(context_window, 'COMPACT_TOKEN_LIMIT', 80)
+    current, calls, counted, generated = {}, {}, [], []
+
+    class ObservedRuntime(ResearchAgentRuntime):
+        async def run(self, **kwargs):
+            current['meter'] = kwargs['observer']
+            return await super().run(**kwargs)
+
+    def schema_name(body):
+        schema = body['text']['format']['schema']
+        if 'proposal' in schema['properties']:
+            fields = schema['properties']['proposal']['properties']
+            return ('method_plan' if 'physics_goal' in fields else 'scientific_review_report') + '_discussion'
+        return schema['title']
+
+    async def transport(request):
+        body = json.loads(request.content)
+        assert not request.url.path.endswith('/compact')
+        name = schema_name(body)
+        if request.url.path.endswith('/input_tokens'):
+            counted.append(body)
+            # Spend part of the existing first role window in two real effects,
+            # each within its own requested timeout, then require soft closing.
+            if closing_reason == 'time' and name == 'scientific_review_report_discussion' and not calls.get(name):
+                assert request.extensions['timeout']['read'] >= 100
+                current['meter'].port.leases.coordinator.clock.advance(100)
+            return httpx.Response(200, json={'object': 'response.input_tokens',
+                'input_tokens': 90 if body.get('tool_choice') == 'none' else 20})
+        assert counted[-1] == {key: body[key] for key in counted[-1]}
+        generated.append(body)
+        calls[name] = calls.get(name, 0) + 1
+        if name in ('scientific_review_report_discussion', 'Discussion') and calls[name] == 1:
+            assert body.get('tool_choice') != 'none'
+            if closing_reason == 'time' and name == 'scientific_review_report_discussion':
+                assert request.extensions['timeout']['read'] >= 155
+                current['meter'].port.leases.coordinator.clock.advance(155)
+            output = [ResponseFunctionToolCall(type='function_call', name='read_context',
+                call_id=f'{name}-batch-{index:02d}', arguments='{"section":"catalog","offset":0}')
+                for index in range(40)]
+        else:
+            if name in ('scientific_review_report_discussion', 'Discussion'):
+                assert body['tool_choice'] == 'none'
+                refusals = [json.loads(item['output']) for item in body['input']
+                    if item.get('type') == 'function_call_output' and 'not_executed' in item['output']]
+                assert refusals and all(result == {'status': 'not_executed',
+                    'reason': 'finalization_budget_reserved'} for result in refusals)
+            if name == 'ResearchBrief':
+                value = {'physics_question': 'Inspect the synthetic analysis.',
+                    'competing_explanations': ['Unknown covariance effects'],
+                    'discriminating_checks': ['Read Host warnings.'], 'success_criteria': ['Retain uncertainties.'],
+                    'discussion': discussion()}
+            elif name.endswith('_discussion'):
+                value = {'proposal': proposal(name.removesuffix('_discussion')), 'discussion': discussion()}
+            else:
+                assert name == 'Discussion'
+                value = discussion()
+            output = [model_message(value)]
+        response = Response(id=f'response-{len(generated)}', created_at=0, model='test-model', object='response',
+            output=output, parallel_tool_calls=True, tool_choice='auto', tools=[], status='completed', usage=USAGE)
+        return httpx.Response(200, json=response.model_dump(mode='json'))
+
+    def create():
+        client = AsyncOpenAI(api_key='offline-test', max_retries=0, timeout=180,
+            http_client=httpx.AsyncClient(transport=httpx.MockTransport(transport)))
+        return ObservedRuntime.from_openai(client=client, model='test-model', max_output_tokens=512)
+
+    snapshot, _, _ = execute_collaboration(tmp_path, runtime_factory=create, request_timeout_seconds=180)
+    assert snapshot.state['run_status'] == 'completed' and snapshot.state.get('active_pause') is None
+    index = loads((snapshot.root/'artifact_index.json').read_bytes())
+    assert index['current']['review']['status'] == 'success'
+    records = snapshot.records.values
+    review_attempt = next(row['attempt_id'] for row in records
+        if row.get('event') == 'scheduled' and row.get('attempt_kind') == 'scientific_reviewer')
+    reserved = [row['payload'] for row in records if row.get('event') == 'resource_reserved'
+        and row['payload']['attempt_id'] == review_attempt]
+    assert sum(row['resource_kind'] == 'tool_call' for row in reserved) == 32
+    assert sum(row['resource_kind'] == 'llm_call' for row in reserved) == 4 <= 8
+    events = [loads(line, canonical=False) for path in (snapshot.host/'domain'/review_attempt).rglob('research_events.jsonl')
+        for line in path.read_bytes().splitlines()]
+    denied = {event['call_id'] for event in events if event['event'] == 'tool_not_executed'}
+    assert denied and all(event.get('call_id') not in denied for event in events
+        if event['event'] in ('tool_start', 'tool_end'))
+    assert len([event for event in events if event['event'] == 'tool_start']) == 32
+    for role in ('reviewer', 'pi'):
+        assert sum(event['event'] == 'model_end' and event['role'] == role for event in events) == 2
+        assert sum(event['event'] == 'run_end' and event['role'] == role for event in events) == 1
+    pressure = [event for event in events if event['event'] == 'context_pressure']
+    assert len(pressure) == 2 and all(event['reason'] == 'finalization_budget_reserved' for event in pressure)
+    if closing_reason == 'time':
+        assert not any(event['event'] == 'tool_start' and event['role'] == 'reviewer'
+            and event['tool_name'] != 'context_token_count' for event in events)
+    assert not any(row['record_type'] in ('human_request', 'human_response') for row in records)
+    terminal = loads(Path(index['current']['terminal']['state_paths']['memory_update_path']).read_bytes())
+    assert terminal['decision_origin'] == 'system' and terminal['authorization_decision'] is None

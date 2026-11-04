@@ -45,8 +45,10 @@ def _json_value(value):
     kind = type(value)
     if value is None or kind is str or kind is bool:
         return
-    if kind is int or kind is float:
+    if kind is int:
         number(value, minimum=-(2**53 - 1))
+    elif kind is float:
+        require(math.isfinite(value), "Non-finite JSON number")
     elif kind is list:
         for item in value:
             _json_value(item)

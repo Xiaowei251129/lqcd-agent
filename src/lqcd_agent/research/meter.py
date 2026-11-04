@@ -25,6 +25,14 @@ class ResearchMeter:
         self.research_budget = ResearchBudget.for_run(port.leases.coordinator,
             {key: context['identity'][key] for key in ('case_id', 'run_id')})
 
+    @property
+    def tool_calls(self):
+        return self.ordinal - self.model_calls
+
+    def role_allowance(self, *, max_turns, reserve_calls, count_required, seconds):
+        """Share existing remaining resources; this object grants no effect authority."""
+        return _RoleAllowance(self, max_turns, reserve_calls, count_required, seconds)
+
     def _fence(self, db):
         self.port.leases._effect_authority(db, self.port.capability_id, self.port.worker, self.port.epoch)
 
@@ -77,7 +85,8 @@ class ResearchMeter:
             scope = resource_scope(self.port, resource_kind='llm_call' if model_call else 'tool_call',
                 resource_id=identifier, input_digest=digest(self.context if first else event),
                 config_digest=digest(config),
-                timeout_seconds=min(self.request_timeout_seconds, self.remaining_seconds()))
+                timeout_seconds=min(event.get('timeout_seconds', self.request_timeout_seconds),
+                                    self.request_timeout_seconds, self.remaining_seconds()))
             settle = scope.__enter__()
             self.active = (identifier, scope, settle)
             if model_call and self.research_budget is not None:
@@ -126,3 +135,73 @@ class ResearchMeter:
             self.ticket = None
             scope.__exit__(type(error), error, error.__traceback__)
             settle_resource_failure(self.port, resource_id=identifier, error=error)
+
+
+class _RoleAllowance:
+    """Pure scheduling headroom inside one existing Host invocation and policy."""
+
+    def __init__(self, meter, max_turns, reserve_calls, count_required, seconds):
+        self.meter, self.count_required = meter, count_required
+        dimensions = meter.context['budget_summary']['dimensions']
+        remaining = min(dimensions[name]['remaining'] for name in
+                        ('tool_calls_per_attempt', 'tool_calls_per_run')) - meter.tool_calls
+        reserved_counts = reserve_calls if count_required else 0
+        available = remaining - reserved_counts
+        tools = min(available, (remaining + 1) // 2) if reserve_calls else available
+        if tools < int(count_required):
+            raise BudgetExhausted('Research attempt cannot fund the remaining role counts')
+        self.tool_limit = meter.tool_calls + tools
+        self.model_limit = meter.model_calls + max_turns
+        now = meter.port.leases.coordinator._time().monotonic_seconds
+        role_seconds = seconds / (reserve_calls + 1)
+        self.until = now + role_seconds
+        # This is one bounded count/generation closing window, not two new
+        # request entitlements. Final count and model share what remains.
+        self.closing_seconds = min(meter.request_timeout_seconds, role_seconds / 2)
+        self.finalizing = False
+
+    def remaining_seconds(self):
+        now = self.meter.port.leases.coordinator._time().monotonic_seconds
+        remaining = min(self.meter.remaining_seconds(), self.until - now)
+        if remaining <= 0:
+            raise BudgetExhausted('Research role has exhausted its existing time share')
+        return remaining
+
+    def must_finalize(self, *, count_pending=False, model_pending=True):
+        counts = int(self.count_required) * (1 + int(count_pending))
+        if ((model_pending and self.model_limit - self.meter.model_calls <= 1) or
+                self.tool_limit - self.meter.tool_calls <= counts or
+                self.remaining_seconds() <= self.closing_seconds):
+            self.finalizing = True
+        return self.finalizing
+
+    def tool_timeout(self):
+        if self.must_finalize(model_pending=False):
+            return None
+        return self.timeout_seconds('tool')
+
+    def timeout_seconds(self, kind, *, closing=False):
+        remaining = self.remaining_seconds()
+        headroom = remaining - self.closing_seconds
+        if headroom <= 0:
+            self.finalizing = True
+        # Only a request already counted with tool_choice=none may spend the
+        # closing window. A late CPU delay cannot grant exploration that time.
+        available = remaining if closing else headroom
+        if available <= 0:
+            if kind == 'tool':
+                return None
+            raise BudgetExhausted('Research exploration cannot consume the reserved closing window')
+        # Counting must leave room for the model request that it enables.
+        if kind == 'count':
+            available /= 2
+        return min(self.meter.request_timeout_seconds, available)
+
+    def require_count(self):
+        if self.tool_limit <= self.meter.tool_calls:
+            raise BudgetExhausted('Research role cannot fund its final context count')
+
+    def allow_compaction(self):
+        return (not self.finalizing and self.model_limit - self.meter.model_calls >= 2 and
+                self.tool_limit - self.meter.tool_calls >= int(self.count_required) and
+                self.remaining_seconds() > self.closing_seconds)

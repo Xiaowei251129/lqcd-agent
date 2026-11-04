@@ -16,7 +16,7 @@ import sys
 import tempfile
 import uuid
 
-from .clock import HostClock
+from .clock import HostClock, Timestamp
 from .protocol import PROTOCOL_SHA256, operation_variant
 from .strict_json import ControlIntegrityError, canonical_bytes, digest, loads, number, require, text
 
@@ -374,6 +374,8 @@ class Coordinator:
         result = dict(row)
         for key in ("request", "reservation", "result", "error", "created_at", "updated_at"):
             result[key] = loads(result[key]) if result[key] is not None else None
+        for key in ("created_at", "updated_at"):
+            Timestamp(**result[key])
         return result
 
     def lookup_key(self, scope, key, *, db=None):

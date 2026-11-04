@@ -52,11 +52,13 @@ def proposal(role):
 
 class CollaborationModel(Model):
     def __init__(self, calls, *, fail=False, refusal=None, need_information=False, code_needed=False,
-                 pi_need_information=False, read_sections=('catalog',), postdoc_read=False):
+                 pi_need_information=False, read_sections=('catalog',), postdoc_read=False,
+                 pi_discussion=None, postdoc_discussion=None):
         self.calls, self.fail, self.read = calls, fail, 0
         self.read_sections, self.postdoc_read = read_sections, postdoc_read
         self.need_information, self.code_needed = need_information, code_needed
         self.pi_need_information, self.refusal = pi_need_information, refusal
+        self.pi_discussion, self.postdoc_discussion = pi_discussion, postdoc_discussion
 
     async def get_response(self, system_instructions, input, model_settings, tools,
                            output_schema, handoffs, tracing, **kwargs):
@@ -96,6 +98,10 @@ class CollaborationModel(Model):
             else:
                 assert name == 'Discussion'
                 value = discussion()
+            if name == 'ResearchBrief' and self.pi_discussion is not None:
+                value['discussion'] = self.pi_discussion
+            if name == 'method_plan_discussion' and self.postdoc_discussion is not None:
+                value['discussion'] = self.postdoc_discussion
             output = [ResponseOutputMessage(type='message', id='answer', role='assistant', status='completed',
                 content=[ResponseOutputText(type='output_text', text=json.dumps(value), annotations=[])])]
         return ModelResponse(output=output, usage=Usage(requests=1, input_tokens=10, output_tokens=3, total_tokens=13),
@@ -328,34 +334,47 @@ def test_planner_requests_missing_information_before_any_analysis(tmp_path, role
     assert plan['status'] == 'needs_more_info' and plan['code_needed'] is False
 
 
-def test_pi_checks_and_prior_questions_reach_the_actual_coding_request(tmp_path):
+class ReadOnlyMeter:
+    """SDK schema fixtures have no Host resource or publication authority."""
+    def __init__(self):
+        self.events = []
+        self.model_calls = 0
+        self.write_scope = None
+    def __call__(self, event):
+        self.events.append(event)
+        if event['event'] == 'model_start':
+            self.model_calls += 1
+    def remaining_seconds(self):
+        return 10
+    def role_allowance(self, **kwargs):
+        return None
+
+
+def coding_plan(tmp_path, model_factory, *, prior_issues=()):
     from lqcd_agent.agents.method_planner import run_method_planner
-    class Observer:
-        def __init__(self):
-            self.events = []
-            self.model_calls = 0
-            self.write_scope = None  # This direct read-only fixture has no Host publication authority.
-        def __call__(self, event):
-            self.events.append(event)
-            if event['event'] == 'model_start':
-                self.model_calls += 1
-        def remaining_seconds(self):
-            return 10
     config = {'case_id': 'test', 'generated_program': {'requirements': ['Keep the specified JSON contract.']}}
     context = {'identity': {'case_id': 'test', 'run_id': 'run'},
         'budget_summary': {'dimensions': {'llm_calls_per_attempt': {'remaining': 4},
                                           'llm_calls_per_run': {'remaining': 32}}},
-        'remediation': {'success_criteria': ['Compare the fit windows.', 'All inputs attributable']}}
+        'remediation': {'success_criteria': ['Compare the fit windows.', 'All inputs attributable']},
+        'project_history': {'issues': list(prior_issues), 'resolved': [], 'conclusions': [], 'conflicts': [],
+            'counts': {'evidence_records': 0, 'unresolved_issues': len(prior_issues),
+                'resolved_questions': 0, 'conflicting_questions': 0, 'accepted_claims': 0}}}
     output = tmp_path/'output'
-    runtime = ResearchAgentRuntime(CollaborationModel([], code_needed=True), max_output_tokens=2048)
+    runtime = ResearchAgentRuntime(model_factory(config), max_output_tokens=2048)
     agent = CollaborationAgent(tmp_path/'host', config, workspace=tmp_path,
         runtime_factory=lambda: runtime, request_timeout_seconds=10)
     with asyncio.Runner() as runner:
-        provider = _RoleProvider(agent, 'method_planner', context, output, runtime, runner, Observer())
+        provider = _RoleProvider(agent, 'method_planner', context, output, runtime, runner, ReadOnlyMeter())
         result = run_method_planner(user_goal='Analyze the frozen data contract.', case_config=config,
             repo_inventory={'repo_root': str(tmp_path), 'analysis_programs': [], 'implementation_gaps': ['Implement the contract.']},
             output_dir=output, provider=provider)
         assert provider.failure is None
+    return result, provider.collaboration
+
+
+def test_pi_checks_and_prior_questions_reach_the_actual_coding_request(tmp_path):
+    result, _ = coding_plan(tmp_path, lambda _: CollaborationModel([], code_needed=True))
     assert result['status'] == 'success' and result['code_needed']
     requirements = result['code_request']['requirements']
     assert 'Inspect the Host diagnostics.' in requirements
@@ -400,3 +419,76 @@ def test_missing_input_block_requires_a_verified_answer_not_a_status_change():
     resolved = _merge_issues(blocked, [{**blocked[0], 'status': 'addressed', 'response': 'Input is present.',
         'evidence_references': ['read-input']}], known_evidence={'read-input'})
     assert resolved[0]['status'] == 'addressed'
+
+
+def test_penultimate_role_turn_can_read_before_the_reserved_final_conclusion(tmp_path):
+    snapshot, calls, _ = execute_collaboration(tmp_path, read_sections=('catalog', 'case_config', 'repo_inventory'))
+    assert snapshot.state['run_status'] == 'completed'
+    assert [call['schema'] for call in calls[:5]] == ['ResearchBrief'] * 4 + ['method_plan_discussion']
+    events = [loads(line, canonical=False) for path in (snapshot.host/'domain').rglob('research_events.jsonl')
+        for line in path.read_bytes().splitlines()]
+    pi_reads = [event for event in events if event['event'] == 'tool_end' and event['role'] == 'pi']
+    assert len(pi_reads) == 3 and not any(event['event'] == 'tool_not_executed' for event in events)
+
+
+@pytest.mark.parametrize('disposition', ['pending_implementation', 'current_blocker', 'verified_answer'])
+def test_planning_distinguishes_inherited_scientific_questions_from_current_prerequisites(tmp_path, disposition):
+    original = _merge_issues([], [issue(status='blocked',
+        question='Which frozen output contract must the implementation retain?')])[0]
+    def model(config):
+        pending = {**original, 'status': 'open'}
+        pi = discussion(issues=[original])
+        postdoc = discussion(issues=[original])
+        if disposition == 'current_blocker':
+            # A current missing prerequisite survives the following role's
+            # relabeling of the issue and recommendation to proceed.
+            pi = discussion(decision='need_information', issues=[original])
+            postdoc = discussion(issues=[pending])
+        elif disposition == 'verified_answer':
+            pi = discussion(decision='need_information', issues=[original])
+            postdoc = discussion(issues=[{**original, 'status':'addressed',
+                'response':'Use the specified frozen JSON contract.', 'evidence_references':[digest(config)]}])
+        return CollaborationModel([], code_needed=True, read_sections=(),
+            postdoc_read=disposition=='verified_answer', pi_discussion=pi, postdoc_discussion=postdoc)
+    result, collaboration = coding_plan(tmp_path, model, prior_issues=[original])
+    retained = next(item for item in collaboration['issues'] if item['id']==original['id'])
+    if disposition == 'current_blocker':
+        assert result['status']=='needs_more_info' and not result['code_needed'] and result['code_request'] is None
+        assert collaboration['decision']=='need_information' and retained==original
+    else:
+        assert result['status']=='success' and result['code_needed'] and result['code_request']
+        assert collaboration['decision']=='recommend_proceed'
+        if disposition == 'pending_implementation':
+            assert retained==original  # No evidence or resolution was fabricated.
+            assert original['question'] in result['code_request']['requirements']
+            assert original['question'] in collaboration['challenges']
+        else:
+            assert retained['status']=='addressed' and retained['evidence_references']
+            assert original['question'] not in collaboration['challenges']
+
+
+def test_review_requires_evidence_for_retained_blocked_questions_despite_proceed_decisions(tmp_path):
+    from lqcd_agent.llm.base import LLMRequest
+    from lqcd_agent.llm.schemas import role_schema
+    original = _merge_issues([], [issue(status='blocked')])[0]
+    context = {'identity': {'case_id': 'test', 'run_id': 'run'},
+        'budget_summary': {'dimensions': {'llm_calls_per_attempt': {'remaining': 4},
+                                          'llm_calls_per_run': {'remaining': 32}}}}
+    # Supply only a plan claim in this read-only schema fixture. No numerical
+    # evidence or accepted result is manufactured, and neither role answers it.
+    agent = SimpleNamespace(workspace=tmp_path, host=tmp_path/'host', request_timeout_seconds=10,
+        _artifact=lambda context, name: {'collaboration': {'issues': [original]}})
+    output = tmp_path/'review'
+    output.mkdir()
+    calls = []
+    runtime = ResearchAgentRuntime(CollaborationModel(calls, read_sections=()), max_output_tokens=2048)
+    with asyncio.Runner() as runner:
+        provider = _RoleProvider(agent, 'scientific_reviewer', context, output, runtime, runner, ReadOnlyMeter())
+        response = provider.generate(LLMRequest(messages=[{'role': 'system', 'content': 'Review the supplied claim.'}],
+            json_schema=role_schema('scientific_review_report'), context_sources={'method_plan': 'Claim only.'}))
+    assert json.loads(response.content)['status'] == 'success'
+    assert [call['schema'] for call in calls] == ['scientific_review_report_discussion', 'Discussion']
+    collaboration = provider.collaboration
+    assert all(exchange['discussion']['decision'] == 'recommend_proceed' for exchange in collaboration['exchanges'])
+    assert collaboration['decision'] == 'need_information' and collaboration['issues'] == [original]
+    assert collaboration['challenges'] == [original['question']]

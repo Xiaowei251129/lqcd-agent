@@ -23,7 +23,7 @@ class ContextWindow:
 
     def request(self, data):
         agent = data.agent
-        self.hooks.prepare_model_settings(agent)
+        self.hooks.prepare_model_settings(agent, count_pending=True)
         schema = agent.output_type if isinstance(agent.output_type, AgentOutputSchemaBase) else AgentOutputSchema(agent.output_type)
         # Use the pinned SDK's own serializer, not an approximate character/token ratio.
         wire = self.model._build_response_create_kwargs(data.model_data.instructions,
@@ -34,12 +34,16 @@ class ContextWindow:
 
     async def count(self, request):
         self.hooks.check_cancelled()
+        timeout = self.request_timeout_seconds
+        if self.hooks.allowance is not None:
+            self.hooks.allowance.require_count()
+            timeout = self.hooks.allowance.timeout_seconds('count', closing=request.get('tool_choice') == 'none')
         self.ordinal += 1
         fields = {'tool_name': 'context_token_count', 'call_id': f'context-count-{self.ordinal}'}
-        await self.hooks.emit('tool_start', **fields, arguments=json.dumps(request))
+        await self.hooks.emit('tool_start', **fields, arguments=json.dumps(request), timeout_seconds=timeout)
         self.hooks.active = ('tool', fields)
-        async with asyncio.timeout(self.request_timeout_seconds):
-            counted = await self.client.responses.input_tokens.count(**request)
+        async with asyncio.timeout(timeout):
+            counted = await self.client.responses.input_tokens.count(**request, timeout=timeout)
         self.hooks.active = None
         await self.hooks.emit('tool_end', **fields, result={'input_tokens': counted.input_tokens})
         if type(counted.input_tokens) is not int or counted.input_tokens < 0:
@@ -58,6 +62,7 @@ class ContextWindow:
         request = self.request(data)
         count = await self.count(request)
         if count <= COMPACT_TOKEN_LIMIT:
+            self.hooks.request_prepared = True
             return data.model_data
         # Always keep scientific contracts, warnings, issues and the role's explicit task.
         if items[:len(self.pinned)] != self.pinned:
@@ -66,15 +71,22 @@ class ContextWindow:
             if count > INPUT_TOKEN_LIMIT:
                 raise ContextLimitError('Required research state exceeds the input token limit')
             await self.hooks.emit('context_pressure', input_tokens=count, reason='protected_state_only')
+            self.hooks.request_prepared = True
             return data.model_data
         if count > INPUT_TOKEN_LIMIT:
             # Do not dispatch even a compact model request beyond the allowed input ceiling.
             raise ContextLimitError('Working history exceeds the input limit; reduce the next tool page')
+        if self.hooks.allowance is not None and not self.hooks.allowance.allow_compaction():
+            await self.hooks.emit('context_pressure', input_tokens=count, reason='finalization_budget_reserved')
+            self.hooks.request_prepared = True
+            return data.model_data
         compact_request = {'model': request['model'], 'input': request['input'],
                            'instructions': request.get('instructions', '')}
-        fields = await self.hooks.start_model(operation='compact', **compact_request)
-        async with asyncio.timeout(self.request_timeout_seconds):
-            compacted = await self.client.responses.compact(**compact_request)
+        timeout = (self.hooks.allowance.timeout_seconds('compact') if self.hooks.allowance is not None
+                   else self.request_timeout_seconds)
+        fields = await self.hooks.start_model(operation='compact', **compact_request, timeout_seconds=timeout)
+        async with asyncio.timeout(timeout):
+            compacted = await self.client.responses.compact(**compact_request, timeout=timeout)
         output = [item.model_dump(mode='json') for item in compacted.output]
         carriers = [{key: item[key] for key in ('type', 'id', 'encrypted_content')}
                     for item in output if item['type'] == 'compaction']
@@ -97,4 +109,5 @@ class ContextWindow:
         await self.hooks.emit('context_compacted', input_tokens_before=count, input_tokens_after=after,
             source_sha256=sha256(json.dumps(items, sort_keys=True).encode()).hexdigest(),
             protected_items=len(self.pinned), output=output)
+        self.hooks.request_prepared = True
         return data.model_data

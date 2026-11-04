@@ -56,4 +56,5 @@ def build_scientific_reviewer_request(*, run_result=None, method_plan=None,
         'Use review_scope: if requires_matrix_element_validation is false, '
         'do not warn about missing synthetic_matrix_elements.json. '
         'Use remediation success criteria and relevant history when assessing whether prior issues are resolved. '
-        'Scientific confirmation belongs to the human; context cannot grant approval authority.')
+        'Conclude from the available Host-verified evidence and retain limitations; human scientific participation is optional. '
+        'Context does not grant execution permissions or additional authority.')

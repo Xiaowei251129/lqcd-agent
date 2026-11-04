@@ -3,10 +3,13 @@
 Host target completion and ordinary resource publication retain the original
 invocation authority. A started intent can never be taken over to reexecute.
 """
+from copy import deepcopy
 from dataclasses import asdict, dataclass
+from functools import lru_cache
 from hashlib import sha256
 
 from .checkpoints import verify_checkpoint
+from .clock import Timestamp
 from .coordinator import boundary, publish_exact, read_regular, replace_projection
 from .execution import append_record_bytes, parse_ledger, replay
 from .integrity import validate_advanced_run_root, validate_run_root
@@ -26,7 +29,6 @@ def invocation_prefix(value, *, published=True):
     require(not entries or not value.get("verification_intents"), "Mixed invocation publication owners")
     require(type(entries) is list, "Invalid invocation budget journal")
     authorization = value["authorization"]
-    execution = parse_ledger(previous["content"].encode()) if entries else None
     for entry in entries:
         closed(entry, ("record", "previous", "previous_index", "content", "index", "intent_digest", "published"))
         require(type(entry["published"]) is bool and (entry["published"] or not published), "Unpublished budget prefix")
@@ -43,13 +45,16 @@ def invocation_prefix(value, *, published=True):
                     record["payload"]["resource_kind"] in ("llm_call", "tool_call"), "Foreign ordinary resource")
         if record["event"] == "resource_settled":
             require(record["payload"]["operation_id"] == authorization["producer_operation_id"], "Foreign settlement owner")
-        execution = execution.append(record)
-        require(execution.canonical.decode() == entry["content"],
+        require(previous["content"].encode() + canonical_bytes(record) + b"\n" == entry["content"].encode(),
                 "Budget ledger differs from its frozen intent")
         index = loads(entry["previous_index"])
         require(canonical_bytes({**index, "execution_head": digest(record)}).decode() == entry["index"],
                 "Budget suffix changed artifact authority")
         previous = entry
+    if entries:
+        # Full replay validates every intermediate lifecycle/budget state once;
+        # the journal above proves each frozen publication is its exact prefix.
+        parse_ledger(previous["content"].encode())
     return previous
 
 
@@ -314,6 +319,12 @@ def authorize_interrupt_capability(coordinator, db, operation, root, checkpoint,
     return {"capability_id": capability_id, "authorization_digest": digest(authorization), "lease_state": "unclaimed"}
 
 
+@lru_cache(maxsize=1)
+def _decoded_capability(raw):
+    """Cache only exact-byte JSON parsing; get exposes a separate mutable copy."""
+    return loads(raw)
+
+
 class InvocationLeases:
     def __init__(self, coordinator, *, decision_adapter=None, external_adapter=None, preparation_adapter=None):
         self.coordinator = coordinator
@@ -328,9 +339,15 @@ class InvocationLeases:
                                                          (capability_id,)).fetchone()
         boundary(self.coordinator.observer, "invocation.capability_lookup", "after")
         require(row is not None, "Unknown invocation capability")
-        value = loads(row["value"])
+        value = deepcopy(_decoded_capability(row["value"]))
         require(digest(value["authorization"]) == value["authorization_digest"], "Invocation authorization changed")
         require(value["state"] in CONTRACT["execution_lease"]["states"], "Unknown invocation state")
+        for field in ("deadline", "expires_at"):
+            if value[field] is not None:
+                number(value[field])
+        Timestamp(**value["updated_at"])
+        if "active_time" in value["authorization"]:
+            number(value["authorization"]["active_time"]["maximum_seconds"])
         return row["revision"], value
 
     def _save(self, db, capability_id, revision, value):

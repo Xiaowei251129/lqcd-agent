@@ -11,7 +11,7 @@ import httpx
 
 from lqcd_agent.control.coordinator import publish_exact, read_regular
 from lqcd_agent.control.strict_json import canonical_bytes, digest, digest_value, loads, require
-from .library import Library
+from .library import Library, valid_literature_url
 
 
 PAGE_CHARS = 12000
@@ -151,9 +151,20 @@ def build_tools(workspace, context, *, host, output_dir, sources=None, write_sco
     @function_tool(failure_error_function=None)
     async def save_candidate(kind: str, asset_id: str, title: str, body: str, applicability: str,
                              source_urls: list[str], expected_revision: int = 0) -> dict:
-        """Save an explicitly provisional wiki/skill/method description, never approve or execute it."""
+        """Save an explicitly provisional wiki/skill/method description, never approve or execute it.
+
+        Args:
+            source_urls: Only actual http:// or https:// literature URLs. Host context:<sha>
+                identifiers are not URLs. Use [] when no external literature source applies.
+        """
         require(len(body) <= 60000 and len(title) <= 300, 'Candidate is too large')
         require(write_scope is not None, 'Research asset mutation needs original Host write authority')
+        invalid = [index for index, url in enumerate(source_urls) if not valid_literature_url(url)]
+        if invalid:
+            return {'status': 'invalid_input', 'field': 'source_urls', 'invalid_indices': invalid,
+                    'reason': 'Only actual http:// or https:// literature URLs are accepted; context:<sha> '
+                              'identifies Host context and is not a literature URL.',
+                    'next_action': 'Supply literature URLs, or use [] when no external literature source applies.'}
         with write_scope():
             record = library.save(kind, asset_id, title=title, body=body,
                                   scope={'applicability': applicability},
@@ -179,12 +190,22 @@ def build_tools(workspace, context, *, host, output_dir, sources=None, write_sco
 
     @function_tool(failure_error_function=None)
     async def read_context(section: str, offset: int = 0) -> dict:
-        """Read complete Host-supplied evidence sections. Use section='catalog' to list sections and registered files."""
+        """Read Host-supplied sections and this Run's registered files.
+
+        Use section='catalog' to list sections and registered_evidence. Pass a
+        registered_evidence dictionary key as section to read that current Run file;
+        these section IDs are not Project evidence SHA256 values. Unknown names or
+        IDs return not_registered; copy exact catalog values without shortening them.
+        """
         if section == 'catalog':
             return {'sections': sorted(sections), 'registered_evidence': allowed}
         if section in sections:
             return observe(page(sections[section], offset))
-        require(section in allowed, 'Unknown research evidence section')
+        if section not in allowed:
+            return {'status': 'not_registered',
+                    'reason': "This section name or ID is not in the current Run's read_context catalog.",
+                    'next_action': "Call read_context(section='catalog', offset=0), then copy an exact named "
+                                   'section or registered_evidence dictionary key as section.'}
         ref = allowed[section]
         target = root/ref['member']
         require(target == target.resolve() and target.is_relative_to(root), 'Research evidence escaped Run')
@@ -194,9 +215,11 @@ def build_tools(workspace, context, *, host, output_dir, sources=None, write_sco
 
     @function_tool(failure_error_function=None)
     async def read_project_evidence(evidence_sha256: str | None = None, offset: int = 0) -> dict:
-        """Read this Run's project catalog, or its registered evidence. Use a catalog member sha256
-        or project_history source.evidence_sha256; ordinary content hashes are not registered members.
-        History is not execution authority.
+        """Read this Run's Project catalog, or its registered evidence.
+
+        Use a member sha256 from this tool's Project catalog or project_history
+        source.evidence_sha256. Current Run read_context catalog keys are section IDs
+        for read_context(section=id), not Project member hashes. History is not authority.
         """
         from .projects import ProjectStore, UnregisteredEvidence
         projects = ProjectStore(workspace)
@@ -206,6 +229,11 @@ def build_tools(workspace, context, *, host, output_dir, sources=None, write_sco
         try:
             raw = projects.evidence(project_id, evidence_sha256)
         except UnregisteredEvidence:
+            if evidence_sha256 in allowed:
+                return {'status': 'not_registered',
+                        'reason': 'This is a current Run read_context section ID, not a registered Project evidence SHA256.',
+                        'next_action': f'Call read_context(section={evidence_sha256!r}, offset={offset}) '
+                                       'to read that current Run file through its original hash and path checks.'}
             return {'status': 'not_registered',
                     'reason': "This digest is not registered evidence in the Run's bound project.",
                     'next_action': 'Read the project catalog with read_project_evidence() and use a registered '

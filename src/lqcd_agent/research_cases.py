@@ -41,7 +41,10 @@ PROGRAM_REQUIREMENTS = {
         'Estimate and regulate the correlated covariance transparently. Report regulation and every unsuccessful replica; '
         'do not replace failed replica parameters with central-fit parameters.',
         'When fixed_ground_energy is true, fix E0=sqrt(ground_energy_at_rest**2+(2*pi*pz/ns)**2), '
-        'and explicitly state that this does not independently test dispersion. When false, infer E0 from data. '
+        'and explicitly state that this does not independently test dispersion. A successful fixed-E0 fit must emit '
+        'finite numeric E0_error=0.0 as the conditional uncertainty of the imposed energy, not null; '
+        'external rest-energy uncertainty is not propagated. Never use zero to replace a failed fit or replica. '
+        'When false, infer E0 from data. '
         'Set dispersion_independently_tested=false in both cases: this program fits a single momentum and does not perform a separate dispersion comparison. '
         'Do not select a preferred fit solely from its smallest chi-squared.',
         'Output status (ok when all fits/replicas succeed, partial when any fail), fits (each with nstates,tmin,tmax,E0,E0_error,chi2_dof,bootstrap_successes,bootstrap_total,failed_sample_ids), '

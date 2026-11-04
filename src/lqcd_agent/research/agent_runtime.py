@@ -50,7 +50,7 @@ class ResearchAgentResult:
 
 
 class _HostHooks(RunHooks):
-    def __init__(self, role, observer, cancel_event, model_call_limit):
+    def __init__(self, role, observer, cancel_event, model_call_limit, allowance):
         self.role, self.observer, self.cancel_event = role, observer, cancel_event
         self.events = []
         self.usage = Usage()
@@ -59,6 +59,11 @@ class _HostHooks(RunHooks):
         self.active = None
         self.effect_error = None
         self.stopping = False
+        self.allowance = allowance
+        self.deferred_calls = set()
+        self.tool_timeouts = {}
+        self.request_prepared = False
+        self.final_model_dispatched = False
 
     async def emit(self, kind, **fields):
         event = _json({"event": kind, "role": self.role, **fields})
@@ -75,9 +80,12 @@ class _HostHooks(RunHooks):
         if self.stopping or (self.cancel_event is not None and self.cancel_event.is_set()):
             raise asyncio.CancelledError()
 
-    def prepare_model_settings(self, agent):
+    def prepare_model_settings(self, agent, *, count_pending=False):
         # A final model allowance must produce a conclusion, not another tool loop.
-        agent.model_settings.tool_choice = 'none' if self.model_calls + 1 >= self.model_call_limit else None
+        closing = self.model_calls + 1 >= self.model_call_limit
+        if self.allowance is not None:
+            closing |= self.allowance.must_finalize(count_pending=count_pending)
+        agent.model_settings.tool_choice = 'none' if closing else None
 
     async def start_model(self, *, operation=None, **request):
         from lqcd_agent.control.budget import BudgetExhausted
@@ -97,12 +105,21 @@ class _HostHooks(RunHooks):
         return fields
 
     async def on_llm_start(self, context, agent, system_prompt, input_items):
-        self.prepare_model_settings(agent)
+        # The filter already counted this exact tool policy. Transport timeouts
+        # may change here, but changing tool_choice would invalidate that count.
+        if not self.request_prepared:
+            self.prepare_model_settings(agent)
+        self.request_prepared = False
+        if self.allowance is not None:
+            agent.model_settings.timeout = self.allowance.timeout_seconds('model',
+                closing=agent.model_settings.tool_choice == 'none')
+        self.final_model_dispatched = agent.model_settings.tool_choice == 'none'
         schema = agent.output_type if isinstance(agent.output_type, AgentOutputSchemaBase) else AgentOutputSchema(agent.output_type)
         await self.start_model(instructions=system_prompt, input=input_items,
             output_schema=None if schema.is_plain_text() else schema.json_schema(),
             tools=[{"name": tool.name, "description": tool.description, "parameters": tool.params_json_schema}
-                   for tool in agent.tools], model_settings=agent.model_settings)
+                   for tool in agent.tools], model_settings=agent.model_settings,
+            **({'timeout_seconds': agent.model_settings.timeout} if self.allowance is not None else {}))
 
     async def on_llm_end(self, context, agent, response):
         self.usage.add(response.usage)
@@ -114,15 +131,33 @@ class _HostHooks(RunHooks):
     async def on_tool_start(self, context, agent, tool):
         from lqcd_agent.control.budget import BudgetExhausted
         self.check_cancelled()
-        if self.model_calls >= self.model_call_limit:
+        if self.final_model_dispatched or self.model_calls >= self.model_call_limit:
             error = BudgetExhausted('Final research turn cannot start another evidence read')
             self.effect_error = error
             raise error
         fields = {"tool_name": tool.name, "call_id": context.tool_call_id}
+        if self.allowance is not None:
+            try:
+                timeout = self.allowance.tool_timeout()
+                admitted = timeout is not None
+            except BaseException as error:
+                self.effect_error = error
+                raise
+            if not admitted:
+                self.deferred_calls.add(context.tool_call_id)
+                await self.emit('tool_not_executed', **fields, status='not_executed',
+                                reason='finalization_budget_reserved')
+                return
+            self.tool_timeouts[context.tool_call_id] = timeout
+            fields['timeout_seconds'] = timeout
         await self.emit("tool_start", **fields, arguments=context.tool_arguments)
         self.active = ("tool", fields)
 
     async def on_tool_end(self, context, agent, tool, result):
+        if context.tool_call_id in self.deferred_calls:
+            self.deferred_calls.remove(context.tool_call_id)
+            return
+        self.tool_timeouts.pop(context.tool_call_id, None)
         self.active = None
         await self.emit("tool_end", tool_name=tool.name, call_id=context.tool_call_id, result=result)
 
@@ -181,12 +216,13 @@ class ResearchAgentRuntime:
 
     async def run(self, *, role: str, instructions: str, input: str | list[dict[str, Any]],
                   tools: Sequence[FunctionTool], output_type: Any, max_turns: int,
-                  observer: Observer, cancel_event: asyncio.Event | None = None) -> ResearchAgentResult:
+                  observer: Observer, cancel_event: asyncio.Event | None = None,
+                  allowance=None) -> ResearchAgentResult:
         if not role or not instructions or not callable(observer):
             raise ValueError("A role, instructions and Host observer are required.")
         if type(max_turns) is not int or max_turns <= 0:
             raise ValueError("The Host must provide a finite positive max_turns.")
-        hooks = _HostHooks(role, observer, cancel_event, max_turns)
+        hooks = _HostHooks(role, observer, cancel_event, max_turns, allowance)
         owned_tools = []
         tool_tasks = set()
         for tool in tools:
@@ -194,7 +230,9 @@ class ResearchAgentRuntime:
                 raise ValueError("Research tools must be Host function tools without SDK-owned approvals.")
             if tool._is_agent_tool or tool._is_codex_tool:
                 raise ValueError("Nested SDK agents cannot bypass Host model accounting.")
-            if (not isinstance(tool.is_enabled, bool) or tool.tool_input_guardrails or tool.tool_output_guardrails):
+            if (not isinstance(tool.is_enabled, bool) or tool.tool_input_guardrails or tool.tool_output_guardrails
+                    or tool.custom_data_extractor is not None or tool.output_json_schema is not None
+                    or tool._output_type_adapter is not None):
                 raise ValueError("Tool admission and checks belong to the Host.")
             if tool.is_enabled is False:
                 continue
@@ -205,6 +243,12 @@ class ResearchAgentRuntime:
             set_function_tool_failure_error_function(owned, None)
             invoke = owned.on_invoke_tool
             async def invoke_host_tool(context, arguments, invoke=invoke, timeout_seconds=tool_timeout):
+                hooks.check_cancelled()
+                if context.tool_call_id in hooks.deferred_calls:
+                    return json.dumps({'status': 'not_executed', 'reason': 'finalization_budget_reserved'})
+                admitted_timeout = hooks.tool_timeouts.get(context.tool_call_id)
+                if admitted_timeout is not None:
+                    timeout_seconds = min(timeout_seconds, admitted_timeout) if timeout_seconds is not None else admitted_timeout
                 # The SDK may detach a cancelled tool while its async cleanup runs.
                 # Retain the complete owning task until Host settlement is safe.
                 tool_tasks.add(asyncio.current_task())

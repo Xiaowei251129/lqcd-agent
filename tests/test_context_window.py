@@ -6,7 +6,7 @@ import json
 
 import httpx
 from openai import AsyncOpenAI, InternalServerError
-from openai.types.responses import Response
+from openai.types.responses import Response, ResponseOutputText
 import pytest
 
 from lqcd_agent.llm.prompts import ContextLimitError
@@ -113,6 +113,48 @@ def test_sdk_compacts_twice_without_resurrecting_old_history_and_keeps_scientifi
     assert all(e['protected_items'] == len(PINNED) for e in summaries)
     assert len([e for e in events if e['event'] == 'model_start' and e.get('operation') == 'compact']) == 2
     assert result.usage['requests'] == 5 and result.usage['total_tokens'] == 65
+
+
+@pytest.mark.parametrize('role,proposal_role', [('postdoc', 'method_plan'),
+                                              ('reviewer', 'scientific_review_report')])
+def test_proposal_discussion_wire_schema_is_strict_for_count_and_generation(role, proposal_role):
+    from lqcd_agent.llm.schemas import role_schema
+    from lqcd_agent.research.collaboration import ProposalDiscussion
+    from tests.test_research_collaboration import discussion, proposal
+
+    payload = {'proposal': proposal(proposal_role), 'discussion': discussion(next_experiment=None)}
+    output = message('unused').model_copy(update={'content': [ResponseOutputText(
+        type='output_text', text=json.dumps(payload), annotations=[])]})
+    wire, events = Wire([20], [[output]]), []
+    async def invoke():
+        async with AsyncOpenAI(api_key='offline-test', max_retries=0,
+                http_client=httpx.AsyncClient(transport=httpx.MockTransport(wire))) as client:
+            runtime = ResearchAgentRuntime.from_openai(client=client, model='test-model', max_output_tokens=512)
+            return await runtime.run(**(arguments(events.append) | {
+                'role': role, 'output_type': ProposalDiscussion(role_schema(proposal_role))}))
+    result = asyncio.run(invoke())
+    assert result.output == payload
+    assert [kind for kind, _ in wire.requests] == ['count', 'generate']
+    def strict(value):
+        if isinstance(value, dict):
+            assert 'default' not in value
+            if value.get('type') == 'object':
+                assert value['additionalProperties'] is False
+                assert set(value['required']) == set(value['properties'])
+            for child in value.values():
+                strict(child)
+        elif isinstance(value, list):
+            for child in value:
+                strict(child)
+    measured, sent = wire.bodies('count')[0], wire.bodies('generate')[0]
+    assert measured['text'] == sent['text']
+    for body in (measured, sent):
+        format = body['text']['format']
+        assert format['type'] == 'json_schema' and format['strict'] is True
+        schema = format['schema']
+        strict(schema)
+        experiment = schema['properties']['discussion']['properties']['next_experiment']
+        assert {'type': 'null'} in experiment['anyOf']
 
 
 @pytest.mark.parametrize('after_tool', [False, True])

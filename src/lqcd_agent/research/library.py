@@ -26,6 +26,17 @@ def _list(value, label):
     return value
 
 
+def valid_literature_url(value):
+    """Check only the accepted literature URL shape, not its scientific provenance."""
+    if type(value) is not str or not value:
+        return False
+    try:
+        parsed = urlparse(value)
+    except ValueError:
+        return False
+    return parsed.scheme in ("https", "http") and bool(parsed.netloc) and not parsed.username
+
+
 class Library(WorkspaceFiles):
     """Small filesystem catalog with scoped references and compare-and-set writes."""
 
@@ -70,9 +81,7 @@ class Library(WorkspaceFiles):
             require(type(source) is dict, "Invalid asset source")
             if "url" in source:
                 closed(source, ("url", "locator"))
-                url = urlparse(text(source["url"]))
-                require(url.scheme in ("https", "http") and bool(url.netloc) and not url.username,
-                        "Invalid literature URL")
+                require(valid_literature_url(source["url"]), "Invalid literature URL")
             else:
                 closed(source, ("path", "sha256", "locator"))
                 self._evidence({key: source[key] for key in ("path", "sha256")})

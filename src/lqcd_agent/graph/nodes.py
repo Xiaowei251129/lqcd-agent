@@ -486,6 +486,7 @@ class ProductNode:
                 terminal_decision['decision_digest'] = digest({k: v for k, v in terminal_decision.items() if k != 'decision_digest'})
             return TargetOutcome('succeeded', {'current_artifact_ids': refs}, artifact=ArtifactOutput('terminal', (memory, report), {'memory_update_path': str(memory), 'final_report_path': str(report)}, classification['memory_status']), terminal_decision=terminal_decision)
         require(node in PRODUCT_FILES, 'Code executes through its original external owner')
+        generated_output = None
         if node == 'decision_coordinator':
             parent = context['direct_parent_attempt_id']
             registered = [loads(line)['pointer'] for line in read_regular(self.root / 'artifact_history.jsonl').splitlines() if loads(line)['event'] == 'registered']
@@ -525,6 +526,12 @@ class ProductNode:
                         config_digest=self.preparation['runtime_policy_digest'],
                         timeout_seconds=self.analysis_handoff.timeout_seconds,
                         effect=lambda: self.analysis_handoff.execute(self.preparation))
+                    spec = loads(self.preparation['canonical_spec_bytes'])
+                    if spec['environment_policy'].get('generated_program') is not None:
+                        require(spec['expected_outputs'] == ['analysis_outputs/generated_result.json'],
+                                'Generated Analysis must use its frozen numerical output path')
+                        generated_output = (spec['expected_outputs'][0],
+                                            canonical_bytes(context['analysis_execution']['result']))
                 if hasattr(self.agent_port, 'run_scoped'):
                     outcome = self.agent_port.run_scoped(node, context, timeout_seconds=timeout, port=port)
                 else:
@@ -599,7 +606,10 @@ class ProductNode:
             require(type(content.get('code_needed')) is bool, 'Planner requires a typed code-needed result')
             state_paths['coder_task_packet_path'] = None
         if node == 'analysis_engineer':
-            output = port.write_member('analysis_outputs/result.json', canonical_bytes(content))
+            if generated_output is not None:
+                output = port.write_member(*generated_output)
+            else:
+                output = port.write_member('analysis_outputs/result.json', canonical_bytes(content))
             members.append(output)
             state_paths['analysis_outputs_dir'] = str(output.parent)
         diagnostic_path = port.write_member(node + '_diagnostic.json', canonical_bytes(diagnostic))

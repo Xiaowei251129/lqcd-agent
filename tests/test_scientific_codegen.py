@@ -1,6 +1,8 @@
 """Exercise scientific assembly with a deterministic backend, actual processes and Host review."""
 from pathlib import Path
 from contextlib import closing
+from copy import deepcopy
+from hashlib import sha256
 import json
 import sys
 
@@ -41,7 +43,8 @@ C2 = b'''import json,sys,math
 p=json.load(open(sys.argv[1]));fixed=p['fixed_ground_energy']
 e=math.hypot(p['ground_energy_at_rest'],2*math.pi*p['pz']/p['ns']) if fixed else .27
 fits=[dict(nstates=n,tmin=t,tmax=p['tmax'],E0=e,E0_error=0 if fixed else .001,chi2_dof=1,bootstrap_successes=p['bootstrap_samples'],bootstrap_total=p['bootstrap_samples'],failed_sample_ids=[]) for n in (1,2) for t in p['tmins']]
-print(json.dumps(dict(status='ok',fits=fits,ground_energy_fixed=fixed,dispersion_independently_tested=False)))
+if not fixed:fits[0]['E0_error']=1e20
+print(json.dumps(dict(status='ok',fits=fits,ground_energy_fixed=fixed,dispersion_independently_tested=False,fixture_evidence='serialized-read-'*1000)))
 '''
 
 
@@ -90,6 +93,19 @@ def deliver(start):
 
 @pytest.mark.parametrize('family',['c2','normalization'])
 def test_scientific_codegen_delivers_real_output_to_autonomous_report(tmp_path,monkeypatch,family):
+    from lqcd_agent.science import ScientificAgent
+    review_contexts, attempted_mutations = [], []
+    original_run = ScientificAgent.run
+    def observe_and_mutate(agent, node, context, *, timeout_seconds):
+        if node == 'scientific_reviewer':
+            review_contexts.append(deepcopy(context))
+        outcome = original_run(agent, node, context, timeout_seconds=timeout_seconds)
+        if node == 'analysis_engineer' and family == 'c2':
+            context['analysis_execution']['result']['fits'][0]['E0_error'] = 0.0
+            context['analysis_execution']['result']['fixture_evidence'] = 'Agent mutation must not replace Host output.'
+            attempted_mutations.append(True)
+        return outcome
+    monkeypatch.setattr(ScientificAgent, 'run', observe_and_mutate)
     start,source,config=start_case(tmp_path,monkeypatch,family)
     assert start['active_pause']['reason']=='external_result'
     before=source.read_bytes()
@@ -110,9 +126,59 @@ def test_scientific_codegen_delivers_real_output_to_autonomous_report(tmp_path,m
     analysis=loads(Path(index['analysis']['state_paths']['run_result_path']).read_bytes())['domain_result']
     observed=analysis['run_result']['generated_execution']
     assert observed['dataset_snapshot']['exists'] and observed['execution']['input_sha256']
-    assert (Path(analysis['analysis_outputs_dir'])/'generated_result.json').is_file()
+    result_path=Path(analysis['analysis_outputs_dir'])/'generated_result.json'
+    assert result_path.is_file()
+    numeric_member=next(member for member in index['analysis']['members']
+                        if member['logical_name']=='analysis_outputs/generated_result.json')
+    numeric_path=root/numeric_member['canonical_path']
+    numeric_bytes=numeric_path.read_bytes()
+    assert numeric_bytes==result_path.read_bytes()
+    assert numeric_member['sha256']==sha256(numeric_bytes).hexdigest()
+    assert analysis['member_digests'][str(result_path.relative_to(host_root(final['host'])))]==numeric_member['sha256']
+    assert not any(member['logical_name']=='analysis_outputs/result.json' for member in index['analysis']['members'])
+    assert len(review_contexts)==1
+    reference={'artifact_id':index['analysis']['artifact_id'], 'member':numeric_member['canonical_path'],
+               'sha256':numeric_member['sha256']}
+    assert reference in review_contexts[0]['current_evidence']
     review=loads(Path(index['review']['state_paths']['scientific_review_report_path']).read_bytes())['domain_result']['report']
     assert review['generated_diagnostics']['status']=='pass' and review['generated_diagnostics']['findings']
+    if family=='c2':
+        result=loads(result_path.read_bytes())
+        assert result['fits'][0]['E0_error']==1e20 and type(result['fits'][0]['E0_error']) is float
+        finding=next(item for item in review['generated_diagnostics']['findings'] if 'error=1e+20' in item)
+        assert finding in review['findings']
+        assert finding in Path(index['terminal']['state_paths']['final_report_path']).read_text()
+        assert attempted_mutations==[True] and len(result['fixture_evidence'])>12000
+        import ast
+        from openai.types.responses import ResponseFunctionToolCall
+        from lqcd_agent.research.agent_runtime import ResearchAgentRuntime
+        from lqcd_agent.research.tools import build_tools
+        from tests.test_research_agent_runtime import ScriptedModel, arguments, message
+        section=digest(reference)
+        def read_call(identifier, section_name, offset=0):
+            return ResponseFunctionToolCall(type='function_call', name='read_context', call_id=identifier,
+                arguments=json.dumps({'section':section_name,'offset':offset}))
+        tools=build_tools(tmp_path,review_contexts[0],host=host_root(final['host']),output_dir=tmp_path/'sdk-read')
+        model=ScriptedModel([[read_call('catalog','catalog')],
+            [read_call('first',section),read_call('last',section,12000)],
+            [message('The complete Host numeric evidence is readable; this is not physics acceptance.')]])
+        events=[]
+        ResearchAgentRuntime(model,max_output_tokens=512).run_sync(**{
+            **arguments(events.append,tools),'max_turns':3})
+        responses={event['call_id']:ast.literal_eval(event['result']) if isinstance(event['result'],str)
+                   else event['result'] for event in events if event['event']=='tool_end'}
+        assert responses['catalog']['registered_evidence'][section]==reference
+        assert responses['first']['next_offset']==12000 and responses['last']['next_offset'] is None
+        assert (responses['first']['text']+responses['last']['text']).encode()==numeric_bytes
+        assert responses['first']['sha256']==responses['last']['sha256']==numeric_member['sha256']
+        assert loads((responses['first']['text']+responses['last']['text']).encode())['fits'][0]['E0_error']==1e20
+        numeric_path.write_bytes(b'changed')
+        try:
+            with pytest.raises(ControlIntegrityError,match='Research evidence changed'):
+                ResearchAgentRuntime(ScriptedModel([[read_call('tampered',section)],
+                    [message('Unreachable')]]),max_output_tokens=512).run_sync(**arguments(events.append,tools))
+        finally:
+            numeric_path.write_bytes(numeric_bytes)
     history=(root/'execution_history.jsonl').read_bytes()
     repeated=deliver(start)
     assert repeated==final and (root/'execution_history.jsonl').read_bytes()==history
@@ -127,13 +193,85 @@ def test_scientific_codegen_delivers_real_output_to_autonomous_report(tmp_path,m
         handoff=AnalysisHandoff(coordinator,next((coordinator.root/'research_repositories').iterdir()),
             allowed_command=[sys.executable,'-I','-B','analysis.py','input.json'],
             expected_outputs=['analysis_outputs/generated_result.json'],generated_program=config['generated_program'],workspace=tmp_path)
+        handoff.verify_preparation(preparation)
+        manifest=loads(preparation['canonical_workspace_manifest_bytes'])
+        program=(handoff.provider.path(manifest['workspace_id'])/'analysis.py').read_bytes()
+        assert program==(C2 if family=='c2' else NORMALIZATION)
+        assert sha256(program).hexdigest()==observed['execution']['program_sha256']
         original=execution.interpreter_identity
         with monkeypatch.context() as patch:
             patch.setattr(execution,'interpreter_identity',lambda python:{**original(python),'libraries':{'changed':'1'}})
             with pytest.raises(ControlIntegrityError,match='Frozen Analysis'):handoff.verify_preparation(preparation)
-        manifest=loads(preparation['canonical_workspace_manifest_bytes'])
         (handoff.provider.path(manifest['workspace_id'])/'analysis.py').write_bytes(b'print("changed")\n')
         with pytest.raises(ControlIntegrityError):handoff.verify_preparation(preparation)
+
+
+@pytest.mark.parametrize('expire', [False, True])
+def test_code_consumption_funds_publication_without_extending_execution_authority(tmp_path, monkeypatch, expire):
+    from lqcd_agent.control.capabilities import InvocationLeases
+    from lqcd_agent.control.clock import FakeClock
+    from lqcd_agent.control.coordinator import Coordinator, read_regular
+    from lqcd_agent.control.pause import ResumeRunRequest
+    from lqcd_agent.inspection import read_snapshot
+    from lqcd_agent.runtime import assemble, scientific_agent
+    start, _, config = start_case(tmp_path, monkeypatch, 'normalization')
+    host, locator = host_root(start['host']), start['run_locator']
+    root = host/locator['case_id']/locator['run_id']
+    clock, observed = FakeClock(100, 0), []
+    def observer(name, side, value):
+        if (name, side) != ('external.trusted_verification', 'after'):
+            return
+        row, = [row for row in coordinator.connection.execute('SELECT capability_id,value FROM invocation_capabilities')
+                if loads(row['value'])['authorization'].get('activation_kind') == 'active_within_resume']
+        leases = InvocationLeases(coordinator)
+        _, capability = leases.get(row['capability_id'])
+        owner = coordinator.get(capability['authorization']['producer_operation_id'])
+        elapsed = capability['deadline'] - clock.now().monotonic_seconds + 1 if expire else 35
+        assert owner['lease_expires'] > capability['deadline'] > 30
+        assert all(entry['published'] for entry in capability['verification_intents'])
+        assert capability['verification_intents'][-1]['record']['payload']['actual'] is not None
+        observed.append((row['capability_id'], capability['deadline']))
+        clock.advance(elapsed)
+        if expire:
+            with pytest.raises(ControlIntegrityError, match='Stale or expired invocation lease'):
+                leases.require_effect_authority(row['capability_id'], capability['worker_id'], capability['invocation_epoch'])
+    with closing(Coordinator(host, clock=clock, observer=observer)) as coordinator:
+        runtime, actor, code = assemble(coordinator, scientific_agent(host, config, None, tmp_path), workflow='scientific')
+        assert runtime.plane.lease_seconds == code.lease_seconds
+        opened = next(row for row in reversed(runtime._records(locator)[1].values) if row.get('event') == 'pause_opened')
+        producer = opened['input_contract']['producer_operation_id']
+        delivery = host/'synthetic_deliveries'/producer
+        final = code.finalize(producer, tool_audit=read_regular(delivery/'tool-audit.jsonl'),
+                              patch=read_regular(delivery/'patch.diff'))
+        payload = {'producer_operation_id': producer, 'external_final_digest': final['terminal_evidence_digest']}
+        request = ResumeRunRequest(locator, opened['pause_id'], 'publication-window', 'external_result', payload, digest(payload))
+        result = runtime.resume_control(request, actor=actor)
+        assert len(observed) == 1
+        cap_id, deadline = observed[0]
+        _, capability = InvocationLeases(coordinator).get(cap_id)
+        assert capability['deadline'] == deadline
+        index = loads(read_regular(root/'artifact_index.json'))['current']
+        if expire:
+            assert result['operation_status'] == 'recovery_required' and result['terminal_closure'] == 'unavailable'
+            assert capability['state'] == 'uncertain' and capability.get('completion_intent') is None
+            assert index['code'] is index['analysis'] is index['terminal'] is None
+        else:
+            assert result['operation_status'] == 'committed' and result['run_status'] == 'running'
+            assert capability['state'] == 'finished' and capability['invocation_epoch'] == 1
+            assert index['code']['status'] == 'success'
+        history = read_regular(root/'execution_history.jsonl')
+        assert runtime.resume_control(request, actor=actor) == result
+        assert len(observed) == 1 and read_regular(root/'execution_history.jsonl') == history
+        records = runtime._records(locator)[1].values
+        assert sum(row.get('event') == 'started' and row.get('attempt_id') == opened['target_attempt_id'] for row in records) == 1
+        assert not any(row['record_type'] in ('human_request', 'human_response') for row in records)
+        if not expire:
+            runtime.run(locator)
+            snapshot = read_snapshot(host, locator)
+            assert snapshot.state['run_status'] == 'completed' and not snapshot.can_advance
+            index = loads(read_regular(root/'artifact_index.json'))['current']
+            analysis = loads(Path(index['analysis']['state_paths']['run_result_path']).read_bytes())['domain_result']
+            assert analysis['run_success'] is True and index['terminal']['status'] == 'accepted'
 
 
 def test_changed_json_is_refused_before_generated_program_execution(tmp_path,monkeypatch):

@@ -486,6 +486,39 @@ def test_native_stale_authority_cannot_spend_quota_or_forward(native_producer, f
     assert ResearchBudget(coordinator, locator).snapshot()['model_calls'] == 0
 
 
+def test_native_producer_control_windows_reject_large_floats(native_producer):
+    from copy import deepcopy
+    from lqcd_agent.control.operations import ExternalControl
+    from lqcd_agent.control.strict_json import ControlIntegrityError
+    coordinator, _, producer, _, _ = native_producer
+    external_id = producer['producer_operation_id']
+    revision, raw = coordinator.connection.execute(
+        'SELECT revision,value FROM external_operations WHERE external_operation_id=?', (external_id,)).fetchone()
+    external = ExternalControl(coordinator)
+    original = external.read(coordinator.connection, external_id)
+    for path in (('hard_deadline',), ('worker_lease_expires_at',), ('dispatch_started_at',),
+                 ('prestart', 'active_time', 'backend_maximum_seconds'),
+                 ('prestart', 'active_time', 'attempt_maximum_seconds'),
+                 ('prestart', 'active_time', 'recovery_expires_at')):
+        changed = deepcopy(original)
+        target = changed
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = 1e100
+        with coordinator.transaction() as db:
+            db.execute('UPDATE external_operations SET value=? WHERE external_operation_id=?',
+                (json.dumps(changed, sort_keys=True, separators=(',', ':')).encode(), external_id))
+        try:
+            with pytest.raises(ControlIntegrityError, match='out-of-range number'):
+                external.read(coordinator.connection, external_id)
+        finally:
+            with coordinator.transaction() as db:
+                db.execute('UPDATE external_operations SET value=? WHERE external_operation_id=?', (raw, external_id))
+        assert external.read(coordinator.connection, external_id) == original
+        assert coordinator.connection.execute('SELECT revision FROM external_operations WHERE external_operation_id=?',
+            (external_id,)).fetchone()[0] == revision
+
+
 @pytest.mark.parametrize('limit', [True, 0, -1, CODE_OUTPUT_TOKEN_LIMIT + 1])
 def test_native_output_limit_is_a_real_pre_dispatch_bound(tmp_path, limit):
     with upstream(lambda path, raw: count_response(100)) as (base, received):

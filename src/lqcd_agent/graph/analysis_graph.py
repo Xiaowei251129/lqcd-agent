@@ -88,7 +88,10 @@ class CanonicalProductRuntime:
         self.analysis_handoff, self.code_host = (analysis_handoff, code_host)
         self.external_adapter = code_host.consumer if external_adapter is None and code_host is not None else external_adapter
         self.route_adapter = ProductRouteAdapter(coordinator, analysis_handoff)
-        self.plane = ControlPlane(coordinator, worker_id=worker_id, route_adapter=self.route_adapter, resume_decision_adapter=self.route_adapter, external_adapter=self.external_adapter, preparation_adapter=analysis_handoff)
+        self.plane = ControlPlane(coordinator, worker_id=worker_id,
+            lease_seconds=code_host.lease_seconds if code_host is not None else 30,
+            route_adapter=self.route_adapter, resume_decision_adapter=self.route_adapter,
+            external_adapter=self.external_adapter, preparation_adapter=analysis_handoff)
         self.app = build_product_graph(self).compile()
 
     def _records(self, locator):

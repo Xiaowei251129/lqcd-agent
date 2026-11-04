@@ -128,6 +128,10 @@ def test_fixed_energy_cannot_be_claimed_as_independent_dispersion_evidence():
         'fits':[{'nstates':n,'tmin':t,'tmax':13,'E0':.15,'E0_error':0,'chi2_dof':1,
                  'bootstrap_successes':200,'bootstrap_total':200,'failed_sample_ids':[]} for n in (1,2) for t in payload['tmins']]}
     check_c2(payload,result)
+    result['fits'][0]['E0_error']=None
+    with pytest.raises(ControlIntegrityError,match='Invalid C2 fit'):check_c2(payload,result)
+    result['fits'][0]['E0_error']=0.0
+    check_c2(payload,result)
     result['dispersion_independently_tested']=True
     with pytest.raises(ControlIntegrityError,match='independent dispersion'):check_c2(payload,result)
     payload['fixed_ground_energy']=False;result['ground_energy_fixed']=False

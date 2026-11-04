@@ -52,8 +52,17 @@ class ExternalControl:
         from .strict_json import number
         number(value["lease_epoch"], integer=True, minimum=1)
         number(value["phase_revision"], integer=True, minimum=1)
+        for field in ("hard_deadline", "worker_lease_expires_at"):
+            number(value[field])
+        if value.get("dispatch_started_at") is not None:
+            number(value["dispatch_started_at"])
+        active = value.get("prestart", {}).get("active_time")
+        if active is not None:
+            for field in ("backend_maximum_seconds", "attempt_maximum_seconds"):
+                number(active[field])
+            if "recovery_expires_at" in active:
+                number(active["recovery_expires_at"])
         if external_id.startswith("external_"):
-            active = value.get("prestart", {}).get("active_time")
             require(active is not None and active["setup_record"]["payload"]["producer_operation_id"] == external_id and
                     digest(active["setup_record"]) == active["setup_record_digest"],
                     "Canonical producer lost its frozen active-time intent")

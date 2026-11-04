@@ -1,8 +1,10 @@
 """B02 tests exercise production persistence without claiming product behavior."""
 from lqcd_agent.control.storage import execution_scratch_root
 from tests.support import mkdtemp
+from contextlib import closing
 from copy import deepcopy
 from pathlib import Path
+import json
 import multiprocessing
 import sqlite3
 
@@ -15,6 +17,40 @@ from lqcd_agent.control.operations import select_successor, validate_phase_evide
 from lqcd_agent.control.strict_json import ControlIntegrityError
 
 from tests.processes import publication_client, reservation_client
+
+
+def test_scientific_json_floats_preserve_explicit_control_number_bounds():
+    from lqcd_agent.control.budget import resource_vector
+    from lqcd_agent.control.clock import Timestamp
+    from lqcd_agent.control.strict_json import canonical_bytes, loads, number
+    value = {"fits": [{"errors": [1e20, -float(2**60), 1e-300]}]}
+    encoded = canonical_bytes(value)
+    assert loads(encoded) == value
+    assert canonical_bytes(loads(encoded)) == encoded
+    assert loads(json.dumps(value), canonical=False) == value
+    assert all(type(item) is float for item in loads(encoded)["fits"][0]["errors"])
+    for amount in (1e20, float(2**60)):
+        with pytest.raises(ControlIntegrityError):
+            number(amount)
+        with pytest.raises(ControlIntegrityError):
+            Timestamp("deterministic_harness", amount, 0)
+        with pytest.raises(ControlIntegrityError):
+            Timestamp("deterministic_harness", 0, amount)
+        with pytest.raises(ControlIntegrityError):
+            resource_vector({"llm_calls": 0, "tool_calls": 0, "verification_commands": 0,
+                             "active_seconds": amount})
+
+
+def test_scientific_json_still_rejects_nonfinite_values_and_unsafe_integers():
+    from lqcd_agent.control.strict_json import canonical_bytes, loads
+    for value in (float("nan"), float("inf"), -float("inf"), 2**53, -(2**53)):
+        with pytest.raises(ControlIntegrityError):
+            canonical_bytes({"fits": [{"error": value}]})
+    for raw in (b'{"error":NaN}', b'{"error":Infinity}', b'{"error":-Infinity}',
+                b'{"error":1e309}', b'{"error":-1e309}', b'{"sample_id":9007199254740992}',
+                b'{"error":1e20,"error":1}'):
+        with pytest.raises(ControlIntegrityError):
+            loads(raw, canonical=False)
 
 
 @pytest.fixture
@@ -74,6 +110,133 @@ def test_operation_lease_fences_old_epoch_and_queries_do_not_renew(output_root):
         assert not called
     finally:
         coordinator.close()
+
+
+@pytest.fixture
+def invocation_host(output_root):
+    from lqcd_agent.control.capabilities import InvocationLeases
+    from lqcd_agent.control.interfaces import ActorContext, ControlPlane, StartRunRequest
+    from lqcd_agent.control.strict_json import digest
+    clock = FakeClock(100, 0)
+    with closing(Coordinator(output_root, clock=clock)) as coordinator:
+        plane = ControlPlane(coordinator, worker_id="decode-fixture")
+        inputs = {"root_goal": {"goal": "Exercise actual invocation authority without a model."},
+                  "input_snapshot": {"kind": "offline_control_fixture"}}
+        result = plane.start_run(StartRunRequest("case", inputs, digest(inputs), "decode-fixture"),
+                                 actor=ActorContext("operator", "human", ("start",)))
+        capability_id = result["result"]["capability_id"]
+        yield coordinator, clock, InvocationLeases(coordinator), capability_id
+
+
+def test_invocation_reads_isolate_mutation_and_observe_fresh_raw_authority(invocation_host):
+    from lqcd_agent.control.strict_json import canonical_bytes, loads
+    coordinator, _, leases, capability_id = invocation_host
+    revision, raw = coordinator.connection.execute(
+        "SELECT revision,value FROM invocation_capabilities WHERE capability_id=?", (capability_id,)).fetchone()
+    original = loads(raw)
+    first_revision, first = leases.get(capability_id)
+    assert first_revision == revision and first == original
+    first["authorization"]["identity"]["attempt_id"] = "mutated-first-copy"
+    first["authorization"]["projection"]["budget"]["dimensions"]["active_seconds_per_attempt"]["remaining"] = -1
+    _, second = leases.get(capability_id)
+    assert second == original
+    second["authorization"]["identity"]["attempt_id"] = "mutated-hit-copy"
+    assert leases.get(capability_id) == (revision, original)
+
+    def replace(value):
+        with coordinator.transaction() as db:
+            db.execute("UPDATE invocation_capabilities SET value=? WHERE capability_id=?", (value, capability_id))
+    changed = deepcopy(original)
+    changed["state"] = "uncertain"
+    replace(canonical_bytes(changed))
+    assert leases.get(capability_id) == (revision, changed)
+    changed = deepcopy(original)
+    changed["authorization"]["identity"]["attempt_id"] = "foreign-attempt"
+    replace(canonical_bytes(changed))
+    for _ in range(2):
+        with pytest.raises(ControlIntegrityError, match="Invocation authorization changed"):
+            leases.get(capability_id)
+    replace(raw[:-1] + b',"state":"unclaimed"}')
+    with pytest.raises(ControlIntegrityError, match="Duplicate JSON key"):
+        leases.get(capability_id)
+    replace(raw)
+    assert leases.get(capability_id) == (revision, original)
+
+    # Raw bytes stay identical while the authoritative SQL revision changes.
+    with coordinator.transaction() as db:
+        db.execute("UPDATE invocation_capabilities SET revision=revision+1 WHERE capability_id=?", (capability_id,))
+    assert leases.get(capability_id) == (revision + 1, original)
+    with pytest.raises(ControlIntegrityError, match="Invocation revision conflict"):
+        with coordinator.transaction() as db:
+            leases._save(db, capability_id, revision, deepcopy(original))
+    assert leases.get(capability_id) == (revision + 1, original)
+
+
+@pytest.mark.parametrize("boundary,lease_seconds", [("expires_at", 5), ("deadline", 2000)])
+def test_decoded_invocation_does_not_cache_live_fencing(invocation_host, boundary, lease_seconds):
+    coordinator, clock, leases, capability_id = invocation_host
+    worker = "decode-fixture"
+    leases.acquire(capability_id, worker, expected_epoch=0, lease_seconds=lease_seconds)
+    leases.start_intent(capability_id, worker, 1)
+    leases.publish_started(capability_id, worker, 1)
+    leases.require_effect_authority(capability_id, worker, 1)
+    before_revision, before = leases.get(capability_id)
+    assert leases.get(capability_id) == (before_revision, before)
+    clock.advance(before[boundary] - clock.now().monotonic_seconds)
+    with pytest.raises(ControlIntegrityError, match="Stale or expired invocation lease"):
+        leases.require_effect_authority(capability_id, worker, 1)
+    assert leases.get(capability_id) == (before_revision, before)
+    assert before["invocation_epoch"] == 1 and before["deadline"] <= 900
+
+
+def test_invocation_control_times_reject_large_floats_without_revision_changes(invocation_host):
+    from lqcd_agent.control.strict_json import loads
+    coordinator, _, leases, capability_id = invocation_host
+    revision, raw = coordinator.connection.execute(
+        "SELECT revision,value FROM invocation_capabilities WHERE capability_id=?", (capability_id,)).fetchone()
+    original = loads(raw)
+    assert leases.get(capability_id) == (revision, original)
+    for path in (("deadline",), ("expires_at",), ("updated_at", "wall_seconds"),
+                 ("updated_at", "monotonic_seconds")):
+        changed = deepcopy(original)
+        target = changed
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = 1e100
+        with coordinator.transaction() as db:
+            db.execute("UPDATE invocation_capabilities SET value=? WHERE capability_id=?",
+                (json.dumps(changed, sort_keys=True, separators=(",", ":")).encode(), capability_id))
+        try:
+            with pytest.raises(ControlIntegrityError, match="out-of-range number"):
+                leases.get(capability_id)
+        finally:
+            with coordinator.transaction() as db:
+                db.execute("UPDATE invocation_capabilities SET value=? WHERE capability_id=?", (raw, capability_id))
+        assert leases.get(capability_id) == (revision, original)
+
+
+def test_control_operation_timestamps_reject_large_floats_at_read(invocation_host):
+    from lqcd_agent.control.strict_json import loads
+    coordinator, _, leases, capability_id = invocation_host
+    _, capability = leases.get(capability_id)
+    operation_id = capability["authorization"]["producer_operation_id"]
+    original = coordinator.get(operation_id)
+    for column in ("created_at", "updated_at"):
+        raw = coordinator.connection.execute(
+            "SELECT " + column + " FROM control_operations WHERE operation_id=?", (operation_id,)).fetchone()[0]
+        for field in ("wall_seconds", "monotonic_seconds"):
+            changed = loads(raw)
+            changed[field] = 1e100
+            with coordinator.transaction() as db:
+                db.execute("UPDATE control_operations SET " + column + "=? WHERE operation_id=?",
+                    (json.dumps(changed, sort_keys=True, separators=(",", ":")).encode(), operation_id))
+            try:
+                with pytest.raises(ControlIntegrityError, match="out-of-range number"):
+                    coordinator.get(operation_id)
+            finally:
+                with coordinator.transaction() as db:
+                    db.execute("UPDATE control_operations SET " + column + "=? WHERE operation_id=?", (raw, operation_id))
+            assert coordinator.get(operation_id) == original
 
 
 def test_exact_publication_rejects_conflict_partial_and_link(output_root):

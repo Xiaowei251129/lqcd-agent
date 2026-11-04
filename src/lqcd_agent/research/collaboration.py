@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 
 from agents.agent_output import AgentOutputSchema, AgentOutputSchemaBase
 from agents.exceptions import ModelBehaviorError, ModelRefusalError
+from agents.strict_schema import ensure_strict_json_schema
 from pydantic import BaseModel, ConfigDict, StringConstraints
 from openai import APIError
 
@@ -91,8 +92,8 @@ class ProposalDiscussion(AgentOutputSchemaBase):
         proposal = deepcopy(self.schema['schema'])
         discussion = Discussion.model_json_schema()
         definitions = {**proposal.pop('$defs', {}), **discussion.pop('$defs', {})}
-        return {'type': 'object', 'properties': {'proposal': proposal, 'discussion': discussion},
-                'required': ['proposal', 'discussion'], 'additionalProperties': False, '$defs': definitions}
+        return ensure_strict_json_schema({'type': 'object', 'properties': {'proposal': proposal, 'discussion': discussion},
+                'required': ['proposal', 'discussion'], 'additionalProperties': False, '$defs': definitions})
 
     def validate_json(self, json_str):
         try:
@@ -132,8 +133,15 @@ ROLE_POLICY = (
     'for the structured conclusion. For a generated program, the Host verifies the frozen dataset and merges '
     'the frozen generated_program.parameters into the JSON passed as argv[1]; neither role nor user '
     'needs to edit the original dataset to supply those parameters. During planning, pending coding and '
-    'numerical results do not prevent a fully specified implementation plan. '
+    'numerical results do not prevent a fully specified implementation plan. Use need_information during planning '
+    'only for an actual prerequisite that prevents implementation. Questions awaiting results from this Run remain '
+    'unresolved implementation checks; their issue status, including an inherited blocked status, does not itself '
+    'prevent planning or assert that the questions have been answered. '
 )
+
+
+def _issue_id(item):
+    return item['id'] or 'issue-'+digest({'question': item['question']})[:20]
 
 
 def _merge_issues(previous, proposed, *, known_evidence=frozenset(), known_questions=None):
@@ -143,7 +151,7 @@ def _merge_issues(previous, proposed, *, known_evidence=frozenset(), known_quest
         item = dict(value)
         if not item['question'].strip():
             raise ModelBehaviorError('Research issues require specific questions')
-        identifier = item['id'] or 'issue-'+digest({'question': item['question']})[:20]
+        identifier = _issue_id(item)
         if item['id'] and identifier not in questions:
             raise ModelBehaviorError('A new issue cannot invent a Host issue id')
         if identifier in questions and item['question'] != questions[identifier]:
@@ -180,9 +188,10 @@ def _prior_issues(context, plan=None):
         'evidence_references': [], 'status': 'open'} for question in criteria])
 
 
-def _plan_checks(proposal, brief, context):
+def _plan_checks(proposal, brief, context, issues):
     checks = [*proposal['method_steps'], *brief['discriminating_checks'], *brief['success_criteria'],
-              *(context.get('remediation') or {}).get('success_criteria', [])]
+              *(context.get('remediation') or {}).get('success_criteria', []),
+              *(item['question'] for item in issues if item['status'] != 'addressed')]
     if any(type(item) is not str or not item.strip() or len(item) > 4096 for item in checks):
         raise ModelBehaviorError('Every scientific implementation criterion must be nonempty and at most 4096 characters')
     proposal['method_steps'] = list(dict.fromkeys(item.strip() for item in checks))
@@ -237,12 +246,14 @@ class _RoleProvider:
             f'Your output allowance is {self.runtime.max_output_tokens} tokens including reasoning. '
             'Keep the final JSON concise: state actionable checks and unresolved questions without '
             'repeating the supplied requirements or evidence catalog.')
+        remaining_seconds = self.meter.remaining_seconds()
+        allowance = self.meter.role_allowance(max_turns=max_turns, reserve_calls=reserve_calls,
+            count_required=self.runtime._client is not None, seconds=remaining_seconds)
         async def invoke():
-            remaining_seconds = self.meter.remaining_seconds()
             return await asyncio.wait_for(self.runtime.run(role=role, instructions=instructions,
                 input=input, tools=[tool for tool in tools if role == 'reviewer' or tool.name != 'review_asset'],
                 output_type=output_type, max_turns=max_turns,
-                observer=self.meter), timeout=remaining_seconds)
+                observer=self.meter, allowance=allowance), timeout=remaining_seconds)
         return self.runner.run(invoke())
 
     def generate(self, request):
@@ -276,6 +287,7 @@ class _RoleProvider:
         # Historical resolutions authorize id reuse, not inclusion or current resolution.
         known_questions = {item['id']: item['question']
                            for item in self.context.get('project_history', {}).get('resolved', [])}
+        plan_prerequisites = set()
         def merge(discussion):
             proposed = list(discussion['issues'])
             if discussion['decision'] == 'need_information':
@@ -289,8 +301,11 @@ class _RoleProvider:
             elif discussion['decision'] == 'revise' and not proposed:
                 proposed.append({'id': '', 'question': discussion['summary'], 'response': None,
                     'evidence_references': [], 'status': 'open'})
-            return _merge_issues(issues, proposed, known_questions=known_questions,
+            merged = _merge_issues(issues, proposed, known_questions=known_questions,
                 known_evidence=_known_evidence(self.context, request.context_sources, self.meter.events))
+            if discussion['decision'] == 'need_information':
+                plan_prerequisites.update(_issue_id(item) for item in proposed if item['status'] == 'blocked')
+            return merged
         from .history import project_state_view
         history = self.context.get('project_history')
         project_state = project_state_view(history) if history is not None else None
@@ -315,7 +330,7 @@ class _RoleProvider:
             proposal, discussion = final.output['proposal'], final.output['discussion']
             issues = merge(discussion)
             exchanges.append({'role': 'postdoc', **deepcopy(final.output)})
-            _plan_checks(proposal, brief.output, self.context)
+            _plan_checks(proposal, brief.output, self.context, issues)
         else:
             # The external reviewer receives the evidence packet, never a fresh PI verdict or synthesis.
             review = self._run('reviewer', ROLE_POLICY+'\nIndependently criticize the method and evidence. '
@@ -334,7 +349,12 @@ class _RoleProvider:
             exchanges.append({'role': 'pi', 'discussion': discussion})
         challenges = [item['question'] for item in issues if item['status'] != 'addressed']
         decision = discussion['decision']
-        if any(item['status'] == 'blocked' for item in issues):
+        # Planning produces evidence for inherited questions. Only a prerequisite
+        # explicitly requested by a current need_information decision prevents
+        # that implementation; the issue status alone is not a readiness decision. Review
+        # still needs an attributable answer for every retained blocked question.
+        if any(item['status'] == 'blocked' and
+               (self.node != 'method_planner' or item['id'] in plan_prerequisites) for item in issues):
             decision = 'need_information'
         if decision != 'recommend_proceed' and not challenges:
             require(discussion['summary'].strip(), 'A revision needs a specific question or explanation')
