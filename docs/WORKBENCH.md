@@ -34,11 +34,19 @@ The private `.runtime/workbench-host.json` stores only a Host locator. Run histo
 
 Create a Project with its question and constraints. Starting configuration is optional; the **Data file**, **Data provenance** and **Scientific Python** fields populate a partial configuration. Declare whether the input is measured, resampled or synthetic; provenance has no default. Enable live research and start an investigation. PI/Postdoc first receive a Host-generated profile of the declared data and can consult the local library or literature. A supported prepared contract automatically starts the formal analysis. The prepared configuration is retained as evidence, leaving the user's Project inputs unchanged.
 
-The preparation panel distinguishes `ready` and `needs_information` from a scientific conclusion. Missing prerequisites appear as concrete questions. Supply a scientific reply through **Join the research**. For missing data paths, provenance, interpreter or other structured metadata, use **Edit research inputs**; free text does not silently fill those fields. Then use **Continue research**. That explicit action inherits the preparation's original task budget and deadline. It cannot replenish resources, change model authorization or restart the old Run. Once the original task expires or is exhausted, **Start a new investigation** explicitly starts a separate task. Preparation and clarification each consume one of the existing four Run slots; no lease is kept alive while waiting for a person.
+The Project overview groups preparation, clarification, formal analysis and follow-up Runs by their shared research task. Select a step to inspect its frozen inputs and state. A ready preparation links to its formal analysis once the child has been recorded.
+
+For `needs_information`, use **Reply** at the question to record a scientific answer. Use **Edit research inputs** for the data file, provenance, interpreter or other structured metadata and save the Project version. **Continue research** uses the original task's remaining quota and deadline. Preparation and clarification each use one of the four Run slots. Use **Start a new investigation** from the Project overview to start a separate budget.
 
 Ordinary comments never dispatch a model. If the needed facts are unavailable, the preparation remains inspectable without requiring human approval. Unsupported input formats require an explicit supported data contract; the interface does not upload or reinterpret arbitrary files automatically.
 
 ## Optional scientific participation
+
+In a formal analysis, open **Results**. C2 shows the actual fit windows, ground-state energies, uncertainties, χ²/dof and replica counts. Select a plotted point or table row to inspect its failed sample IDs. Normalization shows the real and imaginary components and the stored percentile summaries. Replica observables use their declared quantities, units and sampling groups where captured.
+
+**View source record** opens the registered numerical output. **Discuss this record** attaches its digest and identifies the selected row in your scientific input. Use **Review** to follow recorded questions and responses. A source that resolves uniquely in this Run opens directly. The input history also opens evidence by the digest originally cited, including from the Project overview.
+
+When a Project has a second completed formal analysis, open **Compare analyses** and choose it. The identity table shows the captured inputs, contract and output identities. Numerical rows appear together only when the required comparison identities match. Missing identities, different definitions and unmatched rows stay visible. A side-by-side comparison makes no statistical or physics judgment.
 
 Select a Project and record a scientific comment, question or evidence reference. Input is Project-wide by default, or can be bound to the selected Run and observed execution head. Evidence entries use registered Project SHA-256 references; arbitrary paths and fabricated member IDs are rejected. The server stamps operator attribution and binds the current Project version. Inputs have immutable content-addressed records, a verified chain and original-key replay; they never mutate control logs or grant authority.
 
@@ -49,6 +57,8 @@ PI/Reviewer receive applicable contributions at the next safe research attempt, 
 Refreshing restores navigation; restarting HTTP reuses the private Host pointer and operation history. The driver survives HTTP shutdown. A fully admitted, unstarted invocation can continue. Started or partially published work without a verified checkpoint needs its original control recovery and is not blindly invoked again. Coordinator schema 3 rejects old Hosts; use original supported runtimes for their original authority, with no in-place migration.
 
 During publication, inspection can be unavailable rather than asserting a stale Run status. Actions stay disabled until a complete checkpoint verifies. Unsafe/unverifiable Hosts are not replaced. An actually missing Host permits a new managed Host for new work, while saved Project evidence remains readable without execution authority.
+
+An open browser polls verified activity and budgets. It reloads scientific detail when the artifact revision changes. Reading a preview verifies the requested bytes again. Unsent scientific drafts survive polling and switching between Runs within the tab. Archived records expose their captured Run budget and explicitly identify the unavailable live shared-task balance.
 
 Control submissions retain exact business payloads and operation keys. Reconnection reconciles the original operation before repeating that same intent/key. A replacement Host cannot consume an old pending control request. A new stale action or different content under an existing key is rejected. Scientific contributions use their own original-key record, without masquerading as control operations.
 
@@ -71,6 +81,7 @@ All endpoints bind to loopback and validate exact Host/Origin plus a per-server 
 | `POST /api/runs` | Admit a configured case |
 | `GET /api/operations/{key}` | Reconcile an original control action |
 | `GET /api/runs/{host}/{case}/{run}` | Read-only control/scientific view |
+| `GET /api/projects/{id}/runs/{key}` | Verified live or captured Project Run. Either Run view accepts `?details=false` for activity and its detail revision |
 | `GET …/evidence/{id}` | Verified registered text member, at most 4 MiB |
 | `POST …/respond` | Original scoped authorization response |
 | `POST …/cancel` | Original Pause cancellation |

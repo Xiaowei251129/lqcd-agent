@@ -23,6 +23,8 @@ The workbench binds to `127.0.0.1`. CLI, workbench and scientific cases use the 
 
 Create Projects in the workbench or with `lqcd-agent project-create`. Each Run freezes its project version; plans, code, numerical results and questions accumulate as verified project evidence. `library/wiki`, `library/skills` and `library/methods` begin empty. They never import your private wiki. Research agents can propose and independently review scoped assets. Reviewed methods additionally require actual Host-executed independent calibration; operator review is optional and attributable.
 
+In the workbench, open a Project and select a research task to follow its preparation and linked analyses. From **Results**, select a fit window or observable to inspect its evidence, attach a question or compare completed analyses. See the [workbench guide](docs/WORKBENCH.md).
+
 Project research begins with PI/Postdoc preparation before the formal scientific Run. An executable configuration is optional: supply the question, constraints, a workspace-relative data path and scientific Python, or start with a question alone. The Host profiles only declared data and records missing inputs. The roles can read literature and local evidence, identify assumptions and produce a supported executable contract. A ready preparation automatically starts scientific work; concrete missing prerequisites remain visible questions without a mandatory human approval or an open execution lease.
 
 ```bash

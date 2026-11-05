@@ -102,6 +102,8 @@ Current Run section IDs belong to `read_context`; Project member hashes belong t
 
 Generated Analysis publishes its complete `analysis_outputs/generated_result.json` as an immutable member alongside `run_result.json` metadata. The Host freezes the executed JSON bytes and the prepared output path before invoking the Agent. This replaces the duplicate metadata output wrapper and makes numerical comparisons, covariance diagnostics and replicas available through the existing evidence catalog and reader.
 
+For C2 review, the Host gives both Reviewer and PI the exact read identifier and SHA-256 of the current Analysis result when its registered producer and the diagnostic witness agree. Reading that member checks the path and digest and returns up to 48,000 characters with an explicit continuation offset. The role trace records the pages actually returned.
+
 A selected reviewed method version is atomically snapshotted with source, applicability and validation identity. Admission freezes it into read-only `reused/` inputs for the sole Code backend. Final generated analysis remains self-contained. Stale, contested or changed dependencies cannot enter under an old review. The operator CLI uses the same lifecycle; method registration takes `--family` and `--python`, and executes Host calibration.
 
 ## Evidence and numerical contracts

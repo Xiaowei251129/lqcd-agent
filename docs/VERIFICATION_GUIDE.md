@@ -5,6 +5,7 @@
 | Static correctness/import checks | `ruff check src tests scripts setup.py` |
 | Core protection | `python scripts/check.py` |
 | Affected behavior | `python scripts/check.py tests/path.py::test_name` |
+| Workbench presentation, citations and browser submission logic (Node 22.7+ for tests) | `node --test tests/workbench_*.mjs` |
 | Integration | `python scripts/check.py --integration` |
 | Numerical benchmark | `python -m lqcd_agent.benchmark` |
 | Deployment preflight | `lqcd-agent doctor` |

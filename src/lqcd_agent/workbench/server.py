@@ -97,7 +97,7 @@ def create_app(workbench=None):
 
     @app.get('/static/{name}')
     def asset(name: str):
-        if name not in ('app.js', 'style.css'):
+        if name not in ('app.js', 'style.css', 'task-desk.js', 'results.js', 'results.css', 'comparison.js', 'evidence.js', 'submissions.js'):
             raise RequestError('unknown_asset', 404)
         return FileResponse(STATIC/name)
 
@@ -150,8 +150,8 @@ def create_app(workbench=None):
         return await run_in_threadpool(service.start_project, project_id, await body(request))
 
     @app.get('/api/projects/{project_id}/runs/{run_key}')
-    def project_run(project_id: str, run_key: str):
-        return service.project_view(project_id, run_key)
+    def project_run(project_id: str, run_key: str, details: bool = True):
+        return service.project_view(project_id, run_key, details=details)
 
     @app.get('/api/projects/{project_id}/evidence/{identifier}')
     def project_evidence(project_id: str, identifier: str):
@@ -179,8 +179,8 @@ def create_app(workbench=None):
         return await run_in_threadpool(service.start, await body(request))
 
     @app.get('/api/runs/{host}/{case}/{run}')
-    def view(host: str, case: str, run: str):
-        return service.view(host, {'case_id': case, 'run_id': run})
+    def view(host: str, case: str, run: str, details: bool = True):
+        return service.view(host, {'case_id': case, 'run_id': run}, details=details)
 
     @app.get('/api/runs/{host}/{case}/{run}/evidence/{identifier}')
     def evidence(host: str, case: str, run: str, identifier: str):

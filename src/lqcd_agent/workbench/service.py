@@ -22,6 +22,11 @@ from lqcd_agent.research.library import Library
 from .worker import launch_worker, worker_active
 
 
+SUMMARY_SLOTS = {'method_plan.json': 'plan', 'run_result.json': 'analysis',
+                 'scientific_review_report.json': 'review', 'generated_result.json': 'analysis',
+                 'memory_update.json': 'terminal'}
+
+
 class RequestError(ValueError):
     def __init__(self, code, status=409):
         self.code, self.status = code, status
@@ -32,6 +37,46 @@ def key(value):
     if type(value) is not str or re.fullmatch(r'[A-Za-z0-9:_-]{1,128}', value) is None:
         raise RequestError('invalid_operation_key', 400)
     return value
+
+
+def comparison_basis(goal):
+    """Describe alignment from the sealed input contract, without reopening raw data."""
+    config = goal['case_config']
+    program = config['generated_program']
+    family = program['result_kind']
+    dataset = goal.get('dataset_snapshot') or {}
+    intake = goal.get('intake') or {}
+    profile = intake.get('data_profile', {}) if intake.get('dataset_snapshot') == dataset else {}
+    parameters = program.get('parameters', {})
+    values = {**profile.get('metadata', {}), **parameters}
+    dimensions = {'Dataset SHA-256': dataset.get('sha256'), 'Input source': config.get('source_kind')}
+    contracts = sorted(profile.get('observable_contracts', []), key=lambda item: item['id'])
+    groups = sorted(profile.get('replica_groups', []), key=lambda item: item['id'])
+    if family == 'c2':
+        dimensions.update({'Configuration IDs': profile.get('configuration_ids_sha256'), 'Quantity': 'aE0',
+            'Temporal extent': values.get('nt'), 'Spatial extent': values.get('ns'), 'Momentum': values.get('pz'),
+            'Bin size': values.get('binsize'), 'Bootstrap draws': values.get('bootstrap_samples'),
+            'Random seed': values.get('seed'), 'Fixed ground energy': values.get('fixed_ground_energy')})
+        if values.get('fixed_ground_energy') is True:
+            dimensions['Rest energy'] = values.get('ground_energy_at_rest')
+    elif family == 'normalization':
+        dimensions.update({'Replica keys': profile.get('replica_keys_sha256'), 'Quantity': 'dimensionless ratio',
+            'Target momentum': values.get('target_pz'), 'Transverse separation': values.get('target_bT'),
+            'Omit reference': values.get('omit_reference')})
+    elif family == 'replica_observables':
+        dimensions.update({'Definitions, units and kinematics': digest(contracts) if contracts else None,
+                           'Replica groups and sample IDs': digest(groups) if groups else None})
+    else:
+        dimensions['Supported numerical contract'] = None
+    # Windows and longitudinal separations are aligned per result row in the UI.
+    extra = {k: v for k, v in parameters.items() if k not in
+             ('nt', 'ns', 'pz', 'binsize', 'bootstrap_samples', 'seed', 'fixed_ground_energy',
+              'ground_energy_at_rest', 'target_pz', 'target_bT', 'omit_reference', 'tmins', 'tmax', 'bz_values')}
+    if extra:
+        dimensions['Other parameter values'] = digest(extra)
+    return {'family': family, 'dimensions': dimensions,
+            'alignment_sha256': digest([family, dimensions]) if None not in dimensions.values() else None,
+            'observable_contracts': contracts, 'replica_groups': groups}
 
 
 class Workbench:
@@ -128,41 +173,43 @@ class Workbench:
         return self.projects.contribute(project_id, **body)
 
     def project_runs(self, project_id):
-        return [{key: value for key, value in self._project_record(row).items()
-                 if key not in ('state', 'evidence')} for row in self.projects.runs(project_id)]
+        return [self._project_record(row) for row in self.projects.runs(project_id)]
 
     def _project_record(self, manifest):
-        return {**manifest, 'project_run_key': digest({'host': manifest['host'], **manifest['run_locator']}),
+        return {**{k: v for k, v in manifest.items() if k not in ('state', 'evidence')},
+                'project_run_key': digest({'host': manifest['host'], **manifest['run_locator']}),
                 'host_available': not self._host_missing(manifest['host'])}
 
-    def project_view(self, project_id, run_key):
-        manifest = next((row for row in self.projects.runs(project_id)
-                         if digest({'host': row['host'], **row['run_locator']}) == run_key), None)
-        if manifest is None:
-            raise RequestError('unknown_project_run', 404)
-        if not self._host_missing(manifest['host']):
-            result = self.view(manifest['host'], manifest['run_locator'])
+    def project_view(self, project_id, run_key, *, details=True):
+        manifest = self.projects.run(project_id, run_key)
+        record = self._project_record(manifest)
+        if record['host_available']:
+            result = self.view(manifest['host'], manifest['run_locator'], details=details)
+            require(result['project_id'] == project_id, 'Live Run belongs to another Project')
             result.update(project_id=project_id, project_run_key=run_key, archived=False)
             return result
         # Saved evidence has no control authority even when the recorded Run was paused.
         state = manifest['state']
+        result = {**record, 'archived': True, 'inspection': 'verified',
+            'detail_revision': 'capture-' + manifest['sha256'], 'task_binding': manifest.get('research_task'),
+            'research_task': None, 'budget': state['budget'], 'compatible': False, 'managed': False,
+            'can_advance': False, 'needs_recovery': False, 'active_pause': None, 'human_request': None,
+            'actions': {'cancel': False, 'respond': False}}
+        if not details:
+            return result
         entries = [{**item, 'id': item['sha256']} for item in manifest['evidence']]
         goal = next(item for item in entries if item['source'] == 'input' and item['name'] == 'root_goal.json')
         goal = loads(self.projects.evidence(project_id, goal['sha256']))
         attempts = {item['attempt_id']: {'id': item['attempt_id'], 'kind': {'plan': 'method_planner', 'analysis': 'analysis_engineer', 'review': 'scientific_reviewer', 'code': 'code_agent', 'approval': 'human_gate'}.get(item['slot'], item['slot']),
             'event': 'recorded', 'status': 'recorded'} for item in entries if item['attempt_id'] is not None}
-        result = {**self._project_record(manifest), 'archived': True, 'inspection': 'verified',
-            'goal': goal['goal'], 'live': goal['live'], 'workflow': goal['workflow'], 'compatible': False, 'managed': False,
-            'can_advance': False, 'needs_recovery': False, 'active_pause': None, 'human_request': None,
-            'synthetic': (goal.get('case_config') or {}).get('source_kind', 'synthetic_placeholder') == 'synthetic_placeholder',
-            'coding': goal['workflow'] == 'code' or bool((goal.get('case_config') or {}).get('generated_program')),
-            'actions': {'cancel': False, 'respond': False}, 'attempts': list(attempts.values()),
-            'artifacts': [], 'evidence': entries, 'summaries': {}, 'collaboration': [], 'budget': state['budget']}
+        result.update(goal=goal['goal'], live=goal['live'], workflow=goal['workflow'],
+            synthetic=(goal.get('case_config') or {}).get('source_kind', 'synthetic_placeholder') == 'synthetic_placeholder',
+            coding=goal['workflow'] == 'code' or bool((goal.get('case_config') or {}).get('generated_program')),
+            attempts=list(attempts.values()), artifacts=[], evidence=entries, summaries={}, collaboration=[])
         for item in entries:
-            name = Path(item['name']).name
-            if name in ('method_plan.json', 'run_result.json', 'scientific_review_report.json', 'generated_result.json', 'memory_update.json'):
-                value = loads(self.projects.evidence(project_id, item['sha256']), canonical=False)
-                self._summary(result, item, name, value)
+            self._summary(result, item, lambda entry: self.projects.evidence(project_id, entry['sha256']))
+        if 'result_evidence_id' in result:
+            result['comparison_basis'] = comparison_basis(goal)
         return result
 
     def project_member(self, project_id, identifier):
@@ -190,7 +237,23 @@ class Workbench:
                 'project_run_key': digest({'host': status['host'], **status['run_locator']})}
 
     @staticmethod
-    def _summary(result, item, name, value):
+    def _summary(result, item, read_member):
+        name = Path(item['name']).name
+        if name not in SUMMARY_SLOTS or item['slot'] != SUMMARY_SLOTS[name]:
+            return
+        if item['source'] == 'scientific':
+            path = Path('analysis_outputs', name) if name == 'generated_result.json' else Path(name)
+            if result.get('archived'):
+                locator = result['run_locator']
+                path = Path('domain', item['attempt_id'] or '', locator['case_id'], locator['run_id']) / path
+            if item['name'] != path.as_posix():
+                return
+        if name == 'generated_result.json':
+            if not item['current'] or item['source'] != 'scientific':
+                return
+            require('result_evidence_id' not in result, 'Ambiguous current formal numerical result')
+            result['result_evidence_id'] = item['id']
+        value = loads(read_member(item), canonical=False)
         if item['current'] and item['slot'] == 'plan' and name == 'method_plan.json':
             preparation = value.get('domain_result', {}).get('preparation')
             if preparation is not None:
@@ -309,29 +372,31 @@ class Workbench:
             'coding': goal['workflow'] == 'code' or bool((goal.get('case_config') or {}).get('generated_program')),
             'human_request': request, 'actions': {'cancel': host == self.host and pause is not None and pause['status'] == 'opened',
                 'respond': host == self.host and compatible and request is not None and pause['status'] == 'opened'},
-            'runtime_build': snapshot.fingerprint['application_build']}
-        if not details:
-            return result
-        index = loads(read_regular(snapshot.root/'artifact_index.json'))
-        result['artifacts'] = [{'slot': slot, 'status': p['status'], 'artifact_id': p['artifact_id']}
-                               for slot, p in index['current'].items() if p is not None]
-        failure = status.get('execution_failure', {})
-        result.update(scientific_outcome=failure.get('scientific_outcome'),
-                      decision_origin=failure.get('decision_origin'))
+            'runtime_build': snapshot.fingerprint['application_build'],
+            'detail_revision': digest([host, locator, snapshot.control['projection']['artifact_head']]),
+            'project_id': goal.get('project_id'), 'task_binding': goal.get('research_task'),
+            'budget': snapshot.state['budget']}
+        if 'execution_failure' in status:
+            failure = status['execution_failure']
+            result.update(scientific_outcome=failure['scientific_outcome'], decision_origin=failure['decision_origin'])
         attempts = {}
         for row in snapshot.records.values:
             if row['record_type'] == 'attempt':
                 attempts[row['attempt_id']] = {'id': row['attempt_id'], 'kind': row['attempt_kind'],
                     'event': row['event'], 'status': row['status']}
         result['attempts'] = list(attempts.values())
+        if not details:
+            return result
+        index = loads(read_regular(snapshot.root/'artifact_index.json'))
+        result['artifacts'] = [{'slot': slot, 'status': p['status'], 'artifact_id': p['artifact_id']}
+                               for slot, p in index['current'].items() if p is not None]
         entries = self.evidence(snapshot)
         result['evidence'] = [{k: v for k, v in item.items() if k not in ('path', 'scope')} for item in entries.values()]
         result['summaries'], result['collaboration'] = {}, []
         for item in entries.values():
-            if item['name'] in ('method_plan.json', 'run_result.json', 'scientific_review_report.json', 'analysis_outputs/generated_result.json', 'memory_update.json'):
-                value = loads(self._member(item['path'], item['scope'], item['sha256']), canonical=False)
-                self._summary(result, item, Path(item['name']).name, value)
-        result['budget'] = snapshot.state['budget']
+            self._summary(result, item, lambda entry: self._member(entry['path'], entry['scope'], entry['sha256']))
+        if 'result_evidence_id' in result:
+            result['comparison_basis'] = comparison_basis(goal)
         return result
 
     def operation(self, operation_key):

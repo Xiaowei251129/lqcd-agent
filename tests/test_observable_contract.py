@@ -121,3 +121,21 @@ print(json.dumps({'status':'ok','observables':[r],'assumptions':[],'limitations'
     assert scientific['run_locator'] == result['run_locator'] and scientific['workflow'] == 'scientific'
     assert not scientific['preliminary'] and not scientific['resumable']
     assert scientific['scientific_outcome'] == 'qualified' and scientific['decision_origin'] == 'system'
+    # A saved result must resolve the same formal producer and frozen observable
+    # definitions as a live view, even after the original Host is unavailable.
+    from lqcd_agent.workbench.service import Workbench
+    from tests.support import own
+    bench = Workbench(tmp_path)
+    own(host_root(bench.host))
+    key = next(row['project_run_key'] for row in bench.project_runs('ratios') if row['workflow'] == 'scientific')
+    live = bench.project_view('ratios', key)
+    monkeypatch.setattr(bench, '_host_missing', lambda host: True)
+    saved = bench.project_view('ratios', key)
+    assert live['comparison_basis'] == saved['comparison_basis']
+    assert saved['comparison_basis']['alignment_sha256']
+    assert saved['comparison_basis']['observable_contracts'] == payload['observable_contracts']
+    for view in (live, saved):
+        output = view['summaries']['generated_result.json']
+        source = next(row for row in view['evidence'] if row['id'] == view['result_evidence_id'] and
+                      row['source'] == 'scientific' and row['slot'] == 'analysis' and row['current'])
+        assert source['sha256'] == sha256(canonical_bytes(output)).hexdigest()

@@ -19,7 +19,7 @@ from lqcd_agent.llm.schemas import validate_proposal
 from lqcd_agent.science import ScientificAgent
 from .agent_runtime import ResearchAgentRuntime
 from .meter import ResearchMeter
-from .tools import build_tools
+from .tools import build_tools, c2_review_reference
 
 
 Nonempty = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -300,6 +300,14 @@ class _RoleProvider:
                                 **({'research_preparation': preparation} if preparation is not None else {})})
         instructions = '\n'.join(m['content'] for m in request.messages if m['role'] == 'system')
         inputs = [dict(m) for m in request.messages if m['role'] != 'system']
+        c2_output = c2_review_reference(self.agent.host, self.context, request.context_sources)
+        if c2_output is not None:
+            inputs.append({'role': 'user', 'content': json.dumps({'current_c2_analysis': {
+                'sha256': c2_output['sha256'], 'read_context': {'section': digest(c2_output), 'offset': 0},
+                'review': 'Start with this registered numerical result and the named method_plan section. '
+                          'Inspect the window comparisons, covariance diagnostics and fit limitations. '
+                          'If next_offset is present, request any additional pages needed for your conclusion. '
+                          'Distinguish evidence you inspected from unread material.'}})})
         if preparation is not None:
             inputs.append({'role': 'user', 'content': json.dumps({'research_preparation': {
                 key: preparation[key] for key in ('summary', 'assumptions', 'questions')},

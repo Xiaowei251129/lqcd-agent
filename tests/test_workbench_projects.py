@@ -1,15 +1,18 @@
 """Project HTTP metadata and saved evidence never acquire execution authority."""
+from contextlib import closing
 from hashlib import sha256
 import shutil
 from pathlib import Path
 
 import pytest
 
-from lqcd_agent.control.coordinator import read_regular
+from lqcd_agent.control.clock import FakeClock
+from lqcd_agent.control.coordinator import Coordinator, read_regular
+from lqcd_agent.control.research_budget import ResearchBudget
 from lqcd_agent.control.strict_json import loads
 from lqcd_agent.inspection import host_root, list_runs, read_snapshot
 from lqcd_agent.research.library import Library
-from lqcd_agent.workbench.service import Workbench
+from lqcd_agent.workbench.service import Workbench, comparison_basis
 from lqcd_agent.workbench.worker import step
 from tests.support import own
 from tests.test_workbench import client, workbench as workbench, url
@@ -102,11 +105,57 @@ def test_saved_project_evidence_survives_expired_host_without_resuming_it(workbe
     assert archived['archived'] and archived['actions'] == {'cancel': False, 'respond': False}
     assert not archived['resumable'] and not archived['can_advance'] and archived['active_pause'] is None
     assert archived['workflow'] == 'intake' and archived['preparation']['status'] == 'needs_information'
+    assert archived['task_binding'] == saved['research_task'] and archived['research_task'] is None
+    assert archived['budget'] == saved['state']['budget']
     assert http.get(evidence_url).json() == before.json()
+    with monkeypatch.context() as patch:
+        patch.setattr(restarted.projects, 'evidence', lambda *args: pytest.fail('light refresh opened a blob'))
+        light = http.get('/api/projects/spectroscopy/runs/'+listing[0]['project_run_key']+'?details=false').json()
+        assert light['detail_revision'] == archived['detail_revision'] and light['actions'] == archived['actions']
+        assert 'summaries' not in light and 'evidence' not in light
     assert http.post(url(status)+'/cancel', json={'pause': 'old', 'head': saved['execution_head'], 'key': 'stale'}).status_code == 403
     new = launch(http, project, 'new-investigation')
     assert new['host'] == restarted.host and new['run_locator'] != status['run_locator']
     assert len(http.get('/api/projects/spectroscopy/runs').json()) == 2
+
+
+def test_light_refresh_observes_shared_quota_without_reloading_evidence(workbench, monkeypatch):
+    http = client(workbench)
+    status = launch(http, create(http))
+    path = '/api/projects/spectroscopy/runs/' + status['project_run_key']
+    initial = http.get(path).json()
+    assert initial['task_binding']['id'] == initial['research_task']['id']
+    monkeypatch.setattr(workbench, 'evidence', lambda *args: pytest.fail('light refresh walked scientific sidecars'))
+    with closing(Coordinator(host_root(status['host']), clock=FakeClock(100, 0))) as coordinator:
+        quota = ResearchBudget(coordinator, status['run_locator'])
+        quota.reserve('workbench-quota-check', 13, 27)
+        light = http.get(path+'?details=false').json()
+        assert light['execution_head'] == initial['execution_head'] and light['detail_revision'] == initial['detail_revision']
+        assert light['research_task']['remaining_tokens'] == initial['research_task']['remaining_tokens'] - 40
+        assert 'evidence' not in light and 'summaries' not in light
+        quota.settle('workbench-quota-check', 17)
+        refreshed = http.get(url(status)+'?details=false').json()
+        assert refreshed['research_task']['remaining_tokens'] == initial['research_task']['remaining_tokens'] - 17
+        assert refreshed['detail_revision'] == initial['detail_revision']
+
+
+@pytest.mark.parametrize(('family', 'parameters', 'override'), [
+    ('c2', {'nt': 32, 'ns': 16, 'pz': 0, 'seed': 5, 'binsize': 2, 'bootstrap_samples': 30,
+            'fixed_ground_energy': False, 'tmins': [3]}, {'binsize': 4}),
+    ('normalization', {'target_pz': 2, 'target_bT': 1, 'omit_reference': False}, {'omit_reference': True}),
+])
+def test_comparison_needs_bound_sample_identity_and_effective_parameters(family, parameters, override):
+    dataset = {'path': 'raw_data/data.json', 'sha256': 'a' * 64}
+    program = {'result_kind': family, 'parameters': {}}
+    goal = {'case_config': {'generated_program': program, 'source_kind': 'synthetic'}, 'dataset_snapshot': dataset,
+            'intake': {'dataset_snapshot': dataset, 'data_profile': {'metadata': parameters,
+                        'configuration_ids_sha256': 'b' * 64, 'replica_keys_sha256': 'c' * 64}}}
+    original = comparison_basis(goal)['alignment_sha256']
+    assert original
+    program['parameters'] = override
+    assert original != comparison_basis(goal)['alignment_sha256']
+    goal['dataset_snapshot'] = {**dataset, 'sha256': 'd' * 64}
+    assert comparison_basis(goal)['alignment_sha256'] is None
 
 
 def test_project_evidence_requires_project_membership_and_unchanged_bytes(workbench):

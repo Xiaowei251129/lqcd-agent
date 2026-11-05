@@ -263,3 +263,50 @@ def test_mixed_tool_batch_exceeds_allowance_before_native_receives_effects(trial
             assert gateway.failed.is_set()
     value = loads(coordinator.connection.execute('SELECT value FROM external_operations').fetchone()[0])
     assert not value.get('native_tool_intents') and not value.get('numerical_trials')
+    trace = [json.loads(line) for line in (job/'context_requests.jsonl').read_bytes().splitlines()]
+    assert trace[-1]['diagnostic']['check'] == 'Native response exceeds original Code tool allowance'
+    assert b'must-not-exist' not in (job/'context_requests.jsonl').read_bytes()
+    charged = coordinator.connection.execute('SELECT charged_tokens FROM research_requests').fetchall()
+    assert [row[0] for row in charged] == [120]
+
+
+@pytest.mark.parametrize('conflict', [None, 'metadata', 'lifecycle', 'final_arguments', 'extra', 'index', 'call_id', 'arguments', 'duplicate_done', 'kind'])
+def test_streamed_native_tools_bind_exact_completed_items_without_duplicate_terminal_output(conflict):
+    from lqcd_agent.code_agent.context_gateway import _native_response, _response_tools
+    item = {'id':'fc1', 'type':'function_call', 'name':'run_numerical_trial', 'namespace':'mcp__lqcd_numerical',
+            'call_id':'call1', 'arguments':'{"purpose":"fixture","input_json":"{}"}', 'status':'completed'}
+    added = {key:value for key,value in item.items() if key != 'id'}
+    added.update(status='in_progress', arguments='')
+    events = [{'type':'response.created', 'response':{'id':'r', 'status':'in_progress'}},
+              {'type':'response.output_item.added', 'item':added, 'output_index':0},
+              {'type':'response.function_call_arguments.delta', 'item_id':'fc1', 'output_index':0, 'delta':item['arguments']},
+              {'type':'response.output_item.done','item':item, 'output_index':0},
+              {'type':'response.completed', 'response':{'id':'r','status':'completed'}}]
+    if conflict == 'metadata':
+        events[-1]['response']['output'] = [{**item, 'provider_metadata':'different'}]
+    if conflict == 'lifecycle':
+        events.insert(-1, {'type':'response.in_progress', 'response':{'id':'r','output':[
+            {**item, 'arguments':'{"different":"executable"}'}]}})
+    if conflict == 'final_arguments':
+        events[-1]['response']['output'] = [{**item, 'arguments':'{"different":true}'}]
+    if conflict == 'extra':
+        events[-1]['response']['output'] = []
+    if conflict == 'index':
+        events[2]['output_index'] = 1
+    if conflict == 'call_id':
+        added['call_id'] = 'replaced'
+    if conflict == 'arguments':
+        events[2]['delta'] = '{"not_admitted":true}'
+    if conflict == 'duplicate_done':
+        events.insert(-1, events[-2])
+    if conflict == 'kind':
+        item['type'] = 'unknown_call'
+    raw = b': keepalive\r\n' + b''.join(
+        b'data: '+json.dumps(event).encode()+b'\r\n\r\n' for event in events)
+    final, stream = _native_response(raw, 'text/event-stream; charset=utf-8')
+    if conflict not in (None, 'metadata'):
+        with pytest.raises(ValueError):
+            _response_tools(final, stream)
+    else:
+        assert _response_tools(final, stream) == [{key:item[key] for key in
+            ('id', 'type', 'call_id', 'name', 'namespace')} | {'arguments_sha256':digest(json.loads(item['arguments']))}]

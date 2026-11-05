@@ -62,7 +62,7 @@ def _profile(payload):
             keys = [(row['pz'], row['bT'], row['bz'], row['sample_id']) for row in records]
             profile['shapes']['records'] = [len(records)]
             profile['family_candidates'].append('normalization')
-            profile['replica_keys_sha256'] = digest(keys)
+            profile['replica_keys_sha256'] = digest([list(key) for key in keys])
             if len(set(keys)) != len(keys):
                 profile['issues'].append('Resolve duplicate normalization replica identities.')
             for name in ('target_pz', 'target_bT', 'bz_values'):

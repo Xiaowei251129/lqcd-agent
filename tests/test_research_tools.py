@@ -12,6 +12,41 @@ from lqcd_agent.research.tools import Literature, build_tools, page
 from tests.test_async_resources import resource_host as resource_host
 
 
+def test_c2_review_reads_only_the_witnessed_producer_in_larger_pages(tmp_path):
+    from hashlib import sha256
+    from lqcd_agent.research.tools import c2_review_reference
+    host = tmp_path/'host'
+    payload = json.dumps({'diagnostics':'x' * 51000})
+    checksum = sha256(payload.encode()).hexdigest()
+    refs = []
+    for attempt in ('attempt_000002', 'attempt_000003'):
+        relative = f'attempts/{attempt}/analysis_outputs/generated_result.json'
+        member = host/'case'/'run'/relative
+        member.parent.mkdir(parents=True)
+        member.write_text(payload)
+        refs.append({'artifact_id':attempt+':analysis', 'member':relative, 'sha256':checksum})
+    context = {'identity':{'case_id':'case','run_id':'run'}, 'current_evidence':refs}
+    witness = {'path':str(host/'domain/attempt_000003/case/run/analysis_outputs/generated_result.json'),
+               'field':'sha256', 'value':checksum}
+    sources = {'run_result':{'generated_execution':{'result_kind':'c2'}},
+               'review_evidence':{'generated_diagnostics':{'evidence':[witness]}}}
+    assert c2_review_reference(host,context,sources) == refs[1]
+    tool = next(t for t in build_tools(tmp_path,context,host=host,output_dir=tmp_path/'review',sources=sources)
+                if t.name=='read_context')
+    async def read(ref, offset=0):
+        args = json.dumps({'section':digest(ref),'offset':offset})
+        return await tool.on_invoke_tool(ToolContext(context=None,tool_name=tool.name,tool_call_id='read',
+                                                     tool_arguments=args), args)
+    previous = asyncio.run(read(refs[0]))
+    first = asyncio.run(read(refs[1]))
+    last = asyncio.run(read(refs[1],first['next_offset']))
+    assert previous['next_offset']==12000 and first['next_offset']>previous['next_offset']
+    assert first['total_chars']==len(payload) and last['next_offset'] is None
+    assert first['text']+last['text']==payload and first['sha256']==last['sha256']==checksum
+    witness['value']='0'*64
+    assert c2_review_reference(host,context,sources) is None
+
+
 def test_public_literature_reader_paginates_and_retains_exact_source(tmp_path):
     requests = []
     def transport(request):

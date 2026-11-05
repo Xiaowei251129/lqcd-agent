@@ -56,6 +56,7 @@ jobs:
           TMPDIR: ${{ runner.temp }}
       - run: |
           .venv/bin/ruff check src tests scripts setup.py
+          node --test tests/workbench_*.mjs
           .venv/bin/python scripts/generate_protocol.py --check
           .venv/bin/python scripts/build_manifest.py --check
           .venv/bin/python -m lqcd_agent.benchmark

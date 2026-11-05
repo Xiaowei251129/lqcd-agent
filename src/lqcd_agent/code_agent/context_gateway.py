@@ -61,123 +61,188 @@ def _validate(body, model):
     inspect(body.get('input'))
 
 
-def _response_tools(raw, content_type):
-    """Validate a whole bounded response before native can execute any of its items."""
+class _NativeCheck(ValueError):
+    """Only constant Host diagnostics, never provider content or tool arguments."""
+
+
+def _native_check(condition, reason):
+    if not condition:
+        raise _NativeCheck(reason)
+
+
+def _native_response(raw, content_type):
     events = []
     if content_type.split(';', 1)[0] == 'text/event-stream':
         for line in raw.splitlines():
             if not line or line.startswith((b'event:', b':', b'id:', b'retry:')):
                 continue
-            require(line.startswith(b'data:'), 'Unsupported native response framing')
+            _native_check(line.startswith(b'data:'), 'Unsupported native response framing')
             data = line[5:].strip()
             if data == b'[DONE]':
                 continue
             event = loads(data, canonical=False)
-            require(type(event) is dict and type(event.get('type')) is str, 'Invalid native response event')
+            _native_check(type(event) is dict and type(event.get('type')) is str, 'Invalid native response event')
             events.append(event)
-        completed = [event['response'] for event in events if event['type'] == 'response.completed']
-        require(len(completed) == 1, 'Native tool response did not complete exactly once')
-        response = completed[0]
+        completed = [event for event in events if event['type'] == 'response.completed']
+        _native_check(len(completed) == 1 and completed[0] is events[-1], 'Missing or conflicting final completion')
+        response = completed[0].get('response')
+        _native_check(type(response) is dict and all(
+            type(event.get('response')) is dict and event['response'].get('id') == response.get('id') for event in events
+            if event['type'] in ('response.created', 'response.queued', 'response.in_progress')),
+            'Native lifecycle response identity changed')
+        _native_check(not any(event['type'] in ('response.failed','response.incomplete') for event in events),
+                      'Conflicting native terminal events')
     else:
         response = loads(raw, canonical=False)
-    require(type(response) is dict and response.get('status') == 'completed' and
-            type(response.get('output')) is list, 'Incomplete native tool response')
-    items = response['output']
+    _native_check(type(response) is dict and response.get('status') == 'completed', 'Incomplete native response')
+    return response, events
+
+
+def _validate_effect(item, final, *, sealed):
+    kind = final.get('type')
+    if kind not in ('function_call', 'custom_tool_call', 'web_search_call'):
+        return
+    _native_check(all(item.get(key) == final.get(key) for key in ('call_id','namespace','name')),
+                  'Native tool identity changed')
+    field = {'function_call':'arguments','custom_tool_call':'input','web_search_call':'action'}[kind]
+    argument = item.get(field)
+    _native_check(argument == final.get(field) or not sealed and argument in (None, ''),
+                  'Native tool effect changed')
+    if sealed:
+        _native_check(item.get('status') in (None, 'completed') and final.get('status') in (None, 'completed'),
+                      'Incomplete native executable item')
+
+
+def _response_tools(response, events):
+    """Bind every executable item before native receives any response bytes."""
+    output = response.get('output')
+    # The pinned Responses protocol may omit the duplicate terminal output array.
+    # Only completed stream items can supply it; an explicitly empty array stays empty.
+    finished = {}
+    for event in events:
+        if event['type'] != 'response.output_item.done':
+            continue
+        position, item = event.get('output_index'), event.get('item')
+        _native_check(type(position) is int and position >= 0 and position not in finished and type(item) is dict,
+                      'Invalid or repeated completed native output position')
+        finished[position] = item
+    ordered = [finished[index] for index in sorted(finished)]
+    if output is None and events:
+        output = ordered
+    _native_check(type(output) is list and (not events or len(output) == len(ordered)),
+                  'Native streamed items missing from final output')
+    # Responses may enrich completed snapshots with non-executable metadata
+    # (including reasoning records). Bind effect-bearing fields, not presentation.
+    for streamed, final in zip(ordered, output):
+        _native_check(type(final) is dict and streamed.get('id') == final.get('id')
+                      and streamed.get('type') == final.get('type'), 'Final native output identity changed')
+        _validate_effect(streamed, final, sealed=True)
     indexed = {}
     tools = []
-    for item in items:
-        require(type(item) is dict and type(item.get('id')) is str and item['id'] not in indexed,
-                'Native response item identity is missing or repeated')
+    for item in output:
+        _native_check(type(item) is dict and type(item.get('id')) is str and bool(item['id'])
+                      and item['id'] not in indexed, 'Native item identity missing or repeated')
         indexed[item['id']] = item
         kind = item.get('type')
         if kind in ('message', 'reasoning', 'compaction'):
             continue
-        require(kind in ('function_call', 'custom_tool_call', 'web_search_call'),
-                'Unrecognized executable native response item')
+        _native_check(kind in ('function_call', 'custom_tool_call', 'web_search_call'),
+                      'Unrecognized executable native response item')
+        _native_check(item.get('status') in (None, 'completed'), 'Incomplete native executable item')
         identity = {key: item.get(key) for key in ('id', 'type', 'call_id', 'name', 'namespace')}
+        if kind in ('function_call', 'custom_tool_call'):
+            _native_check(type(item.get('call_id')) is str and bool(item['call_id']),
+                          'Native executable call identity missing')
         if kind == 'function_call':
-            require(type(item.get('arguments')) is str, 'Native tool arguments missing')
+            _native_check(type(item.get('arguments')) is str, 'Native tool arguments missing')
             identity['arguments_sha256'] = digest(loads(item['arguments'], canonical=False))
         elif kind == 'custom_tool_call':
-            require(type(item.get('input')) is str, 'Native custom tool input missing')
+            _native_check(type(item.get('input')) is str, 'Native custom tool input missing')
             identity['arguments_sha256'] = digest(item['input'])
         else:
             identity['arguments_sha256'] = digest(item.get('action'))
         tools.append(identity)
     call_ids = [item['call_id'] for item in tools if item['call_id']]
-    require(len(call_ids) == len(set(call_ids)), 'Native response repeated a tool call identity')
-    done = []
-    deltas = {}
+    _native_check(len(call_ids) == len(set(call_ids)), 'Native response repeated a tool call identity')
+    added, closed_positions, deltas = set(), set(), {}
+    argument_events = {'response.function_call_arguments.delta': ('function_call', 'arguments'),
+                       'response.function_call_arguments.done': ('function_call', 'arguments'),
+                       'response.custom_tool_call_input.delta': ('custom_tool_call', 'input'),
+                       'response.custom_tool_call_input.done': ('custom_tool_call', 'input')}
     for event in events:
         kind = event['type']
-        if kind in ('response.output_item.added', 'response.output_item.done'):
-            item = event.get('item', {})
-            expected = indexed.get(item.get('id'))
-            require(expected is not None and all(item.get(key) == expected.get(key)
-                for key in ('id', 'type', 'call_id', 'name', 'namespace')), 'Native streamed tool identity changed')
-            if kind.endswith('.done'):
-                require(item == expected and item['id'] not in done, 'Native streamed item changed or repeated')
-                done.append(item['id'])
-        elif kind in ('response.function_call_arguments.delta', 'response.custom_tool_call_input.delta'):
-            require(event.get('item_id') in indexed and type(event.get('delta')) is str,
-                    'Unbound native tool argument delta')
-            deltas[event['item_id']] = deltas.get(event['item_id'], '') + event['delta']
-        elif kind in ('response.function_call_arguments.done', 'response.custom_tool_call_input.done'):
-            item = indexed.get(event.get('item_id'), {})
-            field = 'arguments' if kind == 'response.function_call_arguments.done' else 'input'
-            require(event.get(field) == item.get(field), 'Native completed tool arguments changed')
-    for identifier, content in deltas.items():
-        item = indexed[identifier]
-        require(content == item.get('arguments' if item['type'] == 'function_call' else 'input'),
-                'Native streamed tool arguments changed')
-    if events:
-        require(set(done) == set(indexed), 'Native response omitted a completed item')
+        position = event.get('output_index')
+        if kind in ('response.created', 'response.queued', 'response.in_progress'):
+            # The SDK can replace even an already completed item from a lifecycle snapshot.
+            snapshot = event['response'].get('output')
+            if snapshot is None:
+                continue
+            _native_check(type(snapshot) is list, 'Invalid native lifecycle output')
+            for index, item in enumerate(snapshot):
+                expected = finished.get(index)
+                _native_check(type(item) is dict and expected is not None and
+                              item.get('type') == expected.get('type') and
+                              (item.get('id') == expected.get('id') or index not in closed_positions and
+                               item.get('id') is None and item.get('type') in ('function_call', 'custom_tool_call')),
+                              'Unbound native lifecycle output')
+                _validate_effect(item, expected, sealed=index in closed_positions)
+            continue
+        if kind == 'response.output_item.added' and event.get('item') is None:
+            continue
+        if kind not in ('response.output_item.added','response.output_item.done') and kind not in argument_events:
+            continue
+        _native_check(type(position) is int and position in finished and position not in closed_positions,
+                      'Unbound or closed native output position')
+        expected = finished[position]
+        if kind == 'response.output_item.added':
+            item = event.get('item')
+            _native_check(type(item) is dict and position not in added and
+                          all(item.get(key) == expected.get(key) for key in ('type','call_id','name','namespace'))
+                          and (item.get('id') == expected['id'] or item.get('id') is None and
+                               item['type'] in ('function_call', 'custom_tool_call')),
+                          'Native streamed tool identity changed')
+            if expected['type'] in ('function_call', 'custom_tool_call'):
+                field = 'arguments' if expected['type'] == 'function_call' else 'input'
+                initial = item.get(field)
+                if initial:
+                    _native_check(type(initial) is str, 'Invalid initial native tool arguments')
+                    deltas[position] = [initial]
+            added.add(position)
+        elif kind == 'response.output_item.done':
+            closed_positions.add(position)
+        else:
+            tool_kind, field = argument_events[kind]
+            _native_check(expected['type'] == tool_kind and event.get('item_id') == expected['id'],
+                          'Unbound native tool arguments')
+            if kind.endswith('.delta'):
+                chunk = event.get('delta')
+                _native_check(type(chunk) is str, 'Invalid native argument delta')
+                deltas.setdefault(position, []).append(chunk)
+            else:
+                _native_check(event.get(field) == expected[field], 'Native completed tool arguments changed')
+    for position, chunks in deltas.items():
+        item = finished[position]
+        _native_check(''.join(chunks) == item['arguments' if item['type'] == 'function_call' else 'input'],
+                      'Native streamed tool arguments changed')
     return tools
 
 
-class _UsageReader:
-    """Inspect only one bounded JSON/SSE record in memory; never persist model content."""
-    def __init__(self, content_type):
-        self.streaming = content_type.split(';', 1)[0] == 'text/event-stream'
-        self.buffer = bytearray()
-        self.complete, self.tokens, self.overflow = False, None, False
+def _usage_tokens(value):
+    usage = value.get('usage')
+    if type(usage) is dict:
+        fields = [usage.get(key) for key in ('input_tokens', 'output_tokens', 'total_tokens')]
+        if all(type(n) is int and n >= 0 for n in fields) and fields[0] + fields[1] == fields[2]:
+            return fields[2]
 
-    def _read(self, raw):
-        try:
-            value = loads(bytes(raw), canonical=False)
-        except ValueError:
-            return
-        if type(value) is not dict:
-            return
-        if self.streaming:
-            if value.get('type') != 'response.completed' or type(value.get('response')) is not dict:
-                return
-            value = value['response']
-        elif value.get('object') != 'response.compaction' and value.get('status') != 'completed':
-            return
-        self.complete = True
-        usage = value.get('usage')
-        if type(usage) is dict:
-            fields = [usage.get(key) for key in ('input_tokens', 'output_tokens', 'total_tokens')]
-            if all(type(n) is int and n >= 0 for n in fields) and fields[0] + fields[1] == fields[2]:
-                self.tokens = fields[2]
 
-    def feed(self, chunk):
-        if self.complete:
-            return
-        self.buffer.extend(chunk)
-        if self.streaming:
-            while b'\n' in self.buffer:
-                raw, _, remaining = self.buffer.partition(b'\n')
-                self.buffer = bytearray(remaining)
-                if not self.overflow and raw.startswith(b'data:'):
-                    self._read(raw[5:].strip())
-                self.overflow = False
-        if len(self.buffer) > 4 * 1024 * 1024:
-            self.buffer.clear()
-            self.overflow = True
-        if not self.streaming and not self.overflow:
-            self._read(bytes(self.buffer))
+def _compact_usage(raw, content_type):
+    # The pinned compact endpoint returns one JSON object, with optional status.
+    # Only a complete transport body can settle the reservation at known usage.
+    _native_check(content_type.split(';', 1)[0] == 'application/json', 'Invalid native compact response type')
+    value = loads(raw, canonical=False)
+    _native_check(type(value) is dict and value.get('object') == 'response.compaction' and
+                  ('status' not in value or value['status'] == 'completed'), 'Incomplete native compaction')
+    return _usage_tokens(value)
 
 
 class CodingContextGateway:
@@ -312,17 +377,17 @@ class CodingContextGateway:
             fence(db)
             value, _, _, task, _ = dispatch.model_authority(db)
             intents = value.setdefault('native_tool_intents', [])
-            require(not any(entry['ticket'] == ticket for entry in intents), 'Native tool response replayed')
-            require(not ({entry['id'] for entry in intents} & {entry['id'] for entry in tools}) and
+            _native_check(not any(entry['ticket'] == ticket for entry in intents), 'Native tool response replayed')
+            _native_check(not ({entry['id'] for entry in intents} & {entry['id'] for entry in tools}) and
                     not ({entry['call_id'] for entry in intents if entry['call_id']} &
                          {entry['call_id'] for entry in tools if entry['call_id']}), 'Native tool item replayed')
             maximum = value['prestart']['aggregate']['request']['maximum_charge']['tool_calls']
-            require(len(intents) + len(tools) + len(task['write_paths']) <= maximum,
+            _native_check(len(intents) + len(tools) + len(task['write_paths']) <= maximum,
                     'Native response exceeds original Code tool allowance')
             intents.extend({**item, 'ticket': ticket} for item in tools)
             previous = value['phase_revision']
             value['phase_revision'] += 1
-            require(db.execute('UPDATE external_operations SET revision=?,value=? '
+            _native_check(db.execute('UPDATE external_operations SET revision=?,value=? '
                 'WHERE external_operation_id=? AND revision=?', (value['phase_revision'], canonical_bytes(value),
                     value['producer_operation_id'], previous)).rowcount == 1, 'Native tool admission CAS lost')
 
@@ -401,7 +466,7 @@ class CodingContextGateway:
         raw = None
         tokens = None
         traced = False
-        phase = upstream_status = error_type = None
+        phase = upstream_status = error_type = native_reason = None
         resources = ExitStack()
         try:
             authorization = handler.headers.get_all('Authorization', [])
@@ -552,20 +617,28 @@ class CodingContextGateway:
                         raise _Rejected(response.status_code if response.status_code in (408, 409, 429) or
                                         response.status_code >= 500 else 422, 'context_upstream_request_failed')
                     content_type = response.headers.get('Content-Type', 'application/json')
-                    usage = _UsageReader(content_type)
-                    # Hold one bounded response until all tool effects have durable
-                    # admission. Native notifications are asynchronous and cannot
-                    # enforce a mixed shell/MCP batch's allowance before execution.
+                    # Hold metered responses until EOF. A prefix cannot prove usage, and
+                    # native may execute tools immediately on receipt of a streamed item.
                     buffered = None
-                    if budget is not None and handler.path == '/v1/responses':
-                        buffered = bytearray()
+                    if budget is not None:
+                        body_bytes = bytearray()
                         try:
                             for chunk in response.iter_raw():
-                                buffered.extend(chunk)
-                                require(len(buffered) <= MAX_WIRE_BYTES, 'Native response is oversized')
-                            tools = _response_tools(bytes(buffered), content_type)
-                            self._admit_tools(budget, fence, ticket, tools)
-                        except (ValueError, TypeError, KeyError, sqlite3.Error):
+                                body_bytes.extend(chunk)
+                                _native_check(len(body_bytes) <= MAX_WIRE_BYTES, 'Native response is oversized')
+                            buffered = bytes(body_bytes)
+                            phase = 'native_response_validation'
+                            if handler.path == '/v1/responses':
+                                final, events = _native_response(buffered, content_type)
+                                settle(_usage_tokens(final))
+                                tools = _response_tools(final, events)
+                                phase = 'native_tool_reservation'
+                                self._admit_tools(budget, fence, ticket, tools)
+                            else:
+                                settle(_compact_usage(buffered, content_type))
+                        except (ValueError, TypeError, KeyError, sqlite3.Error) as error:
+                            error_type = type(error).__name__
+                            native_reason = str(error) if isinstance(error, _NativeCheck) else None
                             raise _Rejected(422, 'context_native_tool_admission_failed') from None
                     handler.close_connection = True
                     handler.send_response(response.status_code)
@@ -573,15 +646,9 @@ class CodingContextGateway:
                     handler.send_header('Connection', 'close')
                     handler.end_headers()
                     response_started = True
-                    for chunk in ([bytes(buffered)] if buffered is not None else response.iter_raw()):
-                        usage.feed(chunk)
-                        # Settle before Codex can consume a completed SSE event.
-                        if usage.complete:
-                            settle(usage.tokens)
+                    for chunk in ([buffered] if buffered is not None else response.iter_raw()):
                         handler.wfile.write(chunk)
                         handler.wfile.flush()
-                    usage.feed(b'\n' if usage.streaming else b'')
-                    settle(usage.tokens if usage.complete else None)
             finally:
                 if ticket is not None and not settled:
                     self.generation_usage_unknown.set()
@@ -596,10 +663,13 @@ class CodingContextGateway:
                     'context_research_authority_or_quota_failed', 'context_native_tool_admission_failed') or (
                     error.message == 'context_upstream_request_failed' and not retryable):
                 self._fail(error.message)
-            if raw is not None and (not traced or error.message == 'context_upstream_request_failed'):
+            if raw is not None and (not traced or error.message in
+                    ('context_upstream_request_failed', 'context_native_tool_admission_failed')):
                 diagnostic = ({'phase': phase, 'upstream_status': upstream_status,
                     'error_type': error_type or type(error).__name__} if error.message in
-                    ('context_token_count_failed', 'context_upstream_request_failed') else None)
+                    ('context_token_count_failed', 'context_upstream_request_failed', 'context_native_tool_admission_failed') else None)
+                if native_reason is not None:
+                    diagnostic['check'] = native_reason
                 self._trace(handler.path, raw, tokens, error.message, diagnostic=diagnostic)
             if not response_started:
                 self._error(handler, error.code, error.message)

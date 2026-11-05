@@ -158,9 +158,10 @@ def test_scientific_codegen_delivers_real_output_to_autonomous_report(tmp_path,m
         def read_call(identifier, section_name, offset=0):
             return ResponseFunctionToolCall(type='function_call', name='read_context', call_id=identifier,
                 arguments=json.dumps({'section':section_name,'offset':offset}))
-        tools=build_tools(tmp_path,review_contexts[0],host=host_root(final['host']),output_dir=tmp_path/'sdk-read')
+        tools=build_tools(tmp_path,review_contexts[0],host=host_root(final['host']),output_dir=tmp_path/'sdk-read',
+            sources={'run_result': analysis['run_result'], 'review_evidence': review})
         model=ScriptedModel([[read_call('catalog','catalog')],
-            [read_call('first',section),read_call('last',section,12000)],
+            [read_call('formal',section)],
             [message('The complete Host numeric evidence is readable; this is not physics acceptance.')]])
         events=[]
         ResearchAgentRuntime(model,max_output_tokens=512).run_sync(**{
@@ -168,10 +169,9 @@ def test_scientific_codegen_delivers_real_output_to_autonomous_report(tmp_path,m
         responses={event['call_id']:ast.literal_eval(event['result']) if isinstance(event['result'],str)
                    else event['result'] for event in events if event['event']=='tool_end'}
         assert responses['catalog']['registered_evidence'][section]==reference
-        assert responses['first']['next_offset']==12000 and responses['last']['next_offset'] is None
-        assert (responses['first']['text']+responses['last']['text']).encode()==numeric_bytes
-        assert responses['first']['sha256']==responses['last']['sha256']==numeric_member['sha256']
-        assert loads((responses['first']['text']+responses['last']['text']).encode())['fits'][0]['E0_error']==1e20
+        assert responses['formal']['next_offset'] is None and responses['formal']['text'].encode()==numeric_bytes
+        assert responses['formal']['sha256']==numeric_member['sha256']
+        assert loads(responses['formal']['text'].encode())['fits'][0]['E0_error']==1e20
         numeric_path.write_bytes(b'changed')
         try:
             with pytest.raises(ControlIntegrityError,match='Research evidence changed'):

@@ -15,16 +15,36 @@ from .library import Library, valid_literature_url
 
 
 PAGE_CHARS = 12000
+# A production C2 window scan includes fit and covariance diagnostics for both models.
+C2_REVIEW_PAGE_CHARS = 48000
 MAX_PAPER_BYTES = 4 * 1024 * 1024
 
 
-def page(value, offset=0):
+def page(value, offset=0, *, size=PAGE_CHARS):
     require(type(offset) is int and offset >= 0, 'Invalid evidence offset')
     content = value if type(value) is str else canonical_bytes(value).decode()
     require(offset <= len(content), 'Evidence offset exceeds content')
-    return {'text': content[offset:offset+PAGE_CHARS], 'offset': offset,
-            'next_offset': offset+PAGE_CHARS if offset+PAGE_CHARS < len(content) else None,
+    return {'text': content[offset:offset+size], 'offset': offset,
+            'next_offset': offset+size if offset+size < len(content) else None,
             'total_chars': len(content), 'sha256': sha256(content.encode()).hexdigest()}
+
+
+def c2_review_reference(host, context, sources):
+    """Join the Host diagnostic's producer path and digest to this Run's registered Analysis copy."""
+    if ((sources.get('run_result') or {}).get('generated_execution') or {}).get('result_kind') != 'c2':
+        return None
+    diagnostic = (sources.get('review_evidence') or {}).get('generated_diagnostics') or {}
+    witnesses = {(row.get('path'), row.get('value')) for row in diagnostic.get('evidence', []) if row.get('field') == 'sha256'}
+    identity = context['identity']
+    for ref in context.get('current_evidence', []):
+        attempt, _, slot = ref['artifact_id'].rpartition(':')
+        member = Path('analysis_outputs/generated_result.json')
+        if slot != 'analysis' or ref['member'] != str(Path('attempts') / attempt / member):
+            continue
+        producer = Path(host) / 'domain' / attempt / identity['case_id'] / identity['run_id'] / member
+        if (str(producer), ref['sha256']) in witnesses:
+            return ref
+    return None
 
 
 class PaperText(HTMLParser):
@@ -108,6 +128,7 @@ def build_tools(workspace, context, *, host, output_dir, sources=None, write_sco
     root = host/context['identity']['case_id']/context['identity']['run_id']
     allowed = {digest(ref): ref for ref in context.get('current_evidence', [])}
     sections = dict(sources if sources is not None else context.get('research_sources', {}))
+    c2_output = c2_review_reference(host, context, sections)
     project_id = context.get('root_goal', {}).get('project_id')
     identity = context['identity']
     actor = 'system:' + '/'.join(str(value) for value in
@@ -211,7 +232,8 @@ def build_tools(workspace, context, *, host, output_dir, sources=None, write_sco
         require(target == target.resolve() and target.is_relative_to(root), 'Research evidence escaped Run')
         raw = read_regular(target)
         require(sha256(raw).hexdigest() == ref['sha256'], 'Research evidence changed')
-        return observe(page(raw.decode(), offset))
+        size = C2_REVIEW_PAGE_CHARS if ref == c2_output else PAGE_CHARS
+        return observe(page(raw.decode(), offset, size=size))
 
     @function_tool(failure_error_function=None)
     async def read_project_evidence(evidence_sha256: str | None = None, offset: int = 0) -> dict:

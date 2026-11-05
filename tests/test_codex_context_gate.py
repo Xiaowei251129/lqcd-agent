@@ -405,19 +405,32 @@ def native_producer(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize('chunk_size', [1, 19, 4096])
-def test_completed_sse_usage_is_read_from_chunked_private_records(chunk_size):
-    from lqcd_agent.code_agent.context_gateway import _UsageReader
-    event = {'type': 'response.completed', 'response': {'id': 'response-fixture',
-        'object': 'response', 'status': 'completed',
-        'usage': {'input_tokens': 100, 'output_tokens': 20, 'total_tokens': 120}}}
-    raw = ('event: response.completed\ndata: ' + json.dumps(event) + '\n\n').encode()
-    reader = _UsageReader('text/event-stream; charset=utf-8')
-    for offset in range(0, len(raw), chunk_size):
-        reader.feed(raw[offset:offset + chunk_size])
-    assert reader.complete and reader.tokens == 120
+def test_completed_sse_usage_is_read_from_chunked_private_records(native_producer, monkeypatch, chunk_size):
+    import httpx
+    from lqcd_agent.control.research_budget import ResearchBudget
+    coordinator, locator, _, job, request = native_producer
+    event = {'type': 'response.completed', 'response': {'id': 'response-fixture', 'object': 'response',
+        'status': 'completed', 'output':[], 'usage': {'input_tokens':100, 'output_tokens':20, 'total_tokens':120}}}
+    raw = ('data: '+json.dumps(event)+'\n\n').encode()
+    original = httpx.Response.iter_raw
+    monkeypatch.setattr(httpx.Response, 'iter_raw', lambda self: original(self, chunk_size=chunk_size))
+    with upstream(lambda path, body: count_response(100) if path.endswith('/input_tokens') else
+                  (200, raw, 'text/event-stream')) as (base, _):
+        settings = ApplicationSettings(api_key='offline-key', api_base=base)
+        with CodingContextGateway(settings, job, producer_authority=request['producer_authority'], task=request['task']) as gateway:
+            assert call(gateway, {'model':settings.coding_model,'input':'fixture'})[0] == 200
+    assert ResearchBudget(coordinator, locator).snapshot()['charged_tokens'] == 120
 
 
-def test_native_repeats_share_real_quota_and_failed_usage_is_not_refunded(native_producer):
+@pytest.mark.parametrize('truncated', [False, True])
+def test_native_repeats_share_real_quota_and_failed_usage_is_not_refunded(native_producer, monkeypatch, truncated):
+    import httpx
+    original = httpx.Response.iter_raw
+    def stream(self, *args, **kwargs):
+        yield from original(self, *args, **kwargs)
+        if truncated and self.request.url.path.endswith('/responses') and len(generations) == 1:
+            raise httpx.RemoteProtocolError('Incomplete test generation')
+    monkeypatch.setattr(httpx.Response, 'iter_raw', stream)
     from lqcd_agent.control.research_budget import ResearchBudget
     coordinator, locator, producer, job, request = native_producer
     generations = []
@@ -426,7 +439,7 @@ def test_native_repeats_share_real_quota_and_failed_usage_is_not_refunded(native
             return count_response(100)
         generations.append(json.loads(raw))
         if len(generations) == 1:
-            return 503, b'private failed body', 'application/json'
+            return (200 if truncated else 503), b'private failed body', 'application/json'
         result = {'type': 'response.completed', 'response': {'id': 'response-fixture',
             'object': 'response', 'status': 'completed', 'output': [], 'usage': {
                 'input_tokens': 100, 'output_tokens': 20, 'total_tokens': 120}}}
@@ -435,7 +448,7 @@ def test_native_repeats_share_real_quota_and_failed_usage_is_not_refunded(native
         settings = ApplicationSettings(api_key='offline-key', api_base=base)
         with CodingContextGateway(settings, job, producer_authority=request['producer_authority'],
                 task=request['task']) as gateway:
-            assert call(gateway, {'model': settings.coding_model, 'input': 'fixture'})[0] == 503
+            assert call(gateway, {'model': settings.coding_model, 'input': 'fixture'})[0] == (502 if truncated else 503)
             assert call(gateway, {'model': settings.coding_model, 'input': 'fixture'})[0] == 200
             assert call(gateway, {'model': settings.coding_model, 'input': 'fixture'})[0] == 422
             assert gateway.failed.is_set() and gateway.generation_usage_unknown.is_set()
@@ -530,7 +543,8 @@ def test_native_output_limit_is_a_real_pre_dispatch_bound(tmp_path, limit):
         assert received == []
 
 
-def test_native_compaction_is_charged_without_unsupported_output_field(native_producer):
+@pytest.mark.parametrize('response_kind', ['complete','incomplete','null_status','trailing','wrong_stream'])
+def test_native_compaction_is_charged_without_unsupported_output_field(native_producer, response_kind):
     from lqcd_agent.control.research_budget import ResearchBudget
     coordinator, locator, producer, job, request = native_producer
     def respond(path, raw):
@@ -539,16 +553,24 @@ def test_native_compaction_is_charged_without_unsupported_output_field(native_pr
         assert 'max_output_tokens' not in json.loads(raw)
         result = {'object': 'response.compaction', 'usage': {
             'input_tokens': 100, 'output_tokens': 10, 'total_tokens': 110}, 'output': []}
-        return 200, json.dumps(result).encode(), 'application/json'
+        if response_kind == 'wrong_stream':
+            event = {'type':'response.completed', 'response':{**result,'status':'incomplete'}}
+            return 200, ('data: '+json.dumps(event)+'\n\n').encode(), 'text/event-stream'
+        if response_kind in ('incomplete','null_status'):
+            result['status'] = 'incomplete' if response_kind == 'incomplete' else None
+        return 200, json.dumps(result).encode() + (b'{}' if response_kind == 'trailing' else b''), 'application/json'
     with upstream(respond) as (base, received):
         settings = ApplicationSettings(api_key='offline-key', api_base=base)
         with CodingContextGateway(settings, job, producer_authority=request['producer_authority'],
                 task=request['task']) as gateway:
-            assert call(gateway, {'model': settings.coding_model, 'input': []}, path='/responses/compact')[0] == 200
-            assert not gateway.failed.is_set()
+            status, _ = call(gateway, {'model': settings.coding_model, 'input': []}, path='/responses/compact')
+            assert status == (200 if response_kind == 'complete' else 422)
+            assert gateway.failed.is_set() == (response_kind != 'complete')
         assert len(received) == 2
     snapshot = ResearchBudget(coordinator, locator).snapshot()
-    assert snapshot['model_calls'] == 1 and snapshot['charged_tokens'] == 110
+    assert snapshot['model_calls'] == 1
+    assert snapshot['unknown_requests'] == int(response_kind != 'complete')
+    assert snapshot['charged_tokens'] == (110 if response_kind == 'complete' else 100 + CODE_OUTPUT_TOKEN_LIMIT)
 
 
 @pytest.mark.parametrize('terminal_status', ['failed', 'cancelled'])

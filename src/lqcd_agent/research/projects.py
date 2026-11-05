@@ -387,6 +387,13 @@ class ProjectStore(WorkspaceFiles):
                 return []
             return [self._run_manifest(project_id, path.name) for path in sorted(root.iterdir())]
 
+    def run(self, project_id, run_key):
+        """Read this Project's verified capture without scanning its other Runs."""
+        digest_value(run_key)
+        with self._locked():
+            self._read(project_id)
+            return self._run_manifest(project_id, run_key)
+
     def evidence(self, project_id, identifier):
         """Read only content referenced by a published snapshot of this project."""
         digest_value(identifier)

@@ -115,6 +115,24 @@ def test_intake_profiles_declared_data_without_raw_values_or_interpreter_executi
         snapshot_intake(tmp_path, project)
 
 
+def test_normalization_intake_binds_original_paired_replica_keys(tmp_path):
+    source = tmp_path/'raw_data'/'ratios.json'
+    source.parent.mkdir()
+    config = {'raw_data_path': 'raw_data/ratios.json', 'source_kind': 'synthetic',
+              'generated_program': {'python': sys.executable}}
+    base = {'pz': 3, 'bT': 2, 'bz': 1, 'sample_id': 8, 'success': True, 'real': .5, 'imag': 0}
+    payload = {'target_pz': 3, 'target_bT': 2, 'bz_values': [1], 'omit_reference': False,
+               'records': [base, {**base, 'sample_id': 2, 'success': False, 'real': None, 'imag': None}]}
+    source.write_text(json.dumps(payload))
+    profile = snapshot_intake(tmp_path, {'case_config': config})['data_profile']
+    assert profile['family_candidates'] == ['normalization'] and profile['issues'] == []
+    assert profile['replica_keys_sha256'] == digest([[3, 2, 1, 8], [3, 2, 1, 2]])
+    payload['records'].append(base)
+    source.write_text(json.dumps(payload))
+    duplicate = snapshot_intake(tmp_path, {'case_config': config})['data_profile']
+    assert 'Resolve duplicate normalization replica identities.' in duplicate['issues']
+
+
 def test_intake_sdk_builds_only_host_resolved_contract_and_retains_source_evidence(tmp_path):
     project = fixture_intake_project(tmp_path)
     outcome, calls, context = prepare_fixture(tmp_path, project)
