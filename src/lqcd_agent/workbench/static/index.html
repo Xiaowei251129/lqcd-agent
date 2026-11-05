@@ -16,8 +16,11 @@
 <details class="project-create"><summary>Create a project</summary><form id="project-create-form">
 <label for="project-id">Short identifier</label><input id="project-id" required maxlength="128" pattern="[A-Za-z0-9_-]+" placeholder="nucleon-mass">
 <label for="project-title-input">Project title</label><input id="project-title-input" required maxlength="500" placeholder="Nucleon ground-state analysis">
-<label for="project-goal-input">Research question</label><textarea id="project-goal-input" rows="3" required maxlength="32000"></textarea>
-<label for="project-case">Starting configuration</label><select id="project-case"><option value="">Add later</option></select>
+<label for="project-goal-input">Research question, data description &amp; constraints</label><textarea id="project-goal-input" rows="4" required maxlength="32000" placeholder="What should the analysis establish? Describe samples, units, known assumptions and required checks."></textarea>
+<label for="project-data-input">Data file <span class="muted">(optional)</span></label><input id="project-data-input" placeholder="raw_data/correlators.json">
+<label for="project-source-input">Data provenance <span class="muted">(measured, resampled or synthetic)</span></label><input id="project-source-input" maxlength="200" placeholder="measured_lattice_data">
+<label for="project-python-input">Scientific Python <span class="muted">(optional)</span></label><input id="project-python-input" placeholder="/absolute/path/to/python3">
+<label for="project-case">Existing configuration <span class="muted">(optional)</span></label><select id="project-case"><option value="">Let PI &amp; Postdoc prepare it</option></select>
 <button id="project-create" class="secondary" type="submit">Create project</button></form></details>
 <button id="open-library" class="secondary">Knowledge, skills &amp; methods</button></section>
 <details class="open-run"><summary>Run a configured case</summary><h2>New investigation</h2><form id="start-form">
@@ -33,10 +36,13 @@
 <section id="project-panel" class="panel project-panel" hidden>
 <div class="section-heading"><p class="eyebrow">RESEARCH PROJECT</p><button id="refresh-project" class="text-button">Refresh project</button></div><h1 id="project-title"></h1><p id="project-goal" class="muted"></p><p id="project-revision" class="footnote"></p>
 <div class="project-launch"><label class="check"><input id="project-live" type="checkbox"><span>Use live research agents <small>API charges and authorized tool execution</small></span></label><button id="project-start" class="primary">Start a new investigation <span>↗</span></button></div><p id="project-readiness" class="footnote"></p>
-<details id="project-editor"><summary>Edit project question and configuration</summary><form id="project-edit-form">
+<details id="project-editor"><summary>Edit research inputs</summary><form id="project-edit-form">
 <label for="edit-project-title">Title</label><input id="edit-project-title" required maxlength="500">
-<label for="edit-project-goal">Research question</label><textarea id="edit-project-goal" rows="3" required maxlength="32000"></textarea>
-<label for="edit-project-config">Case configuration (JSON)</label><textarea id="edit-project-config" rows="7" spellcheck="false" placeholder="null"></textarea>
+<label for="edit-project-goal">Research question, data description &amp; constraints</label><textarea id="edit-project-goal" rows="4" required maxlength="32000"></textarea>
+<label for="edit-project-data">Data file <span class="muted">(workspace-relative, under raw_data/)</span></label><input id="edit-project-data" placeholder="raw_data/correlators.json">
+<label for="edit-project-source">Data provenance <span class="muted">(measured, resampled or synthetic)</span></label><input id="edit-project-source" maxlength="200" placeholder="measured_lattice_data">
+<label for="edit-project-python">Scientific Python <span class="muted">(absolute path)</span></label><input id="edit-project-python" placeholder="/absolute/path/to/python3">
+<details><summary>Advanced configuration</summary><label for="edit-project-config">Draft or complete case configuration (JSON)</label><textarea id="edit-project-config" rows="7" spellcheck="false" placeholder="null"></textarea></details>
 <p class="footnote">Changes create a new project version. Existing investigations retain their original question and configuration.</p><button id="project-save" class="secondary" type="submit">Save project version</button></form></details>
 </section>
 <section id="library-panel" class="panel" hidden><p class="eyebrow">SHARED RESEARCH LIBRARY</p><h1>Knowledge, skills &amp; methods</h1><p class="muted">Your repository starts empty and accumulates reusable work. Every entry shows its review status and scope.</p>
@@ -47,6 +53,7 @@
 <div id="investigation" hidden>
 <div class="run-header"><div><p id="run-mode" class="eyebrow"></p><h1 id="run-title"></h1><p id="run-goal" class="muted"></p></div><span id="run-state" class="state"></span></div>
 <div class="facts"><div><span>RESEARCH OUTCOME</span><strong id="acceptance"></strong></div><div><span>CURRENT ACTIVITY</span><strong id="activity"></strong></div><div><span>CONTROL HEAD</span><strong id="head" class="mono"></strong></div></div>
+<section id="preparation-panel" class="panel" hidden><p class="eyebrow">RESEARCH PREPARATION</p><h2 id="preparation-title"></h2><p id="preparation-summary"></p><div id="preparation-questions"></div><div id="preparation-assumptions"></div><details id="prepared-config-details" hidden><summary>Prepared analysis configuration</summary><pre id="prepared-config"></pre></details><div id="preparation-continue" hidden><p class="footnote">Answer through Join the research or update the Project inputs, then continue within the original remaining budget and deadline. Recording a reply alone does not start work.</p><button id="project-continue" class="secondary" type="button">Continue research</button></div></section>
 <div id="compatibility" class="inline-warning" hidden></div>
 <section class="panel progress-panel"><div class="section-heading"><h2>Research workflow</h2><span id="progress-label" class="muted"></span></div><ol id="timeline" class="timeline"></ol><div id="backend-progress" class="backend-progress" hidden></div><details><summary>Actual budget usage</summary><div id="budget" class="budget"></div></details></section>
 <section class="panel results-panel"><nav id="tabs" class="tabs" aria-label="Research evidence"><button data-tab="overview" class="active">Overview</button><button data-tab="plan">Plan</button><button data-tab="code">Code</button><button data-tab="analysis">Analysis</button><button data-tab="review">Review</button><button data-tab="evidence">All evidence</button></nav>

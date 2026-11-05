@@ -369,6 +369,10 @@ def product_final_report(root, context, index, classification, response):
             rendered = value if type(value) is str else json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
             sections.extend(['## ' + title, rendered])
 
+    preparation = documents.get('plan', {}).get('domain_result', {}).get('preparation')
+    if preparation is not None:
+        include('Research preparation', preparation)
+
     if response is not None:
         raw = read_regular(root / response['payload_reference'])
         require(sha256(raw).hexdigest() == response['payload_sha256'], 'Final report Human response changed')
@@ -429,6 +433,9 @@ class ProductNode:
         records, state = execution.values, execution.projection.value
         index = loads(read_regular(self.root / 'artifact_index.json'))
         context = product_context(self.root, identity, execution, index)
+        if context['root_goal'].get('workflow') == 'intake':
+            require(node in ('method_planner', 'decision_coordinator', 'memory_report', 'human_gate'),
+                    'Research preparation cannot execute Code, numerical analysis or scientific review')
         refs = {slot: pointer['artifact_id'] for slot, pointer in index['current'].items() if pointer is not None}
         refs[SLOT_BY_ATTEMPT_KIND[node]] = identity['attempt_id'] + ':' + SLOT_BY_ATTEMPT_KIND[node]
         if node == 'human_gate':
@@ -474,6 +481,12 @@ class ProductNode:
             classification = classify_memory_update(complete_evidence=complete, blocked=blocked,
                 limitations=bool(warnings or any(item.get('status') != 'addressed' for item in issues)),
                 authorization_decision=response['decision'] if response else None)
+            if context['root_goal'].get('workflow') == 'intake':
+                from lqcd_agent.inspection import read_preparation
+                selected = read_preparation(self.root)
+                classification.update(accepted_result=False, scientific_outcome='inconclusive',
+                    preparation_status=selected[0]['status'] if selected else 'failed',
+                    classification_reason='Research preparation only; no numerical result or physics acceptance is asserted.')
             report_text, report_evidence = product_final_report(self.root, context, index, classification, response)
             payload = {'schema_version': '0.1', **identity, 'producer': node, 'status': classification['memory_status'], **classification, 'evidence': report_evidence}
             memory = port.write_member('memory_update.json', canonical_bytes(payload))

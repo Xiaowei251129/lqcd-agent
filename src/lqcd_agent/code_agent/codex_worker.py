@@ -97,6 +97,15 @@ def run(job):
             gateway = stack.enter_context(CodingContextGateway(settings, job,
                 producer_authority=request.get('producer_authority'), task=task))
             overrides += ('openai_base_url=' + json.dumps(gateway.base_url),)
+            if request.get('producer_authority') is not None and task['tool_policy'][0].get('spec_id') == 'research-codex':
+                from .numerical_trials import NumericalTrials, SERVER, TOOL
+                gateway.numerical_trials = NumericalTrials(gateway, workspace, manifest,
+                    cancelled=cancelled.is_set)
+                overrides += (f'mcp_servers.{SERVER}.url=' + json.dumps(gateway.base_url.removesuffix('/v1') + '/mcp'),
+                    f'mcp_servers.{SERVER}.http_headers={{"Authorization"=' + json.dumps('Bearer ' + gateway.token) + '}',
+                    f'mcp_servers.{SERVER}.enabled_tools=' + json.dumps([TOOL]),
+                    f'mcp_servers.{SERVER}.tools.{TOOL}.approval_mode="approve"',
+                    f'mcp_servers.{SERVER}.tool_timeout_sec=' + str(task['tool_policy'][0]['timeout_seconds']))
             codex = stack.enter_context(Codex(CodexConfig(cwd=str(workspace), env=environment, config_overrides=overrides,
                                client_name='lqcd_agent', client_title='LQCD Agent')))
             codex.login_api_key(gateway.token)
@@ -115,6 +124,12 @@ def run(job):
                       'Only these write paths are permitted: ' + json.dumps(task['write_paths'])
                       + '\nTask: ' + json.dumps(task['requirements']) + '\nAcceptance: ' + json.dumps(task['acceptance_criteria'])
                       + '\nExisting workspace files (read with tools as needed): ' + json.dumps(request['base_paths']))
+            if gateway.numerical_trials is not None:
+                prompt += ('\nUse run_numerical_trial to test the current analysis.py with a small synthetic JSON input. '
+                    'The Host runs the fixed scientific Python and retains exact source, input, output and failure evidence. '
+                    'Repair implementation defects from this feedback. Trial success is not independent calibration '
+                    'or a formal private-data result. Preserve the planned method and full requested production counts; '
+                    'report scientific-method changes rather than silently changing the research question.')
             turn = thread.turn(prompt, output_schema=schema)
             state['turn_id'] = turn.id
             write_json(job / 'state.json', state)
@@ -151,6 +166,8 @@ def run(job):
                                 if is_tool_item(item):
                                     observed = tools.setdefault(item['id'], {'id': item['id'], 'type': item['type'],
                                         'start_at': time.monotonic()})
+                                    if item['type'] == 'mcpToolCall':
+                                        observed.update(server=item['server'], tool=item['tool'])
                                     observed['sha256'] = sha256(json.dumps(item, sort_keys=True).encode()).hexdigest()
                                     if event.method == 'item/completed':
                                         observed['end_at'] = time.monotonic()

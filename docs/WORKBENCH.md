@@ -11,6 +11,9 @@ flowchart LR
     Submit --> CP["Existing ControlPlane / WAL + FULL"]
     CP --> Worker["One shared CLI / workbench Host driver"]
     Worker --> Runtime["CanonicalProductRuntime"]
+    Runtime --> Intake["Project preparation: PI/Postdoc"]
+    Intake -->|ready| Roles
+    Intake -->|missing prerequisite| Questions["Recorded questions; optional clarification"]
     Runtime --> Roles["PI/Postdoc → Code → Analysis → Reviewer/PI"]
     Roles --> Report["Autonomous outcome and evidence"]
     Roles -->|extra authority only| Auth["Original scoped authorization Pause"]
@@ -26,6 +29,14 @@ The workbench supports versioned Projects, linked investigations, optional opera
 `runtime.submit` commits the original business action and returns `Submission(status, advance)`. `advance` drives eligible work through the existing fenced engine. HTTP returns after admission; the shared native driver continues independently of the browser/server. Live scientific CLI tasks use the same launcher and Host lock. It reconciles completed Code deliveries and scoped PI follow-up Runs using the existing control paths, without generating Human Responses or restarting uncertain work.
 
 The private `.runtime/workbench-host.json` stores only a Host locator. Run history and authority come from coordinator tables and immutable ledgers. The shared task quota is visible separately from per-Run counters, including remaining model requests, token reservation units and Run slots. Unexecuted experiment reasons remain visible. A new Run, reconnect or worker restart cannot replenish that quota.
+
+## Prepare a research project
+
+Create a Project with its question and constraints. Starting configuration is optional; the **Data file**, **Data provenance** and **Scientific Python** fields populate a partial configuration. Declare whether the input is measured, resampled or synthetic; provenance has no default. Enable live research and start an investigation. PI/Postdoc first receive a Host-generated profile of the declared data and can consult the local library or literature. A supported prepared contract automatically starts the formal analysis. The prepared configuration is retained as evidence, leaving the user's Project inputs unchanged.
+
+The preparation panel distinguishes `ready` and `needs_information` from a scientific conclusion. Missing prerequisites appear as concrete questions. Supply a scientific reply through **Join the research**. For missing data paths, provenance, interpreter or other structured metadata, use **Edit research inputs**; free text does not silently fill those fields. Then use **Continue research**. That explicit action inherits the preparation's original task budget and deadline. It cannot replenish resources, change model authorization or restart the old Run. Once the original task expires or is exhausted, **Start a new investigation** explicitly starts a separate task. Preparation and clarification each consume one of the existing four Run slots; no lease is kept alive while waiting for a person.
+
+Ordinary comments never dispatch a model. If the needed facts are unavailable, the preparation remains inspectable without requiring human approval. Unsupported input formats require an explicit supported data contract; the interface does not upload or reinterpret arbitrary files automatically.
 
 ## Optional scientific participation
 
@@ -54,7 +65,7 @@ All endpoints bind to loopback and validate exact Host/Origin plus a per-server 
 | `GET/POST /api/projects` | List/create Projects |
 | `GET/POST /api/projects/{id}` | Inspect/version-check Project edits |
 | `GET/POST /api/projects/{id}/contributions` | Attributed optional scientific input |
-| `POST /api/projects/{id}/runs` | Start from a frozen Project version |
+| `POST /api/projects/{id}/runs` | Start Project preparation, or explicitly continue its original intake parent |
 | `GET /api/library` | Candidate/reviewed asset search |
 | `GET /api/runs` | Verified Run navigation |
 | `POST /api/runs` | Admit a configured case |

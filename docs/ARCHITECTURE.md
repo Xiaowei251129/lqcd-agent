@@ -7,8 +7,11 @@ flowchart TD
     User["Researcher / local workbench / CLI"] --> Project["Versioned Project: question, goal, case"]
     Project --> Submit["One submit / advance path"]
     Submit --> Control["Host: identity, leases, task quota, fencing and evidence"]
-    Control --> Plan["PI brief → Postdoc method"]
+    Control --> Intake["Project preparation: PI → Postdoc"]
+    Intake -->|ready contract| Plan["Formal Run: PI brief → Postdoc method"]
+    Intake -->|missing prerequisites| Questions["Recorded questions; no waiting execution lease"]
     Plan --> Code["Optional sole Codex SDK backend"]
+    Code <-->|development trials| Trial["Same Host numerical executor; synthetic input"]
     Plan --> Analysis["Host numerical analysis"]
     Code --> Seal["Verified, sealed analysis.py"]
     Seal --> Analysis
@@ -21,9 +24,12 @@ flowchart TD
     Decision -->|extra authority only| Auth["Scoped authorization request"]
     Auth --> Decision
     User -. optional scientific input .-> Notes["Immutable Project / Run contributions"]
+    Questions -. optional reply and explicit continuation .-> Notes
+    Notes -. next preparation .-> Intake
     Notes -. next safe research attempt .-> Plan
     Notes -. next safe research attempt .-> Review
     Plan <--> Tools["Host evidence, library, INSPIRE and arXiv tools"]
+    Intake <--> Tools
     Review <--> Tools
     Tools <--> Library["Empty-on-install wiki / skills / reviewed methods"]
     Report --> Capture["Verified Project history"]
@@ -43,6 +49,10 @@ With a CodeHost, the product controller reuses its configured worker lease windo
 Canonical JSON preserves finite scientific floating-point values without a magnitude ceiling. Integers retain the exact safe range ±(2**53 − 1); duplicate keys and non-finite values, including exponent overflow, are rejected. Explicit control `number()` bounds remain unchanged: invocation/producer deadlines and windows, and operation/invocation timestamps, are validated on each read. Serialization does not establish scientific validity.
 
 A Project is scientific context. Each Run binds its Project revision, goal, dataset identity, case configuration and exact selected method sources. Project edits affect later admissions. The Project store cannot resume execution or grant authority. Exact committed request-key replay returns the original business result; a conflicting intent is rejected.
+
+Project starts first admit an internal `intake` Run through this same control plane. Its existing planning Attempt runs PI/Postdoc with a bounded profile of the operator-declared data, a partial starting configuration and optional contributions. It never enters Code, Analysis or scientific Review. The Host constructs executable paths and combines only supported model method choices with immutable supplied parameters. Readiness is recorded separately from scientific acceptance. The sealed preparation is the source of a formal scientific child, without a cross-store automatic Project edit. Before first child admission, the Host rechecks the declared data/profile and interpreter executable identity. An interrupted admission reuses its original frozen operation inputs.
+
+Missing prerequisites close preparation with `needs_information`; there is no live lease waiting for a person. A reply or Project input update can be explicitly continued from that preparation through the original start path. Same-key replay returns the original child; another key cannot continue the same parent twice. Preparation, clarification and scientific Runs share the original task limits and deadline. Comments cannot grant permissions, launch a model or extend the task. A new explicitly started investigation is a new task. Existing direct `run --case-config` remains the configured scientific entry.
 
 Read-only status can observe a running research attempt with exactly one unsettled ordinary model/tool resource and no unknown execution settlement. It verifies the committed producer, original checkpoint/source and exact published resource suffix. Bare started state and gaps without an active resource retain the strict refusal path. Observation grants no dispatch or lease renewal. Unknown token/cost usage remains conservative accounting, distinct from an unknown execution settlement.
 
@@ -67,6 +77,10 @@ Command tools use the pinned native managed proxy with public-domain access, the
 The gateway uses one HTTPX pool per worker, rejects implicit remote history, alternate models/routes, WebSockets and automatic truncation, and owns connections through shutdown. Only read-only counting retries broken connections, at most three times inside its original deadline. The gateway never redispatches generation itself; native Codex owns transient generation recovery, and each repeated request is freshly counted and admitted. Unknown usage retains conservative reservations. Private traces contain digests/counts and bounded diagnostics, not credentials or request/error bodies. The native SDK writes files and returns paths; the Host independently verifies and seals their actual bytes.
 
 ## Autonomous conclusions and scoped experiments
+
+The scientific Code worker exposes one `run_numerical_trial` tool over its existing private authenticated gateway. It reads only the bound workspace's current `analysis.py`, takes bounded model-supplied synthetic JSON and uses the original Run's scientific interpreter. The existing numerical executor performs the trial under the original Code tool/time allowance. A fenced intent precedes execution; exact source, input, output and known failure receipts become `numerical_trials.json` in the verified Code bundle. Unknown execution is never silently replayed. Development feedback grants neither physics acceptance nor access to the private production dataset or withheld calibration results. Final Analysis continues to execute the independently sealed delivery.
+
+The gateway holds each bounded native model response until its tool intents fit the original producer allowance and are durably registered. Native receives the unchanged response only after that admission, so a mixed command/trial batch cannot spend the remaining tool allowance twice through delayed notifications. This controls local native command/MCP dispatch; provider-hosted web search has already executed when the response arrives. The final native tool audit still checks actual execution. The numerical executor drains its process group before freezing output, including when the leading process exits successfully.
 
 Normal scientific review no longer requires human approval. A terminal report records `scientific_outcome` (`supported`, `qualified`, `inconclusive`) and `decision_origin=system`, along with evidence and classification reasons. Ordinary caveats can yield a qualified system conclusion. Failed numerical contracts, blocked claims, incomplete evidence and exhausted budgets produce an inconclusive result. An accepted terminal classification is a scoped recorded conclusion, not proof that every physical assumption is correct.
 

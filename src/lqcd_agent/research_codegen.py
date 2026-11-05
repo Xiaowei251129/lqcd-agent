@@ -36,6 +36,7 @@ def prepare_research(coordinator, config, *, workspace, live, initialize, method
     policy = {'base_revision': revision, 'base_tree_digest': tree_digest(base),
         'task_summary': 'Implement the current scientific Method Plan',
         'acceptance_criteria': ['Implement the specified JSON interface and test on synthetic calibration data.',
+            'Use the Host numerical trial tool for development feedback when available; these trials do not establish independent calibration or physics acceptance.',
             'Use read-only reused/ sources only within their recorded applicability; deliver a self-contained analysis.py.',
             f'The selected production Python is {program["python"]}; keep the program compatible with its environment.'],
         'read_paths': sorted(base_files), 'write_paths': ['analysis.py'], 'forbidden_paths': ['.git'],

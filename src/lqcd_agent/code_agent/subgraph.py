@@ -14,6 +14,7 @@ from .ingress import preflight_result
 from .schemas import validate_manifest, validate_task
 from .verification import TrustedVerifier, build_verification_results
 from .workspace import WorkspaceProvider, immutable_git_tree
+from .numerical_trials import trial_member
 
 
 class CodeAgentSubgraph:
@@ -112,6 +113,7 @@ class CodeAgentSubgraph:
                                   recommended_action="review Code result", summary="Validated Code delivery",
                                   trusted_usage=usage)
         members = bundle_members(task, result, receipt, manifest, seal, changes, verification, audit, patch)
+        members.update(trial_member(self.coordinator, task))
         paths = tuple(port.write_member(name, content) for name, content in members.items())
         state_paths = {key: str(root / "attempts" / task["attempt_id"] / member)
                        for key, member in CODE_MEMBER_BY_STATE_FIELD.items()}
@@ -141,6 +143,7 @@ class CodeAgentSubgraph:
                                                  for key, member in CODE_MEMBER_BY_STATE_FIELD.items()},
                 "Code result or projection differs from validated delivery")
         expected_members = bundle_members(task, result, receipt, manifest, seal, changes, verification, audit, patch)
+        expected_members.update(trial_member(self.coordinator, task))
         require(actual == expected_members, "Code bundle member set or bytes changed")
         members = [{"path": str(path.relative_to(root)), "sha256": sha256(read_regular(path)).hexdigest()}
                    for path in outcome.artifact.member_paths]

@@ -48,7 +48,7 @@ async function mutation(path, payload, target) {
   if (state.busy) return;
   if (localStorage.getItem(storage+'pending')) { await reconcile(); return; }
   state.busy = true;
-  for (const id of ['start', 'project-start', 'respond', 'cancel']) $(id).disabled = true;
+  for (const id of ['start', 'project-start', 'project-continue', 'respond', 'cancel']) $(id).disabled = true;
   const pending = {path, payload: {...payload, key: crypto.randomUUID()}, target: target || {host: state.host}};
   localStorage.setItem(storage+'pending', JSON.stringify(pending));
   try {
@@ -58,7 +58,7 @@ async function mutation(path, payload, target) {
     await select({...pending.target, ...result});
   } catch (error) {
     if (error.status && error.status < 500) await reconcile();
-    notice(error.status === 409 ? 'Action rejected: '+error.message+'. Refresh and inspect the current Pause before deciding again.' :
+    notice(error.status === 409 ? 'Action rejected: '+error.message+'. Refresh and inspect the current investigation before trying again.' :
       error.status ? error.message : 'Connection interrupted. Your operation key is retained; reconnect to reconcile the original submission.');
   } finally { state.busy = false; await refresh(); }
 }
@@ -102,9 +102,12 @@ async function loadProject(identifier) {
   text('project-revision', 'Project version '+state.project.revision+' · investigations retain their original version');
   $('edit-project-title').value = state.project.title; $('edit-project-goal').value = state.project.goal;
   $('edit-project-config').value = JSON.stringify(state.project.case_config, null, 2);
+  $('edit-project-data').value = state.project.case_config?.raw_data_path || '';
+  $('edit-project-source').value = state.project.case_config?.source_kind || '';
+  $('edit-project-python').value = state.project.case_config?.generated_program?.python || '';
   $('project-live').checked = false;
-  $('project-start').disabled = state.busy || !state.project.case_config;
-  text('project-readiness', state.project.case_config ? 'Each investigation starts with this project question and configuration.' : 'Add a case configuration below before starting an investigation.');
+  $('project-start').disabled = state.busy;
+  text('project-readiness', 'A new investigation starts a new research budget. PI & Postdoc organize the question, inspect available inputs and prepare the analysis. Ready work proceeds automatically; use Continue research below to answer an existing preparation within its original budget.');
   await contributions(true);
 }
 
@@ -144,17 +147,18 @@ async function contributions(restore = false) {
     return item;
   }));
   const selected = state.selected?.project_id === project.id && state.verified;
-  $('contribution-run-option').hidden = !selected;
+  const clarification = selected && state.view.workflow === 'intake' && state.view.preparation?.status === 'needs_information';
+  $('contribution-run-option').hidden = !selected || clarification;
   text('contribution-scope', selected && ['completed', 'halted', 'failed'].includes(state.view.run_status) ?
     'Attach to the selected closed investigation' : 'Limit to the selected investigation');
-  if (!selected) $('contribution-run').checked = false;
+  if (!selected || clarification) $('contribution-run').checked = false;
   const pending = JSON.parse(localStorage.getItem(storage+'contribution') || 'null');
   $('forget-contribution').hidden = !pending;
   if (restore && pending?.project === project.id) {
     $('contribution-kind').value = pending.payload.kind;
     $('contribution-body').value = pending.payload.body;
     $('contribution-evidence').value = pending.payload.evidence_sha256.join('\n');
-    $('contribution-run').checked = Boolean(pending.payload.run);
+    $('contribution-run').checked = Boolean(pending.payload.run) && !clarification;
   }
 }
 
@@ -187,7 +191,7 @@ function historyList(runs) {
   text('run-count', runs.length);
   rows($('run-list'), runs.length ? runs.map(run => {
     const item = node('button', undefined, 'run-item'+(state.selected?.run_locator.run_id === run.run_locator.run_id ? ' selected' : ''));
-    item.append(node('strong', run.run_locator.case_id), node('span', (run.inspection === 'unavailable' ? 'Verification pending' : readable(run.run_status))+' · '+run.run_locator.run_id.slice(-8)));
+    item.append(node('strong', (run.workflow === 'intake' ? 'Preparation · ' : '')+run.run_locator.case_id), node('span', (run.inspection === 'unavailable' ? 'Verification pending' : run.preparation ? readable(run.preparation.status) : readable(run.run_status))+' · '+run.run_locator.run_id.slice(-8)));
     item.addEventListener('click', () => select(run).catch(error => notice(error.message)));
     return item;
   }) : [node('p', 'No investigations yet.', 'muted')]);
@@ -219,6 +223,21 @@ function summaryLine(label, value) {
   const describe = item => typeof item === 'string' ? item : JSON.stringify(item, null, 2);
   line.append(node('strong', label), node('p', Array.isArray(value) ? value.map(describe).join('\n') : describe(value)));
   return line;
+}
+
+function draftConfig(config, dataPath, python, sourceKind, replaceInputs = false) {
+  if (config !== null && (typeof config !== 'object' || Array.isArray(config))) throw new Error('Case configuration must be an object or null.');
+  const draft = {...config};
+  if (dataPath) draft.raw_data_path = dataPath;
+  else if (replaceInputs) delete draft.raw_data_path;
+  if (sourceKind) draft.source_kind = sourceKind;
+  else if (replaceInputs) delete draft.source_kind;
+  if (python || replaceInputs) {
+    const program = {...draft.generated_program};
+    if (python) program.python = python; else delete program.python;
+    if (Object.keys(program).length) draft.generated_program = program; else delete draft.generated_program;
+  }
+  return Object.keys(draft).length ? draft : null;
 }
 
 function svgElement(name, attrs, value) {
@@ -324,15 +343,28 @@ function render(view) {
   const closed = ['completed', 'halted', 'failed'].includes(view.run_status);
   if (state.noticeKind === 'verification') notice('');
   $('empty').hidden = true; $('investigation').hidden = false;
-  text('run-mode', view.live ? 'LIVE LLM RESEARCH'+(view.coding ? ' · CODEX' : '') : view.synthetic ? 'OFFLINE SYNTHETIC · ENGINEERING EXERCISE' : 'OFFLINE PLANNER & REVIEWER · SCIENTIFIC PROGRAM');
+  const intake = view.workflow === 'intake';
+  text('run-mode', intake ? (view.live ? 'PI & POSTDOC · RESEARCH PREPARATION' : 'OFFLINE PREPARATION · ENGINEERING EXERCISE') : view.live ? 'LIVE LLM RESEARCH'+(view.coding ? ' · CODEX' : '') : view.synthetic ? 'OFFLINE SYNTHETIC · ENGINEERING EXERCISE' : 'OFFLINE PLANNER & REVIEWER · SCIENTIFIC PROGRAM');
   text('run-title', view.run_locator.case_id); text('run-goal', view.goal); text('run-state', readable(view.run_status));
-  text('acceptance', view.scientific_outcome ? readable(view.scientific_outcome)+' · '+readable(view.decision_origin)+' conclusion' : closed ? 'No recorded research outcome' : 'Research in progress');
-  text('activity', view.archived ? 'Saved project evidence' : closed ? 'Run closed · '+readable(view.run_status) : view.active_pause?.reason === 'human_input' ? 'Waiting for extra authorization' : readable(view.attempts.at(-1)?.kind));
+  text('acceptance', intake ? (view.preparation ? readable(view.preparation.status) : 'Preparing research') : view.scientific_outcome ? readable(view.scientific_outcome)+' · '+readable(view.decision_origin)+' conclusion' : closed ? 'No recorded research outcome' : 'Research in progress');
+  text('activity', view.archived ? 'Saved project evidence' : intake && closed && view.preparation ? (view.preparation.status === 'ready' ? 'Preparation complete · inspect subsequent investigations' : 'Preparation complete · information needed') : closed ? 'Run closed · '+readable(view.run_status) : view.active_pause?.reason === 'human_input' ? 'Waiting for extra authorization' : readable(view.attempts.at(-1)?.kind));
+  $('preparation-panel').hidden = !intake;
+  if (intake) {
+    const prepared = view.preparation;
+    text('preparation-title', prepared?.status === 'ready' ? 'Ready for analysis' : prepared?.status === 'needs_information' ? 'Information needed' : 'Organizing the research');
+    text('preparation-summary', prepared?.summary || 'PI & Postdoc are reviewing the research question and available inputs.');
+    rows($('preparation-questions'), prepared?.questions?.length ? [summaryLine('QUESTIONS', prepared.questions)] : []);
+    rows($('preparation-assumptions'), prepared?.assumptions?.length ? [summaryLine('ASSUMPTIONS & SCOPE', prepared.assumptions)] : []);
+    $('prepared-config-details').hidden = !prepared?.case_config;
+    text('prepared-config', prepared?.case_config ? JSON.stringify(prepared.case_config, null, 2) : '');
+    $('preparation-continue').hidden = !(closed && prepared?.status === 'needs_information' && state.project?.id === state.selected?.project_id);
+    $('project-continue').disabled = state.busy || view.archived || !view.compatible || !view.managed;
+  }
   text('head', view.execution_head.slice(0, 14)+'…');
   text('run-identity', view.host+' / '+view.run_locator.run_id); text('refreshed', 'Verified '+new Date().toLocaleTimeString());
   $('compatibility').hidden = view.compatible && !view.needs_recovery && view.managed;
   text('compatibility', view.archived ? 'Saved project evidence. The original execution directory is no longer available; this record cannot resume work or accept decisions. Start a new investigation from the project to continue.' : !view.compatible ? 'Historical runtime build. Evidence remains inspectable; new work requires its original supported build. No migration or replay is performed.' : !view.managed ? 'Imported Run: read-only evidence. Use the original CLI for its control actions.' : 'An invocation started without a committed completion. Inspect its original recovery state; the workbench will not repeat uncertain work.');
-  const roles = ['method_planner', 'code_agent', 'analysis_engineer', 'scientific_reviewer',
+  const roles = ['method_planner', ...(intake ? [] : ['code_agent', 'analysis_engineer', 'scientific_reviewer']),
     ...(view.attempts.some(a => a.kind === 'human_gate') ? ['human_gate'] : []), 'memory_report'];
   rows($('timeline'), roles.map(kind => {
     const attempt = view.attempts.filter(a => a.kind === kind).at(-1);
@@ -375,7 +407,7 @@ function render(view) {
   $('respond').disabled = state.busy || !view.actions.respond;
   $('cancel').disabled = state.busy || !view.actions.cancel;
   $('start').disabled = state.busy;
-  $('project-start').disabled = state.busy || !state.project?.case_config;
+  $('project-start').disabled = state.busy || !state.project;
   collaboration(view); summaries(view); evidenceList();
 }
 
@@ -388,11 +420,11 @@ async function refresh() {
     text('history-title', state.project ? 'Project investigations' : 'Investigations');
     const selected = state.selected;
     if (selected && !state.libraryOpen) { const view = await api(endpoint(selected)); if (selected === state.selected) render(view); }
-    $('project-start').disabled = state.busy || !state.project?.case_config;
+    $('project-start').disabled = state.busy || !state.project;
     await contributions();
     text('connection', 'Connected · local control'); $('connection').classList.remove('offline');
   } catch (error) {
-    state.verified = false; $('respond').disabled = true; $('cancel').disabled = true;
+    state.verified = false; $('respond').disabled = true; $('cancel').disabled = true; $('project-continue').disabled = true;
     text('connection', error.status === 409 ? 'Connected · checkpoint verification pending' : 'Disconnected · reconnecting'); $('connection').classList.add('offline');
     if (error.status === 403) await session();
     else if (error.status === 409) notice('Waiting for a fully verified checkpoint. The last verified snapshot is retained for inspection; actions are disabled. If the worker stopped, inspect original control recovery.', 'verification');
@@ -432,7 +464,9 @@ $('contribution-form').addEventListener('submit', async event => {
   try {
     await api(projectEndpoint(pending.project)+'/contributions', pending.payload);
     localStorage.removeItem(storage+'contribution'); $('contribution-form').reset();
-    notice('Scientific input recorded for the next research checkpoint. It does not grant additional authority.');
+    notice(state.view?.preparation?.status === 'needs_information' ?
+      'Reply recorded. Continue research when ready; it uses the original remaining budget and deadline.' :
+      'Scientific input recorded for the next research checkpoint. It does not grant additional authority.');
     await contributions();
   } catch (error) {
     if (error.status && error.status < 500) localStorage.removeItem(storage+'contribution');
@@ -443,7 +477,8 @@ $('contribution-form').addEventListener('submit', async event => {
 $('project-create-form').addEventListener('submit', async event => {
   event.preventDefault(); $('project-create').disabled = true;
   try {
-    const config = $('project-case').value ? await api('/api/cases/'+encodeURIComponent($('project-case').value)) : null;
+    const config = draftConfig($('project-case').value ? await api('/api/cases/'+encodeURIComponent($('project-case').value)) : null,
+      $('project-data-input').value.trim(), $('project-python-input').value.trim(), $('project-source-input').value.trim());
     const project = await api('/api/projects', {id: $('project-id').value, title: $('project-title-input').value,
       goal: $('project-goal-input').value, case_config: config});
     $('project-create-form').reset(); await chooseProject(project.id); notice('Project created. Its knowledge and results will accumulate in this repository.');
@@ -454,15 +489,32 @@ $('project-edit-form').addEventListener('submit', async event => {
   try {
     const project = await api(projectEndpoint(state.project.id), {expected_digest: state.project.sha256,
       title: $('edit-project-title').value, goal: $('edit-project-goal').value,
-      case_config: JSON.parse($('edit-project-config').value || 'null')});
+      case_config: draftConfig(JSON.parse($('edit-project-config').value || 'null'),
+        $('edit-project-data').value.trim(), $('edit-project-python').value.trim(), $('edit-project-source').value.trim(), true)});
     await loadProject(project.id); notice('Project version saved. Existing investigations retain their original inputs.');
   } catch (error) { notice(error.status === 409 ? 'Project changed. Refresh the project before saving your edits again.' : error.message); }
   finally { $('project-save').disabled = false; }
 });
+$('edit-project-config').addEventListener('input', () => {
+  try {
+    const draft = JSON.parse($('edit-project-config').value || 'null');
+    $('edit-project-data').value = draft?.raw_data_path || '';
+    $('edit-project-source').value = draft?.source_kind || '';
+    $('edit-project-python').value = draft?.generated_program?.python || '';
+  } catch { /* Preserve partially typed JSON until the user completes the edit. */ }
+});
 $('project-start').addEventListener('click', () => {
-  if (!state.project?.case_config) return;
-  if (state.project.case_config.generated_program && !$('project-live').checked) { notice('This configuration requires explicit live LLM and Codex activation.'); return; }
+  if (!state.project) return;
+  if (!$('project-live').checked) { notice('Select Use live research agents to start PI/Postdoc preparation and the subsequent authorized analysis.'); return; }
   mutation(projectEndpoint(state.project.id)+'/runs', {expected_digest: state.project.sha256, live: $('project-live').checked}, {host: state.host, project_id: state.project.id});
+});
+$('project-continue').addEventListener('click', () => {
+  const view = state.view;
+  if (!state.project || !state.verified || view?.preparation?.status !== 'needs_information' ||
+      view.archived || !view.compatible || !view.managed || state.selected?.project_id !== state.project.id) return;
+  mutation(projectEndpoint(state.project.id)+'/runs', {expected_digest: state.project.sha256, live: view.live,
+    intake_parent: view.run_locator.run_id, case: view.run_locator.case_id},
+    {host: view.host, project_id: state.project.id});
 });
 $('refresh-project').addEventListener('click', () => { if (state.project) loadProject(state.project.id).catch(error => notice(error.message)); });
 $('open-library').addEventListener('click', () => {

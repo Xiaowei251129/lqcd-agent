@@ -21,7 +21,7 @@ def test_operator_project_and_library_lifecycle(tmp_path, monkeypatch):
     assert not (tmp_path / "library").exists()
     project = command("project-create", "--id", "ratio", "--title", "Ratio study", "--goal", "Check correlation")
     assert project["case_config"] is None
-    assert command("project-show", "--id", "ratio") == {"project": project, "runs": []}
+    assert command("project-show", "--id", "ratio") == {"project": project, "runs": [], "contributions": []}
     (tmp_path / "case.yaml").write_text("case_id: configured\ndata: {}\n")
     configured = command("project-create", "--id", "configured", "--title", "Configured",
                          "--goal", "Analyze", "--case-config", "case.yaml")
@@ -86,7 +86,34 @@ def test_run_parser_accepts_project_without_case_config(monkeypatch, capsys):
     assert main(["run", "--project", "ratio", "--key", "next"]) == 0
     assert requests[0].project == "ratio" and requests[0].case_config is None
     assert json.loads(capsys.readouterr().out) == {"dispatched": True}
+    assert main(["run", "--project", "ratio", "--key", "continued", "--host", "original",
+                 "--case", "ratio", "--intake-parent", "run_previous", "--project-digest", "a"*64]) == 0
+    assert requests[-1].intake_parent == "run_previous" and requests[-1].host == "original"
+    assert requests[-1].project_digest == "a"*64
     with pytest.raises(SystemExit) as exited:
         main(["library-review", "--kind", "wiki", "--id", "entry", "--status", "candidate",
               "--rationale", "Not a review", "--expected-revision", "1"])
     assert exited.value.code == 2
+
+
+def test_operator_draft_inputs_and_clarification_remain_project_metadata(tmp_path, monkeypatch):
+    from lqcd_agent.research.projects import ProjectStore
+    monkeypatch.setenv("LQCD_AGENT_WORKSPACE", str(tmp_path))
+    project = command("project-create", "--id", "c2", "--title", "C2 study", "--goal", "Compare windows",
+        "--data-path", "raw_data/c2.json", "--source-kind", "measured_lattice_data", "--python", sys.executable)
+    assert project["case_config"] == {"raw_data_path": "raw_data/c2.json", "source_kind": "measured_lattice_data",
+                                     "generated_program": {"python": sys.executable}}
+    args = ("project-contribute", "--id", "c2", "--expected-digest", project["sha256"], "--key", "sample-definition",
+            "--body", "The input contains raw gauge-configuration measurements, not bootstrap replicas.")
+    first = command(*args)
+    assert first["author"] == "operator" and first["run"] is None and first["kind"] == "scientific_comment"
+    assert command(*args) == first
+    shown = command("project-show", "--id", "c2")
+    assert shown == {"project": project, "runs": [], "contributions": [first]}
+    assert not (tmp_path/".runtime").exists()
+    changed = ProjectStore(tmp_path).revise("c2", expected_digest=project["sha256"], goal="Study window stability")
+    command("project-contribute", "--id", "c2", "--expected-digest", project["sha256"], "--key", "stale",
+            "--body", "A stale reply", expected_exit=1, rejection="Stale project revision")
+    assert ProjectStore(tmp_path).read("c2") == changed
+    command("project-create", "--id", "escaped", "--title", "Escape", "--goal", "No",
+            "--data-path", "raw_data/../.env", expected_exit=1, rejection="under raw_data")

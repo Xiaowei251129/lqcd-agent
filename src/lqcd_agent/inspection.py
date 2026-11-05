@@ -53,6 +53,12 @@ class RunSnapshot:
         result = {'host': self.host.name.removeprefix('lqcd-agent-host-'), 'run_locator': self.locator,
             'run_status': self.state['run_status'], 'execution_head': self.state['execution_head'],
             'root_inputs_digest': digest(inputs), 'active_pause': active, 'next_action': next_action}
+        result['workflow'] = inputs['root_goal'].get('workflow')
+        if result['workflow'] == 'intake':
+            selected = read_preparation(self.root)
+            result['preparation'] = selected[0] if selected else None
+            if selected and selected[0]['status'] == 'needs_information' and self.state['run_status'] == 'completed':
+                result['next_action'] = 'clarify_project'
         if self.state['run_status'] in ('failed', 'halted') and self.closure is not None:
             result['execution_failure'] = {
                 'scientific_outcome': 'inconclusive', 'decision_origin': 'system',
@@ -69,6 +75,26 @@ class RunSnapshot:
                 opened = next(r for r in reversed(self.records.values) if r.get('event') == 'pause_opened' and r['pause_id'] == active['pause_id'])
                 result['coding_backend'] = lookup_codex_job(self.host/JOBS_DIRECTORY, opened['input_contract']['producer_operation_id'])
         return result
+
+
+def read_preparation(root):
+    """Read only the current, registered preparation; no model or executor imports."""
+    pointer = loads(read_regular(root/'artifact_index.json'))['current']['plan']
+    if pointer is None:
+        return None
+    member = next(item for item in pointer['members'] if item['logical_name'] == 'method_plan.json')
+    path = root/member['canonical_path']
+    require(path == path.resolve() and path.is_relative_to(root), 'Preparation evidence escaped its Run')
+    raw = read_regular(path)
+    require(sha256(raw).hexdigest() == member['sha256'], 'Preparation evidence changed')
+    value = loads(raw).get('domain_result', {}).get('preparation')
+    if value is None:
+        return None
+    require(type(value) is dict and value.get('status') in ('ready', 'needs_information'),
+            'Invalid preparation result')
+    require((value['status'] == 'ready') == (type(value.get('case_config')) is dict),
+            'Preparation readiness has no matching configuration')
+    return value, member['sha256']
 
 
 @contextmanager

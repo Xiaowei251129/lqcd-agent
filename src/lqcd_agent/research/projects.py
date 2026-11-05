@@ -319,6 +319,11 @@ class ProjectStore(WorkspaceFiles):
                     "resumable": False, "state": snapshot.state, "evidence": entries,
                     "limitations": ["Read-only evidence copy; no execution authority or recovery database.",
                                     "Raw numerical datasets are not automatically backed up."]}
+        manifest['workflow'] = goal['workflow']
+        if goal['workflow'] == 'intake':
+            from lqcd_agent.inspection import read_preparation
+            selected = read_preparation(snapshot.root)
+            manifest['preparation'] = selected[0] if selected else None
         return manifest, blobs
 
     def capture_run(self, snapshot):

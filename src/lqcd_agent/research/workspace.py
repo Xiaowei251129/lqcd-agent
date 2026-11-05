@@ -1,6 +1,6 @@
 """Explicit operator actions on local research assets, without model execution."""
 from hashlib import sha256
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 from lqcd_agent.configuration import read_config
 from lqcd_agent.control.coordinator import read_regular
@@ -11,7 +11,7 @@ from .projects import ProjectStore
 from .methods import assess_method
 
 
-COMMANDS = ("project-create", "project-list", "project-show", "library-search", "library-save",
+COMMANDS = ("project-create", "project-list", "project-show", "project-contribute", "library-search", "library-save",
             "library-review", "library-register-method")
 MAX_INPUT_BYTES = 1024 * 1024
 
@@ -43,12 +43,33 @@ def execute_workspace(request):
         if command == "project-list":
             return projects.list()
         if command == "project-show":
-            return {"project": projects.read(request["id"]), "runs": projects.runs(request["id"])}
+            return {"project": projects.read(request["id"]), "runs": projects.runs(request["id"]),
+                    "contributions": projects.contributions(request["id"])}
+        if command == "project-contribute":
+            return projects.contribute(request["id"], expected_digest=request["expected_digest"],
+                key=request["key"], kind=request.get("kind", "scientific_comment"), body=request["body"],
+                evidence_sha256=request.get("evidence", []))
         config = None
         if request.get("case_config") is not None:
             path, before = _input(Library(workspace), request["case_config"])
             config = read_config(path)
             require(read_regular(path) == before, "Case configuration changed while reading")
+        if request.get("data_path") is not None:
+            relative = request["data_path"]
+            path = PurePosixPath(relative)
+            require(path.parts and path.parts[0] == "raw_data" and len(path.parts) > 1 and
+                    path.as_posix() == relative and not any(part.startswith(".") for part in path.parts) and
+                    "\\" not in relative, "Data must be a workspace-relative file under raw_data/")
+            config = {**(config or {}), "raw_data_path": relative}
+        if request.get("python") is not None:
+            require(Path(request["python"]).is_absolute(), "Select an absolute scientific interpreter")
+            config = {**(config or {}), "generated_program": {
+                **((config or {}).get("generated_program") or {}), "python": request["python"]}}
+        if request.get("source_kind") is not None:
+            source_kind = request["source_kind"]
+            require(type(source_kind) is str and source_kind.strip() and len(source_kind) <= 200,
+                    "Declare bounded data provenance")
+            config = {**(config or {}), "source_kind": source_kind}
         return projects.create(request["id"], request["title"], request["goal"], config)
     library = Library(workspace)
     if command == "library-search":

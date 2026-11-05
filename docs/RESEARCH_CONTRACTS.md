@@ -1,14 +1,38 @@
 # Research assets and observable contracts
 
-Start with an empty library and create a Project from an executable case configuration:
+Start with an empty library and create a Project with a question and optional starting inputs:
 
 ```bash
-lqcd-agent project-create --id c2-study --title "C2 stability" --goal "Assess excited-state sensitivity" --case-config configs/example.json
+lqcd-agent project-create --id c2-study --title "C2 stability" --goal "Assess excited-state sensitivity" --data-path raw_data/c2.json --source-kind measured_lattice_data --python /absolute/scientific/python3
 lqcd-agent project-show --id c2-study
 lqcd-agent run --project c2-study --live --key first-study
 ```
 
-The example configuration is a fixture; supply your intended data and scientific contract. A Project may retain a question before configuration, but numerical execution requires a configured case. Explicit live activation permits paid API work. The CLI and workbench share the same unattended Host driver and original workspace `.env`.
+A Project may begin without a data path or executable configuration. Explicit live activation permits paid PI/Postdoc preparation and subsequent authorized analysis. The CLI and workbench share the same unattended Host driver and original workspace `.env`. `configs/example.json` remains a fixture, not measured C2 data.
+
+## Research intake and clarification
+
+`run --project` first profiles only the declared data, then PI frames the question and Postdoc proposes a supported method and missing analysis parameters. Source provenance, sample identities, physical definitions, supplied parameter values and executable paths are not model-editable. Missing metadata can be explicitly supplied by the operator in the starting configuration; it cannot overwrite source data fields. C2, Normalization and replica-observable JSON contracts and configured registered CSV programs are supported. Other formats remain explicit missing-input questions; this is not a universal file importer.
+
+The starting `case_config` can be partial, for example:
+
+```json
+{"raw_data_path":"raw_data/c2.json","source_kind":"measured_lattice_data","generated_program":{"python":"/absolute/scientific/python3"}}
+```
+
+Use the actual source provenance; `--source-kind` and the workbench's **Data provenance** field set this declaration explicitly, without a default. A free-text scientific reply does not replace missing structured metadata. The scientific interpreter may also already exist at the workspace's `.runtime/bin/python3`. The Host profiles fields, dimensions and metadata without putting the correlator arrays into PI/Postdoc input. Model assumptions and unresolved questions remain recorded evidence. Natural-language scientific constraints inform the plan; only supported structured contracts have deterministic enforcement.
+
+A `ready` preparation automatically admits the formal scientific Run from its sealed configuration. The original Project remains unchanged; the prepared configuration is inspectable in its Plan evidence. `needs_information` records specific questions and closes the preparation without physics acceptance or a lease waiting for a reply. Human scientific participation remains optional. Reply in the workbench or CLI, update missing input fields if needed, then explicitly continue:
+
+```bash
+lqcd-agent project-show --id c2-study
+lqcd-agent project-contribute --id c2-study --expected-digest PROJECT_SHA256 --key reply-one --body "The requested scientific clarification."
+lqcd-agent run --project c2-study --host HOST --case CASE --intake-parent PREPARATION_RUN --live --key continue-one
+```
+
+Continue uses the original task's remaining Run/model/token quota and original deadline. Every preparation, clarification and scientific Run uses one of the same four Run slots. A comment alone never starts a model, changes a frozen Run, grants permissions or renews the task. If the task is exhausted or expired, a deliberate new investigation is required. Existing evidence stays immutable. Offline preparation identifies disabled live research and does not simulate model readiness.
+
+Scientific Code can test its current source with `run_numerical_trial`. Its small synthetic input and actual execution feedback are recorded in the Code bundle. The tool cannot select an interpreter, a data file, a shell command or additional permissions. Trials aid debugging; the final sealed program still runs through formal Analysis and review. Changing a scientific method must remain explicit in the plan/experiment record.
 
 ## Conclusions and additional experiments
 

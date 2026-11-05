@@ -62,6 +62,10 @@ def test_failed_jackknife_never_silently_drops_block_or_returns_error_bar():
 def test_project_observable_program_executes_and_keeps_physics_warning(tmp_path, monkeypatch):
     import sys
     from pathlib import Path
+    from types import SimpleNamespace
+    from lqcd_agent import runtime
+    from lqcd_agent.research.agent_runtime import ResearchAgentRuntime
+    from tests.test_research_intake import IntakeModel
     from tests.test_scientific_codegen import install_backend, deliver
     from lqcd_agent.runtime import ApplicationRequest, execute
     from lqcd_agent.research.projects import ProjectStore
@@ -84,8 +88,19 @@ print(json.dumps({'status':'ok','observables':[r],'assumptions':[],'limitations'
     install_backend(monkeypatch, program)
     projects = ProjectStore(tmp_path)
     project = projects.create('ratios', 'Ratio study', config['physics_goal'], config)
+    # Exercise real PI/Postdoc intake with a local SDK model. Formal Analysis
+    # uses the existing deterministic role and Code fixtures on its sealed contract.
+    calls = []
+    select_agent = runtime.scientific_agent
+    def select(host, selected, settings, workspace):
+        if selected == project['case_config']:
+            settings = SimpleNamespace(timeout_seconds=10, research_runtime=lambda:
+                ResearchAgentRuntime(IntakeModel(calls, family='replica_observables'), max_output_tokens=2048))
+        return select_agent(host, selected, settings, workspace)
+    monkeypatch.setattr(runtime, 'scientific_agent', select)
     start = execute(ApplicationRequest('run', project='ratios', project_digest=project['sha256'], key='observable-start'))
-    assert start['active_pause']['reason'] == 'external_result'
+    assert [call['schema'] for call in calls] == ['ResearchBrief', 'IntakePlan']
+    assert start['workflow'] == 'scientific' and start['active_pause']['reason'] == 'external_result'
     result = deliver(start)
     assert result['run_status'] == 'completed' and result['active_pause'] is None, result
     root = host_root(result['host'])/'observables'/result['run_locator']['run_id']
@@ -101,6 +116,8 @@ print(json.dumps({'status':'ok','observables':[r],'assumptions':[],'limitations'
     assert any(w['code']=='observable_physics_not_validated' for w in review['warnings'])
     records = [loads(row) for row in (root/'execution_history.jsonl').read_bytes().splitlines()]
     assert not any(row['record_type'] == 'human_response' for row in records)
-    history = projects.runs('ratios')
-    assert len(history) == 1 and not history[0]['preliminary'] and not history[0]['resumable']
-    assert history[0]['scientific_outcome'] == 'qualified' and history[0]['decision_origin'] == 'system'
+    preparation, scientific = sorted(projects.runs('ratios'), key=lambda row: row['workflow'])
+    assert preparation['workflow'] == 'intake' and preparation['preparation']['status'] == 'ready'
+    assert scientific['run_locator'] == result['run_locator'] and scientific['workflow'] == 'scientific'
+    assert not scientific['preliminary'] and not scientific['resumable']
+    assert scientific['scientific_outcome'] == 'qualified' and scientific['decision_origin'] == 'system'

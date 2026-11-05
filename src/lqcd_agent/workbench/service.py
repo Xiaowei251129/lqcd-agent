@@ -152,7 +152,7 @@ class Workbench:
         attempts = {item['attempt_id']: {'id': item['attempt_id'], 'kind': {'plan': 'method_planner', 'analysis': 'analysis_engineer', 'review': 'scientific_reviewer', 'code': 'code_agent', 'approval': 'human_gate'}.get(item['slot'], item['slot']),
             'event': 'recorded', 'status': 'recorded'} for item in entries if item['attempt_id'] is not None}
         result = {**self._project_record(manifest), 'archived': True, 'inspection': 'verified',
-            'goal': goal['goal'], 'live': goal['live'], 'compatible': False, 'managed': False,
+            'goal': goal['goal'], 'live': goal['live'], 'workflow': goal['workflow'], 'compatible': False, 'managed': False,
             'can_advance': False, 'needs_recovery': False, 'active_pause': None, 'human_request': None,
             'synthetic': (goal.get('case_config') or {}).get('source_kind', 'synthetic_placeholder') == 'synthetic_placeholder',
             'coding': goal['workflow'] == 'code' or bool((goal.get('case_config') or {}).get('generated_program')),
@@ -174,18 +174,27 @@ class Workbench:
         return {'name': item['name'] if item else identifier, 'sha256': identifier}, raw
 
     def start_project(self, project_id, body):
-        closed(body, ('expected_digest', 'live', 'key'))
+        continuation = 'intake_parent' in body
+        closed(body, ('expected_digest', 'live', 'key', *(('intake_parent', 'case') if continuation else ())))
         operation_key = key(body['key'])
         if type(body['live']) is not bool:
             raise RequestError('invalid_research_request', 400)
+        if continuation:
+            require(type(body['intake_parent']) is str and type(body['case']) is str,
+                    'Preparation continuation requires its original Run and case')
         admitted = submit(ApplicationRequest('run', host=self.host, project=project_id,
-            project_digest=body['expected_digest'], live=body['live'], key=operation_key))
+            project_digest=body['expected_digest'], live=body['live'], key=operation_key,
+            **({'intake_parent': body['intake_parent'], 'case': body['case']} if continuation else {})))
         status = admitted.status
         return {**status, 'project_id': project_id,
                 'project_run_key': digest({'host': status['host'], **status['run_locator']})}
 
     @staticmethod
     def _summary(result, item, name, value):
+        if item['current'] and item['slot'] == 'plan' and name == 'method_plan.json':
+            preparation = value.get('domain_result', {}).get('preparation')
+            if preparation is not None:
+                result['preparation'] = preparation
         if item['current'] and item['slot'] == 'terminal' and name == 'memory_update.json':
             result.update(scientific_outcome=value['scientific_outcome'], decision_origin=value['decision_origin'])
         if item['current'] and 'domain_result' not in value:
@@ -292,11 +301,12 @@ class Workbench:
         if pause and pause['reason'] == 'human_input':
             request = next(r for r in reversed(snapshot.records.values) if r['record_type'] == 'human_request' and
                            r['human_request_id'] == pause['input_contract']['human_request_id'] and r['event'] == 'created')
-        result = {**status, 'inspection': 'verified', 'goal': goal['goal'], 'live': goal['live'], 'compatible': compatible,
+        result = {**status, 'inspection': 'verified', 'goal': goal['goal'], 'live': goal['live'],
+            'workflow': goal['workflow'], 'compatible': compatible,
             'managed': host == self.host, 'can_advance': snapshot.can_advance and compatible,
             'needs_recovery': host == self.host and snapshot.state['run_status'] == 'running' and not snapshot.can_advance and not worker_active(self.host),
-            'synthetic': goal.get('case_config', {}).get('source_kind', 'synthetic_placeholder') == 'synthetic_placeholder',
-            'coding': goal['workflow'] == 'code' or bool(goal.get('case_config', {}).get('generated_program')),
+            'synthetic': (goal.get('case_config') or {}).get('source_kind', 'synthetic_placeholder') == 'synthetic_placeholder',
+            'coding': goal['workflow'] == 'code' or bool((goal.get('case_config') or {}).get('generated_program')),
             'human_request': request, 'actions': {'cancel': host == self.host and pause is not None and pause['status'] == 'opened',
                 'respond': host == self.host and compatible and request is not None and pause['status'] == 'opened'},
             'runtime_build': snapshot.fingerprint['application_build']}

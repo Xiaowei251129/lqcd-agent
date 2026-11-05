@@ -149,6 +149,11 @@ def admit_research_run(db, goal, locator, operation_id, stamp, *, parent=None):
                 'A child changed its inherited research quota')
         require(parent is not None and any(row['locator'] == parent for row in value['runs']),
                 'Research parent is not admitted to this quota')
+    if goal.get('intake_parent') is not None:
+        require(goal['workflow'] == 'intake' and goal['intake_parent'] == parent,
+                'Clarification parent binding changed')
+        require(not any(row['parent'] == parent for row in value['runs']),
+                'This preparation was already continued; use its latest preparation child')
     config = goal.get('case_config') or {}
     parameters_sha = digest(config.get('generated_program', {}).get('parameters', {}))
     methods_sha = digest(goal.get('method_sources', []))

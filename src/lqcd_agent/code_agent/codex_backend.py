@@ -308,6 +308,24 @@ def _seal_codex_result(backend, coordinator, producer, repository, containment, 
     expected = dict(base); seen = set()
     audit = sdk_tool_audit(task, manifest, json.loads((job/'state.json').read_text()).get('tool_events', []),
                            proposal['items'], stopped_at=coordinator._time().monotonic_seconds)
+    if 'native_tool_intents' in source:
+        admitted_ids = {item['call_id'] or item['id'] for item in source['native_tool_intents']}
+        require(all(item['id'] in admitted_ids for item in proposal['items'] if is_tool_item(item)),
+                'Native executed a tool without original admission')
+    if source.get('numerical_trials'):
+        from .numerical_trials import SERVER, TOOL, trial_member
+        trial_member(coordinator, task)
+        calls = [item for item in proposal['items'] if item['type'] == 'mcpToolCall' and
+                 item['server'] == SERVER and item['tool'] == TOOL]
+        require(len(calls) >= len(source['numerical_trials']), 'Native tool audit omitted a numerical trial')
+        remaining = list(calls)
+        for entry in source['numerical_trials']:
+            native = next(item for item in source['native_tool_intents']
+                          if item['id'] == entry['intent']['native_item_id'])
+            match = next((item for item in remaining if item['id'] == native['call_id'] and
+                          digest(item['arguments']) == entry['intent']['arguments_sha256']), None)
+            require(match is not None, 'Native numerical trial arguments changed')
+            remaining.remove(match)
     for change in files:
         require(set(change) == {'path', 'content'}, 'Invalid coding proposal fields')
         path, text = change['path'], change['content']; relative_path(path)

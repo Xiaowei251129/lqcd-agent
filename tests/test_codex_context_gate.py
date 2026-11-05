@@ -428,7 +428,7 @@ def test_native_repeats_share_real_quota_and_failed_usage_is_not_refunded(native
         if len(generations) == 1:
             return 503, b'private failed body', 'application/json'
         result = {'type': 'response.completed', 'response': {'id': 'response-fixture',
-            'object': 'response', 'status': 'completed', 'usage': {
+            'object': 'response', 'status': 'completed', 'output': [], 'usage': {
                 'input_tokens': 100, 'output_tokens': 20, 'total_tokens': 120}}}
         return 200, ('event: response.completed\ndata: '+json.dumps(result)+'\n\n').encode(), 'text/event-stream'
     with upstream(respond) as (base, received):

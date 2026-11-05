@@ -27,6 +27,7 @@ class ApplicationRequest:
     archive_path: str | None = None
     project: str | None = None
     project_digest: str | None = None
+    intake_parent: str | None = None
 
 
 def create_host():
@@ -72,7 +73,7 @@ def submit(request: ApplicationRequest):
     if args.command == 'status':
         return Submission(read_snapshot(host_root(args.host), {'case_id': args.case, 'run_id': args.run}).status())
     intent = {field: getattr(args, field) for field in
-              ('command', 'case', 'goal', 'workflow', 'live', 'case_config', 'project', 'project_digest')}
+              ('command', 'case', 'goal', 'workflow', 'live', 'case_config', 'project', 'project_digest', 'intake_parent')}
     original_inputs = None
     if args.command in ('start', 'run') and args.host is not None:
         from .inspection import read_operation
@@ -120,10 +121,16 @@ def submit(request: ApplicationRequest):
         if args.case_config is not None:
             require(project is None, 'Use the case configuration frozen in the Project')
             config = read_config(Path(args.case_config))
-        require(config is not None, 'This Project needs an executable case configuration before starting a Run')
-        require(config.get('schema_version') == '0.1', 'Unsupported case configuration version')
-        args.case = config.get('case_id', args.case)
-        args.command, args.workflow = 'start', 'scientific'
+        if project is not None:
+            args.case = (config or {}).get('case_id', project['id'])
+            args.command, args.workflow = 'start', 'intake'
+        else:
+            require(config is not None, 'Supply a Project or an executable case configuration')
+            require(config.get('schema_version') == '0.1', 'Unsupported case configuration version')
+            args.case = config.get('case_id', args.case)
+            args.command, args.workflow = 'start', 'scientific'
+    require(args.intake_parent is None or project is not None and args.workflow == 'intake' and args.host is not None
+            or original_inputs is not None, 'Clarification continuation requires its original Host and Project')
     if args.command == 'start' and args.goal is None:
         args.goal = config.get('physics_goal', 'Analyze the configured case') if config else (
             'Implement value() in sample.py returning integer 2' if args.workflow == 'code' else 'Validate the synthetic observable')
@@ -142,7 +149,7 @@ def submit(request: ApplicationRequest):
         method_sources = goal.get('method_sources', [])
     elif original_inputs is not None:
         method_sources = original_inputs['root_goal'].get('method_sources', [])
-    elif config is not None:
+    elif config is not None and args.workflow != 'intake':
         from .research.methods import snapshot_methods
         method_sources = snapshot_methods(config, workspace)
     from lqcd_agent.control.clock import HostClock
@@ -152,7 +159,8 @@ def submit(request: ApplicationRequest):
         previous = coordinator.lookup_key('public_control', args.key)
         replay = previous is not None and previous['status'] == 'committed'
         advance_work = False
-        runtime, actor, code = assemble(coordinator, scientific_agent(root, config, settings, workspace) if config is not None and args.command != 'cancel' else None,
+        runtime, actor, code = assemble(coordinator, scientific_agent(root, config or {}, settings, workspace)
+            if (config is not None or args.workflow == 'intake') and args.command != 'cancel' else None,
             live=live, workflow=args.workflow, initialize=args.command == 'start', method_sources=method_sources)
         plane = runtime.plane
         if args.command == 'start':
@@ -162,7 +170,16 @@ def submit(request: ApplicationRequest):
                 if project is not None:
                     inputs['root_goal'].update(project_id=project['id'], project_revision=project['revision'],
                                               project_sha256=project['sha256'], project_snapshot=project)
-                if config is not None:
+                if args.workflow == 'intake':
+                    from .research.intake import snapshot_intake
+                    prepared = snapshot_intake(workspace, project)
+                    inputs['root_goal'].update(intake=prepared, case_config=config or {},
+                        dataset_snapshot=prepared['dataset_snapshot'], method_sources=[])
+                    inputs['root_goal']['intake_contributions'] = [item['sha256'] for item in
+                        ProjectStore(workspace).contributions(project['id'])]
+                    inputs['input_snapshot'] = {'kind': 'research_intake', 'project': project,
+                                               'intake': prepared}
+                elif config is not None:
                     inputs['root_goal']['case_config'] = config
                     inputs['root_goal']['method_sources'] = method_sources
                     from .tools.dataset import snapshot_dataset
@@ -172,6 +189,14 @@ def submit(request: ApplicationRequest):
                     'limits': dict(RESEARCH_TASK_LIMITS),
                     'deadline': coordinator._time().monotonic_seconds + RESEARCH_TASK_LIMITS['seconds'],
                     'parent': None}
+                if args.intake_parent is not None:
+                    from .research.experiments import clarification_parent
+                    # Explicit continuation inherits the original account. Scientific
+                    # comments alone never dispatch work or renew its deadline.
+                    inherited, parent = clarification_parent(root, request.case, args.intake_parent,
+                        project, live, workspace)
+                    inputs['root_goal']['research_task'] = {**inherited, 'parent': parent}
+                    inputs['root_goal']['intake_parent'] = parent
             result = plane.start_run(StartRunRequest(args.case, inputs, digest(inputs), args.key), actor=actor)
             locator = result['result']['run_locator']
             advance_work = not replay and result['operation_status'] == 'committed' and result['run_status'] == 'running'
@@ -272,7 +297,7 @@ def execute(request: ApplicationRequest):
         root = host_root(status['host'])
         locator = status['run_locator']
         goal = loads(read_regular(root/locator['case_id']/locator['run_id']/'root_goal.json'))
-        if goal['live'] and goal['workflow'] == 'scientific':
+        if goal['live'] and goal['workflow'] in ('scientific', 'intake'):
             from .workbench.worker import launch_worker
             launch_worker(status['host'], Path(goal['workspace']))
     return status

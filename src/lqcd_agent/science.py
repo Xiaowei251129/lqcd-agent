@@ -16,6 +16,9 @@ class ScientificAgent:
         research_context = {key: context.get(key) for key in ('remediation', 'relevant_history')}
         output = self.host / 'domain' / identity['attempt_id'] / identity['case_id'] / identity['run_id']
         output.mkdir(parents=True, exist_ok=True)
+        if context.get('root_goal', {}).get('workflow') == 'intake':
+            from .research.intake import offline_preparation
+            return offline_preparation(context, output)
         diagnostic = {'status': 'success', 'category': 'validated_domain', 'affected_layer': 'none', 'evidence': [],
                       'retryability': 'not_retryable', 'candidates': [], 'confidence': 'unique', 'fingerprint': None,
                       'human_need': None, 'risk': 'low'}

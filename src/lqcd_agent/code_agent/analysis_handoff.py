@@ -10,6 +10,7 @@ from lqcd_agent.control.operations import PreparationVerification
 from lqcd_agent.control.strict_json import canonical_bytes, closed, digest, require, loads
 
 from .artifacts import bundle_members, validate_code_result
+from .numerical_trials import trial_member
 from .schemas import validate_task, validate_manifest
 from .workspace import (WorkspaceProvider, canonical_patch, immutable_git_tree, scan_tree,
                         tree_digest, validate_changes)
@@ -102,6 +103,7 @@ class AnalysisHandoff:
         patch = member_bytes["changes.patch"]
         expected = bundle_members(task, result, receipt, manifest, seal, changes, verification,
                                   member_bytes["tool_audit.jsonl"], patch)
+        expected.update(trial_member(self.coordinator, task))
         require(expected == member_bytes and verification["all_required_passed"] is True and
                 changes["changes"] and result["patch_digest"] == sha256(patch).hexdigest(),
                 "Code source is incomplete or not verified")

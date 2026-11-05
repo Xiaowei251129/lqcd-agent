@@ -61,7 +61,8 @@ def select_product_route(view, diagnostic, *, code_needed=False, code_usable=Fal
                diagnostic['confidence'] == 'unique' and diagnostic['human_need'] is None)
     trigger, request, sequence = 'forward', None, stop_sequence_id
     if node == 'method_planner':
-        target = ('code_agent' if code_needed else 'analysis_engineer') if forward else 'decision_coordinator'
+        target = (('code_agent' if code_needed else 'analysis_engineer')
+                  if forward and diagnostic['category'] != 'research_intake' else 'decision_coordinator')
     elif node == 'code_agent':
         target = 'analysis_engineer' if forward and code_usable else 'decision_coordinator'
     elif node == 'analysis_engineer':

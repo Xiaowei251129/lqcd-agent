@@ -17,7 +17,7 @@ import threading
 import time
 from urllib.parse import urlsplit
 
-from lqcd_agent.control.strict_json import closed, loads, require
+from lqcd_agent.control.strict_json import canonical_bytes, closed, digest, loads, require
 from lqcd_agent.settings import INPUT_TOKEN_LIMIT, CODE_OUTPUT_TOKEN_LIMIT
 
 # The pinned Responses input_tokens API's input-bearing fields. Keep values exact.
@@ -59,6 +59,80 @@ def _validate(body, model):
             for item in value:
                 inspect(item)
     inspect(body.get('input'))
+
+
+def _response_tools(raw, content_type):
+    """Validate a whole bounded response before native can execute any of its items."""
+    events = []
+    if content_type.split(';', 1)[0] == 'text/event-stream':
+        for line in raw.splitlines():
+            if not line or line.startswith((b'event:', b':', b'id:', b'retry:')):
+                continue
+            require(line.startswith(b'data:'), 'Unsupported native response framing')
+            data = line[5:].strip()
+            if data == b'[DONE]':
+                continue
+            event = loads(data, canonical=False)
+            require(type(event) is dict and type(event.get('type')) is str, 'Invalid native response event')
+            events.append(event)
+        completed = [event['response'] for event in events if event['type'] == 'response.completed']
+        require(len(completed) == 1, 'Native tool response did not complete exactly once')
+        response = completed[0]
+    else:
+        response = loads(raw, canonical=False)
+    require(type(response) is dict and response.get('status') == 'completed' and
+            type(response.get('output')) is list, 'Incomplete native tool response')
+    items = response['output']
+    indexed = {}
+    tools = []
+    for item in items:
+        require(type(item) is dict and type(item.get('id')) is str and item['id'] not in indexed,
+                'Native response item identity is missing or repeated')
+        indexed[item['id']] = item
+        kind = item.get('type')
+        if kind in ('message', 'reasoning', 'compaction'):
+            continue
+        require(kind in ('function_call', 'custom_tool_call', 'web_search_call'),
+                'Unrecognized executable native response item')
+        identity = {key: item.get(key) for key in ('id', 'type', 'call_id', 'name', 'namespace')}
+        if kind == 'function_call':
+            require(type(item.get('arguments')) is str, 'Native tool arguments missing')
+            identity['arguments_sha256'] = digest(loads(item['arguments'], canonical=False))
+        elif kind == 'custom_tool_call':
+            require(type(item.get('input')) is str, 'Native custom tool input missing')
+            identity['arguments_sha256'] = digest(item['input'])
+        else:
+            identity['arguments_sha256'] = digest(item.get('action'))
+        tools.append(identity)
+    call_ids = [item['call_id'] for item in tools if item['call_id']]
+    require(len(call_ids) == len(set(call_ids)), 'Native response repeated a tool call identity')
+    done = []
+    deltas = {}
+    for event in events:
+        kind = event['type']
+        if kind in ('response.output_item.added', 'response.output_item.done'):
+            item = event.get('item', {})
+            expected = indexed.get(item.get('id'))
+            require(expected is not None and all(item.get(key) == expected.get(key)
+                for key in ('id', 'type', 'call_id', 'name', 'namespace')), 'Native streamed tool identity changed')
+            if kind.endswith('.done'):
+                require(item == expected and item['id'] not in done, 'Native streamed item changed or repeated')
+                done.append(item['id'])
+        elif kind in ('response.function_call_arguments.delta', 'response.custom_tool_call_input.delta'):
+            require(event.get('item_id') in indexed and type(event.get('delta')) is str,
+                    'Unbound native tool argument delta')
+            deltas[event['item_id']] = deltas.get(event['item_id'], '') + event['delta']
+        elif kind in ('response.function_call_arguments.done', 'response.custom_tool_call_input.done'):
+            item = indexed.get(event.get('item_id'), {})
+            field = 'arguments' if kind == 'response.function_call_arguments.done' else 'input'
+            require(event.get(field) == item.get(field), 'Native completed tool arguments changed')
+    for identifier, content in deltas.items():
+        item = indexed[identifier]
+        require(content == item.get('arguments' if item['type'] == 'function_call' else 'input'),
+                'Native streamed tool arguments changed')
+    if events:
+        require(set(done) == set(indexed), 'Native response omitted a completed item')
+    return tools
 
 
 class _UsageReader:
@@ -111,6 +185,7 @@ class CodingContextGateway:
     def __init__(self, settings, job, *, producer_authority=None, task=None):
         self.settings, self.job = settings, job
         self.producer_authority, self.task = producer_authority, task
+        self.numerical_trials = None
         self.token = secrets.token_urlsafe(32)
         self.upstream = urlsplit(settings.api_base.rstrip('/'))
         if (self.upstream.scheme not in ('http', 'https') or not self.upstream.hostname or
@@ -180,6 +255,8 @@ class CodingContextGateway:
             except OSError:
                 pass
             connection.close()
+        if self.numerical_trials is not None:
+            self.numerical_trials.close()
         self._client.close()
         self.server.shutdown()
         self.server.server_close()
@@ -225,6 +302,29 @@ class CodingContextGateway:
                 yield budget, fence
         except (ValueError, KeyError, TypeError, OSError, sqlite3.Error):
             raise _Rejected(422, 'context_research_authority_or_quota_failed') from None
+
+    def _admit_tools(self, budget, fence, ticket, tools):
+        from .external_operation import ExternalDispatch
+        dispatch = ExternalDispatch(budget.coordinator, self.task['producer_operation_id'],
+            self.producer_authority['worker_owner_id'], self.producer_authority['lease_epoch'],
+            None, None, None, None)
+        with budget.coordinator.transaction() as db:
+            fence(db)
+            value, _, _, task, _ = dispatch.model_authority(db)
+            intents = value.setdefault('native_tool_intents', [])
+            require(not any(entry['ticket'] == ticket for entry in intents), 'Native tool response replayed')
+            require(not ({entry['id'] for entry in intents} & {entry['id'] for entry in tools}) and
+                    not ({entry['call_id'] for entry in intents if entry['call_id']} &
+                         {entry['call_id'] for entry in tools if entry['call_id']}), 'Native tool item replayed')
+            maximum = value['prestart']['aggregate']['request']['maximum_charge']['tool_calls']
+            require(len(intents) + len(tools) + len(task['write_paths']) <= maximum,
+                    'Native response exceeds original Code tool allowance')
+            intents.extend({**item, 'ticket': ticket} for item in tools)
+            previous = value['phase_revision']
+            value['phase_revision'] += 1
+            require(db.execute('UPDATE external_operations SET revision=?,value=? '
+                'WHERE external_operation_id=? AND revision=?', (value['phase_revision'], canonical_bytes(value),
+                    value['producer_operation_id'], previous)).rowcount == 1, 'Native tool admission CAS lost')
 
     @contextmanager
     def _request(self, path, raw, *, timeout_seconds, input_tokens=None, admit=None):
@@ -308,7 +408,8 @@ class CodingContextGateway:
             if len(authorization) != 1 or not hmac.compare_digest(
                     authorization[0].encode(), ('Bearer ' + self.token).encode()):
                 raise _Rejected(401, 'context_authentication_required')
-            if (handler.path not in ROUTES or handler.headers.get('Upgrade') or
+            trial_route = handler.path == '/mcp' and self.numerical_trials is not None
+            if ((handler.path not in ROUTES and not trial_route) or handler.headers.get('Upgrade') or
                     'upgrade' in handler.headers.get('Connection', '').lower()):
                 raise _Rejected(400, 'context_route_forbidden')
             lengths = handler.headers.get_all('Content-Length', [])
@@ -325,6 +426,20 @@ class CodingContextGateway:
                 body = loads(raw, canonical=False)
             except ValueError:
                 raise _Rejected(400, 'context_invalid_json') from None
+            if trial_route:
+                try:
+                    reply = self.numerical_trials.rpc(body)
+                except (ValueError, TypeError, KeyError):
+                    self._fail('numerical_trial_integrity_or_authority_failed')
+                    raise _Rejected(422, 'numerical_trial_integrity_or_authority_failed') from None
+                encoded = b'' if reply is None else json.dumps(reply).encode()
+                handler.send_response(202 if reply is None else 200)
+                handler.send_header('Content-Type', 'application/json')
+                handler.send_header('Content-Length', str(len(encoded)))
+                handler.end_headers()
+                response_started = True
+                handler.wfile.write(encoded)
+                return
             _validate(body, self.settings.coding_model)
             output_limit = CODE_OUTPUT_TOKEN_LIMIT
             if handler.path == '/v1/responses':
@@ -438,13 +553,27 @@ class CodingContextGateway:
                                         response.status_code >= 500 else 422, 'context_upstream_request_failed')
                     content_type = response.headers.get('Content-Type', 'application/json')
                     usage = _UsageReader(content_type)
+                    # Hold one bounded response until all tool effects have durable
+                    # admission. Native notifications are asynchronous and cannot
+                    # enforce a mixed shell/MCP batch's allowance before execution.
+                    buffered = None
+                    if budget is not None and handler.path == '/v1/responses':
+                        buffered = bytearray()
+                        try:
+                            for chunk in response.iter_raw():
+                                buffered.extend(chunk)
+                                require(len(buffered) <= MAX_WIRE_BYTES, 'Native response is oversized')
+                            tools = _response_tools(bytes(buffered), content_type)
+                            self._admit_tools(budget, fence, ticket, tools)
+                        except (ValueError, TypeError, KeyError, sqlite3.Error):
+                            raise _Rejected(422, 'context_native_tool_admission_failed') from None
                     handler.close_connection = True
                     handler.send_response(response.status_code)
                     handler.send_header('Content-Type', content_type)
                     handler.send_header('Connection', 'close')
                     handler.end_headers()
                     response_started = True
-                    for chunk in response.iter_raw():
+                    for chunk in ([bytes(buffered)] if buffered is not None else response.iter_raw()):
                         usage.feed(chunk)
                         # Settle before Codex can consume a completed SSE event.
                         if usage.complete:
@@ -464,7 +593,7 @@ class CodingContextGateway:
                 self.generation_usage_unknown.set()
             if error.message in ('context_token_count_failed', 'context_input_token_limit_exceeded',
                     'context_output_token_limit_exceeded', 'context_producer_authority_missing',
-                    'context_research_authority_or_quota_failed') or (
+                    'context_research_authority_or_quota_failed', 'context_native_tool_admission_failed') or (
                     error.message == 'context_upstream_request_failed' and not retryable):
                 self._fail(error.message)
             if raw is not None and (not traced or error.message == 'context_upstream_request_failed'):

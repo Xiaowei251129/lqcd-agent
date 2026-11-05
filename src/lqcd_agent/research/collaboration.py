@@ -144,6 +144,21 @@ def _issue_id(item):
     return item['id'] or 'issue-'+digest({'question': item['question']})[:20]
 
 
+def _discussion_issues(discussion):
+    """Keep explicit missing prerequisites through every research preparation stage."""
+    proposed = deepcopy(discussion['issues'])
+    if discussion['decision'] == 'need_information':
+        # Omission or a later recommendation cannot release a missing input.
+        proposed = [{**item, 'status': 'blocked'} if item['status'] != 'addressed' else item for item in proposed]
+        if not any(item['status'] == 'blocked' for item in proposed):
+            proposed.append({'id': '', 'question': discussion['summary'], 'response': None,
+                             'evidence_references': [], 'status': 'blocked'})
+    elif discussion['decision'] == 'revise' and not proposed:
+        proposed.append({'id': '', 'question': discussion['summary'], 'response': None,
+                         'evidence_references': [], 'status': 'open'})
+    return proposed
+
+
 def _merge_issues(previous, proposed, *, known_evidence=frozenset(), known_questions=None):
     merged = {item['id']: dict(item) for item in previous}
     questions = {**(known_questions or {}), **{item['id']: item['question'] for item in previous}}
@@ -257,8 +272,12 @@ class _RoleProvider:
         return self.runner.run(invoke())
 
     def generate(self, request):
+        return self._checked(self._generate, request)
+
+    def _checked(self, operation, argument):
+        """Keep provider exception bodies out of every research entry point."""
         try:
-            return self._generate(request)
+            return operation(argument)
         except (APIError, ModelBehaviorError, ModelRefusalError) as error:
             # Provider bodies, refusals and SDK schema errors can contain private response data.
             # The Host events retain the original error type and resource accounting.
@@ -273,12 +292,20 @@ class _RoleProvider:
             raise
 
     def _generate(self, request):
+        preparation = self.context.get('root_goal', {}).get('preparation', {}).get('proposal')
         tools = build_tools(self.agent.workspace, self.context, host=self.agent.host,
                             output_dir=self.output, write_scope=self.meter.write_scope, sources={**request.context_sources,
                                 'project_history': self.context.get('project_history', {}),
-                                'human_contributions': self.context.get('human_contributions', [])})
+                                'human_contributions': self.context.get('human_contributions', []),
+                                **({'research_preparation': preparation} if preparation is not None else {})})
         instructions = '\n'.join(m['content'] for m in request.messages if m['role'] == 'system')
         inputs = [dict(m) for m in request.messages if m['role'] != 'system']
+        if preparation is not None:
+            inputs.append({'role': 'user', 'content': json.dumps({'research_preparation': {
+                key: preparation[key] for key in ('summary', 'assumptions', 'questions')},
+                'scope': 'These are the earlier preparation assumptions, not numerical evidence. '
+                         'Read research_preparation for its complete source. Plan implementation of the now-frozen '
+                         'contract; revisit the research question only when new evidence requires it.'})})
         plan = (self.agent._artifact(self.context, 'method_plan.json')
                 if self.node == 'scientific_reviewer' else None)
         issues = _prior_issues(self.context, plan)
@@ -289,18 +316,7 @@ class _RoleProvider:
                            for item in self.context.get('project_history', {}).get('resolved', [])}
         plan_prerequisites = set()
         def merge(discussion):
-            proposed = list(discussion['issues'])
-            if discussion['decision'] == 'need_information':
-                # A later role cannot turn missing inputs into permission to execute
-                # merely by omitting the question or relabeling the recommendation.
-                proposed = [{**item, 'status': 'blocked'} if item['status'] != 'addressed' else item
-                            for item in proposed]
-                if not any(item['status'] == 'blocked' for item in proposed):
-                    proposed.append({'id': '', 'question': discussion['summary'], 'response': None,
-                        'evidence_references': [], 'status': 'blocked'})
-            elif discussion['decision'] == 'revise' and not proposed:
-                proposed.append({'id': '', 'question': discussion['summary'], 'response': None,
-                    'evidence_references': [], 'status': 'open'})
+            proposed = _discussion_issues(discussion)
             merged = _merge_issues(issues, proposed, known_questions=known_questions,
                 known_evidence=_known_evidence(self.context, request.context_sources, self.meter.events))
             if discussion['decision'] == 'need_information':
@@ -445,6 +461,10 @@ class CollaborationAgent(ScientificAgent):
                 max_output_tokens=runtime.max_output_tokens)
             provider = _RoleProvider(self, node, context, output, runtime, runner, meter)
             try:
+                if context['root_goal'].get('workflow') == 'intake':
+                    require(node == 'method_planner', 'Research intake cannot execute numerical analysis or review')
+                    from .intake import run_intake
+                    return provider._checked(run_intake, provider)
                 # Reuse the numerical checks, canonical artifacts, schema mapping and integrity sealing.
                 agent = ScientificAgent(self.host, self.config, provider=provider, workspace=self.workspace)
                 outcome = agent.run(node, context, timeout_seconds=self.request_timeout_seconds)
