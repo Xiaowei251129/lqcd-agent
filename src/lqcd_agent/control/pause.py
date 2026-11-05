@@ -975,7 +975,7 @@ class PauseOperations:
             if request.reason == "external_result":
                 from .operations import ExternalControl
                 require(request.target_attempt_id == requester["attempt_id"] and target["attempt_kind"] == "code_agent",
-                        "External Pause must bind its original scheduled Code Agent")
+                        "External pause must bind its original scheduled Research Worker attempt")
                 external_dependency = ExternalControl(coordinator).preparation(db, request.run_locator, target, records)
                 require(request.input_contract == {"kind": "external_result", "producer_operation_id": external_dependency["producer_operation_id"]},
                         "External Pause input contract mismatch")
@@ -1777,13 +1777,13 @@ class ExternalInterrupt(ExternalCancellation):
 
 
 def validate_fingerprint(value):
-    """Validate the A04 compatibility components without reading runtime inputs."""
+    """Validate a recorded fingerprint without reading the current Host environment."""
     closed(value, FINGERPRINT_FIELDS)
     for field in ("control_protocol", "application_build", "graph_topology"):
         digest_value(value[field])
     for field in ("state_schema", "execution_schema", "artifact_schema", "langgraph", "checkpointer", "serializer"):
         text(value[field])
-    require(value["execution_schema"] in ("0.3", "0.4"), "Unsupported Pause fingerprint schema")
+    require(value["execution_schema"] == PROTOCOL["schema_version"], "Unsupported fingerprint execution schema")
 
 
 def validate_pause_record(record):

@@ -33,6 +33,7 @@ def test_registered_matrix_program_runs_through_canonical_analysis(tmp_path, csv
               'expected_outputs': ['analysis_outputs/normalization_diagnostics.json']}
     inventory = build_repo_inventory(tmp_path)
     selected = selected_analysis_programs(config, inventory)
+    assert selected[0]['name'] == 'matrix_element_normalization_check'
     assert selected[0]['input_mapping'] == {'matrix_elements': 'raw_data_csv.rows'}
     case = tmp_path/'case.json'; case.write_text(json.dumps(config))
     plan = tmp_path/'plan.json'; plan.write_text(json.dumps({'selected_analysis_programs': selected}))
@@ -42,7 +43,7 @@ def test_registered_matrix_program_runs_through_canonical_analysis(tmp_path, csv
     if not success:
         return
     payload = json.loads((tmp_path/'outputs/case/run/analysis_outputs/normalization_diagnostics.json').read_text())
-    assert payload['all_passed'] is True
+    assert payload['status'] == 'success' and payload['all_passed'] is True
 
 
 def test_failed_review_is_a_failed_domain_diagnostic(tmp_path, monkeypatch):

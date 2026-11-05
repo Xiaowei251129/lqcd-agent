@@ -7,8 +7,9 @@ ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "src/lqcd_agent"
 
 def render():
+    inputs = [*PACKAGE.rglob("*.py"), PACKAGE / "control/protocol.json"]
     sources = {str(p.relative_to(PACKAGE)): hashlib.sha256(p.read_bytes()).hexdigest()
-               for p in sorted(PACKAGE.rglob("*.py"))}
+               for p in sorted(inputs)}
     return json.dumps({"schema_version": "1", "application_build": hashlib.sha256(
         json.dumps(sources, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
         "graph_topology": sources["graph/analysis_graph.py"], "sources": sources}, indent=2) + "\n"

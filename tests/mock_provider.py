@@ -1,4 +1,4 @@
-"""Deterministic no-network LLM provider used by tests and defaults."""
+"""Deterministic no-network LLM provider for tests."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def _as_string_list(value: Any) -> list[str]:
 
 def mock_proposal(value, role):
     """Fill deterministic mock records using the same wire schema as a real provider."""
-    from .schemas import role_schema
+    from lqcd_agent.llm.schemas import role_schema
     root = role_schema(role)['schema']
 
     def shape(value, schema):
@@ -39,22 +39,21 @@ def mock_proposal(value, role):
     return shape(value, root)
 
 
+class StaticProvider:
+    def __init__(self, content: str) -> None:
+        self.content = content
+        self.config = LLMProviderConfig(provider="static")
+
+    def generate(self, request: LLMRequest) -> LLMResponse:
+        return LLMResponse(provider="static", model="static", content=self.content)
+
+
 class MockLLMProvider:
     def __init__(self, config: LLMProviderConfig | None = None) -> None:
         self.config = config or LLMProviderConfig(
             provider="mock",
             default_model="deterministic-mock",
         )
-
-    def _request_payload(self, request: LLMRequest) -> dict[str, Any] | None:
-        if not request.messages:
-            return None
-        content = request.messages[-1].get("content", "")
-        try:
-            payload = json.loads(content)
-        except json.JSONDecodeError:
-            return None
-        return payload if isinstance(payload, dict) else None
 
     def _method_plan(self, payload: dict[str, Any]) -> dict[str, Any]:
         case_config = payload.get("case_config") if isinstance(payload.get("case_config"), dict) else {}
@@ -101,23 +100,14 @@ class MockLLMProvider:
                 'confidence': evidence.get('confidence', 'high')}
 
     def generate(self, request: LLMRequest) -> LLMResponse:
-        payload = self._request_payload(request)
-        if payload and payload.get("artifact_type") == "method_plan":
+        self.last_request = request
+        payload = json.loads(request.messages[-1]["content"])
+        if payload.get("artifact_type") == "method_plan":
             content = json.dumps(mock_proposal(self._method_plan(payload), 'method_plan'), sort_keys=True)
-        elif payload and payload.get("artifact_type") == "scientific_review_report":
+        elif payload.get("artifact_type") == "scientific_review_report":
             content = json.dumps(mock_proposal(self._scientific_review(payload), 'scientific_review_report'), sort_keys=True)
         else:
-            content = json.dumps(
-                {
-                            "provider": "mock",
-                    "status": "success",
-                    "summary": "Deterministic mock LLM response.",
-                    "message_count": len(request.messages),
-                    "warnings": [],
-                    "errors": [],
-                },
-                sort_keys=True,
-            )
+            raise ValueError(f"Unknown test artifact type: {payload.get('artifact_type')}")
         return LLMResponse(
             provider="mock",
             model=self.config.default_model or "deterministic-mock",

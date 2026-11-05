@@ -37,7 +37,7 @@ def completed_parent(tmp_path, monkeypatch):
         value = original(self, node, context, **kwargs)
         if node == 'scientific_reviewer' and context['root_goal']['research_task']['parent'] is None:
             value['content']['collaboration'] = {'schema_version': '0.1', 'decision': 'recommend_proceed',
-                'summary': 'The bounded offline PI fixture requests one separate declared check.',
+                'summary': 'The bounded offline Research Manager fixture requests one separate declared check.',
                 'challenges': [], 'issues': [], 'exchanges': [], 'next_experiment': requested,
                 'authority': 'Scientific proposal only; Host admission still owns execution.'}
         return value
@@ -109,7 +109,7 @@ def test_live_root_start_recovers_original_reservation_with_an_advancing_clock(t
     assert not runtime.submit(request).advance
 
 
-def test_sealed_pi_proposal_creates_one_related_run_with_shared_quota_and_no_human_response(tmp_path, monkeypatch):
+def test_sealed_manager_proposal_creates_one_related_run_with_shared_quota_and_no_human_response(tmp_path, monkeypatch):
     from lqcd_agent import runtime
     from lqcd_agent.research import experiments
     from tests.test_scientific_codegen import deliver

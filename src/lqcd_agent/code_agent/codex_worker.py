@@ -115,7 +115,8 @@ def run(job):
             thread = codex.thread_start(model=settings.coding_model, cwd=str(workspace), approval_mode=ApprovalMode.deny_all)
             state.update(thread_id=thread.id, status='running')
             write_json(job / 'state.json', state)
-            prompt = ('Implement and test the requested program. Use tools and network access when useful. '
+            prompt = ('You are the Research Worker. Implement and test the requested program. '
+                      'Use tools and network access when useful. '
                       'Never read credentials or modify original research data. Keep temporary test files outside '
                       'the deliverable workspace and avoid bytecode files. Write persistent changes with tools, then return '
                       'only their paths in the required JSON schema; do not copy file contents into the final reply. '

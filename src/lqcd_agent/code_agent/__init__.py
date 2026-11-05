@@ -1,1 +1,1 @@
-"""Host-owned canonical Code Agent components."""
+"""Host-owned coding backend and evidence for the Research Worker."""

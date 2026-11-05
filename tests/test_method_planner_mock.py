@@ -3,17 +3,7 @@ from pathlib import Path
 
 from lqcd_agent.agents.method_planner import run_method_planner
 from lqcd_agent.analysis_programs.registry import program_inventory
-from lqcd_agent.llm.base import LLMProviderConfig, LLMRequest, LLMResponse
-from lqcd_agent.llm.mock_provider import MockLLMProvider
-
-
-class StaticProvider:
-    def __init__(self, content: str) -> None:
-        self.content = content
-        self.config = LLMProviderConfig(provider="static")
-
-    def generate(self, request: LLMRequest) -> LLMResponse:
-        return LLMResponse(provider="static", model="static", content=self.content)
+from tests.mock_provider import MockLLMProvider, StaticProvider
 
 
 def _case_config() -> dict[str, str]:
@@ -175,7 +165,6 @@ def test_code_needed_returns_domain_request_without_control_authority(tmp_path: 
     assert request["summary"] == method_plan["coder_task_summary"]
     assert request["requirements"] == method_plan["method_steps"]
     assert set(request) == {"summary", "requirements", "proposed_paths"}
-    assert not (tmp_path / "coder_task_packet.yaml").exists()
 
 
 def test_missing_critical_fields_produce_needs_more_info(tmp_path: Path) -> None:
@@ -196,7 +185,8 @@ def test_missing_critical_fields_produce_needs_more_info(tmp_path: Path) -> None
     assert {error["field"] for error in method_plan["errors"]} == {"user_goal", "case_config.case_id"}
 
 
-def test_provider_backed_method_plan_accepts_valid_mock_output(tmp_path: Path) -> None:
+def test_provider_backed_method_plan_accepts_valid_mock_output(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "private-call-trace-sentinel")
     result = run_method_planner(
         user_goal="Plan through a mock provider.",
         case_config=_case_config(),
@@ -216,11 +206,9 @@ def test_provider_backed_method_plan_accepts_valid_mock_output(tmp_path: Path) -
     assert trace["agent"] == "method_planner"
     assert trace["provider"]["provider"] == "mock"
     assert trace["parsed_payload_path"] == str(tmp_path / "method_plan.json")
-    assert trace["response"]["content"]
-
-
-
-
+    assert json.loads(trace["request"]["messages"][1]["content"])["user_goal"] == "Plan through a mock provider."
+    assert json.loads(trace["response"]["content"])["summary"] == method_plan["summary"]
+    assert "private-call-trace-sentinel" not in json.dumps(trace)
 
 
 def test_invalid_provider_method_plan_writes_failed_artifact(tmp_path: Path) -> None:

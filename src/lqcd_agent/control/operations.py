@@ -1,4 +1,4 @@
-"""Guarded ControlOperation lookups over the generated protocol.
+"""Guarded ControlOperation lookups over the packaged protocol.
 
 These checks validate control structure. Evidence is produced and verified by
 trusted phase implementations, never supplied through a public client request.

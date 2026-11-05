@@ -7,7 +7,7 @@ from lqcd_agent.agents.analysis_engineer import run_analysis_engineer
 from lqcd_agent.agents.method_planner import run_method_planner
 from lqcd_agent.analysis_programs.registry import selected_analysis_programs
 from lqcd_agent.llm.base import LLMResponse
-from lqcd_agent.llm.mock_provider import MockLLMProvider
+from tests.mock_provider import MockLLMProvider
 from lqcd_agent.llm.schemas import validate_proposal
 from lqcd_agent.tools.dataset import snapshot_dataset, read_dataset
 from lqcd_agent.tools.repo_inventory import build_repo_inventory

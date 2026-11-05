@@ -405,7 +405,7 @@ def product_final_report(root, context, index, classification, response):
         for exchange in collaboration.get('exchanges', []):
             role = exchange['role']
             discussion = exchange.get('discussion', exchange.get('brief', {}).get('discussion', {}))
-            label = {'pi': 'PI', 'reviewer': 'Independent Reviewer'}[role]
+            label = {'research_manager': 'Research Manager', 'reviewer': 'Independent Reviewer'}[role]
             if discussion.get('summary'):
                 include(label + (' — planning' if slot == 'plan' else ' — review'), discussion['summary'])
             if role == 'reviewer':
@@ -447,7 +447,7 @@ class ProductNode:
         context = product_context(self.root, identity, execution, index)
         if context['root_goal'].get('workflow') == 'intake':
             require(node in ('method_planner', 'decision_coordinator', 'memory_report', 'human_gate'),
-                    'Research preparation cannot execute Code, numerical analysis or scientific review')
+                    'Research preparation cannot dispatch the Research Worker, run numerical analysis or start scientific review')
         refs = {slot: pointer['artifact_id'] for slot, pointer in index['current'].items() if pointer is not None}
         refs[SLOT_BY_ATTEMPT_KIND[node]] = identity['attempt_id'] + ':' + SLOT_BY_ATTEMPT_KIND[node]
         if node == 'human_gate':
@@ -510,7 +510,7 @@ class ProductNode:
                 terminal_decision.update(decision='halt', reason_code='terminal_budget_stop', next_control_action='close_run')
                 terminal_decision['decision_digest'] = digest({k: v for k, v in terminal_decision.items() if k != 'decision_digest'})
             return TargetOutcome('succeeded', {'current_artifact_ids': refs}, artifact=ArtifactOutput('terminal', (memory, report), {'memory_update_path': str(memory), 'final_report_path': str(report)}, classification['memory_status']), terminal_decision=terminal_decision)
-        require(node in PRODUCT_FILES, 'Code executes through its original external owner')
+        require(node in PRODUCT_FILES, 'Research Worker executes through its original external owner')
         generated_output = None
         if node == 'decision_coordinator':
             parent = context['direct_parent_attempt_id']

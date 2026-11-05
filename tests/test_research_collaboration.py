@@ -51,7 +51,7 @@ def proposal(role):
 
 
 def brief():
-    return {'physics_question': 'PI-BRIEF-PRIVATE-MARKER',
+    return {'physics_question': 'MANAGER-BRIEF-PRIVATE-MARKER',
             'competing_explanations': ['Missing scale information'],
             'discriminating_checks': ['Inspect the Host diagnostics.'],
             'success_criteria': ['All inputs attributable']}
@@ -59,11 +59,11 @@ def brief():
 
 class CollaborationModel(Model):
     def __init__(self, calls, *, fail=False, refusal=None, need_information=False, code_needed=False,
-                 read_sections=('catalog',), pi_discussion=None, edit_plan=None):
+                 read_sections=('catalog',), manager_discussion=None, edit_plan=None):
         self.calls, self.fail, self.read = calls, fail, 0
         self.read_sections = read_sections
         self.need_information, self.code_needed = need_information, code_needed
-        self.refusal, self.pi_discussion = refusal, pi_discussion
+        self.refusal, self.manager_discussion = refusal, manager_discussion
         self.edit_plan = edit_plan
 
     async def get_response(self, system_instructions, input, model_settings, tools,
@@ -84,7 +84,7 @@ class CollaborationModel(Model):
         else:
             if name == 'method_plan_discussion':
                 value = {'brief': brief(), 'proposal': proposal('method_plan'),
-                         'discussion': self.pi_discussion or discussion()}
+                         'discussion': self.manager_discussion or discussion()}
                 value['proposal'].update(code_needed=self.code_needed,
                     coder_task_summary='Implement the prescribed analysis.' if self.code_needed else None)
                 if self.need_information:
@@ -139,7 +139,7 @@ def test_actual_sdk_collaboration_uses_host_resources_preserves_review_and_concl
     assert [call['schema'] for call in calls] == ['method_plan_discussion', 'method_plan_discussion',
                                               'scientific_review_report_discussion', 'Discussion']
     reviewer = calls[2]['input']
-    assert 'PI-BRIEF-PRIVATE-MARKER' not in json.dumps(reviewer)
+    assert 'MANAGER-BRIEF-PRIVATE-MARKER' not in json.dumps(reviewer)
     records = parse_ledger((snapshot.root/'execution_history.jsonl').read_bytes()).values
     reserved = [row['payload'] for row in records if row.get('event') == 'resource_reserved']
     settled = [row['payload'] for row in records if row.get('event') == 'resource_settled']
@@ -185,7 +185,7 @@ def test_role_without_budget_refuses_before_sdk_invocation(tmp_path, recwarn, ex
         provider = _RoleProvider(SimpleNamespace(request_timeout_seconds=10), 'method_planner', context, tmp_path,
                                  runtime, runner, ExhaustedMeter())
         with pytest.raises(BudgetExhausted):
-            provider._run('pi', 'Conclude.', [], Discussion, [])
+            provider._run('research_manager', 'Conclude.', [], Discussion, [])
     assert calls == events == []
     assert not recwarn.list
 
@@ -277,7 +277,7 @@ def test_resolved_host_issue_can_be_revisited_only_with_its_original_question_an
 
 @pytest.mark.parametrize('warnings,errors', [([], []), ([{'severity': 'severe'}], []),
     ([{'severity': 'warning'}], []), ([], [{'code': 'failed_check'}])])
-def test_pi_revision_preserves_warnings_and_cannot_override_errors(warnings, errors):
+def test_manager_revision_preserves_warnings_and_cannot_override_errors(warnings, errors):
     outcome = {'diagnostic': {'status': 'success', 'category': 'scientific_review', 'risk': 'high', 'human_need': None},
                'content': {'domain_result': {'report': {'status': 'success', 'warnings': warnings, 'errors': errors}}}}
     _review_recommendation(outcome, {'decision': 'revise', 'challenges': ['Inspect a second window.']})
@@ -342,7 +342,7 @@ def coding_plan(tmp_path, model_factory, *, prior_issues=()):
     return result, provider.collaboration
 
 
-def test_pi_checks_and_prior_questions_reach_the_actual_coding_request(tmp_path):
+def test_manager_checks_and_prior_questions_reach_the_actual_coding_request(tmp_path):
     result, _ = coding_plan(tmp_path, lambda _: CollaborationModel([], code_needed=True))
     assert result['status'] == 'success' and result['code_needed']
     requirements = result['code_request']['requirements']
@@ -353,7 +353,7 @@ def test_pi_checks_and_prior_questions_reach_the_actual_coding_request(tmp_path)
 
 
 @pytest.mark.parametrize('defect,persistent', [('success_criteria',False), ('discriminating_checks',True), ('issue_id',False)])
-def test_configured_case_corrects_only_a_completed_pi_proposal(tmp_path, defect, persistent):
+def test_configured_case_corrects_only_a_completed_manager_proposal(tmp_path, defect, persistent):
     calls = []
     def edit(draft):
         if len(calls) == 1 or persistent:
@@ -408,15 +408,15 @@ def test_missing_input_block_requires_a_verified_answer_not_a_status_change():
     assert resolved[0]['status'] == 'addressed'
 
 
-def test_pi_reads_multiple_sections_without_a_second_planner(tmp_path):
+def test_manager_reads_multiple_sections_without_a_second_planner(tmp_path):
     snapshot, calls, _ = execute_collaboration(tmp_path, read_sections=('catalog', 'case_config', 'repo_inventory'))
     assert snapshot.state['run_status'] == 'completed'
     assert [call['schema'] for call in calls] == ['method_plan_discussion'] * 4 + ['scientific_review_report_discussion', 'Discussion']
     assert f"at most {policy().value['limits']['llm_calls_per_attempt'] - 1} model turns" in calls[0]['instructions']
     events = [loads(line, canonical=False) for path in (snapshot.host/'domain').rglob('research_events.jsonl')
         for line in path.read_bytes().splitlines()]
-    pi_reads = [event for event in events if event['event'] == 'tool_end' and event['role'] == 'pi']
-    assert len(pi_reads) == 3 and not any(event['event'] == 'tool_not_executed' for event in events)
+    manager_reads = [event for event in events if event['event'] == 'tool_end' and event['role'] == 'research_manager']
+    assert len(manager_reads) == 3 and not any(event['event'] == 'tool_not_executed' for event in events)
 
 
 @pytest.mark.parametrize('disposition', ['pending_implementation', 'current_blocker', 'verified_answer'])
@@ -431,7 +431,7 @@ def test_planning_distinguishes_inherited_scientific_questions_from_current_prer
             plan_discussion = discussion(issues=[{**original, 'status':'addressed',
                 'response':'Use the specified frozen JSON contract.', 'evidence_references':[digest(config)]}])
         return CollaborationModel([], code_needed=True, read_sections=('case_config',) if disposition=='verified_answer' else (),
-                                  pi_discussion=plan_discussion)
+                                  manager_discussion=plan_discussion)
     result, collaboration = coding_plan(tmp_path, model, prior_issues=[original])
     retained = next(item for item in collaboration['issues'] if item['id']==original['id'])
     if disposition == 'current_blocker':

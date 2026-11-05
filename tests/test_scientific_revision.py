@@ -104,12 +104,12 @@ class ReviewFixture:
         else:
             value = diagnostic()
         return {'diagnostic': value, 'content': {'collaboration': {'challenges': QUESTIONS,
-            'summary': 'PI synthesis retains the covariance limitation.',
+            'summary': 'Research Manager synthesis retains the covariance limitation.',
             'issues': [{'id': 'window', 'question': QUESTIONS[0], 'response': None,
                         'evidence_references': [], 'status': 'open'}],
             'exchanges': [{'role': 'reviewer', 'proposal': {'summary': 'Independent conclusion: inspect the covariance.'},
                            'discussion': {'summary': 'The reviewer requests an independent covariance check.'}},
-                          {'role': 'pi', 'discussion': {'summary': 'PI recommends reporting the limitation explicitly.'}}]},
+                          {'role': 'research_manager', 'discussion': {'summary': 'Research Manager recommends reporting the limitation explicitly.'}}]},
             'warnings': ['Finite-volume study remains outstanding.'],
             'review_context': 'The first fit and its covariance must remain inspectable.'}}
 
@@ -184,7 +184,7 @@ def test_system_final_report_preserves_independent_review_and_unresolved_limitat
     terminal = index['current']['terminal']
     assert terminal['status'] == 'accepted'
     report = Path(terminal['state_paths']['final_report_path']).read_text()
-    for required in ('PI recommends reporting the limitation explicitly.',
+    for required in ('Research Manager recommends reporting the limitation explicitly.',
                      'Independent conclusion: inspect the covariance.', QUESTIONS[0],
                      'Finite-volume study remains outstanding.', 'Decision origin: system.'):
         assert required in report

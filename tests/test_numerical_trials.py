@@ -38,7 +38,7 @@ def trial_producer(tmp_path, monkeypatch):
     (workspace / 'raw_data').mkdir(parents=True)
     from lqcd_agent.research_evaluation import calibration
     (workspace / 'raw_data' / 'input.json').write_bytes(canonical_bytes(
-        {**calibration('c2'), 'private_marker': 'never sent to Code'}))
+        {**calibration('c2'), 'private_marker': 'never sent to the Research Worker'}))
     monkeypatch.setenv('LQCD_AGENT_WORKSPACE', str(workspace))
     config = {'schema_version': '0.1', 'case_id': 'trial', 'physics_goal': 'Exercise numerical trial feedback.',
         'raw_data_path': 'raw_data/input.json', 'source_kind': 'synthetic',
@@ -106,7 +106,7 @@ def test_trial_failure_repair_and_exact_evidence_without_raw_input(trial_produce
         with pytest.raises(ControlIntegrityError, match='key conflicts'):
             gateway.numerical_trials.call('second', {**arguments, 'input_json': '{}'})
     member = trial_member(coordinator, request['task'])['numerical_trials.json']
-    assert b'never sent to Code' not in member
+    assert b'never sent to the Research Worker' not in member
     records = loads(member)['trials']
     assert len(records) == 2 and [r['receipt']['status'] for r in records] == ['failed', 'succeeded']
     assert all(r['receipt']['scientific_acceptance'] is False for r in records)
@@ -264,7 +264,7 @@ def test_mixed_tool_batch_exceeds_allowance_before_native_receives_effects(trial
     value = loads(coordinator.connection.execute('SELECT value FROM external_operations').fetchone()[0])
     assert not value.get('native_tool_intents') and not value.get('numerical_trials')
     trace = [json.loads(line) for line in (job/'context_requests.jsonl').read_bytes().splitlines()]
-    assert trace[-1]['diagnostic']['check'] == 'Native response exceeds original Code tool allowance'
+    assert trace[-1]['diagnostic']['check'] == 'Native response exceeds Research Worker tool allowance'
     assert b'must-not-exist' not in (job/'context_requests.jsonl').read_bytes()
     charged = coordinator.connection.execute('SELECT charged_tokens FROM research_requests').fetchall()
     assert [row[0] for row in charged] == [120]

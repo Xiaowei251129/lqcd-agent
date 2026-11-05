@@ -101,9 +101,7 @@ class CanonicalProductRuntime:
         return (root, parse_ledger(read_regular(root / 'execution_history.jsonl')))
 
     def run(self, locator):
-        from lqcd_agent.control.strict_json import require
         _, execution = self._records(locator)
-        require(execution.projection.value['schema_version'] == '0.4', 'Canonical entry rejects legacy Runs')
         first = next((row for row in execution.values if row['record_type'] == 'transition' and row['source_node'] == 'START'))
         return self.app.invoke({'run_locator': locator, 'attempt_id': first['target_attempt_id'], 'transition_id': first['transition_id']}, {'recursion_limit': 128})
 
@@ -189,7 +187,7 @@ class CanonicalProductRuntime:
             require(len(matches) == 1, 'Target requires its original single capability')
             capability_id, capability = matches[0]
             if node_name == 'code_agent':
-                require(self.code_host is not None, 'Canonical Code requires the trusted B03 parent adapter')
+                require(self.code_host is not None, 'Research Worker requires the trusted coding host')
                 self.code_host.prepare(capability_id, worker_id=self.worker_id, actor=self.actor)
                 interrupt({'run_locator': locator, 'reason': 'external_result'})
             leases = InvocationLeases(self.coordinator, decision_adapter=self.route_adapter, preparation_adapter=self.route_adapter)

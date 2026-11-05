@@ -221,7 +221,7 @@ def test_optional_contribution_is_version_bound_idempotent_and_never_authorizati
     assert http.get('/api/projects/spectroscopy').json() == project
     assert not list_runs(host_root(workbench.host))
     assert http.post(path, json={**body, 'body': 'Changed intent'}).status_code == 409
-    assert http.post(path, json={**body, 'key': 'forge', 'author': 'pi'}).status_code == 409
+    assert http.post(path, json={**body, 'key': 'forge', 'author': 'research_manager'}).status_code == 409
     changed = http.post('/api/projects/spectroscopy', json={'expected_digest': project['sha256'],
         'title': project['title'], 'goal': 'A later question', 'case_config': project['case_config']}).json()
     assert changed['revision'] == 2

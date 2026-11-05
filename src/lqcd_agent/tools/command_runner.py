@@ -70,7 +70,7 @@ def _split_local_command(command: str) -> tuple[list[str] | None, str | None]:
 def _synthetic_matrix_elements_payload(*, run_id: str, case_id: str) -> dict[str, Any]:
     return {'schema_version': '0.1', 'run_id': run_id, 'case_id': case_id, 'created_at': utc_now(), 'producer': 'analysis_engineer', 'status': 'success', 'summary': 'Mock synthetic matrix elements without real raw data.', 'warnings': [], 'errors': [], 'source_kind': 'synthetic', 'z_values': [0, 1], 'pz_values': [1], 'matrix_elements': [{'z': 0, 'Pz': 1, 'component': 'real', 'value': 1.0, 'error': 0.01}, {'z': 1, 'Pz': 1, 'component': 'real', 'value': 0.5, 'error': 0.02}], 'normalization': 'mock_unit', 'uncertainties': 'deterministic_mock', 'diagnostic_flags': []}
 
-def _run_mock_command(*, command_id: str, command: str, cwd: Path, output_dir: Path, timeout_seconds: int, started_at: str, run_id: str, case_id: str, force: bool) -> dict[str, Any]:
+def _run_mock_command(*, command_id: str, command: str, cwd: Path, output_dir: Path, timeout_seconds: int, started_at: str, run_id: str, case_id: str) -> dict[str, Any]:
     completed_at = utc_now()
     if command == 'mock:success':
         return {'command_id': command_id, 'command': command, 'command_kind': 'mock', 'working_directory': str(cwd), 'timeout_seconds': timeout_seconds, 'started_at': started_at, 'completed_at': completed_at, 'return_code': 0, 'stdout': 'Mock command completed successfully.\n', 'stderr': '', 'produced_files': [], 'status': 'passed'}
@@ -82,11 +82,12 @@ def _run_mock_command(*, command_id: str, command: str, cwd: Path, output_dir: P
         output_path, error = _safe_output_path(output_dir, relative_output)
         if error or output_path is None:
             return _blocked_result(command_id=command_id, command=command, cwd=cwd, timeout_seconds=timeout_seconds, started_at=started_at, message=error or 'Invalid mock output path.')
-        if output_path.exists() and (not force):
-            return _blocked_result(command_id=command_id, command=command, cwd=cwd, timeout_seconds=timeout_seconds, started_at=started_at, message='Refusing to overwrite an existing analysis output without force.')
+        if output_path.exists():
+            return _blocked_result(command_id=command_id, command=command, cwd=cwd, timeout_seconds=timeout_seconds, started_at=started_at, message='Refusing to overwrite an existing analysis output.')
         output_path.parent.mkdir(parents=True, exist_ok=True)
         payload = _synthetic_matrix_elements_payload(run_id=run_id, case_id=case_id)
-        output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+        with output_path.open('x', encoding='utf-8') as handle:
+            handle.write(json.dumps(payload, indent=2, sort_keys=True) + '\n')
         return {'command_id': command_id, 'command': command, 'command_kind': 'mock', 'working_directory': str(cwd), 'timeout_seconds': timeout_seconds, 'started_at': started_at, 'completed_at': utc_now(), 'return_code': 0, 'stdout': f'Wrote {output_path}.\n', 'stderr': '', 'produced_files': [str(output_path)], 'status': 'passed'}
     return _blocked_result(command_id=command_id, command=command, cwd=cwd, timeout_seconds=timeout_seconds, started_at=started_at, message='Mock analysis command is not recognized.')
 
@@ -96,7 +97,7 @@ def _local_command_is_allowed(command: str, allowed_commands: Sequence[str] | No
 def _local_command_has_forbidden_paths(parts: Sequence[str]) -> bool:
     return any((_has_forbidden_path_part(Path(part)) for part in parts))
 
-def run_command(*, command: str | Sequence[str], cwd: str | Path, output_dir: str | Path, run_id: str, case_id: str, command_id: str='cmd_001', timeout_seconds: int=60, allowed_commands: Sequence[str] | None=None, force: bool=False) -> dict[str, Any]:
+def run_command(*, command: str | Sequence[str], cwd: str | Path, output_dir: str | Path, run_id: str, case_id: str, command_id: str='cmd_001', timeout_seconds: int=60, allowed_commands: Sequence[str] | None=None) -> dict[str, Any]:
     cwd_path = Path(cwd).resolve()
     output_path = Path(output_dir).resolve()
     command_display = _command_text(command)
@@ -104,7 +105,7 @@ def run_command(*, command: str | Sequence[str], cwd: str | Path, output_dir: st
     if _has_forbidden_path_part(cwd_path) or _has_forbidden_path_part(output_path):
         return _blocked_result(command_id=command_id, command=command_display, cwd=cwd_path, timeout_seconds=timeout_seconds, started_at=started_at, message='Commands must not run in or write to forbidden data paths.')
     if command_display.startswith('mock:'):
-        return _run_mock_command(command_id=command_id, command=command_display, cwd=cwd_path, output_dir=output_path, timeout_seconds=timeout_seconds, started_at=started_at, run_id=run_id, case_id=case_id, force=force)
+        return _run_mock_command(command_id=command_id, command=command_display, cwd=cwd_path, output_dir=output_path, timeout_seconds=timeout_seconds, started_at=started_at, run_id=run_id, case_id=case_id)
     parts, parse_error = _split_local_command(command_display)
     if parse_error or parts is None:
         return _blocked_result(command_id=command_id, command=command_display, cwd=cwd_path, timeout_seconds=timeout_seconds, started_at=started_at, message=parse_error or 'Command could not be parsed safely.')
@@ -121,5 +122,5 @@ def run_command(*, command: str | Sequence[str], cwd: str | Path, output_dir: st
     after_files = _snapshot_files(output_path)
     return {'command_id': command_id, 'command': command_display, 'command_kind': 'local', 'working_directory': str(cwd_path), 'timeout_seconds': timeout_seconds, 'started_at': started_at, 'completed_at': utc_now(), 'return_code': completed.returncode, 'stdout': _summarize_text(completed.stdout), 'stderr': _summarize_text(completed.stderr), 'produced_files': sorted(after_files - before_files), 'status': 'passed' if completed.returncode == 0 else 'failed'}
 
-def run_commands(*, commands: Sequence[str | Sequence[str]], cwd: str | Path, output_dir: str | Path, run_id: str, case_id: str, timeout_seconds: int=60, allowed_commands: Sequence[str] | None=None, force: bool=False) -> list[dict[str, Any]]:
-    return [run_command(command=command, cwd=cwd, output_dir=output_dir, run_id=run_id, case_id=case_id, command_id=f'cmd_{index:03d}', timeout_seconds=timeout_seconds, allowed_commands=allowed_commands, force=force) for index, command in enumerate(commands, 1)]
+def run_commands(*, commands: Sequence[str | Sequence[str]], cwd: str | Path, output_dir: str | Path, run_id: str, case_id: str, timeout_seconds: int=60, allowed_commands: Sequence[str] | None=None) -> list[dict[str, Any]]:
+    return [run_command(command=command, cwd=cwd, output_dir=output_dir, run_id=run_id, case_id=case_id, command_id=f'cmd_{index:03d}', timeout_seconds=timeout_seconds, allowed_commands=allowed_commands) for index, command in enumerate(commands, 1)]

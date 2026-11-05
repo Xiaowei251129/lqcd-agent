@@ -29,9 +29,9 @@ def fixture_intake_project(workspace):
 
 
 class IntakeModel(Model):
-    def __init__(self, calls, *, parameters=None, family='c2', pi_need=False, correct=False, choices=(),
+    def __init__(self, calls, *, parameters=None, family='c2', manager_need=False, correct=False, choices=(),
                  missing_field=None, invent_issue_id=False):
-        self.calls, self.family, self.pi_need = calls, family, pi_need
+        self.calls, self.family, self.manager_need = calls, family, manager_need
         self.correct, self.choices, self.missing_field = correct, list(choices), missing_field
         self.invent_issue_id = invent_issue_id
         self.parameters = ({'binsize': 1, 'seed': 2, 'tmins': [2], 'tmax': 6, 'fixed_ground_energy': False}
@@ -55,7 +55,7 @@ class IntakeModel(Model):
         if self.invent_issue_id:
             decision = discussion(issues=[issue(id='' if self.correct and len(self.calls)>1 else 'window-check',
                 status='addressed', response='The method was specified.', evidence_references=['read_context:method'])])
-        if self.pi_need:
+        if self.manager_need:
             decision = discussion(decision='need_information',
                 issues=[issue(question='Which output contract is supported by these data?')])
         value = {'physics_question': f'Check the supported {self.family} contract.',
@@ -156,11 +156,11 @@ def test_intake_sdk_builds_only_host_resolved_contract_and_retains_source_eviden
         assert sha256((tmp_path/'host'/path).read_bytes()).hexdigest() == expected
 
 
-def test_pi_distinguishes_facts_from_delegable_choices(tmp_path):
+def test_manager_distinguishes_facts_from_delegable_choices(tmp_path):
     choice = {'question':'Which result is needed downstream?',
         'options':[{'label':'Stability', 'consequence':'Report window shifts.'},
                    {'label':'Energy', 'consequence':'Define a physical acceptance rule.'}], 'recommended':'Stability'}
-    outcome, _, _ = prepare_fixture(tmp_path, fixture_intake_project(tmp_path), pi_need=True, choices=[choice])
+    outcome, _, _ = prepare_fixture(tmp_path, fixture_intake_project(tmp_path), manager_need=True, choices=[choice])
     prep = outcome['content']['domain_result']['preparation']
     assert prep['method_plan'] is prep['case_config'] is None and prep['choices'] == [choice]
     assert len(prep['questions']) == 2 and choice['question'] in prep['questions']
@@ -168,7 +168,7 @@ def test_pi_distinguishes_facts_from_delegable_choices(tmp_path):
 
 def test_revised_plan_cannot_drop_previously_blocking_scientific_questions(tmp_path):
     project = fixture_intake_project(tmp_path)
-    first, _, _ = prepare_fixture(tmp_path, project, pi_need=True)
+    first, _, _ = prepare_fixture(tmp_path, project, manager_need=True)
     earlier = first['content']['domain_result']['preparation']
     second, _, _ = prepare_fixture(tmp_path, project, previous=earlier)
     revised = second['content']['domain_result']['preparation']
@@ -177,7 +177,7 @@ def test_revised_plan_cannot_drop_previously_blocking_scientific_questions(tmp_p
 
 
 @pytest.mark.parametrize('field', ['success_criteria', 'discriminating_checks'])
-def test_pi_repairs_missing_decision_criteria_before_a_ready_plan(tmp_path, field):
+def test_manager_repairs_missing_decision_criteria_before_a_ready_plan(tmp_path, field):
     project = fixture_intake_project(tmp_path)
     outcome, calls, _ = prepare_fixture(tmp_path, project, missing_field=field, correct=True)
     prep = outcome['content']['domain_result']['preparation']
@@ -190,13 +190,13 @@ def test_missing_criterion_cannot_start_work_or_hide_a_real_data_question(tmp_pa
     project = fixture_intake_project(tmp_path)
     with pytest.raises(ModelBehaviorError, match='after correction'):
         prepare_fixture(tmp_path, project, missing_field='discriminating_checks')
-    blocked, calls, _ = prepare_fixture(tmp_path, project, missing_field='discriminating_checks', pi_need=True)
+    blocked, calls, _ = prepare_fixture(tmp_path, project, missing_field='discriminating_checks', manager_need=True)
     prep = blocked['content']['domain_result']['preparation']
     assert len(calls) == 1 and prep['status'] == 'needs_information'
     assert prep['method_plan'] is None and prep['questions'] == ['Which output contract is supported by these data?']
 
 
-def test_pi_repairs_unsupported_parameter_inside_original_preparation(tmp_path):
+def test_manager_repairs_unsupported_parameter_inside_original_preparation(tmp_path):
     outcome, calls, _ = prepare_fixture(tmp_path, fixture_intake_project(tmp_path),
         parameters={'relative_eigenvalue_floor':1e-8}, correct=True)
     prep = outcome['content']['domain_result']['preparation']
@@ -205,7 +205,7 @@ def test_pi_repairs_unsupported_parameter_inside_original_preparation(tmp_path):
     assert 'Test the covariance eigenvalue floor as a method choice.' in prep['method_plan']['method_steps']
 
 
-def test_pi_repairs_issue_identity_without_promoting_unverified_evidence(tmp_path):
+def test_manager_repairs_issue_identity_without_promoting_unverified_evidence(tmp_path):
     from agents.exceptions import ModelBehaviorError
     project = fixture_intake_project(tmp_path)
     outcome, calls, _ = prepare_fixture(tmp_path, project, invent_issue_id=True, correct=True)

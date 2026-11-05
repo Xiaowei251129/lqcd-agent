@@ -153,10 +153,9 @@ def build_manifest(
     }
 
 
-def write_manifest_json(output_dir: str | Path, payload: dict[str, Any], *, force: bool = False) -> str:
+def write_manifest_json(output_dir: str | Path, payload: dict[str, Any]) -> str:
     path = Path(output_dir) / "manifest.json"
-    if path.exists() and not force:
-        raise FileExistsError("Refusing to overwrite manifest.json without force.")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    with path.open("x", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     return str(path)

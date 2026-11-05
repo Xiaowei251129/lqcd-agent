@@ -56,11 +56,6 @@ def _as_string_list(value: Any) -> list[str]:
     return [str(value)]
 
 
-def _resolve_commands(case_config: dict[str, Any]) -> list[str]:
-    commands = _resolve_explicit_commands(case_config)
-    return commands or list(DEFAULT_ANALYSIS_COMMANDS)
-
-
 def _resolve_explicit_commands(case_config: dict[str, Any]) -> list[str]:
     return _as_string_list(case_config.get("analysis_commands"))
 
@@ -203,7 +198,6 @@ def _run_selected_analysis_programs(
     run_id: str,
     case_id: str,
     timeout_seconds: int,
-    force: bool,
     dataset_snapshot,
     consumed_inputs,
 ) -> list[dict[str, Any]]:
@@ -263,7 +257,7 @@ def _run_selected_analysis_programs(
                 )
             )
             continue
-        if output_path.exists() and not force:
+        if output_path.exists():
             results.append(
                 _program_result(
                     command_id=command_id,
@@ -337,7 +331,8 @@ def _run_selected_analysis_programs(
             **payload,
         }
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        with output_path.open("x", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
         program_status = "passed" if payload.get("status") == "success" else "failed"
         results.append(
             _program_result(
@@ -373,16 +368,6 @@ def _resolve_case_reference_files(case_config: dict[str, Any], repo_root: Path) 
     return resolved
 
 
-def _resolve_run_output_dir(
-    *, output_root: str | Path | None, run_output_dir: str | Path | None, case_id: str, run_id: str
-) -> Path:
-    if output_root is not None:
-        return Path(output_root) / case_id / run_id
-    if run_output_dir is not None:
-        return Path(run_output_dir)
-    raise ValueError("Either output_root or run_output_dir is required.")
-
-
 def _canonical_path_error(path: Path, *, case_id: str, run_id: str) -> str | None:
     parts = path.resolve().parts
     if len(parts) < 2 or parts[-2:] != (case_id, run_id):
@@ -390,9 +375,7 @@ def _canonical_path_error(path: Path, *, case_id: str, run_id: str) -> str | Non
     return None
 
 
-def _existing_artifact_error(run_output_dir: Path, *, force: bool) -> str | None:
-    if force:
-        return None
+def _existing_artifact_error(run_output_dir: Path) -> str | None:
     protected_paths = [
         run_output_dir / "run_result.json",
         run_output_dir / "manifest.json",
@@ -400,7 +383,7 @@ def _existing_artifact_error(run_output_dir: Path, *, force: bool) -> str | None
     ]
     existing = [str(path) for path in protected_paths if path.exists()]
     if existing:
-        return "Refusing to overwrite existing run artifacts without force: " + ", ".join(existing)
+        return "Refusing to overwrite existing run artifacts: " + ", ".join(existing)
     return None
 
 
@@ -437,10 +420,7 @@ def _write_run_log(
     commands: Sequence[dict[str, Any]],
     validation_results: dict[str, Any],
     run_success: bool,
-    force: bool,
 ) -> str:
-    if path.exists() and not force:
-        raise FileExistsError("Refusing to overwrite run.log without force.")
     lines = [
         f"created_at={utc_now()}",
         f"run_id={run_id}",
@@ -463,15 +443,15 @@ def _write_run_log(
         )
     lines.append("validation=" + json.dumps(validation_results, sort_keys=True))
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    with path.open("x", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
     return str(path)
 
 
-def _write_run_result(output_dir: Path, payload: dict[str, Any], *, force: bool) -> str:
+def _write_run_result(output_dir: Path, payload: dict[str, Any]) -> str:
     path = output_dir / "run_result.json"
-    if path.exists() and not force:
-        raise FileExistsError("Refusing to overwrite run_result.json without force.")
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    with path.open("x", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     return str(path)
 
 
@@ -480,23 +460,16 @@ def run_analysis_engineer(
     case_config_path: str | Path,
     case_id: str,
     run_id: str,
-    output_root: str | Path | None = None,
-    run_output_dir: str | Path | None = None,
+    run_output_dir: str | Path,
     method_plan_path: str | Path | None = None,
     repo_root: str | Path | None = None,
     timeout_seconds: int = 60,
-    force: bool = False,
     dataset_snapshot: dict | None = None,
     generated_execution: dict | None = None,
 ) -> dict[str, Any]:
-    run_dir = _resolve_run_output_dir(
-        output_root=output_root,
-        run_output_dir=run_output_dir,
-        case_id=case_id,
-        run_id=run_id,
-    ).resolve()
-    canonical_error = _canonical_path_error(run_dir, case_id=case_id, run_id=run_id)
-    if canonical_error:
+    run_dir = Path(run_output_dir).resolve()
+    output_error = _canonical_path_error(run_dir, case_id=case_id, run_id=run_id) or _existing_artifact_error(run_dir)
+    if output_error:
         return {
             "run_success": False,
             "failure_type": "workflow",
@@ -504,21 +477,7 @@ def run_analysis_engineer(
             "manifest_path": None,
             "analysis_outputs_dir": None,
             "warnings": [],
-            "errors": [{"field": "output_dir", "message": canonical_error, "path": str(run_dir)}],
-            "run_result": None,
-            "manifest": None,
-        }
-
-    existing_error = _existing_artifact_error(run_dir, force=force)
-    if existing_error:
-        return {
-            "run_success": False,
-            "failure_type": "workflow",
-            "run_result_path": None,
-            "manifest_path": None,
-            "analysis_outputs_dir": None,
-            "warnings": [],
-            "errors": [{"field": "output_dir", "message": existing_error, "path": str(run_dir)}],
+            "errors": [{"field": "output_dir", "message": output_error, "path": str(run_dir)}],
             "run_result": None,
             "manifest": None,
         }
@@ -549,19 +508,7 @@ def run_analysis_engineer(
             'status': 'passed' if generated_execution['result'].get('status') in ('ok', 'partial') else 'failed',
             'return_code': generated_execution['returncode'], 'stdout': '', 'stderr': '',
             'produced_files': [str(destination)], 'execution': generated_execution['execution']}]
-    elif explicit_commands:
-        allowed_commands = _resolve_allowed_commands(case_config, explicit_commands)
-        command_results = run_commands(
-            commands=explicit_commands,
-            cwd=repo_path,
-            output_dir=run_dir,
-            run_id=run_id,
-            case_id=case_id,
-            timeout_seconds=timeout_seconds,
-            allowed_commands=allowed_commands,
-            force=force,
-        )
-    elif selected_programs:
+    elif selected_programs and not explicit_commands:
         command_results = _run_selected_analysis_programs(
             selected_programs=selected_programs,
             dataset_snapshot=dataset_snapshot, consumed_inputs=consumed_inputs,
@@ -571,10 +518,9 @@ def run_analysis_engineer(
             run_id=run_id,
             case_id=case_id,
             timeout_seconds=timeout_seconds,
-            force=force,
         )
     else:
-        commands = _resolve_commands(case_config)
+        commands = explicit_commands or list(DEFAULT_ANALYSIS_COMMANDS)
         allowed_commands = _resolve_allowed_commands(case_config, commands)
         command_results = run_commands(
             commands=commands,
@@ -584,7 +530,6 @@ def run_analysis_engineer(
             case_id=case_id,
             timeout_seconds=timeout_seconds,
             allowed_commands=allowed_commands,
-            force=force,
         )
     validation_results = validate_expected_outputs(
         output_dir=run_dir,
@@ -624,7 +569,6 @@ def run_analysis_engineer(
         commands=command_results,
         validation_results=validation_results,
         run_success=run_success,
-        force=force,
     )
     run_result = {
         **_base_artifact(run_id=run_id, case_id=case_id, status=status, summary=summary),
@@ -652,7 +596,7 @@ def run_analysis_engineer(
     }
     if generated_execution is not None:
         run_result['generated_execution'] = {k: v for k, v in generated_execution.items() if k != 'result'}
-    run_result_written_path = _write_run_result(run_dir, run_result, force=force)
+    run_result_written_path = _write_run_result(run_dir, run_result)
     input_files = [str(case_config_path), *golden_reference_files]
     if method_plan_path:
         input_files.append(str(method_plan_path))
@@ -670,7 +614,7 @@ def run_analysis_engineer(
         warnings=warnings,
         errors=errors,
     )
-    manifest_written_path = write_manifest_json(run_dir, manifest, force=force)
+    manifest_written_path = write_manifest_json(run_dir, manifest)
 
     return {
         "run_success": run_success,

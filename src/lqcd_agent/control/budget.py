@@ -161,19 +161,6 @@ def run_resource(port, *, effect, **request):
         return settle(effect())
 
 
-async def async_run_resource(port, *, effect, evidence=None, tokens=None, cost=None, **request):
-    """Run one asynchronous effect without hiding model or tool calls.
-
-    Extractors convert SDK results to JSON evidence and measured usage. They
-    must not perform effects. Failures retain the original maximum reservation.
-    """
-    with resource_scope(port, **request) as settle:
-        result = await effect()
-        return settle(result, evidence=result if evidence is None else evidence(result),
-                      tokens=None if tokens is None else tokens(result),
-                      cost=None if cost is None else cost(result))
-
-
 def settle_resource_failure(port, *, resource_id, error):
     """Conservatively settle an ended call under its original invocation fence."""
     from .capabilities import invocation_prefix

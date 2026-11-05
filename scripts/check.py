@@ -36,7 +36,7 @@ CORE = [
  "tests/test_storage.py::test_existing_authority_rejects_unsupported_platform_without_writes"]
 
 def identity():
-    files = [p for base in ("src", "tests", "contracts", "configs", "scripts") for p in (ROOT/base).rglob("*")
+    files = [p for base in ("src", "tests", "configs", "scripts") for p in (ROOT/base).rglob("*")
              if p.is_file() and p.name != ".DS_Store" and "__pycache__" not in p.parts and not p.suffix == ".pyc" and not any(x.endswith(".egg-info") for x in p.parts)]
     files += [ROOT/name for name in ("pyproject.toml", "requirements.lock", "setup.py", "MANIFEST.in", ".github/workflows/check.yml")]
     return hashlib.sha256(json.dumps({str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
@@ -74,7 +74,6 @@ def main():
     started=time.monotonic()
     rows = []
     try:
-        subprocess.run([str(PYTHON),"scripts/generate_protocol.py","--check"],check=True)
         subprocess.run([str(PYTHON),"scripts/build_manifest.py"],check=True)
         if args.integration:report["source_sha256"]=identity()
         import pytest

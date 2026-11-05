@@ -202,7 +202,7 @@ def _validate_record(record):
         validate_pause_record(record)
     elif kind == "lineage":
         from .pause import validate_fingerprint
-        from .children import validate_source_fingerprint, validate_source_proof
+        from .children import validate_source_proof
         from .strict_json import digest
         require(event == "lineage_initialized" and record["creation_reason"] in ("replay_of", "fork_of"),
                 "Invalid child lineage variant")
@@ -210,11 +210,10 @@ def _validate_record(record):
         validate_source_proof(record["source_snapshot_proof"], record["creation_reason"])
         require(digest(record["source_snapshot_proof"]) == record["lineage_snapshot_digest"], "Lineage digest mismatch")
         proof = record["source_snapshot_proof"]
-        validate_source_fingerprint(record["source_runtime_fingerprint"], proof["source_schema"], record["creation_reason"])
+        validate_fingerprint(record["source_runtime_fingerprint"])
         if record["creation_reason"] == "replay_of":
             require(record["source_runtime_fingerprint"] == proof["runtime_fingerprint"], "Lineage source fingerprint mismatch")
         validate_fingerprint(record["target_runtime_fingerprint"])
-        require(record["target_runtime_fingerprint"]["execution_schema"] == "0.4", "Child target fingerprint schema mismatch")
     else:
         number(record["budget_event_index"], integer=True, minimum=1)
         require(record["budget_event_id"] == f"budget_event_{record['budget_event_index']:06d}", "Invalid budget event identity")

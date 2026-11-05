@@ -115,7 +115,7 @@ def test_sdk_compacts_twice_without_resurrecting_old_history_and_keeps_scientifi
     assert result.usage['requests'] == 5 and result.usage['total_tokens'] == 65
 
 
-@pytest.mark.parametrize('role,proposal_role', [('pi', 'method_plan'),
+@pytest.mark.parametrize('role,proposal_role', [('research_manager', 'method_plan'),
                                               ('reviewer', 'scientific_review_report')])
 def test_proposal_discussion_wire_schema_is_strict_for_count_and_generation(role, proposal_role):
     from lqcd_agent.llm.schemas import role_schema

@@ -11,11 +11,6 @@ from .protocol import PROTOCOL, operation_variant
 from .strict_json import ControlIntegrityError, canonical_bytes, closed, digest, digest_value, loads, number, require, text
 SOURCE_CONTRACT = next((row for row in PROTOCOL['evidence_unions'] if row['union_id'] == 'SourceSnapshotProof'))
 
-def validate_source_fingerprint(value, source_schema, creation_reason):
-    require(source_schema == '0.4', 'Only current Run sources are supported')
-    validate_fingerprint(value)
-    require(value['execution_schema'] == source_schema, 'Source fingerprint schema mismatch')
-
 def validate_source_proof(proof, creation_reason):
     require(type(proof) is dict, 'Missing SourceSnapshotProof')
     tag = 'replay_root' if creation_reason == 'replay_of' else 'fork_head'
@@ -30,7 +25,7 @@ def validate_source_proof(proof, creation_reason):
     if tag == 'replay_root':
         closed(proof['immutable_root_input'], ('root_goal', 'input_snapshot'))
         require(digest(proof['immutable_root_input']) == proof['root_input_digest'], 'Source root digest mismatch')
-        validate_source_fingerprint(proof['runtime_fingerprint'], proof['source_schema'], creation_reason)
+        validate_fingerprint(proof['runtime_fingerprint'])
     else:
         require(proof['source_run_status'] in SOURCE_CONTRACT['fork_head_run_status_contract']['allowed_values'], 'Ineligible fork status')
         number(proof['source_control_revision'], integer=True, minimum=1)
@@ -131,10 +126,7 @@ class ChildOperations:
         require(b'\n' in raw, 'Source has no complete Run record')
         boundary(self.coordinator.observer, 'ingress.source_record', 'before')
         try:
-            created = loads(raw.split(b'\n', 1)[0], canonical=False)
-            require(type(created) is dict, 'Invalid source creation record')
-            loads(raw.split(b'\n', 1)[0])
-            require(created.get('schema_version') == '0.4', 'Source requires a supported immutable-root validator')
+            created = loads(raw.split(b'\n', 1)[0])
             validate_record(created)
         finally:
             boundary(self.coordinator.observer, 'ingress.source_record', 'after')
@@ -155,7 +147,7 @@ class ChildOperations:
                 sources.append(self.coordinator.snapshot(operation['operation_id'], db=db))
         require(len(sources) == 1 and sources[0]['records'][0] == created, 'Source creation proof is unavailable')
         fingerprint = sources[0]['runtime_fingerprint']
-        validate_source_fingerprint(fingerprint, '0.4', 'fork_of' if type(request) is ForkRunRequest else 'replay_of')
+        validate_fingerprint(fingerprint)
         saved = loads(read_regular(root / 'budget_policy.json'))
         selected = policy(saved['profile_id']).value
         require(saved == selected and created['policy_digest'] == selected['policy_digest'], 'Unsupported source policy')

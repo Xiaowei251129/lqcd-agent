@@ -52,18 +52,14 @@ def test_scientific_completion_does_not_depend_on_a_model_or_human_approval_fiel
 def test_scientific_roles_receive_frozen_remediation_and_history(tmp_path, monkeypatch, node):
     from copy import deepcopy
     from lqcd_agent.llm.context import context_reference, read_context_evidence
-    from lqcd_agent.llm.mock_provider import MockLLMProvider
+    from tests.mock_provider import MockLLMProvider
     from tests.test_research_evidence import inputs
     from tests.test_scientific_reviewer import _write_effective_mass_artifacts
 
-    class RecordingProvider(MockLLMProvider):
-        def generate(self, request):
-            self.request = request
-            return super().generate(request)
 
     _, config, inventory, _, _ = inputs(tmp_path)
     run_dir, result_path, plan_path = _write_effective_mass_artifacts(tmp_path, run_id='run', case_id='case')
-    provider = RecordingProvider()
+    provider = MockLLMProvider()
     agent = ScientificAgent(tmp_path, config, workspace=tmp_path, provider=provider)
     monkeypatch.setattr(agent, '_artifact', lambda context, name: {'domain_result': {
         'run_result_path': str(result_path), 'analysis_outputs_dir': str(run_dir / 'analysis_outputs'),
@@ -77,13 +73,13 @@ def test_scientific_roles_receive_frozen_remediation_and_history(tmp_path, monke
         context['identity']['attempt_id'] = attempt
         context['remediation']['success_criteria'] = [criterion]
         result = agent.run(node, context, timeout_seconds=1)
-        payload = json.loads(provider.request.messages[1]['content'])
+        payload = json.loads(provider.last_request.messages[1]['content'])
         expected = {key: deepcopy(context[key]) for key in ('remediation', 'relevant_history')}
         assert payload['research_context'] == expected
         if node == 'scientific_reviewer':
             assert result['diagnostic']['risk'] == 'low' and result['diagnostic']['human_need'] is None
         output = tmp_path / 'domain' / attempt / 'case' / 'run'
-        catalog = context_reference(provider.request.context_sources)
+        catalog = context_reference(provider.last_request.context_sources)
         context['remediation']['success_criteria'].append('Do not mutate prior context')
         assert read_context_evidence(output, catalog, 'research_context') == expected
 

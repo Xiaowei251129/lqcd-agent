@@ -1,4 +1,4 @@
-"""Admit PI-proposed experiments through the original Host start/advance path."""
+"""Admit experiments proposed by the Research Manager through the original Host start/advance path."""
 from copy import deepcopy
 from contextlib import closing
 from hashlib import sha256

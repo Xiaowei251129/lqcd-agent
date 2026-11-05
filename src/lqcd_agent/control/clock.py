@@ -4,7 +4,6 @@ import time
 import uuid
 import sys
 import subprocess
-from typing import Protocol
 
 from .strict_json import number, require
 
@@ -19,10 +18,6 @@ class Timestamp:
         require(self.source in ("host", "deterministic_harness"), "Undeclared clock source")
         number(self.wall_seconds)
         number(self.monotonic_seconds)
-
-
-class Clock(Protocol):
-    def now(self) -> Timestamp: ...
 
 
 def host_boot_id():

@@ -88,8 +88,8 @@ print(json.dumps({'status':'ok','observables':[r],'assumptions':[],'limitations'
     install_backend(monkeypatch, program)
     projects = ProjectStore(tmp_path)
     project = projects.create('ratios', 'Ratio study', config['physics_goal'], config)
-    # Exercise real PI intake with a local SDK model. Formal Analysis
-    # uses the existing deterministic role and Code fixtures on its sealed contract.
+    # Exercise real Research Manager intake with a local SDK model. Formal Analysis
+    # uses the existing deterministic role and Research Worker fixtures on its sealed contract.
     calls = []
     select_agent = runtime.scientific_agent
     def select(host, selected, settings, workspace):

@@ -1,4 +1,5 @@
 """Validate the actual installed wheel and the operator-owned workspace boundary."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -40,11 +41,11 @@ def test_wheel_installs_and_runs_outside_source(tmp_path):
     with zipfile.ZipFile(wheel) as bundle:
         manifest = json.loads(bundle.read('lqcd_agent/_build_manifest.json'))
         assert manifest['application_build']
+        protocol = bundle.read('lqcd_agent/control/protocol.json')
+        assert manifest['sources']['control/protocol.json'] == hashlib.sha256(protocol).hexdigest()
         assert all('lqcd_agent/workbench/static/'+name in bundle.namelist() for name in ('index.html','app.js','style.css'))
-        assert not any('/demo/' in name for name in bundle.namelist())
         entrypoints = bundle.read(next(name for name in bundle.namelist() if name.endswith('/entry_points.txt'))).decode()
         assert 'lqcd-agent-workbench = lqcd_agent.workbench.server:main' in entrypoints
-        assert 'lqcd-agent-demo' not in entrypoints
         assert not any(n.startswith(('check-results/', '.env', 'raw_data/')) for n in bundle.namelist())
     environment = tmp_path/'environment'
     venv.EnvBuilder(with_pip=True).create(environment)

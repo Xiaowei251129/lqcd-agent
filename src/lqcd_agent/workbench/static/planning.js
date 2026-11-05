@@ -12,7 +12,7 @@ export function planSections(plan) {
     'Decision criteria': brief.success_criteria,
     'Analysis steps': method.method_steps?.filter(step => !checks.has(step)), 'Expected inputs': method.required_inputs,
     'Observables': method.target_observables, 'Deliverables': method.required_outputs, 'Programs': method.selected_analysis_programs,
-    'Code task': method.coder_task_summary,
+    'Research Worker task': method.coder_task_summary,
     'Data source': [config.raw_data_path, config.source_kind].filter(Boolean),
     'Frozen parameters': config.generated_program?.parameters,
     'Other implementation requirements': config.generated_program?.requirements?.filter(item => !method.method_steps?.includes(item)),

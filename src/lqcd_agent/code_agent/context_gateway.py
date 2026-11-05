@@ -383,7 +383,7 @@ class CodingContextGateway:
                          {entry['call_id'] for entry in tools if entry['call_id']}), 'Native tool item replayed')
             maximum = value['prestart']['aggregate']['request']['maximum_charge']['tool_calls']
             _native_check(len(intents) + len(tools) + len(task['write_paths']) <= maximum,
-                    'Native response exceeds original Code tool allowance')
+                    'Native response exceeds Research Worker tool allowance')
             intents.extend({**item, 'ticket': ticket} for item in tools)
             previous = value['phase_revision']
             value['phase_revision'] += 1

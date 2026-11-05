@@ -143,7 +143,7 @@ class ArtifactEffectPort:
         with coordinator.transaction() as db:
             self.leases._effect_authority(db, self.capability_id, self.worker, self.epoch)
             revision, value, root, now = self.leases._fence(db, self.capability_id, self.worker, self.epoch)
-            require("external_consumption" not in value["authorization"], "Code uses its original verification owner")
+            require("external_consumption" not in value["authorization"], "The coding attempt uses its original verification owner")
             previous = invocation_prefix(value)
             execution = parse_ledger(previous["content"].encode())
             state = execution.projection.value
@@ -808,7 +808,7 @@ class InvocationLeases:
 
         require(type(output) is ArtifactOutput, "Untyped artifact output")
         require(execution.projection.value["attempt_kind"] != "code_agent" or type(code_proof) is CodeConsumptionProof,
-                "Code Agent requires its verified B03 bundle adapter")
+                "Research Worker requires its verified bundle adapter")
         state = bounded_projection(execution, artifact_index=index, artifact_head=index["artifact_head"], artifact_event_index=index["revision"]).value
         state.update(output_dir=str(root), execution_history_path=str(root / "execution_history.jsonl"),
                      artifact_history_path=str(root / "artifact_history.jsonl"), artifact_index_path=str(root / "artifact_index.json"))

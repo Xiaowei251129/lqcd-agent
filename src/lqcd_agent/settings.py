@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import stat
 
-# Canonical deployment token policy for research and Code. Derived thresholds are
+# Shared token policy for the Research Manager, Research Worker and Reviewer. Derived thresholds are
 # not independent settings. Every model request also consumes the shared task quota.
 INPUT_TOKEN_LIMIT = 256_000
 RESEARCH_OUTPUT_TOKEN_LIMIT = 32_768

@@ -1,4 +1,4 @@
-"""Reusable code is reviewed and frozen before entering the sole Code backend."""
+"""Reusable code is reviewed and frozen before entering the Research Worker backend."""
 from contextlib import nullcontext
 from hashlib import sha256
 

@@ -1,4 +1,4 @@
-"""Deterministic Scientific Reviewer Agent for Phase 5."""
+"""Scientific review of Host diagnostics and optional model findings."""
 
 from __future__ import annotations
 

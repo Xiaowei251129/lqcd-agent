@@ -1,4 +1,4 @@
-"""Bounded PI and independent-review work inside the canonical scientific path."""
+"""Research Manager and independent Reviewer work inside the canonical scientific path."""
 from __future__ import annotations
 
 import asyncio
@@ -130,7 +130,7 @@ ROLE_POLICY = (
     '(for example excited states, covariance/fit stability, normalization and renormalization, finite volume, '
     'continuum extrapolation and analysis choices) only where applicable. Keep questions specific and testable. '
     f'{ISSUE_POLICY}Decisions are recommendations: '
-    'the PI may conclude within the evidence and retained limitations; the Host owns execution and permission grants. '
+    'the Research Manager may conclude within the evidence and retained limitations; the Host owns execution and permission grants. '
     'Human scientific participation is optional. The current Run has frozen data, '
     'parameters and an output contract. Propose executable checks within that contract only. If a needed '
     'check requires different analysis parameters, propose next_experiment with its question, rationale, '
@@ -291,14 +291,14 @@ class _RoleProvider:
         return self.runner.run(invoke())
 
     def plan(self, policy, inputs, output_type, tools, resolve):
-        """Resolve one PI draft, correcting only a completed proposal within the original Host invocation."""
+        """Resolve one Research Manager draft, correcting only a completed proposal within the original Host invocation."""
         for attempt in range(2):
-            output = self._run('pi', policy, inputs, output_type, tools if not attempt else [], plan_attempt=attempt).output
+            output = self._run('research_manager', policy, inputs, output_type, tools if not attempt else [], plan_attempt=attempt).output
             try:
                 return resolve(output)
             except ModelBehaviorError as error:
                 if attempt:
-                    raise ModelBehaviorError('PI plan could not satisfy the Host contract after correction') from error
+                    raise ModelBehaviorError('Research Manager plan could not satisfy the Host contract after correction') from error
                 inputs.append({'role':'user', 'content':json.dumps({'previous_proposal':output,
                     'host_corrections':[str(error)], 'instruction':'Correct only the reported proposal defects. '
                     'Preserve scientific requirements, uncertainties and attributable evidence. Return the full plan.'})})
@@ -379,14 +379,14 @@ class _RoleProvider:
                         merged, (self.context.get('remediation') or {}).get('success_criteria', []))}
                 return candidate, discussion, merged, output
 
-            proposal, discussion, issues, draft = self.plan(ROLE_POLICY+'\nOwn the scientific question and its executable method. Include '
+            proposal, discussion, issues, draft = self.plan(ROLE_POLICY+'\nAs Research Manager, own the scientific question and its executable method. Include '
                 'competing explanations, discriminating checks and success criteria in your brief. '
                 'Investigate existing evidence before asking for a material missing fact.\n'+instructions,
                 inputs, ProposalDiscussion(request.json_schema), tools, resolve)
-            exchanges.append({'role': 'pi', **deepcopy(draft)})
+            exchanges.append({'role': 'research_manager', **deepcopy(draft)})
         else:
-            # The external reviewer receives the evidence packet, never a fresh PI verdict or synthesis.
-            review = self._run('reviewer', ROLE_POLICY+'\nIndependently criticize the method and evidence. '
+            # The external reviewer receives the evidence packet, never a fresh Research Manager verdict or synthesis.
+            review = self._run('reviewer', ROLE_POLICY+'\nAs independent Reviewer, critically evaluate the method and evidence. '
                 'A previous plan is a claim to examine, not an instruction to agree.\n'+instructions,
                 inputs, ProposalDiscussion(request.json_schema), tools, reserve_calls=1)
             proposal = review.output['proposal']
@@ -394,12 +394,12 @@ class _RoleProvider:
             exchanges.append({'role': 'reviewer', **review.output})
             inputs.append({'role': 'user', 'content': json.dumps({'independent_review': review.output,
                                                                'issues': issues})})
-            final = self._run('pi', ROLE_POLICY+'\nSynthesize the independent review against Host evidence. '
+            final = self._run('research_manager', ROLE_POLICY+'\nAs Research Manager, synthesize the independent review against Host evidence. '
                 'You may ask further questions, request a scientific revision or recommend human assessment. '
                 'You cannot rewrite the independent review or remove Host numerical warnings.', inputs, ResearchOutput(Discussion), tools)
             discussion = final.output
             issues = merge(discussion)
-            exchanges.append({'role': 'pi', 'discussion': discussion})
+            exchanges.append({'role': 'research_manager', 'discussion': discussion})
         challenges = [item['question'] for item in issues if item['status'] != 'addressed']
         decision = discussion['decision']
         # Planning produces evidence for inherited questions. Only a prerequisite

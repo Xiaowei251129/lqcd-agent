@@ -3,17 +3,7 @@ import pytest
 from pathlib import Path
 
 from lqcd_agent.agents.scientific_reviewer import run_scientific_reviewer
-from lqcd_agent.llm.base import LLMProviderConfig, LLMRequest, LLMResponse
-from lqcd_agent.llm.mock_provider import MockLLMProvider, mock_proposal
-
-
-class StaticProvider:
-    def __init__(self, content: str) -> None:
-        self.content = content
-        self.config = LLMProviderConfig(provider="static")
-
-    def generate(self, request: LLMRequest) -> LLMResponse:
-        return LLMResponse(provider="static", model="static", content=self.content)
+from tests.mock_provider import MockLLMProvider, StaticProvider, mock_proposal
 
 
 def _good_matrix_payload(*, run_id: str = "run_a", case_id: str = "case_a") -> dict[str, object]:

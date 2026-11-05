@@ -8,11 +8,11 @@ lqcd-agent project-show --id c2-study
 lqcd-agent run --project c2-study --live --key first-study
 ```
 
-A Project may begin without a data path or executable configuration. Explicit live activation permits paid PI planning under the original task quota. The CLI and workbench share the same unattended Host driver and original workspace `.env`. `configs/example.json` remains a fixture, not measured C2 data.
+A Project may begin without a data path or executable configuration. Explicit live activation permits paid Research Manager planning under the original task quota. The CLI and workbench share the same unattended Host driver and original workspace `.env`. `configs/example.json` remains a fixture, not measured C2 data.
 
 ## Research intake and clarification
 
-`run --project` first profiles only the declared data, then the PI frames the question and proposes a supported method and any missing analysis parameters. Source provenance, sample identities, physical definitions, supplied parameter values and executable paths are not model-editable. Missing metadata can be explicitly supplied by the operator in the starting configuration; it cannot overwrite source data fields. C2, Normalization and replica-observable JSON contracts and configured registered CSV programs are supported. Other formats remain explicit missing-input questions; this is not a universal file importer.
+`run --project` first profiles only the declared data, then the Research Manager frames the question and proposes a supported method and any missing analysis parameters. Source provenance, sample identities, physical definitions, supplied parameter values and executable paths are not model-editable. Missing metadata can be explicitly supplied by the operator in the starting configuration; it cannot overwrite source data fields. C2, Normalization and replica-observable JSON contracts and configured registered CSV programs are supported. Other formats remain explicit missing-input questions; this is not a universal file importer.
 
 The starting `case_config` can be partial, for example:
 
@@ -20,9 +20,9 @@ The starting `case_config` can be partial, for example:
 {"raw_data_path":"raw_data/c2.json","source_kind":"measured_lattice_data","generated_program":{"python":"/absolute/scientific/python3"}}
 ```
 
-Use the actual source provenance; `--source-kind` and the workbench's **Data provenance** field set this declaration explicitly, without a default. A free-text scientific reply does not replace missing structured metadata. The scientific interpreter may also already exist at the workspace's `.runtime/bin/python3`. The Host profiles fields, dimensions and metadata without putting the correlator arrays into PI input. Model assumptions and unresolved questions remain recorded evidence. Natural-language scientific constraints inform the plan; only supported structured contracts have deterministic enforcement.
+Use the actual source provenance; `--source-kind` and the workbench's **Data provenance** field set this declaration explicitly, without a default. A free-text scientific reply does not replace missing structured metadata. The scientific interpreter may also already exist at the workspace's `.runtime/bin/python3`. The Host profiles fields, dimensions and metadata without putting the correlator arrays into Research Manager input. Model assumptions and unresolved questions remain recorded evidence. Natural-language scientific constraints inform the plan; only supported structured contracts have deterministic enforcement.
 
-Review mode is the Project default. A completed preparation releases its lease and provides a registered plan digest. Use the displayed Plan SHA when acting on it. Select `--plan-mode auto` at initial submission for automatic execution once the PI has supplied an executable plan.
+Review mode is the Project default. A completed preparation releases its lease and provides a registered plan digest. Use the displayed Plan SHA when acting on it. Select `--plan-mode auto` at initial submission for automatic execution once the Research Manager has supplied an executable plan.
 
 ```bash
 lqcd-agent status --host HOST --case CASE --run PREPARATION_RUN
@@ -33,13 +33,13 @@ lqcd-agent run --project c2-study --project-digest PROJECT_SHA256 --host HOST --
 
 A revision can consume a group of scientific answers and a new Project input version. Viewing a draft and ordinary scientific comments consume no Run. Revision and execution use the original task's remaining quota and deadline. After expiry, explicitly request `--plan-action renew` for a new account. The original consumption and plan remain attributable. Current inputs and permissions must be verified before dispatch. An archived Project capture is evidence, and carries no execution authority.
 
-Scientific Code can test its current source with `run_numerical_trial`. Its small synthetic input and actual execution feedback are recorded in the Code bundle. The tool cannot select an interpreter, a data file, a shell command or additional permissions. Trials aid debugging; the final sealed program still runs through formal Analysis and review. Changing a scientific method must remain explicit in the plan/experiment record.
+The Research Worker can test its current source with `run_numerical_trial`. Its small synthetic input and actual execution feedback are recorded in the code bundle. The tool cannot select an interpreter, a data file, a shell command or additional permissions. Trials aid debugging; the final sealed program still runs through formal Analysis and review. Changing a scientific method must remain explicit in the plan/experiment record.
 
 ## Conclusions and additional experiments
 
 Research can end without a Human Response. Terminal artifacts distinguish `supported`, `qualified` and `inconclusive` outcomes, actual decision provenance and remaining limitations. Optional operator input is scientific evidence, not execution authorization. Additional authority uses the original scoped pause/response mechanism.
 
-The PI's final review discussion can include `next_experiment`, with `question`, `rationale`, `parameter_changes` (a list of `name` and JSON-string `value_json`) and `method_ids`. In auto mode, supported changes create a linked Run through the existing Host. In review-first mode, a proposal that changes the reviewed scope is recorded for a new plan. The Host binds dataset bytes, physical metadata, interpreter and permissions to the original authorization. Selected methods must be reviewed local sources. Every child consumes the original shared task quota. Unsupported scope, repeated parameters, or exhausted resources leave a recorded unexecuted-proposal reason. Existing results remain immutable.
+The Research Manager's final review discussion can include `next_experiment`, with `question`, `rationale`, `parameter_changes` (a list of `name` and JSON-string `value_json`) and `method_ids`. In auto mode, supported changes create a linked Run through the existing Host. In review-first mode, a proposal that changes the reviewed scope is recorded for a new plan. The Host binds dataset bytes, physical metadata, interpreter and permissions to the original authorization. Selected methods must be reviewed local sources. Every child consumes the original shared task quota. Unsupported scope, repeated parameters, or exhausted resources leave a recorded unexecuted-proposal reason. Existing results remain immutable.
 
 ## Acquiring and reviewing assets
 

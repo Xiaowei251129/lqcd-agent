@@ -411,7 +411,7 @@ def test_generated_scientific_cancel_restores_stop_adapter_without_execution_dep
 @pytest.mark.parametrize('corrupt',[False,True])
 def test_generated_diagnostics_survive_provider_review_without_raw_replica_context(tmp_path,corrupt):
     from lqcd_agent.agents.scientific_reviewer import run_scientific_reviewer
-    from lqcd_agent.llm.mock_provider import MockLLMProvider
+    from tests.mock_provider import MockLLMProvider
     from tests.test_research_cases import normalized_control
     payload=calibration('normalization');payload.update(lineage_limit='Original resampling correspondence is unavailable.',private_probe='PRIVATE_REPLICA_SENTINEL')
     result=normalized_control()
@@ -420,23 +420,19 @@ def test_generated_diagnostics_survive_provider_review_without_raw_replica_conte
     (outputs/'generated_result.json').write_bytes(canonical_bytes(result))
     run=tmp_path/'run_result.json';run.write_bytes(canonical_bytes({'run_success':True,
         'generated_execution':{'result_kind':'normalization'},'analysis_outputs_dir':str(outputs)}))
-    class Capture(MockLLMProvider):
-        def generate(self,request):
-            self.request=request
-            return super().generate(request)
-    provider=Capture()
+    provider = MockLLMProvider()
     reviewed=run_scientific_reviewer(run_id='r',case_id='c',run_output_dir=tmp_path,
         run_result_path=run,provider=provider,generated_input=payload)
     assert reviewed['report']['generated_diagnostics']['status']==('severe' if corrupt else 'warning')
     assert reviewed['confidence']==('low' if corrupt else 'medium')
-    assert 'PRIVATE_REPLICA_SENTINEL' not in json.dumps(provider.request.messages)
-    assert 'generated_diagnostics' in provider.request.context_sources['review_evidence']
+    assert 'PRIVATE_REPLICA_SENTINEL' not in json.dumps(provider.last_request.messages)
+    assert 'generated_diagnostics' in provider.last_request.context_sources['review_evidence']
 
 
 def test_generated_review_keeps_full_production_summary_without_irrelevant_artifact_scans(tmp_path,monkeypatch):
     from copy import deepcopy
     from lqcd_agent.agents import scientific_reviewer as reviewer
-    from lqcd_agent.llm.mock_provider import MockLLMProvider
+    from tests.mock_provider import MockLLMProvider
     from tests.test_research_cases import normalized_control
     payload=calibration('normalization');payload['bz_values']=[0,2,4]
     target=[r for r in payload['records'] if (r['pz'],r['bT'])==(6,2)]
@@ -457,15 +453,11 @@ def test_generated_review_keeps_full_production_summary_without_irrelevant_artif
         pytest.fail('Generated output must use its own numerical contract')
     monkeypatch.setattr(reviewer,'diagnose_correlator_outputs',irrelevant)
     monkeypatch.setattr(reviewer,'diagnose_fit_outputs',irrelevant)
-    class Capture(MockLLMProvider):
-        def generate(self,request):
-            self.request=request
-            return super().generate(request)
-    provider=Capture()
+    provider = MockLLMProvider()
     reviewed=reviewer.run_scientific_reviewer(run_id='r',case_id='c',run_output_dir=tmp_path,
         run_result_path=run,method_plan_path=plan,provider=provider,generated_input=payload)
     assert reviewed['status']=='success',reviewed
-    view=json.loads(provider.request.messages[1]['content'])
+    view=json.loads(provider.last_request.messages[1]['content'])
     assert 'method_steps' not in view['method_plan_summary']
     assert view['method_plan_summary']['method_step_count']==len(steps)
     assert "read_context(section='method_plan')" in view['method_plan_summary']['method_steps_source']

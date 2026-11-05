@@ -62,7 +62,7 @@ def test_live_job_status_reads_original_namespace_without_backend_construction(t
         {'run_status':'paused','execution_head':digest('head'),'active_pause':pause})
     before = {str(p.relative_to(tmp_path)):p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
     def forbidden(*args,**kwargs):
-        raise AssertionError('Inspection must not construct a Code backend')
+        raise AssertionError('Inspection must not construct a Research Worker backend')
     monkeypatch.setattr(CodexCodingBackend,'__init__',forbidden)
     status = snapshot.status()['coding_backend']
     assert status['status'] == 'completed' and status['receipt_reference'] == 'codex-receipt:'+operation

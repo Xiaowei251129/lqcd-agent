@@ -1,13 +1,12 @@
 """Async SDK calls retain the same real Host fences and resource accounting."""
 import asyncio
 from contextlib import closing
-from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
 from lqcd_agent.control.budget import (
-    BudgetExhausted, async_run_resource, resource_scope, run_resource, settle_resource_failure,
+    BudgetExhausted, resource_scope, run_resource, settle_resource_failure,
 )
 from lqcd_agent.control.capabilities import ArtifactEffectPort, InvocationLeases
 from lqcd_agent.control.clock import FakeClock
@@ -55,53 +54,34 @@ def events(root, event):
     return [row["payload"] for row in ledger(root).values if row.get("event") == event]
 
 
-def test_async_result_keeps_sdk_object_and_records_real_usage(resource_host):
+def test_scope_accounts_measured_usage_and_preserves_opaque_results(resource_host):
     port, clock, root = resource_host
-
-    @dataclass
-    class SDKResult:
-        answer: str
-        tokens: int
-
-    expected = SDKResult("Inspect the covariance", 17)
-
-    async def effect():
+    answer = object()
+    evidence = {"answer": "Inspect the covariance"}
+    with resource_scope(port, **request("model-1")) as finish:
         assert len(events(root, "resource_reserved")) == 1
         assert not events(root, "resource_settled")
-        await asyncio.sleep(0)
         clock.advance(2)
-        return expected
-
-    result = asyncio.run(async_run_resource(port, **request("model-1"), effect=effect,
-        evidence=lambda value: {"answer": value.answer}, tokens=lambda value: value.tokens))
-    assert result is expected
+        assert finish(answer, evidence=evidence, tokens=17) is answer
     settled, = events(root, "resource_settled")
     assert settled["actual"]["llm_calls"] == 1 and settled["actual"]["active_seconds"] == 2
     assert settled["tokens"] == {"state": "known", "value": 17}
     assert settled["cost"] == {"state": "unknown", "value": None}
-    assert settled["evidence_digest"] == digest({"answer": expected.answer})
+    assert settled["evidence_digest"] == digest(evidence)
     assert run_resource(port, **request("read-1", "tool_call"), effect=lambda: {"rows": 4}) == {"rows": 4}
     state = ledger(root).projection.value["budget"]["dimensions"]
     assert state["llm_calls_per_attempt"]["used"] == 1
     assert state["tool_calls_per_attempt"]["used"] == 1
 
 
-def test_async_budget_denial_does_not_call_model(resource_host):
+def test_budget_denial_prevents_dispatch(resource_host):
     port, _, root = resource_host
-    called = []
-
-    async def effect():
-        called.append(True)
-        return {"answer": "evidence"}
-
-    async def calls():
-        for index in range(2):
-            await async_run_resource(port, **request(f"model-{index}"), effect=effect)
-        with pytest.raises(BudgetExhausted):
-            await async_run_resource(port, **request("model-denied"), effect=effect)
-
-    asyncio.run(calls())
-    assert len(called) == 2 and len(events(root, "resource_reserved")) == 2
+    for index in range(2):
+        run_resource(port, **request(f"model-{index}"), effect=lambda: {"answer": "evidence"})
+    with pytest.raises(BudgetExhausted):
+        with resource_scope(port, **request("model-denied")):
+            pytest.fail("Effect dispatched past the budget")
+    assert len(events(root, "resource_reserved")) == 2
 
 
 def test_cancellation_retains_maximum_and_cannot_redispatch(resource_host):
@@ -110,12 +90,13 @@ def test_cancellation_retains_maximum_and_cannot_redispatch(resource_host):
     returned = []
 
     async def effect():
-        entered.set()
-        await asyncio.Event().wait()
-        returned.append(True)
+        with resource_scope(port, **request("cancelled")) as finish:
+            entered.set()
+            await asyncio.Event().wait()
+            returned.append(finish({"answer": "unexpected"}))
 
     async def cancel():
-        task = asyncio.create_task(async_run_resource(port, **request("cancelled"), effect=effect))
+        task = asyncio.create_task(effect())
         await entered.wait()
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -156,15 +137,12 @@ def test_scope_cannot_settle_after_exit_or_twice(resource_host):
     settle_resource_failure(port, resource_id="unfinished", error=RuntimeError("effect ended without output"))
 
 
-def test_async_untrusted_duration_cannot_become_success(resource_host):
+def test_untrusted_duration_cannot_become_success(resource_host):
     port, clock, root = resource_host
-
-    async def effect():
-        clock.advance(3)
-        return {"answer": "late"}
-
     with pytest.raises(ControlIntegrityError, match="duration"):
-        asyncio.run(async_run_resource(port, **request("late", timeout=2), effect=effect))
+        with resource_scope(port, **request("late", timeout=2)) as finish:
+            clock.advance(3)
+            finish({"answer": "late"})
     assert not events(root, "resource_settled")
     settle_resource_failure(port, resource_id="late", error=TimeoutError("late result"))
     assert events(root, "resource_settled")[0]["actual"] is None

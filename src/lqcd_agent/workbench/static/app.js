@@ -17,7 +17,7 @@ const notice = (message, kind = '') => { state.noticeKind = kind; text('notice',
 const runEndpoint = locator => '/api/runs/'+[locator.host, locator.run_locator.case_id, locator.run_locator.run_id].map(encodeURIComponent).join('/');
 const projectEndpoint = id => '/api/projects/'+encodeURIComponent(id);
 const endpoint = locator => locator.project_id && locator.project_run_key ? projectEndpoint(locator.project_id)+'/runs/'+encodeURIComponent(locator.project_run_key) : runEndpoint(locator);
-const roleNames = {pi: 'PI', reviewer: 'Independent Reviewer', method_planner: 'Planning', code_agent: 'Code Researcher', analysis_engineer: 'Analysis Researcher', scientific_reviewer: 'Reviewer & PI', human_gate: 'Authorization', memory_report: 'Report'};
+const roleNames = {research_manager: 'Research Manager', reviewer: 'Independent Reviewer', method_planner: 'Method plan', code_agent: 'Research Worker', analysis_engineer: 'Host numerical analysis', scientific_reviewer: 'Scientific review', human_gate: 'Authorization', memory_report: 'Report'};
 const revisions = new Map();
 const drafts = new Map();
 let draftKey, navigation = 0, refreshing = false, refreshAgain = false;
@@ -167,8 +167,8 @@ async function loadProject(identifier, version = navigation) {
   $('project-live').checked = false;
   $('project-start').disabled = state.busy;
   $('plan-mode').value = 'review';
-  $('project-start').textContent = 'Plan with PI';
-  text('project-readiness', 'A new investigation starts a new task budget. The PI can read the data profile, project evidence and literature while drafting.');
+  $('project-start').textContent = 'Plan with Research Manager';
+  text('project-readiness', 'A new investigation starts a new task budget. The Research Manager can read the data profile, project evidence and literature while drafting.');
 }
 
 async function chooseProject(identifier) {
@@ -336,7 +336,7 @@ function collaboration(view) {
       e.slot === exchange.slot && e.name.split('/').at(-1) === filename);
     const card = node('section', undefined, 'collaboration-card');
     const header = node('header');
-    header.append(node('h3', exchange.slot === 'plan' ? 'Research planning' : 'Independent review & PI discussion'),
+    header.append(node('h3', exchange.slot === 'plan' ? 'Research planning' : 'Scientific review discussion'),
       node('small', exchange.current ? 'Current' : 'Earlier round', 'muted'));
     card.append(header, node('p', exchange.summary));
     for (const issue of exchange.issues || []) {
@@ -620,7 +620,7 @@ $('edit-project-config').addEventListener('input', () => {
   } catch { /* Preserve partially typed JSON until the user completes the edit. */ }
 });
 $('plan-mode').addEventListener('change', () => {
-  $('project-start').textContent = $('plan-mode').value === 'auto' ? 'Plan and execute automatically' : 'Plan with PI';
+  $('project-start').textContent = $('plan-mode').value === 'auto' ? 'Plan and execute automatically' : 'Plan with Research Manager';
 });
 $('project-start').addEventListener('click', () => {
   if (!state.project) return;

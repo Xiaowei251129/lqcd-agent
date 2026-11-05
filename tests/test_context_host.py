@@ -38,14 +38,14 @@ def planning_response():
 
 
 @pytest.mark.parametrize('behavior', ['valid', 'ignore_final', 'repair_final'])
-def test_compaction_shares_real_budget_with_the_planning_pi(tmp_path, monkeypatch, behavior):
+def test_compaction_shares_real_budget_with_the_planning_manager(tmp_path, monkeypatch, behavior):
     monkeypatch.setattr(context_window, 'INPUT_TOKEN_LIMIT', 100)
     monkeypatch.setattr(context_window, 'COMPACT_TOKEN_LIMIT', 80)
-    counts, pi_calls, compact_calls = 0, 0, 0
+    counts, manager_calls, compact_calls = 0, 0, 0
     request_timeout_seconds = 0.5
     generated = []
     async def transport(request):
-        nonlocal counts, pi_calls, compact_calls
+        nonlocal counts, manager_calls, compact_calls
         assert request.extensions['timeout']['read'] == request_timeout_seconds
         body = json.loads(request.content)
         if request.url.path.endswith('/input_tokens'):
@@ -66,11 +66,11 @@ def test_compaction_shares_real_budget_with_the_planning_pi(tmp_path, monkeypatc
             name = schema['title']
         generated.append(name)
         if name == 'method_plan_discussion':
-            pi_calls += 1
+            manager_calls += 1
             closing = body.get('tool_choice') == 'none'
-            if pi_calls == 1 or behavior == 'ignore_final' or (behavior == 'repair_final' and not closing):
+            if manager_calls == 1 or behavior == 'ignore_final' or (behavior == 'repair_final' and not closing):
                 output = [ResponseFunctionToolCall(type='function_call', name='read_context',
-                    call_id=f'pi-read-{pi_calls}', arguments='{"section":"case_config","offset":0}')]
+                    call_id=f'manager-read-{manager_calls}', arguments='{"section":"case_config","offset":0}')]
             else:
                 plan = planning_response()
                 if behavior == 'repair_final' and body.get('tools'):
@@ -113,8 +113,8 @@ def test_compaction_shares_real_budget_with_the_planning_pi(tmp_path, monkeypatc
     events = [loads(line, canonical=False) for path in (snapshot.host/'domain'/planning).rglob('research_events.jsonl')
               for line in path.read_bytes().splitlines()]
     starts = [e for e in events if e['event'] == 'model_start']
-    pi_starts = [e for e in starts if e['role'] == 'pi'][:3]
-    assert len(pi_starts) == 3 and [e.get('operation') for e in pi_starts] == [None, 'compact', None]
+    manager_starts = [e for e in starts if e['role'] == 'research_manager'][:3]
+    assert len(manager_starts) == 3 and [e.get('operation') for e in manager_starts] == [None, 'compact', None]
     index = loads((snapshot.root/'artifact_index.json').read_bytes())
     terminal = loads(Path(index['current']['terminal']['state_paths']['memory_update_path']).read_bytes())
     assert terminal['decision_origin'] == 'system' and terminal['authorization_decision'] is None
@@ -172,7 +172,7 @@ def test_count_failure_before_any_model_closes_without_a_fabricated_model_anchor
 
 
 @pytest.mark.parametrize('closing_reason', ['tools', 'time'])
-def test_batched_tools_leave_real_reviewer_and_pi_counts_and_conclusions(tmp_path, monkeypatch, closing_reason):
+def test_batched_tools_leave_real_reviewer_and_manager_counts_and_conclusions(tmp_path, monkeypatch, closing_reason):
     """Use actual SDK batches and Host effects; refused calls are never evidence."""
     monkeypatch.setattr(context_window, 'INPUT_TOKEN_LIMIT', 100)
     monkeypatch.setattr(context_window, 'COMPACT_TOKEN_LIMIT', 80)
@@ -255,7 +255,7 @@ def test_batched_tools_leave_real_reviewer_and_pi_counts_and_conclusions(tmp_pat
     assert denied and all(event.get('call_id') not in denied for event in events
         if event['event'] in ('tool_start', 'tool_end'))
     assert len([event for event in events if event['event'] == 'tool_start']) == 32
-    for role in ('reviewer', 'pi'):
+    for role in ('reviewer', 'research_manager'):
         assert sum(event['event'] == 'model_end' and event['role'] == role for event in events) == 2
         assert sum(event['event'] == 'run_end' and event['role'] == role for event in events) == 1
     pressure = [event for event in events if event['event'] == 'context_pressure']

@@ -129,7 +129,7 @@ function answerField(question, choice, index) {
   field.dataset.question = question;
   field.append(element('legend', question));
   if (choice) {
-    for (const option of [...choice.options, {label: 'Delegate this choice to PI', consequence: 'PI will explain the choice in the revised plan.'}]) {
+    for (const option of [...choice.options, {label: 'Delegate this choice to the Research Manager', consequence: 'The Research Manager will explain the choice in the revised plan.'}]) {
       const label = element('label', undefined, 'check'), input = element('input');
       input.type = 'radio'; input.name = 'answer-'+index; input.value = option.label;
       const content = element('span', option.label+(option.label === choice.recommended ? ' (recommended)' : ''));
@@ -152,7 +152,7 @@ function preparation(view, runs, project, onSelect) {
   const current = runKey(view);
   putText('preparation-title', status === 'needs_information' ? 'Questions for you' : status === 'ready' ?
     (view.plan_mode === 'review' && !children.length ? 'Plan ready for review' : 'Prepared plan') :
-    closed(view) ? 'Preparation ended' : 'PI is preparing the plan');
+    closed(view) ? 'Preparation ended' : 'The Research Manager is preparing the plan');
   putText('preparation-summary', data?.summary || '');
   const version = view.plan_digest;
   putText('plan-version', version ? 'Plan '+version.slice(0,12)+' · '+(view.plan_mode === 'auto' ? 'Automatic execution' :

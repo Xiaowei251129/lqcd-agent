@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 
@@ -98,10 +97,3 @@ def provider_exception_artifact(
         code=code,
         message=message,
     )
-
-
-def write_error_artifact(path: str | Path, artifact: dict[str, Any]) -> str:
-    artifact_path = Path(path)
-    artifact_path.parent.mkdir(parents=True, exist_ok=True)
-    artifact_path.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return str(artifact_path)
