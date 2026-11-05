@@ -174,6 +174,16 @@ def test_experiment_proposals_cannot_expand_data_or_execution_authority(name):
     assert config == before
 
 
+@pytest.mark.parametrize('family,metadata,value', [
+    ('c2', 'ns', 32), ('c2', 'ground_energy_at_rest', 0.27), ('normalization', 'target_bT', 3),
+    ('replica_observables', 'operator_normalization', 1.0)])
+def test_operator_supplied_metadata_cannot_be_varied_as_an_experiment_control(family, metadata, value):
+    config = {'generated_program': {'result_kind': family, 'parameters': {metadata: value}}}
+    with pytest.raises(ControlIntegrityError, match='data, authority'):
+        experiment_config(config, proposal(parameter_changes=[{'name': metadata, 'value_json': str(value * 2)}]))
+    assert config['generated_program']['parameters'] == {metadata: value}
+
+
 def test_experiment_parameters_are_new_config_values_without_mutating_the_parent():
     config = {'raw_data_path':'raw_data/frozen.json','generated_program':{
         'python':'/trusted/python','parameters':{'fixed_ground_energy':False},

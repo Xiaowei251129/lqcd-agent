@@ -1,11 +1,13 @@
 """Research task assembly over the existing durable CodeHost and graph."""
 import subprocess
+import tempfile
 from pathlib import Path
 
 from .code_agent.analysis_handoff import AnalysisHandoff
 from .code_agent.codex_backend import CodexCodingBackend, ProcessContainment, JOBS_DIRECTORY
 from .code_agent.subgraph import ProductCodeHost
 from .code_agent.workspace import create_base_repository, immutable_git_tree, tree_digest
+from .control.coordinator import sync_directory
 from .control.strict_json import digest, require
 
 
@@ -23,9 +25,17 @@ def prepare_research(coordinator, config, *, workspace, live, initialize, method
     from .research.methods import method_files
     base_files = {'analysis.py': b'raise NotImplementedError("Implement the research task")\n', **method_files(method_sources)}
     repository = coordinator.root/'research_repositories'/tree_digest(base_files)
+    require(repository == repository.resolve(), 'Research coding base path was redirected')
     if initialize and not repository.exists():
         repository.parent.mkdir(mode=0o700, exist_ok=True)
-        create_base_repository(repository, base_files)
+        # Build privately. Hold the Host writer only to publish a completed Git base.
+        with tempfile.TemporaryDirectory(prefix='.build-', dir=repository.parent) as stage:
+            candidate = Path(stage)/'base'
+            create_base_repository(candidate, base_files)
+            with coordinator.transaction():
+                if not repository.exists():
+                    candidate.rename(repository)
+                    sync_directory(repository.parent)
     revision = subprocess.check_output(['git', '-C', str(repository), 'rev-parse', 'HEAD'], text=True).strip()
     base = immutable_git_tree(repository, revision)
     require(base == base_files, 'Research coding base changed')

@@ -11,10 +11,10 @@ flowchart LR
     Submit --> CP["Existing ControlPlane / WAL + FULL"]
     CP --> Worker["One shared CLI / workbench Host driver"]
     Worker --> Runtime["CanonicalProductRuntime"]
-    Runtime --> Intake["Project preparation: PI/Postdoc"]
-    Intake -->|ready| Roles
+    Runtime --> Intake["PI research plan"]
+    Intake -->|execute selected version or auto| Roles
     Intake -->|missing prerequisite| Questions["Recorded questions; optional clarification"]
-    Runtime --> Roles["PI/Postdoc → Code → Analysis → Reviewer/PI"]
+    Runtime --> Roles["Selected plan → Code → Analysis → Reviewer/PI"]
     Roles --> Report["Autonomous outcome and evidence"]
     Roles -->|extra authority only| Auth["Original scoped authorization Pause"]
     Auth --> UI
@@ -32,13 +32,14 @@ The private `.runtime/workbench-host.json` stores only a Host locator. Run histo
 
 ## Prepare a research project
 
-Create a Project with its question and constraints. Starting configuration is optional; the **Data file**, **Data provenance** and **Scientific Python** fields populate a partial configuration. Declare whether the input is measured, resampled or synthetic; provenance has no default. Enable live research and start an investigation. PI/Postdoc first receive a Host-generated profile of the declared data and can consult the local library or literature. A supported prepared contract automatically starts the formal analysis. The prepared configuration is retained as evidence, leaving the user's Project inputs unchanged.
+Create a Project with its research question, constraints and available data. Declare the input provenance. The scientific interpreter and data file may be set in the Project editor. Planning can use the configured paid research model and named literature tools.
 
-The Project overview groups preparation, clarification, formal analysis and follow-up Runs by their shared research task. Select a step to inspect its frozen inputs and state. A ready preparation links to its formal analysis once the child has been recorded.
+1. Leave **Review the PI plan before execution** selected and click **Plan with PI**. For unattended work, select **Execute automatically when ready** at launch. The PI investigates the declared inputs, local evidence and relevant methods and produces a plan. The preparation page shows the question, evidence, method, assumptions, decision criteria and expected outputs.
+2. Review open questions together. Choose an option, enter a reply, or delegate a scientific preference. Missing measurements and provenance require attributable facts. Use the Project editor for structured input changes. Open **Request a revision**, submit the answers and any other changes once, then inspect the revised sections alongside the previous version.
+3. **Save for later** returns to the Project. Open the saved preparation to resume. **Execute this plan** selects the displayed version for scientific execution. The initial formal Run registers that plan and passes its requirements to Code. Selecting a stale version cannot launch a second Run.
+4. Read **Results**, **Code & trials**, **Review** and **All evidence** on the formal Run. The task timeline connects the preparation, its revision and the selected analysis.
 
-For `needs_information`, use **Reply** at the question to record a scientific answer. Use **Edit research inputs** for the data file, provenance, interpreter or other structured metadata and save the Project version. **Continue research** uses the original task's remaining quota and deadline. Preparation and clarification each use one of the four Run slots. Use **Start a new investigation** from the Project overview to start a separate budget.
-
-Ordinary comments never dispatch a model. If the needed facts are unavailable, the preparation remains inspectable without requiring human approval. Unsupported input formats require an explicit supported data contract; the interface does not upload or reinterpret arbitrary files automatically.
+Within the current task, planning and execution share the displayed Run, request and token allowances and deadline. Reading a plan and ordinary comments use no Run; each submitted revision costs one. If the account expires, **Recheck plan and start with a new budget** opens a separate task and records its source. Changed inputs require a new plan; previous evidence remains available. Archived captures have no execution authority.
 
 ## Optional scientific participation
 
@@ -75,7 +76,7 @@ All endpoints bind to loopback and validate exact Host/Origin plus a per-server 
 | `GET/POST /api/projects` | List/create Projects |
 | `GET/POST /api/projects/{id}` | Inspect/version-check Project edits |
 | `GET/POST /api/projects/{id}/contributions` | Attributed optional scientific input |
-| `POST /api/projects/{id}/runs` | Start Project preparation, or explicitly continue its original intake parent |
+| `POST /api/projects/{id}/runs` | Create a PI plan, or revise, execute or renew a digest-bound version |
 | `GET /api/library` | Candidate/reviewed asset search |
 | `GET /api/runs` | Verified Run navigation |
 | `POST /api/runs` | Admit a configured case |

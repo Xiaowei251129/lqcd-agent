@@ -217,6 +217,33 @@ class ProjectStore(WorkspaceFiles):
             return [row for row in records if run is None or row["run"] is None or
                     all(row["run"][name] == value for name, value in run.items())]
 
+    def research_inputs(self, project_id, host, locator):
+        """Collect the same scientific inputs for role context and plan admission."""
+        from lqcd_agent.control.research_budget import inspect_budget
+        host_id = host.name.removeprefix('lqcd-agent-host-')
+        scopes = set()
+        expected_account = None
+        while locator is not None:
+            account = inspect_budget(host, locator)
+            if account is None:
+                scopes.add((locator['case_id'], locator['run_id']))
+                break
+            require(expected_account is None or account['id'] == expected_account, 'Renewed plan source account changed')
+            parents = {row['locator']['run_id']: row['parent'] for row in account['runs']}
+            while locator is not None:
+                scope = (locator['case_id'], locator['run_id'])
+                require(scope not in scopes, 'Research input ancestry contains a cycle')
+                scopes.add(scope)
+                root = locator
+                locator = parents[locator['run_id']]
+            # A renewed root has a provenance parent in an earlier account.
+            goal = loads(read_regular(host/root['case_id']/root['run_id']/'root_goal.json'))
+            origin = goal.get('plan_origin')
+            if origin:
+                locator, expected_account = origin['parent'], origin['task_id']
+        return [row for row in self.contributions(project_id) if row['run'] is None or
+                (row['run']['host'] == host_id and (row['run']['case_id'], row['run']['run_id']) in scopes)]
+
     @staticmethod
     def _source(path, scope, expected, remaining):
         digest_value(expected)

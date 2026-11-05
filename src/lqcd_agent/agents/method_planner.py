@@ -258,6 +258,43 @@ def write_method_plan(output_dir: str | Path, plan: dict[str, Any]) -> str:
     return str(path)
 
 
+def resolve_method_proposal(payload, case_config, repo_inventory):
+    """Resolve executable selections once, before a scientific plan acquires Run identity."""
+    validation_errors = validate_proposal(payload, 'method_plan')
+    if not validation_errors:
+        if (case_config or {}).get('generated_program') and payload['status'] == 'success':
+            if not payload['code_needed'] or payload['selected_analysis_programs'] or not payload['method_steps']:
+                validation_errors.append('Generated scientific analysis requires an explicit implementation plan.')
+        selected = []
+        inventory = {p['name']: p for p in (repo_inventory or {}).get('analysis_programs', [])}
+        for name in payload['selected_analysis_programs']:
+            choice = canonical_program_selection(inventory.get(name, {}), case_config or {}, repo_inventory)
+            if choice is None or any(item['name'] == name for item in selected):
+                validation_errors.append('Selected program is unavailable or duplicated.')
+                break
+            selected.append(choice)
+        if (payload['status'] == 'success' and (case_config or {}).get('raw_data_path')
+                and any(requested_programs(case_config)) and not selected and not payload['code_needed']):
+            validation_errors.append('A raw-data analysis plan requires a selected program or an implementation request.')
+        if not validation_errors:
+            payload = dict(payload)
+            payload['selected_analysis_programs'] = selected
+            payload['required_outputs'] = ['method_plan.json', 'run_result.json',
+                *(['analysis_outputs/generated_result.json'] if (case_config or {}).get('generated_program')
+                  else [item['output_path'] for item in selected]), 'scientific_review_report.json', 'decision_log.json']
+    return payload, validation_errors
+
+
+def publish_method_plan(output_dir, plan, inventory):
+    method_plan_path = write_method_plan(output_dir, plan)
+    code_request = None
+    if plan["status"] == "success" and plan["code_needed"]:
+        code_request = {"summary": plan["coder_task_summary"], "requirements": plan["method_steps"],
+                        "proposed_paths": (inventory or {}).get("allowed_files", [])}
+    return {"status": plan["status"], "method_plan_path": method_plan_path, "code_needed": plan["code_needed"],
+            "code_request": code_request, "method_plan": plan}
+
+
 def _provider_failure_plan(
     *,
     run_id: str,
@@ -361,28 +398,7 @@ def _run_provider_method_planner(
         }
 
     assert payload is not None
-    validation_errors = validate_proposal(payload, 'method_plan')
-    if not validation_errors:
-        if (case_config or {}).get('generated_program') and payload['status'] == 'success':
-            if not payload['code_needed'] or payload['selected_analysis_programs'] or not payload['method_steps']:
-                validation_errors.append('Generated scientific analysis requires an explicit implementation plan.')
-        selected = []
-        inventory = {p['name']: p for p in (repo_inventory or {}).get('analysis_programs', [])}
-        for name in payload['selected_analysis_programs']:
-            choice = canonical_program_selection(inventory.get(name, {}), case_config or {}, repo_inventory)
-            if choice is None or any(item['name'] == name for item in selected):
-                validation_errors.append('Selected program is unavailable or duplicated.')
-                break
-            selected.append(choice)
-        if (payload['status'] == 'success' and (case_config or {}).get('raw_data_path')
-                and any(requested_programs(case_config)) and not selected and not payload['code_needed']):
-            validation_errors.append('A raw-data analysis plan requires a selected program or an implementation request.')
-        if not validation_errors:
-            payload = artifact_payload(payload, run_id=run_id, case_id=case_id, producer='method_planner')
-            payload['selected_analysis_programs'] = selected
-            payload['required_outputs'] = ['method_plan.json', 'run_result.json',
-                *(['analysis_outputs/generated_result.json'] if (case_config or {}).get('generated_program')
-                  else [item['output_path'] for item in selected]), 'scientific_review_report.json', 'decision_log.json']
+    payload, validation_errors = resolve_method_proposal(payload, case_config, repo_inventory)
     if validation_errors:
         plan = _provider_failure_plan(
             run_id=run_id,
@@ -413,27 +429,11 @@ def _run_provider_method_planner(
             "method_plan": plan,
         }
 
-    method_plan_path = write_method_plan(output_dir, payload)
-    write_llm_call_trace(
-        output_dir=output_dir,
-        agent="method_planner",
-        provider=provider,
-        request=request,
-        response=response,
-        parsed_payload_path=method_plan_path,
-        status=payload["status"],
-    )
-    code_request = None
-    if payload["status"] == "success" and payload["code_needed"]:
-        code_request = {"summary": payload["coder_task_summary"], "requirements": payload["method_steps"],
-                        "proposed_paths": (repo_inventory or {}).get("allowed_files", [])}
-    return {
-        "status": payload["status"],
-        "method_plan_path": method_plan_path,
-        "code_needed": payload["code_needed"],
-        "code_request": code_request,
-        "method_plan": payload,
-    }
+    plan = artifact_payload(payload, run_id=run_id, case_id=case_id, producer='method_planner')
+    result = publish_method_plan(output_dir, plan, repo_inventory)
+    write_llm_call_trace(output_dir=output_dir, agent='method_planner', provider=provider, request=request,
+                         response=response, parsed_payload_path=result['method_plan_path'], status=plan['status'])
+    return result
 
 
 def run_method_planner(
@@ -474,16 +474,4 @@ def run_method_planner(
             {"field": "method_plan", "message": error} for error in validation_errors
         )
 
-    method_plan_path = write_method_plan(output_dir, plan)
-    code_request = None
-    if plan["status"] == "success" and plan["code_needed"]:
-        code_request = {"summary": plan["coder_task_summary"], "requirements": plan["method_steps"],
-                        "proposed_paths": (repo_inventory or {}).get("allowed_files", [])}
-
-    return {
-        "status": plan["status"],
-        "method_plan_path": method_plan_path,
-        "code_needed": plan["code_needed"],
-        "code_request": code_request,
-        "method_plan": plan,
-    }
+    return publish_method_plan(output_dir, plan, repo_inventory)

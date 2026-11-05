@@ -29,9 +29,9 @@ class ResearchMeter:
     def tool_calls(self):
         return self.ordinal - self.model_calls
 
-    def role_allowance(self, *, max_turns, reserve_calls, count_required, seconds):
+    def role_allowance(self, *, max_turns, reserve_calls, reserve_repair, count_required, seconds):
         """Share existing remaining resources; this object grants no effect authority."""
-        return _RoleAllowance(self, max_turns, reserve_calls, count_required, seconds)
+        return _RoleAllowance(self, max_turns, reserve_calls, reserve_repair, count_required, seconds)
 
     def _fence(self, db):
         self.port.leases._effect_authority(db, self.port.capability_id, self.port.worker, self.port.epoch)
@@ -140,12 +140,12 @@ class ResearchMeter:
 class _RoleAllowance:
     """Pure scheduling headroom inside one existing Host invocation and policy."""
 
-    def __init__(self, meter, max_turns, reserve_calls, count_required, seconds):
+    def __init__(self, meter, max_turns, reserve_calls, reserve_repair, count_required, seconds):
         self.meter, self.count_required = meter, count_required
         dimensions = meter.context['budget_summary']['dimensions']
         remaining = min(dimensions[name]['remaining'] for name in
                         ('tool_calls_per_attempt', 'tool_calls_per_run')) - meter.tool_calls
-        reserved_counts = reserve_calls if count_required else 0
+        reserved_counts = (reserve_calls + int(reserve_repair and remaining > 1)) if count_required else 0
         available = remaining - reserved_counts
         tools = min(available, (remaining + 1) // 2) if reserve_calls else available
         if tools < int(count_required):

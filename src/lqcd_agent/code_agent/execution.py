@@ -27,8 +27,12 @@ def interpreter_identity(python, *, timeout=15):
 
 # Numerical controls may vary in a new, separately sealed Run. Measured values,
 # sample identities, units and physical definitions remain immutable source data.
-ANALYSIS_PARAMETERS = frozenset({'binsize', 'bootstrap_samples', 'seed', 'tmins', 'tmax',
-                                 'fixed_ground_energy', 'omit_reference'})
+FAMILY_CONTROLS = {
+    'c2': frozenset({'binsize', 'bootstrap_samples', 'seed', 'tmins', 'tmax', 'fixed_ground_energy'}),
+    'normalization': frozenset({'omit_reference'}),
+    'replica_observables': frozenset(),
+}
+ANALYSIS_PARAMETERS = frozenset().union(*FAMILY_CONTROLS.values())
 
 
 def read_scientific_input(workspace, snapshot, parameters):

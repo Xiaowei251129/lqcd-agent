@@ -1,4 +1,4 @@
-"""Bounded PI/Postdoc/independent-review work inside the canonical scientific path."""
+"""Bounded PI and independent-review work inside the canonical scientific path."""
 from __future__ import annotations
 
 import asyncio
@@ -71,7 +71,6 @@ class ResearchBrief(BaseModel):
     competing_explanations: list[Nonempty]
     discriminating_checks: list[Nonempty]
     success_criteria: list[Nonempty]
-    discussion: Discussion
 
 
 class ProposalDiscussion(AgentOutputSchemaBase):
@@ -92,19 +91,35 @@ class ProposalDiscussion(AgentOutputSchemaBase):
         proposal = deepcopy(self.schema['schema'])
         discussion = Discussion.model_json_schema()
         definitions = {**proposal.pop('$defs', {}), **discussion.pop('$defs', {})}
-        return ensure_strict_json_schema({'type': 'object', 'properties': {'proposal': proposal, 'discussion': discussion},
-                'required': ['proposal', 'discussion'], 'additionalProperties': False, '$defs': definitions})
+        properties = {'proposal': proposal, 'discussion': discussion}
+        if self.schema['name'] == 'method_plan':
+            properties['brief'] = ResearchBrief.model_json_schema()
+        return ensure_strict_json_schema({'type': 'object', 'properties': properties,
+                'required': list(properties), 'additionalProperties': False, '$defs': definitions})
 
     def validate_json(self, json_str):
         try:
             value = loads(json_str, canonical=False)
-            require(type(value) is dict and set(value) == {'proposal', 'discussion'}, 'Invalid role response')
+            fields = {'proposal', 'discussion'}
+            if self.schema['name'] == 'method_plan':
+                fields.add('brief')
+            require(type(value) is dict and set(value) == fields, 'Invalid role response')
+            if 'brief' in fields:
+                value['brief'] = ResearchBrief.model_validate(value['brief']).model_dump(mode='json')
             errors = validate_proposal(value['proposal'], self.schema['name'])
             require(not errors, 'Invalid scientific proposal: '+'; '.join(errors))
             value['discussion'] = Discussion.model_validate(value['discussion']).model_dump(mode='json')
             return value
         except (ValueError, TypeError, KeyError) as error:
             raise ModelBehaviorError('Invalid structured research response') from error
+
+
+ISSUE_POLICY = (
+    'Give each new issue an empty id (""); the Host assigns its identifier. For an existing issue copy its '
+    'id and question exactly. Mark an issue addressed only with an explicit response and attributable evidence: '
+    'use the context catalog SHA256, a registered artifact SHA256, or a SHA256/evidence_id/source URL returned '
+    'by an evidence-reading tool. Tool or section names alone are not references. Preserve unanswered issues. '
+)
 
 
 ROLE_POLICY = (
@@ -114,9 +129,7 @@ ROLE_POLICY = (
     'citations, computations or figure inspection. Inspect competing explanations and relevant systematic errors '
     '(for example excited states, covariance/fit stability, normalization and renormalization, finite volume, '
     'continuum extrapolation and analysis choices) only where applicable. Keep questions specific and testable. '
-    'Reuse existing issue ids; use an empty id for new issues. Mark an issue addressed only with an explicit '
-    'response and attributable evidence references: use the context catalog SHA256, a registered artifact SHA256, '
-    'or a SHA256/evidence_id/source URL returned by an evidence-reading tool. Preserve unanswered issues. Decisions are recommendations: '
+    f'{ISSUE_POLICY}Decisions are recommendations: '
     'the PI may conclude within the evidence and retained limitations; the Host owns execution and permission grants. '
     'Human scientific participation is optional. The current Run has frozen data, '
     'parameters and an output contract. Propose executable checks within that contract only. If a needed '
@@ -203,13 +216,14 @@ def _prior_issues(context, plan=None):
         'evidence_references': [], 'status': 'open'} for question in criteria])
 
 
-def _plan_checks(proposal, brief, context, issues):
-    checks = [*proposal['method_steps'], *brief['discriminating_checks'], *brief['success_criteria'],
-              *(context.get('remediation') or {}).get('success_criteria', []),
-              *(item['question'] for item in issues if item['status'] != 'addressed')]
+def _plan_steps(method_steps, brief, issues, extra=()):
+    if not method_steps or not brief['discriminating_checks'] or not brief['success_criteria']:
+        raise ModelBehaviorError('An executable plan needs method steps, discriminating checks and success criteria')
+    checks = [*method_steps, *brief['discriminating_checks'], *brief['success_criteria'],
+              *(item['question'] for item in issues if item['status'] != 'addressed'), *extra]
     if any(type(item) is not str or not item.strip() or len(item) > 4096 for item in checks):
         raise ModelBehaviorError('Every scientific implementation criterion must be nonempty and at most 4096 characters')
-    proposal['method_steps'] = list(dict.fromkeys(item.strip() for item in checks))
+    return list(dict.fromkeys(item.strip() for item in checks))
 
 
 def _known_evidence(context, sources, events):
@@ -248,11 +262,16 @@ class _RoleProvider:
             timeout_seconds=agent.request_timeout_seconds)
         self.failure, self.collaboration = None, None
 
-    def _run(self, role, instructions, input, output_type, tools, *, reserve_calls=0):
+    def _run(self, role, instructions, input, output_type, tools, *, reserve_calls=0, plan_attempt=None):
         dimensions = self.context['budget_summary']['dimensions']
         remaining = min(dimensions[name]['remaining'] for name in
                         ('llm_calls_per_attempt', 'llm_calls_per_run')) - self.meter.model_calls
         max_turns = min(remaining - reserve_calls, (remaining + 1) // 2) if reserve_calls else remaining
+        reserve_repair = plan_attempt == 0 and remaining > 1
+        if reserve_repair:
+            max_turns -= 1
+        if plan_attempt == 1:
+            max_turns = min(1, max_turns)
         if max_turns < 1:
             raise BudgetExhausted('Research attempt cannot fund the remaining roles')
         instructions += (f'\nYou have at most {max_turns} model turns for this role, including the final '
@@ -262,7 +281,7 @@ class _RoleProvider:
             'Keep the final JSON concise: state actionable checks and unresolved questions without '
             'repeating the supplied requirements or evidence catalog.')
         remaining_seconds = self.meter.remaining_seconds()
-        allowance = self.meter.role_allowance(max_turns=max_turns, reserve_calls=reserve_calls,
+        allowance = self.meter.role_allowance(max_turns=max_turns, reserve_calls=reserve_calls, reserve_repair=reserve_repair,
             count_required=self.runtime._client is not None, seconds=remaining_seconds)
         async def invoke():
             return await asyncio.wait_for(self.runtime.run(role=role, instructions=instructions,
@@ -270,6 +289,19 @@ class _RoleProvider:
                 output_type=output_type, max_turns=max_turns,
                 observer=self.meter, allowance=allowance), timeout=remaining_seconds)
         return self.runner.run(invoke())
+
+    def plan(self, policy, inputs, output_type, tools, resolve):
+        """Resolve one PI draft, correcting only a completed proposal within the original Host invocation."""
+        for attempt in range(2):
+            output = self._run('pi', policy, inputs, output_type, tools if not attempt else [], plan_attempt=attempt).output
+            try:
+                return resolve(output)
+            except ModelBehaviorError as error:
+                if attempt:
+                    raise ModelBehaviorError('PI plan could not satisfy the Host contract after correction') from error
+                inputs.append({'role':'user', 'content':json.dumps({'previous_proposal':output,
+                    'host_corrections':[str(error)], 'instruction':'Correct only the reported proposal defects. '
+                    'Preserve scientific requirements, uncertainties and attributable evidence. Return the full plan.'})})
 
     def generate(self, request):
         return self._checked(self._generate, request)
@@ -312,8 +344,8 @@ class _RoleProvider:
             inputs.append({'role': 'user', 'content': json.dumps({'research_preparation': {
                 key: preparation[key] for key in ('summary', 'assumptions', 'questions')},
                 'scope': 'These are the earlier preparation assumptions, not numerical evidence. '
-                         'Read research_preparation for its complete source. Plan implementation of the now-frozen '
-                         'contract; revisit the research question only when new evidence requires it.'})})
+                         'Read research_preparation for its complete source. Assess the sealed analysis against '
+                         'the selected scientific plan and its declared criteria.'})})
         plan = (self.agent._artifact(self.context, 'method_plan.json')
                 if self.node == 'scientific_reviewer' else None)
         issues = _prior_issues(self.context, plan)
@@ -322,14 +354,10 @@ class _RoleProvider:
         # Historical resolutions authorize id reuse, not inclusion or current resolution.
         known_questions = {item['id']: item['question']
                            for item in self.context.get('project_history', {}).get('resolved', [])}
-        plan_prerequisites = set()
         def merge(discussion):
             proposed = _discussion_issues(discussion)
-            merged = _merge_issues(issues, proposed, known_questions=known_questions,
+            return _merge_issues(issues, proposed, known_questions=known_questions,
                 known_evidence=_known_evidence(self.context, request.context_sources, self.meter.events))
-            if discussion['decision'] == 'need_information':
-                plan_prerequisites.update(_issue_id(item) for item in proposed if item['status'] == 'blocked')
-            return merged
         from .history import project_state_view
         history = self.context.get('project_history')
         project_state = project_state_view(history) if history is not None else None
@@ -343,18 +371,19 @@ class _RoleProvider:
             'project_state': project_state})})
         exchanges = []
         if self.node == 'method_planner':
-            brief = self._run('pi', ROLE_POLICY+'\nFrame the scientific problem before implementation. '
-                'Specify the question, competing explanations, discriminating checks and success criteria. '
-                'Do not decide that any analysis has succeeded.', inputs, ResearchOutput(ResearchBrief), tools, reserve_calls=1)
-            issues = merge(brief.output['discussion'])
-            exchanges.append({'role': 'pi', 'brief': brief.output})
-            inputs.append({'role': 'user', 'content': json.dumps({'pi_brief': brief.output, 'issues': issues})})
-            final = self._run('postdoc', ROLE_POLICY+'\nOrganize the implementation and answer the PI questions.\n'+instructions,
-                              inputs, ProposalDiscussion(request.json_schema), tools)
-            proposal, discussion = final.output['proposal'], final.output['discussion']
-            issues = merge(discussion)
-            exchanges.append({'role': 'postdoc', **deepcopy(final.output)})
-            _plan_checks(proposal, brief.output, self.context, issues)
+            def resolve(output):
+                candidate, discussion = output['proposal'], output['discussion']
+                merged = merge(discussion)
+                if candidate['status'] == 'success' and discussion['decision'] != 'need_information':
+                    candidate = {**candidate, 'method_steps':_plan_steps(candidate['method_steps'], output['brief'],
+                        merged, (self.context.get('remediation') or {}).get('success_criteria', []))}
+                return candidate, discussion, merged, output
+
+            proposal, discussion, issues, draft = self.plan(ROLE_POLICY+'\nOwn the scientific question and its executable method. Include '
+                'competing explanations, discriminating checks and success criteria in your brief. '
+                'Investigate existing evidence before asking for a material missing fact.\n'+instructions,
+                inputs, ProposalDiscussion(request.json_schema), tools, resolve)
+            exchanges.append({'role': 'pi', **deepcopy(draft)})
         else:
             # The external reviewer receives the evidence packet, never a fresh PI verdict or synthesis.
             review = self._run('reviewer', ROLE_POLICY+'\nIndependently criticize the method and evidence. '
@@ -377,8 +406,7 @@ class _RoleProvider:
         # explicitly requested by a current need_information decision prevents
         # that implementation; the issue status alone is not a readiness decision. Review
         # still needs an attributable answer for every retained blocked question.
-        if any(item['status'] == 'blocked' and
-               (self.node != 'method_planner' or item['id'] in plan_prerequisites) for item in issues):
+        if self.node == 'scientific_reviewer' and any(item['status'] == 'blocked' for item in issues):
             decision = 'need_information'
         if decision != 'recommend_proceed' and not challenges:
             require(discussion['summary'].strip(), 'A revision needs a specific question or explanation')
@@ -424,7 +452,8 @@ class CollaborationAgent(ScientificAgent):
         self.timeout_seconds = policy().value['limits']['active_seconds_per_attempt']
 
     def run_scoped(self, node, context, *, timeout_seconds, port):
-        if node == 'analysis_engineer':
+        frozen = node == 'method_planner' and context['root_goal'].get('preparation') is not None
+        if node == 'analysis_engineer' or frozen:
             from lqcd_agent.graph.nodes import product_resource
             return product_resource(port, resource_kind='tool_call', resource_id='domain-diagnosis',
                 input_digest=digest(context), config_digest=digest({'node': node, 'structured_output': True}),
@@ -441,24 +470,9 @@ class CollaborationAgent(ScientificAgent):
         identity = context['identity']
         if context['root_goal'].get('project_id') is not None:
             from .projects import ProjectStore
-            from lqcd_agent.control.research_budget import ResearchBudget
-            projects = ProjectStore(self.workspace)
             current = {key: identity[key] for key in ('case_id', 'run_id')}
-            applicable = [current]
-            quota = ResearchBudget.for_run(port.leases.coordinator, current)
-            if quota is not None:
-                ancestry = {digest(row['locator']): row['parent'] for row in quota.snapshot()['runs']}
-                parent = ancestry.get(digest(current))
-                while parent is not None:
-                    require(parent not in applicable, 'Research ancestry contains a cycle')
-                    applicable.append(parent)
-                    parent = ancestry.get(digest(parent))
-            contributions = {}
-            for locator in applicable:
-                for item in projects.contributions(context['root_goal']['project_id'],
-                        run={'host': self.host.name.removeprefix('lqcd-agent-host-'), **locator}):
-                    contributions[item['sha256']] = item
-            context = {**context, 'human_contributions': sorted(contributions.values(), key=lambda item: item['revision'])}
+            notes = ProjectStore(self.workspace).research_inputs(context['root_goal']['project_id'], self.host, current)
+            context = {**context, 'human_contributions': notes}
         output = self.host/'domain'/identity['attempt_id']/identity['case_id']/identity['run_id']
         output.mkdir(parents=True, exist_ok=True)
         with asyncio.Runner() as runner:

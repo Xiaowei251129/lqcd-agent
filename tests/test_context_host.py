@@ -31,8 +31,14 @@ def factory(transport, *, request_timeout_seconds=10):
     return create
 
 
-@pytest.mark.parametrize('extra_pi_read', [False, True])
-def test_compaction_shares_real_role_budget_and_preserves_second_role_allowance(tmp_path, monkeypatch, extra_pi_read):
+def planning_response():
+    return {'brief':{'physics_question':'Inspect the synthetic analysis.',
+            'competing_explanations':['Unknown covariance effects'], 'discriminating_checks':['Read Host warnings.'],
+            'success_criteria':['Retain uncertainties.']}, 'proposal':proposal('method_plan'), 'discussion':discussion()}
+
+
+@pytest.mark.parametrize('behavior', ['valid', 'ignore_final', 'repair_final'])
+def test_compaction_shares_real_budget_with_the_planning_pi(tmp_path, monkeypatch, behavior):
     monkeypatch.setattr(context_window, 'INPUT_TOKEN_LIMIT', 100)
     monkeypatch.setattr(context_window, 'COMPACT_TOKEN_LIMIT', 80)
     counts, pi_calls, compact_calls = 0, 0, 0
@@ -59,16 +65,17 @@ def test_compaction_shares_real_role_budget_and_preserves_second_role_allowance(
         else:
             name = schema['title']
         generated.append(name)
-        if name == 'ResearchBrief':
+        if name == 'method_plan_discussion':
             pi_calls += 1
-            if pi_calls == 1 or extra_pi_read:
+            closing = body.get('tool_choice') == 'none'
+            if pi_calls == 1 or behavior == 'ignore_final' or (behavior == 'repair_final' and not closing):
                 output = [ResponseFunctionToolCall(type='function_call', name='read_context',
                     call_id=f'pi-read-{pi_calls}', arguments='{"section":"case_config","offset":0}')]
             else:
-                output = [model_message({'physics_question': 'Inspect the synthetic analysis.',
-                    'competing_explanations': ['Unknown covariance effects'],
-                    'discriminating_checks': ['Read Host warnings.'], 'success_criteria': ['Retain uncertainties.'],
-                    'discussion': discussion()})]
+                plan = planning_response()
+                if behavior == 'repair_final' and body.get('tools'):
+                    plan['brief']['success_criteria'] = []
+                output = [model_message(plan)]
         elif name.endswith('_discussion'):
             output = [model_message({'proposal': proposal(name.removesuffix('_discussion')),
                                      'discussion': discussion()})]
@@ -101,7 +108,7 @@ def test_compaction_shares_real_role_budget_and_preserves_second_role_allowance(
     assert capability['invocation_epoch'] == 1
     models = [r for r in reserved if r['resource_kind'] == 'llm_call']
     allowance = policy().value['limits']['llm_calls_per_attempt']
-    assert compact_calls == 1 and len(models) == 4
+    assert compact_calls == 1 and len(models) == {'valid':3, 'ignore_final':allowance-1, 'repair_final':allowance}[behavior]
     assert all(r['applicable_limits']['llm_calls'] == allowance for r in models)
     events = [loads(line, canonical=False) for path in (snapshot.host/'domain'/planning).rglob('research_events.jsonl')
               for line in path.read_bytes().splitlines()]
@@ -112,15 +119,21 @@ def test_compaction_shares_real_role_budget_and_preserves_second_role_allowance(
     terminal = loads(Path(index['current']['terminal']['state_paths']['memory_update_path']).read_bytes())
     assert terminal['decision_origin'] == 'system' and terminal['authorization_decision'] is None
     assert not any(r['record_type'] in ('human_request', 'human_response') for r in records)
-    if extra_pi_read:
-        assert generated == ['ResearchBrief'] * 3
-        assert models[-1]['remaining_before']['llm_calls'] == allowance - 3
+    if behavior == 'ignore_final':
+        # One shared model slot is still available for a correction of a completed draft.
+        # This model called a tool on its final turn and never submitted that draft.
+        assert generated == ['method_plan_discussion'] * (allowance - 2)
+        assert models[-1]['remaining_before']['llm_calls'] == allowance - len(models) + 1
         assert terminal['scientific_outcome'] == 'inconclusive' and index['current']['analysis'] is None
     else:
-        assert generated[:3] == ['ResearchBrief', 'ResearchBrief', 'method_plan_discussion']
-        assert models[-1]['remaining_before']['llm_calls'] == allowance - 3
+        assert generated[:2] == ['method_plan_discussion'] * 2
+        assert models[-1]['remaining_before']['llm_calls'] == allowance - len(models) + 1
         assert snapshot.state['run_status'] == 'completed' and snapshot.state.get('active_pause') is None
         assert index['current']['review']['status'] == 'success'
+        if behavior == 'repair_final':
+            assert generated.count('method_plan_discussion') == allowance-1
+            assert starts[-1]['model_settings']['tool_choice'] == 'none' and not starts[-1]['tools']
+            assert 'host_corrections' in starts[-1]['input'][-1]['content']
 
 
 @pytest.mark.parametrize('failure', ['http_error', 'input_limit'])
@@ -208,11 +221,8 @@ def test_batched_tools_leave_real_reviewer_and_pi_counts_and_conclusions(tmp_pat
                     if item.get('type') == 'function_call_output' and 'not_executed' in item['output']]
                 assert refusals and all(result == {'status': 'not_executed',
                     'reason': 'finalization_budget_reserved'} for result in refusals)
-            if name == 'ResearchBrief':
-                value = {'physics_question': 'Inspect the synthetic analysis.',
-                    'competing_explanations': ['Unknown covariance effects'],
-                    'discriminating_checks': ['Read Host warnings.'], 'success_criteria': ['Retain uncertainties.'],
-                    'discussion': discussion()}
+            if name == 'method_plan_discussion':
+                value = planning_response()
             elif name.endswith('_discussion'):
                 value = {'proposal': proposal(name.removesuffix('_discussion')), 'discussion': discussion()}
             else:

@@ -87,7 +87,9 @@ def test_run_parser_accepts_project_without_case_config(monkeypatch, capsys):
     assert requests[0].project == "ratio" and requests[0].case_config is None
     assert json.loads(capsys.readouterr().out) == {"dispatched": True}
     assert main(["run", "--project", "ratio", "--key", "continued", "--host", "original",
-                 "--case", "ratio", "--intake-parent", "run_previous", "--project-digest", "a"*64]) == 0
+                 "--case", "ratio", "--intake-parent", "run_previous", "--project-digest", "a"*64,
+                 "--plan-action", "revise", "--plan-digest", "b"*64]) == 0
+    assert requests[-1].plan_action == "revise" and requests[-1].plan_digest == "b"*64
     assert requests[-1].intake_parent == "run_previous" and requests[-1].host == "original"
     assert requests[-1].project_digest == "a"*64
     with pytest.raises(SystemExit) as exited:

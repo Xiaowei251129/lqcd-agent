@@ -1,6 +1,6 @@
 # LQCD Agent
 
-An AI Research Partner for LQCD with controlled planning, code/analysis work, scientific review, autonomous conclusions, optional human participation and attributable results. Offline mode uses deterministic roles and a Fake coding backend. Explicit live mode uses the Python OpenAI Agents SDK for PI/Postdoc/Reviewer research and the independent Codex SDK backend for bounded coding proposals. Each installation starts with an empty local research library. Software checks do not establish physics readiness.
+An AI Research Partner for LQCD with controlled planning, code/analysis work, scientific review, autonomous conclusions, optional human participation and attributable results. Offline mode uses deterministic roles and a Fake coding backend. Explicit live mode uses the Python OpenAI Agents SDK for PI and Reviewer research and the independent Codex SDK backend for bounded coding proposals. Each installation starts with an empty local research library. Software checks do not establish physics readiness.
 
 Scientific validation is shared by offline and model-assisted review: models interpret Host diagnostics and cannot erase numerical warnings. Planner and Reviewer receive validated remediation and the current project research state through retained context bundles; complete history and original evidence remain available through named reads. Credentials and live activation belong to application assembly. See the [architecture](docs/ARCHITECTURE.md) for research-role and execution boundaries.
 
@@ -25,7 +25,7 @@ Create Projects in the workbench or with `lqcd-agent project-create`. Each Run f
 
 In the workbench, open a Project and select a research task to follow its preparation and linked analyses. From **Results**, select a fit window or observable to inspect its evidence, attach a question or compare completed analyses. See the [workbench guide](docs/WORKBENCH.md).
 
-Project research begins with PI/Postdoc preparation before the formal scientific Run. An executable configuration is optional: supply the question, constraints, a workspace-relative data path and scientific Python, or start with a question alone. The Host profiles only declared data and records missing inputs. The roles can read literature and local evidence, identify assumptions and produce a supported executable contract. A ready preparation automatically starts scientific work; concrete missing prerequisites remain visible questions without a mandatory human approval or an open execution lease.
+For a new Project, the PI investigates the question, constraints and declared data, then writes a versioned research plan. Review its evidence, assumptions, method and decision criteria before starting Code. Choose automatic execution at launch for unattended work. Both modes run the selected plan through the same Host.
 
 ```bash
 lqcd-agent project-create --id c2-study --title "C2 study" \
@@ -34,9 +34,9 @@ lqcd-agent project-create --id c2-study --title "C2 study" \
 lqcd-agent run --project c2-study --live --key prepare-c2
 ```
 
-The data need a supported scientific contract and attributable metadata; see [research intake and clarification](docs/RESEARCH_CONTRACTS.md#research-intake-and-clarification). The workbench can edit the starting inputs and record a reply. **Continue research** consumes the original task's remaining quota and deadline; **Start a new investigation** explicitly starts a new task. Merely commenting never dispatches work. Offline preparation reports that live research is disabled and makes no claim to have used PI/Postdoc models.
+Use the workbench to answer questions together, request a revision, or execute the selected version. Saving a draft or ordinary scientific comment does not dispatch work. A new task after expiry requires an explicit action and fresh checks of the inputs and authority.
 
-Live planning contains PI → Postdoc; analysis uses the existing Host and optional Codex backend; review contains independent Reviewer → PI synthesis. Research can conclude without a Human Response. Outcomes are `supported`, `qualified` or `inconclusive`, with `decision_origin=system`. Optional operator contributions and actual authorization decisions retain their own attribution; a permission response is not a scientific endorsement. Warnings and unresolved questions remain evidence. Optional operator contributions enter later research attempts; only additional authorization uses the human gate. PI follow-up experiments create linked Runs under the same task quota. See [research contracts and commands](docs/RESEARCH_CONTRACTS.md) and the [workbench guide](docs/WORKBENCH.md).
+Code implements the plan. The Host executes the sealed program. The independent Reviewer examines the plan and result before PI synthesis. The recorded conclusion can be `supported`, `qualified` or `inconclusive`. Extra execution authority requires a separate response. See the [research contracts and CLI](docs/RESEARCH_CONTRACTS.md) and the [workbench guide](docs/WORKBENCH.md).
 
 ## Application API and coding
 

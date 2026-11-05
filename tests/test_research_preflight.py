@@ -24,7 +24,7 @@ def test_request_failure_before_model_concludes_with_real_evidence(tmp_path, mon
     snapshot, calls, _ = execute_collaboration(tmp_path)
     assert snapshot.state['run_status'] == 'completed' and snapshot.state.get('active_pause') is None
     assert [call['schema'] for call in calls] == ([] if role == 'method_planner' else
-        ['ResearchBrief', 'ResearchBrief', 'method_plan_discussion'])
+        ['method_plan_discussion'] * 2)
     index = loads((snapshot.root/'artifact_index.json').read_bytes())
     source = index['current']['plan' if role == 'method_planner' else 'review']
     assert source['status'] == 'failed'

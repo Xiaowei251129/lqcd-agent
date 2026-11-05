@@ -26,14 +26,14 @@ The single pack is `raw_data/research_cases/`, excluded from Git. Extraction ref
 
 ## Canonical scientific workflow
 
-Prepare private configurations for the normal scientific entry:
+For a reviewable experiment, extract and verify the pack, prepare the configurations, then create a Project in the workbench and supply the relevant case as its starting configuration. The PI prepares a plan for review before Code starts. A fully configured batch case can enter the scientific Run directly:
 
 ```bash
 python -m lqcd_agent.research_cases prepare --python /path/to/trusted/python-with-numpy-and-scipy
 python -m lqcd_agent run --case-config raw_data/research_cases/cases/c2-fit-comparison.json --live --key first-c2
 ```
 
-Use `normalization-complex.json` for Normalization. The other configurations cover the fixed-energy constraint and missing-reference outcome. There are no separate research workflow profiles or fixed research-role agents. Explicit live use incurs API charges. The existing private `.env` selects the research Agents SDK model with `OPENAI_MODEL` and Codex with `LQCD_CODE_MODEL`.
+Use `normalization-complex.json` for Normalization. The other configurations cover the fixed-energy constraint and missing-reference outcome. Both entry points use the PI planning contract and the same Code, Analysis and Reviewer stages. Explicit live use incurs API charges. The existing private `.env` selects the research Agents SDK model with `OPENAI_MODEL` and Codex with `LQCD_CODE_MODEL`.
 
 The actual scientific Planner produces a validated implementation request. The existing CodeHost freezes its requirements, scope and budget, then Codex writes/tests the program with tools and native-proxied public networking inside the frozen profile, then returns changed paths rather than duplicating source in its final response. The worker reads the actual files into the existing proposal, and the Host independently validates and seals them. Measured arrays, individual bootstrap values, withheld references and the earlier analysis implementation stay outside programming prompts. A successful plan describes completed planning; coding and calculation can still be pending. A genuinely pending plan remains pending and cannot start Code.
 

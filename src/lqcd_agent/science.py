@@ -28,9 +28,22 @@ class ScientificAgent:
             inventory = {**build_repo_inventory(self.workspace), 'dataset_snapshot': context['root_goal']['dataset_snapshot']}
             if self.config.get('generated_program'):
                 inventory['implementation_gaps'] = ['Implement the supplied Run-local scientific JSON contract.']
-            result = run_method_planner(user_goal=context['root_goal']['goal'], case_config=self.config,
-                repo_inventory=inventory,
-                output_dir=output, run_id=identity['run_id'], provider=self.provider, research_context=research_context)
+            preparation = context['root_goal'].get('preparation')
+            if preparation is not None:
+                from .agents.method_planner import publish_method_plan
+                from .control.strict_json import digest, require
+                from .llm.schemas import artifact_payload
+                frozen = preparation['proposal']
+                require(frozen['status'] == 'ready' and digest(frozen) == preparation['proposal_sha256']
+                        and frozen['case_config'] == self.config, 'Prepared analysis contract changed')
+                plan = artifact_payload(frozen['method_plan'], run_id=identity['run_id'],
+                                        case_id=identity['case_id'], producer='method_planner')
+                result = publish_method_plan(output, plan, inventory)
+                result['preparation_sha256'] = preparation['plan_sha256']
+            else:
+                result = run_method_planner(user_goal=context['root_goal']['goal'], case_config=self.config,
+                    repo_inventory=inventory,
+                    output_dir=output, run_id=identity['run_id'], provider=self.provider, research_context=research_context)
             coding_enabled = self.config.get('generated_program') is not None
             if result['status'] != 'success' or (result['code_needed'] and not coding_enabled):
                 diagnostic.update(status='failed', category='implementation_gap', affected_layer='plan', risk='high')
@@ -38,10 +51,11 @@ class ScientificAgent:
             if content['code_needed']:
                 from .control.strict_json import require
                 require(result['code_request'] is not None, 'Planner has no structured coding request')
-                content['requirements'] = [*result['code_request']['requirements'], *self.config['generated_program']['requirements']]
+                requirements = [*result['code_request']['requirements'], *self.config['generated_program']['requirements']]
                 if self.config['generated_program']['result_kind'] == 'replica_observables':
                     from .research.observable_contract import CONTRACT
-                    content['requirements'].append(CONTRACT)
+                    requirements.append(CONTRACT)
+                content['requirements'] = list(dict.fromkeys(requirements))
         elif node == 'analysis_engineer':
             from .agents.analysis_engineer import run_analysis_engineer
             config = output / 'case.json'

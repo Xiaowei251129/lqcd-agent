@@ -1,3 +1,4 @@
+import {planFeedback} from './planning.js';
 import {renderTaskList, renderTaskDesk} from './task-desk.js';
 import {submissionSlot, sendControl, sendContribution} from './submissions.js';
 import {renderResults} from './results.js';
@@ -16,7 +17,7 @@ const notice = (message, kind = '') => { state.noticeKind = kind; text('notice',
 const runEndpoint = locator => '/api/runs/'+[locator.host, locator.run_locator.case_id, locator.run_locator.run_id].map(encodeURIComponent).join('/');
 const projectEndpoint = id => '/api/projects/'+encodeURIComponent(id);
 const endpoint = locator => locator.project_id && locator.project_run_key ? projectEndpoint(locator.project_id)+'/runs/'+encodeURIComponent(locator.project_run_key) : runEndpoint(locator);
-const roleNames = {pi: 'PI', postdoc: 'Postdoc', reviewer: 'Independent Reviewer', method_planner: 'PI & Postdoc', code_agent: 'Code Researcher', analysis_engineer: 'Analysis Researcher', scientific_reviewer: 'Reviewer & PI', human_gate: 'Authorization', memory_report: 'Report'};
+const roleNames = {pi: 'PI', reviewer: 'Independent Reviewer', method_planner: 'Planning', code_agent: 'Code Researcher', analysis_engineer: 'Analysis Researcher', scientific_reviewer: 'Reviewer & PI', human_gate: 'Authorization', memory_report: 'Report'};
 const revisions = new Map();
 const drafts = new Map();
 let draftKey, navigation = 0, refreshing = false, refreshAgain = false;
@@ -80,7 +81,7 @@ function leaveRun() {
   reader.close(false);
   state.selected = null; state.view = null; state.verified = false;
   revisions.clear(); state.tab = 'overview'; showTab('overview');
-  $('respond').disabled = true; $('cancel').disabled = true; $('project-continue').disabled = true;
+  $('respond').disabled = true; $('cancel').disabled = true; disablePlanControls(true);
   $('gate').hidden = true; $('cancel-box').hidden = true; $('comparison').hidden = true; $('empty').hidden = true;
   $('participation').hidden = true; $('contribution-list').replaceChildren();
   $('investigation').hidden = true;
@@ -126,14 +127,19 @@ async function finishControl(pending, replay, version) {
   }
 }
 
-async function mutation(path, payload, target) {
+function disablePlanControls(disabled) {
+  for (const id of ['plan-execute','plan-revise','plan-renew']) $(id).disabled = disabled;
+}
+
+async function mutation(path, payload, target, feedback) {
   if (state.busy) return;
   const version = navigation;
   state.busy = true;
-  for (const id of ['start','project-start','project-continue','respond','cancel']) $(id).disabled = true;
+  disablePlanControls(true);
+  for (const id of ['start','project-start','respond','cancel']) $(id).disabled = true;
   try {
     const {record, replay} = await controlSlot.claim({path, payload: {...payload, key: crypto.randomUUID()},
-      target: target || {host: state.host}});
+      target: target || {host: state.host}, ...(feedback ? {feedback} : {})});
     await finishControl(record, replay, version);
   } catch (error) { notice(error.message); }
   finally { state.busy = false; await refresh(); }
@@ -160,7 +166,9 @@ async function loadProject(identifier, version = navigation) {
   $('edit-project-python').value = state.project.case_config?.generated_program?.python || '';
   $('project-live').checked = false;
   $('project-start').disabled = state.busy;
-  text('project-readiness', 'A new investigation starts a new research budget. PI & Postdoc organize the question, inspect available inputs and prepare the analysis. Ready work proceeds automatically; use Continue research below to answer an existing preparation within its original budget.');
+  $('plan-mode').value = 'review';
+  $('project-start').textContent = 'Plan with PI';
+  text('project-readiness', 'A new investigation starts a new task budget. The PI can read the data profile, project evidence and literature while drafting.');
 }
 
 async function chooseProject(identifier) {
@@ -328,7 +336,7 @@ function collaboration(view) {
       e.slot === exchange.slot && e.name.split('/').at(-1) === filename);
     const card = node('section', undefined, 'collaboration-card');
     const header = node('header');
-    header.append(node('h3', exchange.slot === 'plan' ? 'PI & Postdoc research discussion' : 'Independent review & PI discussion'),
+    header.append(node('h3', exchange.slot === 'plan' ? 'Research planning' : 'Independent review & PI discussion'),
       node('small', exchange.current ? 'Current' : 'Earlier round', 'muted'));
     card.append(header, node('p', exchange.summary));
     for (const issue of exchange.issues || []) {
@@ -391,11 +399,18 @@ function render(view, detailChanged) {
   if (state.noticeKind === 'verification') notice('');
   $('empty').hidden = true; $('investigation').hidden = false;
   const intake = view.workflow === 'intake';
-  if (changed('desk', [view.detail_revision, view.run_status, view.next_action, view.attempts.at(-1)?.kind, view.active_pause?.pause_id,
+  if (changed('desk', [view.detail_revision, view.run_status, view.plan_exhausted, view.research_task?.remaining_runs, view.plan_digest, view.next_action, view.attempts.at(-1)?.kind, view.active_pause?.pause_id,
     state.project?.sha256, state.runs.map(r => [r.project_run_key, r.execution_head])])) {
     renderTaskDesk(view, state.runs, state.project, openRun);
   }
-  $('project-continue').disabled = state.busy || !state.verified || view.archived || !view.compatible || !view.managed;
+  disablePlanControls(state.busy || !state.verified || view.archived || !view.compatible || !view.managed);
+  if (intake) {
+    const quota = view.research_task;
+    text('plan-allowance', !quota ? '' : [
+      Number.isFinite(view.plan_remaining_seconds) ? Math.ceil(view.plan_remaining_seconds/60)+' min remaining' : null,
+      quota.model_calls+' / '+quota.limits.model_calls+' model calls', quota.remaining_runs+' Run slots left'
+    ].filter(Boolean).join(' · '));
+  }
   text('head', view.execution_head.slice(0, 14)+'…');
   text('run-identity', view.host+' / '+view.run_locator.run_id); text('refreshed', 'Checkpoint checked '+new Date().toLocaleTimeString());
   $('compatibility').hidden = view.compatible && !view.needs_recovery && view.managed;
@@ -502,7 +517,7 @@ async function refresh() {
     text('connection', 'Connected · local'); $('connection').classList.remove('offline');
   } catch (error) {
     if (version !== navigation) return;
-    state.verified = false; $('respond').disabled = true; $('cancel').disabled = true; $('project-continue').disabled = true;
+    state.verified = false; $('respond').disabled = true; $('cancel').disabled = true; disablePlanControls(true);
     text('connection', error.network ? 'Disconnected · reconnecting' : error.status === 409 ?
       'Checkpoint unavailable' : 'View unavailable');
     $('connection').classList.toggle('offline', Boolean(error.network));
@@ -564,9 +579,7 @@ $('contribution-form').addEventListener('submit', async event => {
     drafts.delete(originalDraft);
     if (draftKey !== originalDraft) return;
     $('contribution-form').reset(); attachmentPicker([]);
-    notice(state.view?.preparation?.status === 'needs_information' ?
-      'Reply recorded. Continue research when ready; it uses the original remaining budget and deadline.' :
-      'Scientific input recorded for the next research checkpoint. It does not grant additional authority.');
+    notice('Scientific input recorded for the next research checkpoint.');
     await contributions();
   } catch (error) {
     notice(error.status === 409 ? 'The Project or Run changed. Refresh before submitting again.' : error.message);
@@ -606,18 +619,42 @@ $('edit-project-config').addEventListener('input', () => {
     $('edit-project-python').value = draft?.generated_program?.python || '';
   } catch { /* Preserve partially typed JSON until the user completes the edit. */ }
 });
+$('plan-mode').addEventListener('change', () => {
+  $('project-start').textContent = $('plan-mode').value === 'auto' ? 'Plan and execute automatically' : 'Plan with PI';
+});
 $('project-start').addEventListener('click', () => {
   if (!state.project) return;
-  if (!$('project-live').checked) { notice('Select Use live research agents to start PI/Postdoc preparation and the subsequent authorized analysis.'); return; }
-  mutation(projectEndpoint(state.project.id)+'/runs', {expected_digest: state.project.sha256, live: $('project-live').checked}, {host: state.host, project_id: state.project.id});
+  if (!$('project-live').checked) { notice('Select Use live research agents to start a metered planning task.'); return; }
+  mutation(projectEndpoint(state.project.id)+'/runs', {expected_digest: state.project.sha256, live: true,
+    plan_mode: $('plan-mode').value}, {host: state.host, project_id: state.project.id});
 });
-$('project-continue').addEventListener('click', () => {
-  const view = state.view;
-  if (!state.project || !state.verified || view?.preparation?.status !== 'needs_information' ||
-      view.archived || !view.compatible || !view.managed || state.selected?.project_id !== state.project.id) return;
-  mutation(projectEndpoint(state.project.id)+'/runs', {expected_digest: state.project.sha256, live: view.live,
-    intake_parent: view.run_locator.run_id, case: view.run_locator.case_id},
-    {host: view.host, project_id: state.project.id});
+
+function actOnPlan(action) {
+  const view = state.view, project = state.project;
+  if (!project || !state.verified || view?.workflow !== 'intake' || !view.plan_digest || view.archived ||
+      !view.compatible || !view.managed || state.selected?.project_id !== project.id) return;
+  let feedback;
+  if (action === 'revise') {
+    const answers = [...$('preparation-questions').querySelectorAll('fieldset')].map(field => ({
+      question: field.dataset.question, answer: [field.querySelector('input:checked')?.value,
+        field.querySelector('textarea').value.trim()].filter(Boolean).join(' — ')}));
+    const body = planFeedback(answers, $('plan-feedback').value);
+    if (body.length > 16000) { notice('Keep this batch of answers within 16,000 characters.'); return; }
+    if (body) feedback = {expected_digest: project.sha256, key: crypto.randomUUID(), kind: 'scientific_comment',
+      body, evidence_sha256:[view.plan_digest], run: {host:view.host, ...view.run_locator, execution_head:view.execution_head}};
+  }
+  mutation(projectEndpoint(project.id)+'/runs', {expected_digest: project.sha256, live: view.live,
+    intake_parent: view.run_locator.run_id, case: view.run_locator.case_id, plan_action: action,
+    plan_digest: view.plan_digest}, {host:view.host, project_id:project.id}, feedback);
+}
+for (const action of ['revise','execute','renew']) {
+  $('plan-'+action).addEventListener('click', () => actOnPlan(action));
+}
+$('plan-later').addEventListener('click', () => {
+  if (state.project && state.view?.project_id === state.project.id) {
+    const id = state.project.id;
+    chooseProject(id).then(() => notice('The recorded plan is saved in this Project.')).catch(error => notice(error.message));
+  }
 });
 $('refresh-project').addEventListener('click', () => { if (state.project) loadProject(state.project.id).catch(error => notice(error.message)); });
 $('project-overview-button').addEventListener('click', () => {

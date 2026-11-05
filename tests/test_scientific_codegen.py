@@ -91,6 +91,30 @@ def deliver(start):
         key='delivery-'+digest([start['run_locator'],start['active_pause']['pause_id']])))
 
 
+def test_settled_analysis_exception_closes_with_original_error_and_no_exit_code(tmp_path, monkeypatch):
+    from lqcd_agent.code_agent.analysis_handoff import AnalysisHandoff
+    message = 'Process inspection denied before numerical output'
+    def denied(*_):
+        raise PermissionError(message)
+    monkeypatch.setattr(AnalysisHandoff, 'execute', denied)
+    pending, _, _ = start_case(tmp_path, monkeypatch, 'normalization')
+    finished = deliver(pending)
+    assert finished['run_status'] == 'completed' and finished['active_pause'] is None
+    locator = finished['run_locator']
+    root = host_root(finished['host'])/locator['case_id']/locator['run_id']
+    analysis = loads((root/'run_result.json').read_bytes())
+    assert analysis['status'] == 'failed' and 'execution' not in analysis
+    assert analysis['errors'] == [{'type':'OrdinaryResourceFailure', 'message':message}]
+    rows = [loads(row) for row in (root/'execution_history.jsonl').read_bytes().splitlines()]
+    settlement, = [r for r in rows if r.get('event') == 'resource_settled' and
+                   r['payload']['resource_operation_id'].endswith(':analysis-subprocess')]
+    assert settlement['payload']['actual'] is None
+    failed, = [r['payload']['fingerprint'] for r in rows if r.get('event') == 'failure_observed'
+               and r['payload']['fingerprint']['code'] == 'execution_failure']
+    assert failed['diagnostics']['exit_code'] is None
+    assert not loads((root/'memory_update.json').read_bytes())['accepted_result']
+
+
 @pytest.mark.parametrize('family',['c2','normalization'])
 def test_scientific_codegen_delivers_real_output_to_autonomous_report(tmp_path,monkeypatch,family):
     from lqcd_agent.science import ScientificAgent

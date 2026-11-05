@@ -54,9 +54,12 @@ class RunSnapshot:
             'run_status': self.state['run_status'], 'execution_head': self.state['execution_head'],
             'root_inputs_digest': digest(inputs), 'active_pause': active, 'next_action': next_action}
         result['workflow'] = inputs['root_goal'].get('workflow')
+        if 'plan_mode' in inputs['root_goal']:
+            result['plan_mode'] = inputs['root_goal']['plan_mode']
         if result['workflow'] == 'intake':
             selected = read_preparation(self.root)
             result['preparation'] = selected[0] if selected else None
+            result['plan_digest'] = selected[1] if selected else None
             if selected and selected[0]['status'] == 'needs_information' and self.state['run_status'] == 'completed':
                 result['next_action'] = 'clarify_project'
         if self.state['run_status'] in ('failed', 'halted') and self.closure is not None:
@@ -66,8 +69,23 @@ class RunSnapshot:
                 'summary': 'Execution ended without establishing a scientific final conclusion.',
                 'run_status': self.state['run_status']}
         if 'research_task' in inputs['root_goal']:
-            from .control.research_budget import inspect_budget
-            result['research_task'] = inspect_budget(self.host, self.locator)
+            from .control.research_budget import inspect_budget, plan_exhausted
+            account = result['research_task'] = inspect_budget(self.host, self.locator)
+            if result['workflow'] == 'intake' and result['preparation'] is not None:
+                from .control.clock import FakeClock, HostClock
+                clock = HostClock() if inputs['root_goal']['live'] else FakeClock(100, 0)
+                now = clock.now().monotonic_seconds
+                result['plan_remaining_seconds'] = max(0, int(account['deadline'] - now))
+                result['plan_exhausted'] = plan_exhausted(account, now)
+                row = next(r for r in account['runs'] if r['locator'] == self.locator)
+                successor = next((r['locator'] for r in account['runs'] if r['parent'] == self.locator), None)
+                result['plan_successor'] = successor or row.get('renewed_by', {}).get('locator')
+                if result['plan_successor']:
+                    result['next_action'] = 'inspect_plan_successor'
+                elif result['plan_exhausted']:
+                    result['next_action'] = 'renew_plan'
+                elif result.get('plan_mode') == 'review' and result['preparation']['status'] == 'ready':
+                    result['next_action'] = 'review_plan'
         if inputs['root_goal']['live']:
             result['coding_backend'] = None
             if active and active['reason'] == 'external_result':

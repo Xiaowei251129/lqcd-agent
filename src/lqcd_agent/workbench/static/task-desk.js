@@ -1,8 +1,9 @@
+import {planSections, planDiff, planningAccess} from './planning.js';
 /* Read-only navigation and layout. The application owns every control submission. */
 const byId = id => document.getElementById(id);
 const readable = value => String(value ?? '').replaceAll('_', ' ');
 const runKey = run => JSON.stringify([run.host, run.run_locator.case_id, run.run_locator.run_id]);
-const sameLocator = (a, b) => a?.case_id === b?.case_id && a?.run_id === b?.run_id;
+const sameLocator = (a, b) => a && b && a.case_id === b.case_id && a.run_id === b.run_id;
 const closed = view => ['completed', 'failed', 'halted'].includes(view.run_status);
 
 function element(tag, text, className) {
@@ -116,71 +117,103 @@ function openField(field) {
   input.focus();
 }
 
+function section(name, values) {
+  const group = element('div', undefined, 'plan-section'), list = element('ul');
+  for (const value of values) list.append(element('li', value));
+  group.append(element('h3', name), list);
+  return group;
+}
+
+function answerField(question, choice, index) {
+  const field = element('fieldset', undefined, 'plan-question');
+  field.dataset.question = question;
+  field.append(element('legend', question));
+  if (choice) {
+    for (const option of [...choice.options, {label: 'Delegate this choice to PI', consequence: 'PI will explain the choice in the revised plan.'}]) {
+      const label = element('label', undefined, 'check'), input = element('input');
+      input.type = 'radio'; input.name = 'answer-'+index; input.value = option.label;
+      const content = element('span', option.label+(option.label === choice.recommended ? ' (recommended)' : ''));
+      content.append(element('small', option.consequence)); label.append(input, content); field.append(label);
+    }
+  }
+  const label = element('label', choice ? 'Your answer or additional context' : 'Supply the missing information');
+  const text = element('textarea'); text.id = 'plan-answer-'+index; label.htmlFor = text.id;
+  text.rows = 2; text.maxLength = 3000; field.append(label, text);
+  return field;
+}
+
 function preparation(view, runs, project, onSelect) {
   const data = view.preparation, status = data?.status;
-  const clarification = status === 'needs_information';
-  const matchingProject = project && view.project_id === project.id;
+  const children = runs.filter(run => run.host === view.host &&
+    (sameLocator(run.research_task?.parent, view.run_locator) || sameLocator(run.run_locator,view.plan_successor)));
+  const previous = view.previous_plan;
+  const matched = project?.id === view.project_id;
+  const access = planningAccess(view, project, children);
   const current = runKey(view);
-  putText('preparation-title', status === 'ready' ? 'Ready for analysis' : clarification ? 'Information needed' :
-    closed(view) ? 'Preparation ended' : 'Preparing the investigation');
-  putText('preparation-summary', data?.summary || (closed(view) ? 'No preparation summary was recorded.' :
-    'PI and Postdoc are preparing the research question and analysis contract.'));
-  const questions = data?.questions || [];
-  updateSection('preparation-questions', [current, questions, Boolean(matchingProject), view.archived, status], () => {
-    if (!questions.length) return [];
-    const list = element('ol', undefined, 'questions');
-    for (const question of questions) {
-      const item = element('li');
-      item.append(element('span', question));
-      if (matchingProject && clarification) {
-        // These shortcuts edit the Project draft. The Host checks the next admission.
-        const field = question.includes('raw_data_path') || question.startsWith('Provide the declared research input file') ? 'data' :
-          question.includes('source_kind') ? 'source' :
-          question.includes('generated_program.python') || question.includes('scientific Python interpreter') ? 'python' :
-          question.startsWith('Supply ns, pz') || question.startsWith('Supply target_pz') ? 'config' : null;
-        if (field && !view.archived) {
-          const id = 'edit-project-'+field;
-          item.append(selectButton('Edit '+byId(id).labels[0].textContent, () => openField(id), 'text-button'));
-        }
-        item.append(selectButton('Reply', () => {
-          const input = byId('contribution-body');
-          if (!input.value) input.value = 'Regarding “'+question.slice(0,600)+'”\n';
-          openField('contribution-body');
-        }, 'text-button'));
-      }
-      list.append(item);
+  putText('preparation-title', status === 'needs_information' ? 'Questions for you' : status === 'ready' ?
+    (view.plan_mode === 'review' && !children.length ? 'Plan ready for review' : 'Prepared plan') :
+    closed(view) ? 'Preparation ended' : 'PI is preparing the plan');
+  putText('preparation-summary', data?.summary || '');
+  const version = view.plan_digest;
+  putText('plan-version', version ? 'Plan '+version.slice(0,12)+' · '+(view.plan_mode === 'auto' ? 'Automatic execution' :
+    view.plan_mode === 'review' ? 'Review before execution' : 'Recorded plan') : '');
+  updateSection('plan-sections', [current,version,data,view.intake_profile], () => {
+    const sections = planSections(data || {}), profile = view.intake_profile;
+    const facts = profile ? [profile.format, ...Object.entries(profile.shapes || {}).map(([field,shape]) =>
+      field+' · '+shape.join(' × ')), ...Object.entries(profile.metadata || {}).map(([name,value]) =>
+      name+' = '+JSON.stringify(value))].filter(Boolean) : [];
+    return Object.entries({'Verified input profile':facts, ...sections})
+      .filter(([,values]) => values.length).map(([name, values]) => section(name, values));
+  });
+  updateSection('plan-diff', [current,version,previous?.plan_sha256], () => {
+    if (!previous?.proposal || !data) return [];
+    const diff = planDiff(previous.proposal, data), details = element('details', undefined, 'fold');
+    details.append(element('summary', 'Changes from previous plan ('+diff.length+')'));
+    for (const change of diff) {
+      const group = element('section'); group.append(element('h3', change.section),
+        section('Previously', change.before.length ? change.before : ['—']),
+        section('Now', change.after.length ? change.after : ['—'])); details.append(group);
     }
-    return [element('h3', 'Open questions'), list];
+    return [details];
   });
-  const assumptions = data?.assumptions || [];
-  updateSection('preparation-assumptions', [current, assumptions], () => {
-    if (!assumptions.length) return [];
-    const details = element('details'), list = element('ul');
-    for (const assumption of assumptions) list.append(element('li', assumption));
-    details.append(element('summary', 'Assumptions and scope'), list); return [details];
+  updateSection('preparation-questions', [current,version,data?.questions,access.revise], () => {
+    const questions = data?.questions || [];
+    if (!questions.length) return [];
+    if (!access.revise) return [section('Recorded questions', questions)];
+    const first = questions.slice(0,3).map((q,i) => answerField(q, data.choices?.find(c => c.question === q), i));
+    if (questions.length > 3) first.push(section('Other open prerequisites', questions.slice(3)));
+    return first;
   });
+  const revision = byId('plan-revision');
+  if (revision.dataset.plan !== current+version) {
+    revision.open = status === 'needs_information'; revision.dataset.plan = current+version;
+    byId('plan-feedback').value = '';
+  }
+  byId('plan-actions').hidden = !access.revise && !access.execute && !access.renew;
+  byId('plan-execute').hidden = !access.execute;
+  revision.hidden = !access.revise;
+  byId('plan-renew-block').hidden = !access.renew;
   byId('prepared-config-details').hidden = !data?.case_config;
   putText('prepared-config', data?.case_config ? JSON.stringify(data.case_config, null, 2) : '');
-  const children = runs.filter(run => run.host === view.host && binding(run)?.id === view.task_binding?.id &&
-    sameLocator(binding(run)?.parent, view.run_locator));
-  // Replaying the same parent would consume authority: only link a recorded child here.
-  byId('archived-clarification').hidden = !(clarification && view.archived);
-  byId('preparation-continue').hidden = !(matchingProject && clarification && closed(view) && !view.archived && !children.length);
-  const links = children.filter(run => status === 'ready' ? run.workflow === 'scientific' : clarification && run.workflow === 'intake');
-  updateSection('formal-child', [current, status, links.map(runKey)], () => {
-    if (links.length) return links.map(run => selectButton(run.workflow === 'scientific' ? 'Open formal analysis →' :
-      'Open continued preparation →', () => onSelect(run), 'secondary'));
-    if (status === 'ready') return [element('p', 'No linked formal analysis is recorded in this task’s history.', 'footnote')];
+  updateSection('formal-child', [current,version,view.archived,view.plan_mode,access,children.map(runKey),project?.sha256], () => {
+    if (children.length) return children.map(run => selectButton(run.workflow === 'scientific' ?
+      'Open formal analysis →' : 'Open revised plan →', () => onSelect(run)));
+    if (view.research_task?.remaining_runs === 1 && !view.plan_exhausted && !view.plan_successor) {
+      return [element('p', 'The final Run slot is reserved for formal analysis. To revise this plan, open Project overview → Start a new investigation for a new task budget.', 'footnote')];
+    }
+    if (view.plan_successor) return [element('p','A successor was admitted. Its Project record is being captured.', 'footnote')];
+    if (view.archived) return [element('p','Saved evidence. Start a new plan from the Project to resume research.', 'footnote')];
+    if (matched && data?.status === 'ready' && !access.execute && !access.renew && view.project_sha256 !== project.sha256) {
+      return [element('p','Project inputs changed. Request a revised plan before execution.', 'footnote')];
+    }
     return [];
   });
 }
 
 export function renderTaskDesk(view, runs, project, onSelect) {
   const intake = view?.workflow === 'intake';
-  const clarify = intake && view.preparation?.status === 'needs_information' && project && view.project_id === project.id;
-  moveTo('project-editor', clarify && !view.archived ? 'clarification-editor' : 'editor-home');
-  moveTo('participation', clarify ? 'clarification-reply' : 'participation-home');
-  putText('participation-label', clarify ? 'Record a scientific reply' : 'Scientific input');
+  const edit = intake && view.preparation && project && view.project_id === project.id;
+  moveTo('project-editor', edit && !view.archived ? 'clarification-editor' : 'editor-home');
   byId('project-panel').classList.toggle('compact', Boolean(view && project));
   if (!view) {
     byId('navigation-toggle').setAttribute('aria-expanded', 'false');

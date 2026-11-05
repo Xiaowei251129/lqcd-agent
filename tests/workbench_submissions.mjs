@@ -67,3 +67,26 @@ test('scientific input keeps its exact payload through a session failure and rel
   }), /stale/);
   assert.equal(slot.read(),null);
 });
+
+test('lost grouped reply is replayed with its own original key before the one plan revision', async () => {
+  const slot = submissionSlot('plan-revision');
+  const revision = {...record('revision'),target:{host:'h',project_id:'p'},
+    path:'/api/projects/p/runs',feedback:{key:'note',body:'Keep failed replicas'}};
+  await slot.claim(revision);
+  const recorded = new Set(), launched = [];
+  let loseReply = true;
+  const api = async (path, body) => {
+    if (path === '/api/operations/revision') throw reject(404,'unknown_operation');
+    if (path.endsWith('/contributions')) {
+      recorded.add(body.key);
+      if (loseReply) {loseReply = false; throw Error('lost reply');}
+      return {};
+    }
+    launched.push(body.key); return {status:'committed'};
+  };
+  await assert.rejects(sendControl(slot,revision,false,api), /lost reply/);
+  assert.deepEqual(slot.read(),revision); assert.deepEqual(launched,[]);
+  await sendControl(slot,revision,true,api);
+  assert.deepEqual([...recorded],['note']); assert.deepEqual(launched,['revision']);
+  assert.equal(slot.read(),null);
+});

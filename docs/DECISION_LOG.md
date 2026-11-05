@@ -4,9 +4,11 @@ These are the reasons for the current design. Implementation and qualification s
 
 ## Research collaboration over one control plane
 
-Use the Python OpenAI Agents SDK for bounded PI/Postdoc/Reviewer tool loops and the sole Codex backend for coding proposals. The SDK supplies model/tool interaction; the existing control plane owns authorization, budgets, leases, cancellation, durable transitions and publication. Do not introduce a second scheduler, session authority or approval mechanism. Admit each model/tool effect before execution, disable transport retries and settle actual effects through the existing resource scope.
+Use the Python OpenAI Agents SDK for bounded PI/Reviewer tool loops and the sole Codex backend for coding proposals. The SDK supplies model/tool interaction; the existing control plane owns authorization, budgets, leases, cancellation, durable transitions and publication. Do not introduce a second scheduler, session authority or approval mechanism. Admit each model/tool effect before execution, disable transport retries and settle actual effects through the existing resource scope.
 
-Keep PI framing, Postdoc implementation planning and independent Reviewer context within the existing scientific attempts. Analysis is Host execution, not another model persona. Concrete scientific questions may use real replan cycles only when Host diagnostics permit them; they do not invent failures or borrow prior failure grants. Unanswered questions and the human decision remain part of the final report.
+Assign scientific framing and implementation planning to one PI. Project preparation produces one versioned method for Code and Reviewer. Review-first and unattended Projects differ at Host admission. The Reviewer examines the actual numerical results in a separate context.
+
+
 
 ## Empty local assets and attributable reuse
 

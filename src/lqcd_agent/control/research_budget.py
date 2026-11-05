@@ -99,6 +99,11 @@ def account_snapshot(db, value):
             'remaining_tokens': max(0, value['limits']['tokens'] - charged)}
 
 
+def plan_exhausted(account, now):
+    return now >= account['deadline'] or min(account[key] for key in
+        ('remaining_runs', 'remaining_model_calls', 'remaining_tokens')) == 0
+
+
 def inspect_budget(host, locator):
     """Read the existing task quota without constructing writers or renewing authority."""
     from contextlib import closing
@@ -149,11 +154,37 @@ def admit_research_run(db, goal, locator, operation_id, stamp, *, parent=None):
                 'A child changed its inherited research quota')
         require(parent is not None and any(row['locator'] == parent for row in value['runs']),
                 'Research parent is not admitted to this quota')
-    if goal.get('intake_parent') is not None:
-        require(goal['workflow'] == 'intake' and goal['intake_parent'] == parent,
-                'Clarification parent binding changed')
-        require(not any(row['parent'] == parent for row in value['runs']),
-                'This preparation was already continued; use its latest preparation child')
+    action = goal.get('request_intent', {}).get('plan_action')
+    if action is not None and binding['parent'] == parent:
+        # A revised plan, accepted plan and renewed root compete for the same source.
+        # Reserve the winner together with Run creation, including across task accounts.
+        source_account = value
+        source_parent = parent
+        if action == 'renew':
+            origin = goal['plan_origin']
+            require(parent is None and origin['task_id'] != binding['id'], 'Renewal requires a new root account')
+            source_row = db.execute('SELECT value FROM research_tasks WHERE task_id=?', (origin['task_id'],)).fetchone()
+            require(source_row is not None, 'Source plan quota is unavailable')
+            source_account = loads(source_row[0])
+            source_parent = origin['parent']
+            original = account_snapshot(db, source_account)
+            require(plan_exhausted(original, stamp.monotonic_seconds), 'Original plan quota remains available')
+        expected = (goal.get('previous_plan') or goal.get('preparation') or {})['parent']
+        require(source_parent == expected, 'Changed source plan locator')
+        source_run = next((r for r in source_account['runs'] if r['locator'] == source_parent), None)
+        require(source_run is not None and 'renewed_by' not in source_run and
+                not any(r['parent'] == source_parent for r in source_account['runs']),
+                'This plan already has a successor; select the latest plan')
+        if action == 'renew':
+            source_run['renewed_by'] = {'task_id': binding['id'], 'locator': locator}
+            db.execute('UPDATE research_tasks SET value=? WHERE task_id=?',
+                       (canonical_bytes(source_account), source_account['id']))
+        else:
+            remaining = account_snapshot(db, value)
+            if action == 'revise' and remaining['remaining_runs'] <= 1:
+                raise BudgetExhausted('Last Run slot is reserved for execution; start a new task to revise again')
+            if not remaining['remaining_model_calls'] or not remaining['remaining_tokens']:
+                raise BudgetExhausted('Research task model/token quota exhausted')
     config = goal.get('case_config') or {}
     parameters_sha = digest(config.get('generated_program', {}).get('parameters', {}))
     methods_sha = digest(goal.get('method_sources', []))

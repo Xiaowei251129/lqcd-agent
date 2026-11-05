@@ -203,9 +203,13 @@ class Workbench:
         attempts = {item['attempt_id']: {'id': item['attempt_id'], 'kind': {'plan': 'method_planner', 'analysis': 'analysis_engineer', 'review': 'scientific_reviewer', 'code': 'code_agent', 'approval': 'human_gate'}.get(item['slot'], item['slot']),
             'event': 'recorded', 'status': 'recorded'} for item in entries if item['attempt_id'] is not None}
         result.update(goal=goal['goal'], live=goal['live'], workflow=goal['workflow'],
+            plan_mode=goal.get('plan_mode'), plan_origin=goal.get('plan_origin'),
             synthetic=(goal.get('case_config') or {}).get('source_kind', 'synthetic_placeholder') == 'synthetic_placeholder',
             coding=goal['workflow'] == 'code' or bool((goal.get('case_config') or {}).get('generated_program')),
             attempts=list(attempts.values()), artifacts=[], evidence=entries, summaries={}, collaboration=[])
+        if goal['workflow'] == 'intake':
+            result['intake_profile'] = goal['intake']['data_profile']
+            result['previous_plan'] = goal.get('previous_plan')
         for item in entries:
             self._summary(result, item, lambda entry: self.projects.evidence(project_id, entry['sha256']))
         if 'result_evidence_id' in result:
@@ -221,17 +225,18 @@ class Workbench:
         return {'name': item['name'] if item else identifier, 'sha256': identifier}, raw
 
     def start_project(self, project_id, body):
-        continuation = 'intake_parent' in body
-        closed(body, ('expected_digest', 'live', 'key', *(('intake_parent', 'case') if continuation else ())))
+        action = 'plan_action' in body
+        fields = ('intake_parent', 'case', 'plan_digest', 'plan_action') if action else (
+            ('plan_mode',) if 'plan_mode' in body else ())
+        closed(body, ('expected_digest', 'live', 'key', *fields))
         operation_key = key(body['key'])
         if type(body['live']) is not bool:
             raise RequestError('invalid_research_request', 400)
-        if continuation:
-            require(type(body['intake_parent']) is str and type(body['case']) is str,
-                    'Preparation continuation requires its original Run and case')
+        if action:
+            require(all(type(body[field]) is str for field in fields), 'Plan action requires its original identity')
         admitted = submit(ApplicationRequest('run', host=self.host, project=project_id,
             project_digest=body['expected_digest'], live=body['live'], key=operation_key,
-            **({'intake_parent': body['intake_parent'], 'case': body['case']} if continuation else {})))
+            **{field: body[field] for field in fields}))
         status = admitted.status
         return {**status, 'project_id': project_id,
                 'project_run_key': digest({'host': status['host'], **status['run_locator']})}
@@ -254,10 +259,11 @@ class Workbench:
             require('result_evidence_id' not in result, 'Ambiguous current formal numerical result')
             result['result_evidence_id'] = item['id']
         value = loads(read_member(item), canonical=False)
-        if item['current'] and item['slot'] == 'plan' and name == 'method_plan.json':
+        if item['current'] and item['source'] == 'artifact' and item['slot'] == 'plan' and name == 'method_plan.json':
             preparation = value.get('domain_result', {}).get('preparation')
             if preparation is not None:
                 result['preparation'] = preparation
+                result['plan_digest'] = item['sha256']
         if item['current'] and item['slot'] == 'terminal' and name == 'memory_update.json':
             result.update(scientific_outcome=value['scientific_outcome'], decision_origin=value['decision_origin'])
         if item['current'] and 'domain_result' not in value:
@@ -374,7 +380,8 @@ class Workbench:
                 'respond': host == self.host and compatible and request is not None and pause['status'] == 'opened'},
             'runtime_build': snapshot.fingerprint['application_build'],
             'detail_revision': digest([host, locator, snapshot.control['projection']['artifact_head']]),
-            'project_id': goal.get('project_id'), 'task_binding': goal.get('research_task'),
+            'project_id': goal.get('project_id'), 'project_sha256': goal.get('project_sha256'),
+            'task_binding': goal.get('research_task'), 'plan_origin': goal.get('plan_origin'),
             'budget': snapshot.state['budget']}
         if 'execution_failure' in status:
             failure = status['execution_failure']
@@ -387,6 +394,9 @@ class Workbench:
         result['attempts'] = list(attempts.values())
         if not details:
             return result
+        if goal['workflow'] == 'intake':
+            result['intake_profile'] = goal['intake']['data_profile']
+            result['previous_plan'] = goal.get('previous_plan')
         index = loads(read_regular(snapshot.root/'artifact_index.json'))
         result['artifacts'] = [{'slot': slot, 'status': p['status'], 'artifact_id': p['artifact_id']}
                                for slot, p in index['current'].items() if p is not None]

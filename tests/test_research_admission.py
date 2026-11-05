@@ -1,8 +1,10 @@
 """Admission preserves frozen project intent and isolates reusable coding bases."""
 from contextlib import closing
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from hashlib import sha256
 import sys
+from threading import Barrier, Event
 
 import pytest
 
@@ -84,3 +86,40 @@ def test_same_host_keeps_independent_frozen_method_bases_without_dispatch(tmp_pa
             assert files["reused/ratio.py"] == source
             assert prepared.task_policy["write_paths"] == ["analysis.py"]
             assert "reused/ratio.py" in prepared.task_policy["read_paths"]
+
+
+def test_concurrent_research_bases_publish_one_complete_git_tree(tmp_path, monkeypatch):
+    from lqcd_agent.code_agent import workspace
+    host = tmp_path/"host"
+    host.mkdir()
+    with closing(Coordinator(host)):
+        pass
+    config = {"generated_program": {"python": sys.executable, "parameters": {}, "requirements": ["Synthetic fixture"],
+                                    "timeout_seconds": 10, "result_kind": "normalization"}}
+    bases = host/"research_repositories"
+    files = {"analysis.py": b'raise NotImplementedError("Implement the research task")\n'}
+    target = bases/workspace.tree_digest(files)
+    writing, release = Barrier(3), Event()
+    publish = workspace.publish_exact
+
+    def pause_before_git(target_file, content):
+        writing.wait(timeout=10)
+        assert release.wait(timeout=10)
+        return publish(target_file, content)
+
+    def prepare():
+        with closing(Coordinator(host)) as coordinator:
+            code, _ = prepare_research(coordinator, config, workspace=tmp_path, live=True, initialize=True)
+            return code.base_repository, code.task_policy["base_revision"]
+
+    monkeypatch.setattr(workspace, "publish_exact", pause_before_git)
+    with ThreadPoolExecutor(2) as pool:
+        writers = [pool.submit(prepare) for _ in range(2)]
+        try:
+            writing.wait(timeout=10)
+            assert not target.exists()
+        finally:
+            release.set()
+        first, second = (job.result(timeout=30) for job in writers)
+    assert first == second and first[0] == target
+    assert immutable_git_tree(*first) == files and list(bases.iterdir()) == [target]

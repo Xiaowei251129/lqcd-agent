@@ -1,5 +1,5 @@
 """One application entry for CLI and Python clients over the canonical engine."""
-from contextlib import closing
+from contextlib import closing, nullcontext
 from dataclasses import dataclass, replace
 from pathlib import Path
 import tempfile
@@ -28,6 +28,9 @@ class ApplicationRequest:
     project: str | None = None
     project_digest: str | None = None
     intake_parent: str | None = None
+    plan_action: str | None = None
+    plan_mode: str | None = None
+    plan_digest: str | None = None
 
 
 def create_host():
@@ -72,8 +75,17 @@ def submit(request: ApplicationRequest):
         return Submission(archive_run(host_root(args.host), {'case_id': args.case, 'run_id': args.run}))
     if args.command == 'status':
         return Submission(read_snapshot(host_root(args.host), {'case_id': args.case, 'run_id': args.run}).status())
+    require(args.plan_mode in (None, 'review', 'auto'), 'Choose review or auto planning')
+    require(args.plan_action in (None, 'revise', 'execute', 'renew'), 'Unknown Project plan action')
+    source_action = args.plan_action is not None
+    require(source_action == (args.intake_parent is not None) == (args.plan_digest is not None),
+            'Plan action requires the exact preparation Run and plan digest')
+    require(not source_action or args.command == 'run' and args.host and args.project and args.project_digest and
+            args.goal is None and args.plan_mode is None, 'Plan action must select its original Host and Project')
+    require(args.plan_mode is None or args.command == 'run' and args.project, 'Plan mode requires a Project')
     intent = {field: getattr(args, field) for field in
-              ('command', 'case', 'goal', 'workflow', 'live', 'case_config', 'project', 'project_digest', 'intake_parent')}
+              ('command', 'case', 'goal', 'workflow', 'live', 'case_config', 'project', 'project_digest',
+               'intake_parent', 'plan_action', 'plan_mode', 'plan_digest')}
     original_inputs = None
     if args.command in ('start', 'run') and args.host is not None:
         from .inspection import read_operation
@@ -102,6 +114,8 @@ def submit(request: ApplicationRequest):
     config = None
     workspace = workspace_root() if args.command != 'cancel' else None
     project = None
+    plan_source = None
+    intake = None
     if original_inputs is not None:
         # Resume the admitted request, including its original deadline and reuse
         # snapshots. Mutable project/config/library heads cannot replace it.
@@ -112,7 +126,8 @@ def submit(request: ApplicationRequest):
     elif args.project is not None:
         require(args.command == 'run', 'Use run --project to bind a scientific Project')
         from .research.projects import ProjectStore
-        project = ProjectStore(workspace).read(args.project)
+        projects = ProjectStore(workspace)
+        project = projects.read(args.project)
         require(args.project_digest is None or project['sha256'] == args.project_digest, 'Project changed before Run admission')
         args.goal = args.goal if args.goal is not None else project['goal']
         config = project['case_config']
@@ -124,13 +139,22 @@ def submit(request: ApplicationRequest):
         if project is not None:
             args.case = (config or {}).get('case_id', project['id'])
             args.command, args.workflow = 'start', 'intake'
+            from .research.intake import snapshot_intake
+            intake = snapshot_intake(workspace, project)
+            if source_action:
+                from .research.experiments import select_plan
+                plan_source = select_plan(request, project, workspace, intake)
+                if project['sha256'] == plan_source['goal']['project_sha256']:
+                    args.goal = plan_source['goal']['goal']
+                if plan_source['execute']:
+                    config = plan_source['proposal']['case_config']
+                    args.case = config['case_id']
+                    args.workflow = 'scientific'
         else:
             require(config is not None, 'Supply a Project or an executable case configuration')
             require(config.get('schema_version') == '0.1', 'Unsupported case configuration version')
             args.case = config.get('case_id', args.case)
             args.command, args.workflow = 'start', 'scientific'
-    require(args.intake_parent is None or project is not None and args.workflow == 'intake' and args.host is not None
-            or original_inputs is not None, 'Clarification continuation requires its original Host and Project')
     if args.command == 'start' and args.goal is None:
         args.goal = config.get('physics_goal', 'Analyze the configured case') if config else (
             'Implement value() in sample.py returning integer 2' if args.workflow == 'code' else 'Validate the synthetic observable')
@@ -167,37 +191,53 @@ def submit(request: ApplicationRequest):
             inputs = original_inputs
             if inputs is None:
                 inputs = {'root_goal': {'goal': args.goal, 'workflow': args.workflow, 'live': live, 'workspace': str(workspace), 'request_intent': intent}, 'input_snapshot': {'kind': 'current_mock' if config is None else 'scientific_case', 'case_config': config}}
+                goal = inputs['root_goal']
                 if project is not None:
-                    inputs['root_goal'].update(project_id=project['id'], project_revision=project['revision'],
-                                              project_sha256=project['sha256'], project_snapshot=project)
+                    goal.update(project_id=project['id'], project_revision=project['revision'],
+                                project_sha256=project['sha256'], project_snapshot=project,
+                                plan_mode=args.plan_mode or 'review', intake=intake)
                 if args.workflow == 'intake':
-                    from .research.intake import snapshot_intake
-                    prepared = snapshot_intake(workspace, project)
-                    inputs['root_goal'].update(intake=prepared, case_config=config or {},
-                        dataset_snapshot=prepared['dataset_snapshot'], method_sources=[])
-                    inputs['root_goal']['intake_contributions'] = [item['sha256'] for item in
-                        ProjectStore(workspace).contributions(project['id'])]
-                    inputs['input_snapshot'] = {'kind': 'research_intake', 'project': project,
-                                               'intake': prepared}
+                    goal.update(case_config=config or {}, dataset_snapshot=intake['dataset_snapshot'], method_sources=[])
+                    inputs['input_snapshot'] = {'kind': 'research_intake', 'project': project, 'intake': intake}
                 elif config is not None:
-                    inputs['root_goal']['case_config'] = config
-                    inputs['root_goal']['method_sources'] = method_sources
-                    from .tools.dataset import snapshot_dataset
-                    inputs['root_goal']['dataset_snapshot'] = snapshot_dataset(config, workspace)
-                inputs['root_goal']['research_task'] = {
+                    goal.update(case_config=config, method_sources=method_sources)
+                    from lqcd_agent.tools.dataset import snapshot_dataset
+                    goal['dataset_snapshot'] = snapshot_dataset(config, workspace)
+                goal['research_task'] = {
                     'id': digest({'host': str(root), 'key': args.key, 'intent': intent}),
                     'limits': dict(RESEARCH_TASK_LIMITS),
                     'deadline': coordinator._time().monotonic_seconds + RESEARCH_TASK_LIMITS['seconds'],
                     'parent': None}
-                if args.intake_parent is not None:
-                    from .research.experiments import clarification_parent
-                    # Explicit continuation inherits the original account. Scientific
-                    # comments alone never dispatch work or renew its deadline.
-                    inherited, parent = clarification_parent(root, request.case, args.intake_parent,
-                        project, live, workspace)
-                    inputs['root_goal']['research_task'] = {**inherited, 'parent': parent}
-                    inputs['root_goal']['intake_parent'] = parent
-            result = plane.start_run(StartRunRequest(args.case, inputs, digest(inputs), args.key), actor=actor)
+                if plan_source is not None:
+                    source = plan_source['goal']
+                    parent = plan_source['parent']
+                    selected = {'parent': parent, 'plan_sha256': request.plan_digest,
+                                'proposal': plan_source['proposal']}
+                    if request.plan_action == 'renew':
+                        goal['plan_origin'] = {'parent': parent, 'plan_sha256': request.plan_digest,
+                                               'task_id': source['research_task']['id']}
+                    else:
+                        goal['plan_mode'] = source['plan_mode']
+                        goal['research_task'] = {**source['research_task'], 'parent': parent}
+                    if plan_source['execute']:
+                        goal['preparation'] = {**selected, 'proposal_sha256': digest(selected['proposal']),
+                                               'request_key': request.key}
+                        require(goal['dataset_snapshot'] == source['dataset_snapshot'],
+                                'Data changed during prepared analysis admission')
+                    else:
+                        goal['previous_plan'] = selected
+                        if request.plan_action == 'revise':
+                            goal['intake_parent'] = parent
+            # Serialize Project edits/contributions against this version's Host admission.
+            guard = projects._locked() if project is not None else nullcontext()
+            with guard:
+                if project is not None:
+                    require(projects.read(project['id']) == project, 'Project changed during plan admission')
+                    if plan_source is not None and plan_source['execute']:
+                        notes = projects.research_inputs(project['id'], root, plan_source['parent'])
+                        require({row['sha256'] for row in notes} <= set(plan_source['proposal']['scientific_input_sha256']),
+                                'New scientific input requires plan revision')
+                result = plane.start_run(StartRunRequest(args.case, inputs, digest(inputs), args.key), actor=actor)
             locator = result['result']['run_locator']
             advance_work = not replay and result['operation_status'] == 'committed' and result['run_status'] == 'running'
         else:

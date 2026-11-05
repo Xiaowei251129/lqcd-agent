@@ -35,7 +35,15 @@ export async function sendControl(slot, record, replay, api) {
   let operation = replay ? await lookup() : null;
   if (operation?.status !== 'committed') {
     if (slot.read()?.payload.key !== key) return null;
-    try { operation = await api(record.path, record.payload); }
+    try {
+      // Keep the answer bundle and revision intent together across a lost reply.
+      // The contribution is immutable and independently idempotent; only /runs dispatches.
+      if (record.feedback) {
+        await api('/api/projects/'+encodeURIComponent(record.target.project_id)+'/contributions', record.feedback);
+        if (slot.read()?.payload.key !== key) return null;
+      }
+      operation = await api(record.path, record.payload);
+    }
     catch (error) {
       if (!rejectedPost(error)) throw error;
       // An error while reading the ledger is not a rejection of the original intent.

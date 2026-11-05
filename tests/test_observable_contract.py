@@ -88,7 +88,7 @@ print(json.dumps({'status':'ok','observables':[r],'assumptions':[],'limitations'
     install_backend(monkeypatch, program)
     projects = ProjectStore(tmp_path)
     project = projects.create('ratios', 'Ratio study', config['physics_goal'], config)
-    # Exercise real PI/Postdoc intake with a local SDK model. Formal Analysis
+    # Exercise real PI intake with a local SDK model. Formal Analysis
     # uses the existing deterministic role and Code fixtures on its sealed contract.
     calls = []
     select_agent = runtime.scientific_agent
@@ -98,8 +98,8 @@ print(json.dumps({'status':'ok','observables':[r],'assumptions':[],'limitations'
                 ResearchAgentRuntime(IntakeModel(calls, family='replica_observables'), max_output_tokens=2048))
         return select_agent(host, selected, settings, workspace)
     monkeypatch.setattr(runtime, 'scientific_agent', select)
-    start = execute(ApplicationRequest('run', project='ratios', project_digest=project['sha256'], key='observable-start'))
-    assert [call['schema'] for call in calls] == ['ResearchBrief', 'IntakePlan']
+    start = execute(ApplicationRequest('run', project='ratios', project_digest=project['sha256'], plan_mode='auto', key='observable-start'))
+    assert [call['schema'] for call in calls] == ['IntakePlan']
     assert start['workflow'] == 'scientific' and start['active_pause']['reason'] == 'external_result'
     result = deliver(start)
     assert result['run_status'] == 'completed' and result['active_pause'] is None, result
@@ -119,6 +119,10 @@ print(json.dumps({'status':'ok','observables':[r],'assumptions':[],'limitations'
     preparation, scientific = sorted(projects.runs('ratios'), key=lambda row: row['workflow'])
     assert preparation['workflow'] == 'intake' and preparation['preparation']['status'] == 'ready'
     assert scientific['run_locator'] == result['run_locator'] and scientific['workflow'] == 'scientific'
+    frozen = preparation['preparation']['method_plan']
+    plan_record = loads(Path(index['plan']['state_paths']['method_plan_path']).read_bytes())['domain_result']
+    assert all(plan_record['method_plan'][key] == value for key, value in frozen.items())
+    assert plan_record['code_request']['requirements'] == frozen['method_steps']
     assert not scientific['preliminary'] and not scientific['resumable']
     assert scientific['scientific_outcome'] == 'qualified' and scientific['decision_origin'] == 'system'
     # A saved result must resolve the same formal producer and frozen observable

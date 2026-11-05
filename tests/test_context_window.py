@@ -115,14 +115,16 @@ def test_sdk_compacts_twice_without_resurrecting_old_history_and_keeps_scientifi
     assert result.usage['requests'] == 5 and result.usage['total_tokens'] == 65
 
 
-@pytest.mark.parametrize('role,proposal_role', [('postdoc', 'method_plan'),
+@pytest.mark.parametrize('role,proposal_role', [('pi', 'method_plan'),
                                               ('reviewer', 'scientific_review_report')])
 def test_proposal_discussion_wire_schema_is_strict_for_count_and_generation(role, proposal_role):
     from lqcd_agent.llm.schemas import role_schema
     from lqcd_agent.research.collaboration import ProposalDiscussion
-    from tests.test_research_collaboration import discussion, proposal
+    from tests.test_research_collaboration import brief, discussion, proposal
 
     payload = {'proposal': proposal(proposal_role), 'discussion': discussion(next_experiment=None)}
+    if proposal_role == 'method_plan':
+        payload['brief'] = brief()
     output = message('unused').model_copy(update={'content': [ResponseOutputText(
         type='output_text', text=json.dumps(payload), annotations=[])]})
     wire, events = Wire([20], [[output]]), []

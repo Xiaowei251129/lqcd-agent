@@ -310,9 +310,11 @@ def test_preparation_clarification_continues_original_budget_without_human_gate(
     assert loads(read_regular(original.root/'root_goal.json'))['case_config'] == {}
 
     body = {'expected_digest': project['sha256'], 'live': False, 'key': 'continue-preparation',
-        'intake_parent': first['run_locator']['run_id'], 'case': first['run_locator']['case_id']}
+        'intake_parent': first['run_locator']['run_id'], 'case': first['run_locator']['case_id'],
+        'plan_action': 'revise', 'plan_digest': view['plan_digest']}
     path = '/api/projects/unconfigured/runs'
     assert http.post(path, json={key: value for key, value in body.items() if key != 'case'}).status_code == 409
+    assert http.post(path, json={**body, 'plan_digest': '0'*64}).status_code == 409
     continued = http.post(path, json=body)
     assert continued.status_code == 202, continued.text
     second = continued.json()

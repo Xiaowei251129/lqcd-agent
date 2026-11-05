@@ -101,6 +101,7 @@ def product_failure_material(root, source, diagnostic, records, coordinator):
         value = loads(raw)
         leaves.append({'member_id': name, 'content_digest': digest(value)})
         inputs.append(input_ref('root_input', sha256(raw).hexdigest(), name))
+    analysis_result = None
     main_names = {'plan': 'method_plan.json', 'analysis': 'run_result.json', 'review': 'scientific_review_report.json'}
     for slot in main_names:
         if slot not in selected:
@@ -112,6 +113,8 @@ def product_failure_material(root, source, diagnostic, records, coordinator):
         require(sha256(raw).hexdigest() == member['sha256'], 'Failure domain input changed')
         value = loads(raw)
         require(value['schema_version'] == '0.1' and value['producer'] == pointer['attempt_kind'] and all((value[k] == row[k] for k in ('case_id', 'run_id'))) and all((value[k] == pointer[k] for k in ('attempt_id', 'attempt_kind'))), 'Failure domain owner changed')
+        if slot == 'analysis':
+            analysis_result = value
         scientific = {k: v for k, v in value.items() if k not in metadata}
         ref = input_ref('member', member['sha256'], member['logical_name'], digest(row))
         leaves.append({'member_id': slot + '/' + member['logical_name'], 'content_digest': digest(scientific)})
@@ -247,9 +250,18 @@ def product_failure_material(root, source, diagnostic, records, coordinator):
     diagnostics = {'exit_code': None, 'signal': None, 'failing_test_ids': [], 'validator_errors': []}
     failure_class, code = (diagnostic['status'], category)
     if analysis_spec is not None:
-        main = next((m for m in analysis_registration['members'] if m['logical_name'] == 'run_result.json'))
-        actual_return = loads(read_regular(root / main['canonical_path']))['execution']
-        diagnostics['exit_code'] = actual_return['returncode']
+        if 'execution' in analysis_result:
+            diagnostics['exit_code'] = analysis_result['execution']['returncode']
+        else:
+            # A settled effect can raise before it produces any process result.
+            resource_id = tool_call['payload']['resource_operation_id']
+            settlements = [r['payload'] for r in records if r.get('event') == 'resource_settled'
+                           and r['payload']['resource_operation_id'] == resource_id]
+            require(source['attempt_kind'] == 'analysis_engineer' and category == 'execution_failure'
+                    and diagnostic['status'] == 'failed' and analysis_result['status'] == 'failed'
+                    and any(e.get('type') == 'OrdinaryResourceFailure' for e in analysis_result.get('errors', []))
+                    and len(settlements) == 1 and settlements[0]['actual'] is None,
+                    'Missing execution result without a settled Analysis resource failure')
     if source['attempt_kind'] == 'code_agent':
         failure_class, code = (result['failure_class'], result['status'])
         layer = {'scope_violation': 'security', 'policy_violation': 'policy', 'verification_failed': 'verification', 'tool_error': 'tool', 'timeout': 'control', 'external_interruption': 'control'}.get(failure_class, 'code')
@@ -393,7 +405,7 @@ def product_final_report(root, context, index, classification, response):
         for exchange in collaboration.get('exchanges', []):
             role = exchange['role']
             discussion = exchange.get('discussion', exchange.get('brief', {}).get('discussion', {}))
-            label = {'pi': 'PI', 'postdoc': 'Postdoc', 'reviewer': 'Independent Reviewer'}[role]
+            label = {'pi': 'PI', 'reviewer': 'Independent Reviewer'}[role]
             if discussion.get('summary'):
                 include(label + (' — planning' if slot == 'plan' else ' — review'), discussion['summary'])
             if role == 'reviewer':

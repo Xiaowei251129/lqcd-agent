@@ -156,7 +156,7 @@ def test_published_sdk_resource_view_is_read_only_and_never_reexecutes(tmp_path,
     snapshot, calls, _ = observe_sdk_resources(tmp_path, monkeypatch, observe)
     assert set(observed) == {'model', 'tool'} and len(observed) >= 4
     assert settled_gaps and len(set(settled_gaps)) == len(settled_gaps)
-    assert len(calls) == 5 and snapshot.state['run_status'] == 'completed'
+    assert len(calls) == 4 and snapshot.state['run_status'] == 'completed'
     assert read_snapshot(snapshot.host, snapshot.locator).status() == snapshot.status()
 
 

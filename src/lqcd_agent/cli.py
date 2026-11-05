@@ -68,7 +68,11 @@ def main(argv=None):
                 command.add_argument("--case-config")
                 command.add_argument("--project", help="Use the goal and case configuration frozen in a local project")
                 command.add_argument("--project-digest", help="Expected current Project SHA-256")
-                command.add_argument("--intake-parent", help="Continue a completed preparation that needs information, using its original Host, case and task budget")
+                command.add_argument("--plan-mode", choices=("review", "auto"), help="Project planning mode (default: review before execution)")
+                command.add_argument("--intake-parent", help="Original preparation Run ID for a plan action")
+                command.add_argument("--plan-digest", help="Exact registered plan SHA-256 shown by status")
+                command.add_argument("--plan-action", choices=("revise", "execute", "renew"),
+                                     help="Revise after recording scientific input, execute a selected plan, or explicitly start fresh funding after expiry")
         else:
             command.add_argument("--run", required=True)
             if name in ("resume", "cancel"):

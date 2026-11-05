@@ -50,15 +50,21 @@ def proposal(role):
     return {**result, 'findings': [], 'evidence': [], 'recommended_checks': [], 'confidence': 'high'}
 
 
+def brief():
+    return {'physics_question': 'PI-BRIEF-PRIVATE-MARKER',
+            'competing_explanations': ['Missing scale information'],
+            'discriminating_checks': ['Inspect the Host diagnostics.'],
+            'success_criteria': ['All inputs attributable']}
+
+
 class CollaborationModel(Model):
     def __init__(self, calls, *, fail=False, refusal=None, need_information=False, code_needed=False,
-                 pi_need_information=False, read_sections=('catalog',), postdoc_read=False,
-                 pi_discussion=None, postdoc_discussion=None):
+                 read_sections=('catalog',), pi_discussion=None, edit_plan=None):
         self.calls, self.fail, self.read = calls, fail, 0
-        self.read_sections, self.postdoc_read = read_sections, postdoc_read
+        self.read_sections = read_sections
         self.need_information, self.code_needed = need_information, code_needed
-        self.pi_need_information, self.refusal = pi_need_information, refusal
-        self.pi_discussion, self.postdoc_discussion = pi_discussion, postdoc_discussion
+        self.refusal, self.pi_discussion = refusal, pi_discussion
+        self.edit_plan = edit_plan
 
     async def get_response(self, system_instructions, input, model_settings, tools,
                            output_schema, handoffs, tracing, **kwargs):
@@ -70,38 +76,28 @@ class CollaborationModel(Model):
         if self.refusal is not None:
             output = [ResponseOutputMessage(type='message', id='answer', role='assistant', status='completed',
                 content=[ResponseOutputRefusal(type='refusal', refusal=self.refusal)])]
-        elif name == 'ResearchBrief' and self.read < len(self.read_sections):
+        elif name == 'method_plan_discussion' and self.read < len(self.read_sections):
             section = self.read_sections[self.read]
             self.read += 1
             output = [ResponseFunctionToolCall(type='function_call', name='read_context',
                 arguments=json.dumps({'section': section, 'offset': 0}), call_id='read-'+section)]
-        elif name == 'method_plan_discussion' and self.postdoc_read:
-            self.postdoc_read = False
-            output = [ResponseFunctionToolCall(type='function_call', name='read_context',
-                arguments='{"section":"case_config","offset":0}', call_id='postdoc-read')]
         else:
-            if name == 'ResearchBrief':
-                value = {'physics_question': 'PI-BRIEF-PRIVATE-MARKER', 'competing_explanations': ['Missing scale information'],
-                    'discriminating_checks': ['Inspect the Host diagnostics.'], 'success_criteria': ['All inputs attributable'],
-                    'discussion': discussion()}
-                if self.pi_need_information:
+            if name == 'method_plan_discussion':
+                value = {'brief': brief(), 'proposal': proposal('method_plan'),
+                         'discussion': self.pi_discussion or discussion()}
+                value['proposal'].update(code_needed=self.code_needed,
+                    coder_task_summary='Implement the prescribed analysis.' if self.code_needed else None)
+                if self.need_information:
                     value['discussion'] = discussion(decision='need_information',
-                        summary='The required ensemble is missing.',
-                        issues=[issue(question='Supply the required input ensemble.', status='open')])
-            elif name in ('method_plan_discussion', 'scientific_review_report_discussion'):
-                value = {'proposal': proposal(name.removesuffix('_discussion')), 'discussion': discussion()}
-                if name == 'method_plan_discussion':
-                    value['proposal'].update(code_needed=self.code_needed,
-                        coder_task_summary='Implement the prescribed analysis.' if self.code_needed else None)
-                    if self.need_information:
-                        value['discussion'] = discussion(decision='need_information', summary='Supply a missing input ensemble.')
+                        issues=[issue(question='Supply the required input ensemble.', status='blocked')])
+                    value['brief']['success_criteria'] = []
+                if self.edit_plan:
+                    self.edit_plan(value)
+            elif name == 'scientific_review_report_discussion':
+                value = {'proposal': proposal('scientific_review_report'), 'discussion': discussion()}
             else:
                 assert name == 'Discussion'
                 value = discussion()
-            if name == 'ResearchBrief' and self.pi_discussion is not None:
-                value['discussion'] = self.pi_discussion
-            if name == 'method_plan_discussion' and self.postdoc_discussion is not None:
-                value['discussion'] = self.postdoc_discussion
             output = [ResponseOutputMessage(type='message', id='answer', role='assistant', status='completed',
                 content=[ResponseOutputText(type='output_text', text=json.dumps(value), annotations=[])])]
         return ModelResponse(output=output, usage=Usage(requests=1, input_tokens=10, output_tokens=3, total_tokens=13),
@@ -113,8 +109,8 @@ class CollaborationModel(Model):
         yield
 
 
-def execute_collaboration(workspace, *, fail=False, refusal=None, need_information=False, pi_need_information=False,
-                          read_sections=('catalog',), postdoc_read=False, runtime_factory=None, request_timeout_seconds=10):
+def execute_collaboration(workspace, *, fail=False, refusal=None, need_information=False,
+                          read_sections=('catalog',), runtime_factory=None, request_timeout_seconds=10):
     host = Path(mkdtemp(prefix='lqcd-agent-host-', dir=execution_scratch_root()))
     calls, closed = [], []
     class ClosingRuntime(ResearchAgentRuntime):
@@ -122,7 +118,7 @@ def execute_collaboration(workspace, *, fail=False, refusal=None, need_informati
             closed.append(True)
     def factory():
         return ClosingRuntime(CollaborationModel(calls, fail=fail, refusal=refusal, need_information=need_information,
-            pi_need_information=pi_need_information, read_sections=read_sections, postdoc_read=postdoc_read), max_output_tokens=2048)
+            read_sections=read_sections), max_output_tokens=2048)
     config = {'schema_version': '0.1', 'case_id': 'sdk-collaboration', 'source_kind': 'synthetic_placeholder',
               'physics_goal': 'Inspect synthetic normalization evidence.'}
     with closing(Coordinator(host, clock=FakeClock(100, 0))) as coordinator:
@@ -140,18 +136,18 @@ def execute_collaboration(workspace, *, fail=False, refusal=None, need_informati
 def test_actual_sdk_collaboration_uses_host_resources_preserves_review_and_concludes(tmp_path):
     snapshot, calls, closed = execute_collaboration(tmp_path)
     assert snapshot.state['run_status'] == 'completed' and snapshot.state.get('active_pause') is None and len(closed) == 2
-    assert [call['schema'] for call in calls] == ['ResearchBrief', 'ResearchBrief', 'method_plan_discussion',
+    assert [call['schema'] for call in calls] == ['method_plan_discussion', 'method_plan_discussion',
                                               'scientific_review_report_discussion', 'Discussion']
-    reviewer = calls[3]['input']
+    reviewer = calls[2]['input']
     assert 'PI-BRIEF-PRIVATE-MARKER' not in json.dumps(reviewer)
     records = parse_ledger((snapshot.root/'execution_history.jsonl').read_bytes()).values
     reserved = [row['payload'] for row in records if row.get('event') == 'resource_reserved']
     settled = [row['payload'] for row in records if row.get('event') == 'resource_settled']
-    assert len(reserved) == len(settled) == 7
-    assert [row['resource_kind'] for row in reserved].count('llm_call') == 5
+    assert len(reserved) == len(settled) == 6
+    assert [row['resource_kind'] for row in reserved].count('llm_call') == 4
     assert [row['resource_kind'] for row in reserved].count('tool_call') == 2
     assert settled[0]['tokens'] == {'state': 'unknown', 'value': None}
-    assert sum(row['tokens']['value'] or 0 for row in settled) == 52
+    assert sum(row['tokens']['value'] or 0 for row in settled) == 39
     review_paths = list((snapshot.host/'domain').rglob('scientific_review_report.json'))
     assert len(review_paths) == 1
     report = loads(review_paths[0].read_bytes(), canonical=False)
@@ -173,28 +169,6 @@ def test_actual_sdk_collaboration_uses_host_resources_preserves_review_and_concl
     assert not any(row['record_type'] in ('human_request', 'human_response') for row in records)
 
 
-@pytest.mark.parametrize('postdoc_read', [False, True])
-def test_roles_share_the_host_call_allowance_preserving_the_second_role(tmp_path, postdoc_read):
-    snapshot, calls, _ = execute_collaboration(tmp_path, read_sections=('catalog', 'case_config'),
-                                             postdoc_read=postdoc_read)
-    allowance = policy().value['limits']['llm_calls_per_attempt']
-    assert [call['schema'] for call in calls[:4]] == ['ResearchBrief'] * 3 + ['method_plan_discussion']
-    assert f'at most {(allowance + 1)//2} model turns' in calls[0]['instructions']
-    assert f'at most {allowance - 3} model turns' in calls[3]['instructions']
-    records = parse_ledger((snapshot.root/'execution_history.jsonl').read_bytes()).values
-    first_attempt = next(row['attempt_id'] for row in records if row.get('event') == 'scheduled')
-    reserved = [row['payload'] for row in records if row.get('event') == 'resource_reserved'
-                and row['payload']['attempt_id'] == first_attempt and row['payload']['resource_kind'] == 'llm_call']
-    assert len(reserved) == (5 if postdoc_read else 4) <= allowance
-    assert all(row['applicable_limits']['llm_calls'] == allowance for row in reserved)
-    index = loads((snapshot.root/'artifact_index.json').read_bytes())
-    assert snapshot.state['run_status'] == 'completed' and len(calls) == (7 if postdoc_read else 6)
-    assert index['current']['plan']['status'] == index['current']['review']['status'] == 'success'
-    terminal = loads(Path(index['current']['terminal']['state_paths']['memory_update_path']).read_bytes())
-    assert terminal['decision_origin'] == 'system' and terminal['authorization_decision'] is None
-    assert not any(row['record_type'] in ('human_request', 'human_response') for row in records)
-
-
 @pytest.mark.parametrize('exhausted', ['calls', 'deadline'])
 def test_role_without_budget_refuses_before_sdk_invocation(tmp_path, recwarn, exhausted):
     calls, events = [], []
@@ -211,7 +185,7 @@ def test_role_without_budget_refuses_before_sdk_invocation(tmp_path, recwarn, ex
         provider = _RoleProvider(SimpleNamespace(request_timeout_seconds=10), 'method_planner', context, tmp_path,
                                  runtime, runner, ExhaustedMeter())
         with pytest.raises(BudgetExhausted):
-            provider._run('postdoc', 'Conclude.', [], Discussion, [])
+            provider._run('pi', 'Conclude.', [], Discussion, [])
     assert calls == events == []
     assert not recwarn.list
 
@@ -316,12 +290,8 @@ def test_pi_revision_preserves_warnings_and_cannot_override_errors(warnings, err
         assert outcome['diagnostic']['category'] == 'scientific_review' and outcome['diagnostic']['risk'] == 'high'
 
 
-@pytest.mark.parametrize('role', ['pi', 'postdoc'])
-def test_planner_requests_missing_information_before_any_analysis(tmp_path, role):
-    # For the PI case, Postdoc omits the PI's open question and recommends proceeding.
-    # That omission must not authorize an analysis with the missing input.
-    snapshot, calls, closed = execute_collaboration(tmp_path, need_information=role == 'postdoc',
-                                                   pi_need_information=role == 'pi')
+def test_planner_requests_missing_information_before_any_analysis(tmp_path):
+    snapshot, calls, closed = execute_collaboration(tmp_path, need_information=True)
     assert snapshot.state['run_status'] == 'completed' and snapshot.state.get('active_pause') is None and len(closed) == 1
     assert not any(call['schema'] == 'scientific_review_report_discussion' for call in calls)
     records = parse_ledger((snapshot.root/'execution_history.jsonl').read_bytes()).values
@@ -369,7 +339,6 @@ def coding_plan(tmp_path, model_factory, *, prior_issues=()):
         result = run_method_planner(user_goal='Analyze the frozen data contract.', case_config=config,
             repo_inventory={'repo_root': str(tmp_path), 'analysis_programs': [], 'implementation_gaps': ['Implement the contract.']},
             output_dir=output, provider=provider)
-        assert provider.failure is None
     return result, provider.collaboration
 
 
@@ -381,6 +350,24 @@ def test_pi_checks_and_prior_questions_reach_the_actual_coding_request(tmp_path)
     assert 'Compare the fit windows.' in requirements
     assert requirements.count('All inputs attributable') == 1
     assert result['method_plan']['method_steps'] == requirements
+
+
+@pytest.mark.parametrize('defect,persistent', [('success_criteria',False), ('discriminating_checks',True), ('issue_id',False)])
+def test_configured_case_corrects_only_a_completed_pi_proposal(tmp_path, defect, persistent):
+    calls = []
+    def edit(draft):
+        if len(calls) == 1 or persistent:
+            if defect == 'issue_id':
+                draft['discussion']['issues'] = [issue(id='invented-id')]
+            else:
+                draft['brief'][defect] = []
+    result, _ = coding_plan(tmp_path, lambda _: CollaborationModel(calls, code_needed=True, read_sections=(), edit_plan=edit))
+    assert len(calls) == 2 and 'at most 1 model turns' in calls[-1]['instructions']
+    assert json.loads(calls[-1]['input'][-1]['content'])['host_corrections']
+    if persistent:
+        assert result['status'] == 'failed' and result['code_request'] is None
+    else:
+        assert result['status'] == 'success' and 'All inputs attributable' in result['code_request']['requirements']
 
 
 def test_current_run_answers_inherited_open_issue_only_with_current_evidence():
@@ -421,10 +408,11 @@ def test_missing_input_block_requires_a_verified_answer_not_a_status_change():
     assert resolved[0]['status'] == 'addressed'
 
 
-def test_penultimate_role_turn_can_read_before_the_reserved_final_conclusion(tmp_path):
+def test_pi_reads_multiple_sections_without_a_second_planner(tmp_path):
     snapshot, calls, _ = execute_collaboration(tmp_path, read_sections=('catalog', 'case_config', 'repo_inventory'))
     assert snapshot.state['run_status'] == 'completed'
-    assert [call['schema'] for call in calls[:5]] == ['ResearchBrief'] * 4 + ['method_plan_discussion']
+    assert [call['schema'] for call in calls] == ['method_plan_discussion'] * 4 + ['scientific_review_report_discussion', 'Discussion']
+    assert f"at most {policy().value['limits']['llm_calls_per_attempt'] - 1} model turns" in calls[0]['instructions']
     events = [loads(line, canonical=False) for path in (snapshot.host/'domain').rglob('research_events.jsonl')
         for line in path.read_bytes().splitlines()]
     pi_reads = [event for event in events if event['event'] == 'tool_end' and event['role'] == 'pi']
@@ -436,20 +424,14 @@ def test_planning_distinguishes_inherited_scientific_questions_from_current_prer
     original = _merge_issues([], [issue(status='blocked',
         question='Which frozen output contract must the implementation retain?')])[0]
     def model(config):
-        pending = {**original, 'status': 'open'}
-        pi = discussion(issues=[original])
-        postdoc = discussion(issues=[original])
+        plan_discussion = discussion(issues=[original])
         if disposition == 'current_blocker':
-            # A current missing prerequisite survives the following role's
-            # relabeling of the issue and recommendation to proceed.
-            pi = discussion(decision='need_information', issues=[original])
-            postdoc = discussion(issues=[pending])
+            plan_discussion = discussion(decision='need_information', issues=[original])
         elif disposition == 'verified_answer':
-            pi = discussion(decision='need_information', issues=[original])
-            postdoc = discussion(issues=[{**original, 'status':'addressed',
+            plan_discussion = discussion(issues=[{**original, 'status':'addressed',
                 'response':'Use the specified frozen JSON contract.', 'evidence_references':[digest(config)]}])
-        return CollaborationModel([], code_needed=True, read_sections=(),
-            postdoc_read=disposition=='verified_answer', pi_discussion=pi, postdoc_discussion=postdoc)
+        return CollaborationModel([], code_needed=True, read_sections=('case_config',) if disposition=='verified_answer' else (),
+                                  pi_discussion=plan_discussion)
     result, collaboration = coding_plan(tmp_path, model, prior_issues=[original])
     retained = next(item for item in collaboration['issues'] if item['id']==original['id'])
     if disposition == 'current_blocker':

@@ -97,7 +97,7 @@ def create_app(workbench=None):
 
     @app.get('/static/{name}')
     def asset(name: str):
-        if name not in ('app.js', 'style.css', 'task-desk.js', 'results.js', 'results.css', 'comparison.js', 'evidence.js', 'submissions.js'):
+        if name not in ('app.js', 'style.css', 'task-desk.js', 'results.js', 'results.css', 'comparison.js', 'evidence.js', 'submissions.js', 'planning.js'):
             raise RequestError('unknown_asset', 404)
         return FileResponse(STATIC/name)
 

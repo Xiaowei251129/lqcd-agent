@@ -8,10 +8,10 @@ from lqcd_agent.control.clock import FakeClock, HostClock
 from lqcd_agent.control.budget import BudgetExhausted
 from lqcd_agent.control.coordinator import Coordinator, read_regular
 from lqcd_agent.control.interfaces import ActorContext, StartRunRequest
-from lqcd_agent.control.research_budget import DuplicateExperiment, ResearchBudget
+from lqcd_agent.control.research_budget import DuplicateExperiment, ResearchBudget, plan_exhausted
 from lqcd_agent.control.strict_json import ControlIntegrityError, closed, digest, loads, number, require, text
 from lqcd_agent.inspection import host_root, read_snapshot, read_preparation
-from lqcd_agent.code_agent.execution import ANALYSIS_PARAMETERS
+from lqcd_agent.code_agent.execution import FAMILY_CONTROLS
 
 
 def experiment_config(config, proposal):
@@ -27,8 +27,7 @@ def experiment_config(config, proposal):
     program = result['generated_program']
     parameters = program['parameters']
     family = program['result_kind']
-    allowed = (set(ANALYSIS_PARAMETERS) - {'omit_reference'} if family == 'c2' else
-               {'omit_reference'} if family == 'normalization' else set()) | set(parameters)
+    allowed = FAMILY_CONTROLS[family]
     seen = set()
     for change in proposal['parameter_changes']:
         closed(change, ('name', 'value_json'))
@@ -49,8 +48,6 @@ def experiment_config(config, proposal):
                     'Invalid fit-window experiment')
         elif name in ('fixed_ground_energy', 'omit_reference'):
             require(type(value) is bool, 'Experiment flag must be boolean')
-        elif name in parameters:
-            require(type(value) is type(parameters[name]), 'Experiment changed parameter type')
         parameters[name] = value
     require(type(proposal['method_ids']) is list and len(proposal['method_ids']) <= 16 and
             all(type(item) is str and item for item in proposal['method_ids']), 'Invalid experiment methods')
@@ -85,14 +82,40 @@ def continue_research(host, locator):
     if selected is None:
         return None
     request, evidence_sha = selected
-    preparation = goal['workflow'] == 'intake'
-    lineage = 'preparation' if preparation else 'experiment'
-    evidence_field = 'plan_sha256' if preparation else 'review_sha256'
+    if goal['workflow'] == 'intake':
+        if goal['plan_mode'] != 'auto':
+            return None
+        # Automatic and operator-selected plans use the same version-bound admission.
+        from lqcd_agent.runtime import ApplicationRequest, submit
+        from lqcd_agent.inspection import read_operation
+        key = 'preparation-' + digest([locator, evidence_sha])
+        old = read_operation(snapshot.host, key)
+        if old is not None and old['status'] == 'committed':
+            return None
+        if old is None:
+            clock = HostClock() if goal['live'] else FakeClock(100, 0)
+            with closing(Coordinator(snapshot.host, clock=clock)) as coordinator:
+                quota = ResearchBudget(coordinator, locator)
+                account = quota.snapshot()
+                if any(row['parent'] == locator for row in account['runs']) or digest(locator) in account['unexecuted_experiments']:
+                    return None
+                if plan_exhausted(account, clock.now().monotonic_seconds):
+                    quota.decline_experiment(digest(request), 'research_budget_exhausted')
+                    return None
+        admitted = submit(ApplicationRequest('run', key=key, host=host, case=locator['case_id'], project=goal['project_id'],
+            project_digest=goal['project_sha256'], live=goal['live'], intake_parent=locator['run_id'],
+            plan_action='execute', plan_digest=evidence_sha))
+        return admitted.status['run_locator'] if admitted.advance else None
+    lineage = 'experiment'
+    evidence_field = 'review_sha256'
     clock = HostClock() if goal['live'] else FakeClock(100, 0)
     with closing(Coordinator(snapshot.host, clock=clock)) as coordinator:
         quota = ResearchBudget(coordinator, locator)
         account = quota.snapshot()
         if digest(locator) in account['unexecuted_experiments']:
+            return None
+        if goal.get('plan_mode') == 'review':
+            quota.decline_experiment(digest(request), 'new_scientific_scope_requires_review')
             return None
         request_key = lineage + '-' + digest([locator, evidence_sha, request])
         existing = coordinator.lookup_key('public_control', request_key)
@@ -116,21 +139,12 @@ def continue_research(host, locator):
             workspace = Path(child_goal['workspace'])
         else:
             workspace = Path(goal['workspace'])
-            if preparation:
-                from .intake import snapshot_intake
-                observed = snapshot_intake(workspace, goal['project_snapshot'])
-                require(observed == goal['intake'], 'Research inputs changed after preparation; start a new intake')
-                config = deepcopy(request['case_config'])
-                require(config['case_id'] == locator['case_id'], 'Preparation changed its case identity')
-                require(config.get('raw_data_path') == (goal['case_config'] or {}).get('raw_data_path'),
-                        'Preparation changed its operator data source')
-            else:
-                try:
-                    config = experiment_config(goal['case_config'], request)
-                except (ControlIntegrityError, ValueError, TypeError, KeyError):
-                    quota.decline_experiment(digest(request), 'unsupported_experiment_scope')
-                    return None
-            if not preparation and request['method_ids']:
+            try:
+                config = experiment_config(goal['case_config'], request)
+            except (ControlIntegrityError, ValueError, TypeError, KeyError):
+                quota.decline_experiment(digest(request), 'unsupported_experiment_scope')
+                return None
+            if request['method_ids']:
                 from .library import Library
                 try:
                     records = [Library(workspace).read('method', item) for item in request['method_ids']]
@@ -149,17 +163,19 @@ def continue_research(host, locator):
                 quota.decline_experiment(digest(request), 'method_not_independently_qualified')
                 return None
             methods_sha = digest(method_sources)
-            if not preparation and any(row['parameters_sha256'] == parameters_sha and row['methods_sha256'] == methods_sha
+            if any(row['parameters_sha256'] == parameters_sha and row['methods_sha256'] == methods_sha
                    for row in account['runs']):
                 quota.decline_experiment(digest(request), 'no_new_analysis_parameters_or_methods')
                 return None
-            if not preparation:
-                config['generated_program']['requirements'].append('Additional scientific check: ' + request['question'])
+            config['generated_program']['requirements'].append('Additional scientific check: ' + request['question'])
             child_goal = {**deepcopy(goal), 'workflow': 'scientific', 'case_config': config, 'method_sources': method_sources,
-                          'goal': goal['goal'] if preparation else goal['goal'] + '\nAdditional experiment: ' + request['question'],
+                          'goal': goal['goal'] + '\nAdditional experiment: ' + request['question'],
                           'research_task': {**goal['research_task'], 'parent': dict(locator)},
                           lineage: {'parent': dict(locator), evidence_field: evidence_sha,
                                          'proposal': request, 'proposal_sha256': digest(request), 'request_key': request_key}}
+            child_goal.pop('preparation', None)
+            child_goal.pop('previous_plan', None)
+            child_goal.pop('plan_origin', None)
             child_goal.pop('intake_parent', None)
             child_goal['request_intent'] = {'command': lineage, 'parent': dict(locator),
                                            'proposal_sha256': digest(request), evidence_field: evidence_sha}
@@ -196,33 +212,59 @@ def continuation_pending(snapshot):
         return False
     from lqcd_agent.inspection import read_operation
     request, evidence_sha = proposal(snapshot)
-    key = ('preparation' if goal['workflow'] == 'intake' else 'experiment') + '-' + digest([snapshot.locator, evidence_sha, request])
+    if goal['workflow'] == 'intake':
+        if goal['plan_mode'] != 'auto':
+            return False
+        key = 'preparation-' + digest([snapshot.locator, evidence_sha])
+    else:
+        key = 'experiment-' + digest([snapshot.locator, evidence_sha, request])
     existing = read_operation(snapshot.host, key)
     if existing is not None:
         return existing['status'] == 'in_progress'
+    if goal['workflow'] == 'intake' and any(row['parent'] == snapshot.locator for row in account['runs']):
+        return False
     now = HostClock().now().monotonic_seconds if goal['live'] else 0
-    return account['remaining_model_calls'] > 0 and account['remaining_tokens'] > 0 and now < account['deadline'] and account['remaining_runs'] > 0
+    return not plan_exhausted(account, now)
 
 
-def clarification_parent(host, case, run, project, live, workspace):
-    """An explicit reply continuation can consume, never replace, its old task."""
-    locator = {'case_id': case, 'run_id': run}
-    snapshot = read_snapshot(host, locator)
-    goal = loads(read_regular(snapshot.root/'root_goal.json'))
-    require(snapshot.state['run_status'] == 'completed' and goal.get('workflow') == 'intake',
-            'Only a completed research preparation can receive clarification')
-    require(goal['workspace'] == str(workspace) and goal['project_id'] == project['id'] and goal['live'] == live,
-            'Clarification cannot change workspace, Project or model authority')
-    selected = read_preparation(snapshot.root)
-    require(selected is not None and selected[0]['status'] == 'needs_information',
-            'This preparation is not waiting for scientific information')
+def select_plan(request, project, workspace, intake):
+    """Select immutable preparation bytes and recheck the current executable inputs."""
     from lqcd_agent.control.pause import runtime_fingerprint
-    require(snapshot.fingerprint == runtime_fingerprint(), 'Clarification needs the original supported runtime')
+    from lqcd_agent.control.research_budget import inspect_budget
     from .projects import ProjectStore
-    current_contributions = ProjectStore(workspace).contributions(project['id'],
-        run={'host': host.name.removeprefix('lqcd-agent-host-'), **locator})
-    original_contributions = goal.get('intake_contributions', [])
-    require(project['sha256'] != goal['project_sha256'] or
-            bool({item['sha256'] for item in current_contributions} - set(original_contributions)),
-            'Supply a scientific reply or update the Project inputs before continuing')
-    return goal['research_task'], locator
+    parent = {'case_id': request.case, 'run_id': request.intake_parent}
+    snapshot = read_snapshot(host_root(request.host), parent)
+    goal = loads(read_regular(snapshot.root/'root_goal.json'))
+    require(snapshot.state['run_status'] == 'completed' and goal['workflow'] == 'intake' and
+            snapshot.fingerprint == runtime_fingerprint(), 'Plan action needs the original completed preparation and runtime')
+    require(goal['workspace'] == str(workspace) and goal['project_id'] == project['id'] and
+            goal['live'] == request.live, 'Plan action cannot change workspace, Project or model authority')
+    sealed = read_preparation(snapshot.root)
+    require(sealed is not None and sealed[1] == request.plan_digest, 'Selected plan digest changed')
+    proposal = sealed[0]
+    if proposal['status'] == 'ready':
+        config = proposal['case_config']
+        require(config['case_id'] == parent['case_id'] and
+                config.get('raw_data_path') == goal['case_config'].get('raw_data_path'),
+                'Prepared plan changed its original case or data source')
+    account = inspect_budget(snapshot.host, parent)
+    clock = HostClock() if goal['live'] else FakeClock(100, 0)
+    renew = request.plan_action == 'renew'
+    require(plan_exhausted(account, clock.now().monotonic_seconds) == renew,
+            'Use the original remaining quota, or explicitly renew an exhausted plan')
+    notes = ProjectStore(workspace).research_inputs(project['id'], snapshot.host, parent)
+    unread = {row['sha256'] for row in notes} - set(proposal['scientific_input_sha256'])
+    unchanged = project['sha256'] == goal['project_sha256'] and intake == goal['intake'] and not unread
+    ready = proposal['status'] == 'ready'
+    if ready and unchanged:
+        from .methods import snapshot_methods
+        try:
+            snapshot_methods(proposal['case_config'], workspace)
+        except (ControlIntegrityError, FileNotFoundError):
+            unchanged = False
+    if request.plan_action == 'execute':
+        require(ready and unchanged, 'Research inputs changed after preparation or plan needs revision')
+    if request.plan_action == 'revise':
+        require(not unchanged, 'Supply scientific feedback or update the Project inputs before revising')
+    return {'goal': goal, 'proposal': proposal, 'parent': parent,
+            'execute': request.plan_action != 'revise' and ready and unchanged}
