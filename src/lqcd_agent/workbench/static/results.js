@@ -22,7 +22,7 @@ export function resultRecords(result, basis) {
     const records = list(result.fits).map((fit, index) => {
       const window = '['+number(fit.tmin)+', '+number(fit.tmax)+']';
       const group = number(fit.nstates)+'-state';
-      return {context: 'fits['+index+']: '+group+' fit, t/a = '+window,
+      return {pointer: '/fits/'+index, fields: Object.keys(fit), context: 'fits['+index+']: '+group+' fit, t/a = '+window,
         key: index, title: group+' fit · '+window, cells: [window, group, number(fit.E0), number(fit.E0_error),
           number(fit.chi2_dof), counts(fit.bootstrap_successes, fit.bootstrap_total)],
         x: fit.tmin, end: fit.tmax, series: fit.nstates, y: fit.E0, error: fit.E0_error,
@@ -126,9 +126,9 @@ function intervalPlot(model, select) {
   return figure;
 }
 
-function sourceActions(source, context, state) {
+function sourceActions(source, context, state, pointer) {
   const bar=element('div','result-actions');
-  bar.append(button('View source record','result-link',()=>state.actions.openEvidence(source,context)));
+  bar.append(button('View source record','result-link',()=>state.actions.openEvidence(source,context,pointer)));
   if (state.actions.contribute) bar.append(button('Discuss this record','result-link',()=>state.actions.contribute(source,context)));
   return bar;
 }
@@ -145,7 +145,22 @@ function recordInspector(node, record, source, state) {
   const meta=element('dl','result-meta');
   for (const [label,value] of record.metadata || []) if (value) meta.append(element('dt',null,label),element('dd',null,value));
   meta.append(element('dt',null,'Failed replica IDs'),element('dd',null,replicaIdsLabel(record.failed)));
-  node.append(meta,sourceActions(source,record.context,state));
+  node.append(meta,sourceActions(source,record.context,state,record.pointer));
+  if (record.pointer && state.actions.correct) {
+    const field = element('select');
+    field.setAttribute('aria-label','Correction target');
+    const options = [['','Whole fit'],['E0','Ground-state energy'],['E0_error','Ground-state uncertainty'],
+      ['chi2_dof','χ²/dof'],['tmin','Window start'],['tmax','Window end'],['nstates','State count'],
+      ['bootstrap_successes','Successful replicas'],['bootstrap_total','Total replicas'],['failed_sample_ids','Failed replica IDs']];
+    for (const [key,label] of options) {
+      if (key && !record.fields.includes(key)) continue;
+      const option = element('option',null,label);
+      option.value = key ? record.pointer+'/'+key : record.pointer;
+      field.append(option);
+    }
+    node.append(element('div','result-actions',field,
+      button('Record a correction','result-link',()=>state.actions.correct(source,field.value))));
+  }
 }
 
 const displayed = new WeakMap();
@@ -158,6 +173,50 @@ export function formalResultSource(view) {
       ? ['domain',item.attempt_id,view.run_locator.case_id,view.run_locator.run_id,filename].join('/')
       : filename));
   return matches.length===1 ? matches[0] : null;
+}
+
+export function renderC2Conclusion(container, view, reader) {
+  container.replaceChildren();
+  const chain = view.summaries?.['memory_update.json']?.c2_evidence;
+  const source = formalResultSource(view);
+  if (!chain) {
+    if (source && view.comparison_basis?.family === 'c2' && view.summaries?.['memory_update.json']) {
+      container.append(element('p','result-muted','This report contains no structured fit selection or criterion citations.'));
+    }
+    return;
+  }
+  if (!source || source.sha256 !== chain.result_sha256) {
+    container.append(element('p','result-warning','Could not verify the Analysis source for the recorded decision.'));
+    return;
+  }
+  const fits = new Map(chain.fits.map(row=>[row.pointer,row]));
+  const fitLink = (row) => button(row.nstates+'-state ['+row.tmin+', '+row.tmax+'] · '+row.estimate+
+    ' · replicas '+row.replicas,'result-link',()=>reader.open(source,'Sealed C2 fit',row.pointer));
+  const preferred = fits.get(chain.selection.fit_pointer);
+  container.append(element('h3',null,'Fit selection'));
+  if (chain.selection.status === 'selected' && preferred) {
+    container.append(element('p',null,'Research Manager’s preferred fit · ',fitLink(preferred)));
+  } else {
+    container.append(element('p',null,chain.selection.status === 'no_preference'
+      ? 'The Research Manager reported no preferred ground-state energy.' : 'Fit preference was not assessed.'));
+  }
+  if (chain.fixed_ground_energy) container.append(element('p','result-warning','Fixed ground energy. The quoted uncertainty is conditional on the input constraint.'));
+  if (!chain.criteria.length) return;
+  container.append(element('h3',null,'Scientific decision criteria'));
+  const plan = list(view.evidence).find(item=>item.sha256===chain.plan_sha256 && item.name.endsWith('method_plan.json'));
+  const rows = element('ol','criterion-list');
+  for (const criterion of chain.criteria) {
+    const row = element('li',null,element('strong',null,criterion.text),element('p',null,
+      criterion.assessment ? 'Research Manager assessment · '+criterion.assessment : 'No recorded assessment'));
+    if (plan || view.project_id) row.append(button('Read selected criterion','result-link',()=>plan
+      ? reader.open(plan,'Selected plan criterion',criterion.pointer)
+      : reader.openSaved(view.project_id,chain.plan_sha256,'Selected plan criterion',criterion.pointer)));
+    for (const pointer of criterion.fit_pointers) {
+      if (fits.has(pointer)) row.append(fitLink(fits.get(pointer)));
+    }
+    rows.append(row);
+  }
+  container.append(rows);
 }
 
 export function resultWarnings(view, source=formalResultSource(view)) {
@@ -174,7 +233,7 @@ export function renderResults(container, view, actions) {
   const previous=displayed.get(container);
   const origin=JSON.stringify([view.host,view.run_locator,source?.id]);
   const key=JSON.stringify([origin,source?.sha256,Boolean(result),warnings,
-    basis.family,Boolean(actions.contribute)]);
+    basis.family,Boolean(actions.contribute),Boolean(actions.correct)]);
   if (previous?.key===key) {previous.actions=actions;return;}
   const state={key,origin,actions,selected:previous?.origin===origin ? previous.selected : null};
   displayed.set(container,state);container.replaceChildren();

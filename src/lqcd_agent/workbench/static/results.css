@@ -41,3 +41,8 @@
 @container (max-width:40rem){.result-grid{grid-template-columns:minmax(0,1fr)}}
 .result-view{container-type:inline-size}
 @media(pointer:coarse){.result-link,.result-record{min-height:44px}.result-mark{width:28px;height:28px}}
+
+.criterion-list li {margin-block:.8rem}
+.criterion-list p {margin:.15rem 0}
+.criterion-list .result-link {display:block;text-align:left}
+#correction-target {overflow-wrap:anywhere}

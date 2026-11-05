@@ -269,8 +269,12 @@ def _configuration(provider, proposal):
 
 
 def _outcome(context, output, preparation, collaboration):
-    preparation = {**preparation, 'scientific_input_sha256': [
-        row['sha256'] for row in context.get('human_contributions', [])]}
+    snapshot = context['root_goal']['intake']
+    dataset = snapshot['dataset_snapshot']
+    preparation = {**preparation, 'profile_sha256': digest(snapshot),
+        'dataset_identity': {key: dataset[key] for key in ('path', 'exists', 'sha256')} if dataset else None,
+        'interpreter_identity': snapshot['python_identity'],
+        'scientific_input_sha256': [row['sha256'] for row in context.get('human_contributions', [])]}
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     for name, value in (('preparation.json', preparation), ('collaboration.json', collaboration)):
@@ -290,7 +294,7 @@ def offline_preparation(context, output):
         'issues': [], 'challenges': [question], 'exchanges': [], 'next_experiment': None,
         'authority': 'Offline preparation does not execute research models or numerical analysis.'}
     return _outcome(context, output, {'status': 'needs_information', 'summary': question, 'questions': [question],
-        'assumptions': [], 'case_config': None, 'profile_sha256': digest(context['root_goal']['intake'])}, collaboration)
+        'assumptions': [], 'case_config': None}, collaboration)
 
 
 def run_intake(provider):
@@ -435,6 +439,6 @@ def run_intake(provider):
         return _outcome(context, output, {'status': 'needs_information' if questions else 'ready',
             'summary': discussion['summary'], 'questions': questions, 'assumptions': proposal['assumptions'],
             'choices':choices, 'blocking_issues':blockers, 'brief':brief, 'method_plan':method_plan,
-            'case_config': config, 'profile_sha256': digest(context['root_goal']['intake'])}, collaboration)
+            'case_config': config}, collaboration)
 
     return provider.plan(policy, inputs, ResearchOutput(IntakePlan), tools, resolve)

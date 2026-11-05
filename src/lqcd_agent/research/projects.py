@@ -146,8 +146,11 @@ class ProjectStore(WorkspaceFiles):
             raw = read_regular(self._path(f"projects/{project_id}/contributions/{identifier}.json"))
             require(len(raw) <= 65536 and sha256(raw).hexdigest() == identifier,
                     "Scientific contribution digest changed")
-            record = closed(loads(raw), ("schema_version", "project_id", "project_revision", "project_sha256",
-                "revision", "previous_sha256", "key", "author", "kind", "body", "evidence_sha256", "run", "created_at"))
+            record = loads(raw)
+            require(type(record) is dict, "Invalid scientific contribution record")
+            target_field = ("target",) if record.get("kind") == "correction" else ()
+            closed(record, ("schema_version", "project_id", "project_revision", "project_sha256", "revision",
+                "previous_sha256", "key", "author", "kind", "body", "evidence_sha256", "run", "created_at", *target_field))
             require(record["schema_version"] == "1" and record["project_id"] == project_id and
                     record["revision"] == revision and record["author"] == "operator",
                     "Scientific contribution chain changed")
@@ -159,11 +162,30 @@ class ProjectStore(WorkspaceFiles):
         require(identifier is None, "Scientific contribution chain changed")
         return list(reversed(records))
 
-    def contribute(self, project_id, *, expected_digest, key, kind, body, evidence_sha256=(), run=None):
+    def _check_correction(self, project_id, manifest, target):
+        """Resolve only the current formal C2 result in the observed closed Run."""
+        from .c2_evidence import resolve_c2_target
+
+        require(manifest["workflow"] == "scientific" and not manifest["preliminary"],
+                "Corrections require a concluded scientific Run")
+        entries = manifest["evidence"]
+        goals = [entry for entry in entries if entry["source"] == "input" and entry["name"] == "root_goal.json"]
+        require(len(goals) == 1, "Missing or ambiguous frozen Run goal")
+        goal = loads(self._blob(project_id, goals[0]["sha256"]))
+        require(((goal.get("case_config") or {}).get("generated_program") or {}).get("result_kind") == "c2",
+                "Field corrections require a C2 result")
+        formal = [entry for entry in entries if entry["current"] and entry["slot"] == "analysis" and
+                  entry["source"] == "artifact" and entry["name"] ==
+                  f"attempts/{entry['attempt_id']}/analysis_outputs/generated_result.json"]
+        require(len(formal) == 1 and formal[0]["sha256"] == target["sha256"],
+                "Correction must cite this Run's current formal C2 result")
+        resolve_c2_target(loads(self._blob(project_id, target["sha256"]), canonical=False), target["pointer"])
+
+    def contribute(self, project_id, *, expected_digest, key, kind, body, evidence_sha256=(), run=None, target=None):
         """Record operator scientific input; this never grants execution authority."""
         digest_value(expected_digest)
         component(key)
-        require(len(key) <= 128 and kind in ("scientific_comment", "question", "evidence"),
+        require(len(key) <= 128 and kind in ("scientific_comment", "question", "evidence", "correction"),
                 "Invalid scientific contribution")
         text(body)
         require(body.strip() and len(body) <= 16000, "Scientific contribution needs bounded text")
@@ -172,9 +194,17 @@ class ProjectStore(WorkspaceFiles):
         require(len(set(evidence_sha256)) == len(evidence_sha256), "Duplicate contribution evidence")
         references = sorted(evidence_sha256)
         require(kind != "evidence" or bool(references), "Evidence input needs registered references")
+        if kind == "correction":
+            closed(target, ("sha256", "pointer"))
+            digest_value(target["sha256"])
+            require(run is not None and target["sha256"] in references,
+                    "A correction needs a Run and its cited result SHA-256")
+        else:
+            require(target is None, "Only corrections carry a numerical target")
         for identifier in references:
-            # Registered project evidence is immutable; no arbitrary path or URL is read.
-            self.evidence(project_id, identifier)
+            # The correction result is checked against its exact Run under the write lock.
+            if target is None or identifier != target["sha256"]:
+                self.evidence(project_id, identifier)
         if run is not None:
             closed(run, ("host", "case_id", "run_id", "execution_head"))
             for name in ("host", "case_id", "run_id"):
@@ -182,6 +212,8 @@ class ProjectStore(WorkspaceFiles):
             digest_value(run["execution_head"])
         intent = {"project_sha256": expected_digest, "key": key, "kind": kind, "body": body,
                   "evidence_sha256": references, "run": run}
+        if target is not None:
+            intent["target"] = target
         with self._locked(write=True):
             current = self._read(project_id)
             records = self._contributions(project_id)
@@ -193,7 +225,10 @@ class ProjectStore(WorkspaceFiles):
             require(digest(current) == expected_digest, "Stale project revision")
             if run is not None:
                 run_key = digest({name: run[name] for name in ("host", "case_id", "run_id")})
-                self._run_manifest(project_id, run_key)
+                manifest = self._run_manifest(project_id, run_key)
+                if target is not None:
+                    require(manifest["execution_head"] == run["execution_head"], "Stale correction Run view")
+                    self._check_correction(project_id, manifest, target)
             record = {"schema_version": "1", "project_id": project_id,
                 "project_revision": current["revision"], **intent, "revision": len(records) + 1,
                 "previous_sha256": records[-1]["sha256"] if records else None,
@@ -441,8 +476,13 @@ class ProjectStore(WorkspaceFiles):
                         break
             if not found:
                 raise UnregisteredEvidence("Evidence is not registered to this project")
-            path = self._path(f"projects/{project_id}/evidence/{identifier}")
-            require(path.stat().st_size <= MAX_BYTES, "Project evidence is too large")
-            raw = read_regular(path)
-            require(sha256(raw).hexdigest() == identifier, "Project evidence digest changed")
-            return raw
+            return self._blob(project_id, identifier)
+
+    def _blob(self, project_id, identifier):
+        """Read content after verifying its registration in a Project manifest."""
+        digest_value(identifier)
+        path = self._path(f"projects/{project_id}/evidence/{identifier}")
+        require(path.stat().st_size <= MAX_BYTES, "Project evidence is too large")
+        raw = read_regular(path)
+        require(len(raw) <= MAX_BYTES and sha256(raw).hexdigest() == identifier, "Project evidence digest changed")
+        return raw

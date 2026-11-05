@@ -4,27 +4,57 @@ const lines = value => (Array.isArray(value) ? value : value == null ? [] : [val
 
 export function planSections(plan) {
   const brief = plan.brief || {}, method = plan.method_plan || {}, config = plan.case_config || {};
+  const program = config.generated_program || {}, dataset = plan.dataset_identity, python = plan.interpreter_identity;
   const checks = new Set([...(brief.discriminating_checks || []), ...(brief.success_criteria || [])]);
-  return Object.fromEntries(Object.entries({
-    'Research question': brief.physics_question || method.physics_goal,
-    'Competing explanations': brief.competing_explanations,
-    'Discriminating checks': brief.discriminating_checks,
-    'Decision criteria': brief.success_criteria,
-    'Analysis steps': method.method_steps?.filter(step => !checks.has(step)), 'Expected inputs': method.required_inputs,
-    'Observables': method.target_observables, 'Deliverables': method.required_outputs, 'Programs': method.selected_analysis_programs,
-    'Research Worker task': method.coder_task_summary,
-    'Data source': [config.raw_data_path, config.source_kind].filter(Boolean),
-    'Frozen parameters': config.generated_program?.parameters,
-    'Other implementation requirements': config.generated_program?.requirements?.filter(item => !method.method_steps?.includes(item)),
-    'Assumptions and limits': plan.assumptions,
-  }).map(([name, value]) => [name, lines(value)]));
+  const groups = {
+    'Scientific plan': {
+      'Research goal': config.physics_goal || method.physics_goal, 'Research question': brief.physics_question,
+      'Competing explanations': brief.competing_explanations, 'Discriminating checks': brief.discriminating_checks,
+      'Decision criteria': brief.success_criteria, 'Assumptions and limits': plan.assumptions,
+      'Analysis steps': method.method_steps?.filter(step => !checks.has(step)), 'Expected inputs': method.required_inputs,
+      'Observables': method.target_observables || config.target_observables, 'Deliverables': method.required_outputs,
+      'Research Worker task': method.coder_task_summary,
+    },
+    'Execution bindings': {
+      'Data file': config.raw_data_path || dataset?.path, 'Data provenance': config.source_kind,
+      'Data content SHA-256': dataset?.exists === false ? 'File missing at preparation' : dataset?.sha256,
+      'Scientific interpreter': program.python || python?.path, 'Resolved interpreter': python?.realpath,
+      'Interpreter SHA-256': python?.sha256, 'Result type': program.result_kind,
+      'Frozen parameters': Object.entries(program.parameters || {}).map(([key,value]) => key+' = '+line(value)),
+      'Numerical timeout (seconds)': program.timeout_seconds, 'Registered programs': method.selected_analysis_programs,
+      'Requested program tags': config.analysis_program_tags, 'Explicit analysis commands': config.analysis_commands,
+      'Allowed analysis commands': config.allowed_analysis_commands, 'Configured output checks': config.expected_outputs,
+      'Reference files': config.golden_reference_files, 'Reference directory': config.golden_example_root,
+      'Requested method versions': config.method_dependencies,
+      'Other implementation requirements': program.requirements?.filter(item => !method.method_steps?.includes(item)),
+      'Intake snapshot SHA-256': plan.profile_sha256,
+    },
+  };
+  return Object.fromEntries(Object.entries(groups).map(([group,sections]) =>
+    [group,Object.fromEntries(Object.entries(sections).map(([name,value]) => [name,lines(value)]))]));
 }
 
 export function planDiff(previous, current) {
-  const before = {...planSections(previous), 'Open questions': lines(previous.questions)},
-    after = {...planSections(current), 'Open questions': lines(current.questions)};
-  return Object.keys(after).filter(key => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
-    .map(section => ({section, before: before[section], after: after[section]}));
+  function comparison(plan) {
+    const groups = planSections(plan);
+    Object.assign(groups['Scientific plan'], {'Readiness': lines(plan.status), 'Plan summary': lines(plan.summary),
+      'Open questions': lines(plan.questions), 'Proposed choices': lines(plan.choices), 'Blocking issues': lines(plan.blocking_issues),
+      'Scientific input SHA-256': lines(plan.scientific_input_sha256)});
+    return groups;
+  }
+  const before = comparison(previous), after = comparison(current), changes = [];
+  for (const [group, sections] of Object.entries(after)) {
+    for (const [section, values] of Object.entries(sections)) {
+      if (JSON.stringify(before[group][section]) !== JSON.stringify(values)) {
+        changes.push({group, section, before: before[group][section], after: values});
+      }
+    }
+  }
+  return changes;
+}
+
+export function planDraftKey(host, project, caseId, run, digest) {
+  return 'lqcd-workbench:plan-draft:'+JSON.stringify([host,project,caseId,run,digest]);
 }
 
 export function planningAccess(view, project, children) {
@@ -36,7 +66,10 @@ export function planningAccess(view, project, children) {
     renew: actionable && Boolean(view.plan_exhausted)};
 }
 
-export function planFeedback(answers, instruction) {
-  return [...answers.filter(({answer}) => answer.trim()).map(({question, answer}) =>
-    question+'\n'+answer.trim()), instruction.trim()].filter(Boolean).join('\n\n');
+export function planFeedback({answers, instruction}) {
+  const replies = answers.map(({question, choice, note}) => {
+    const reply = [choice, note.trim()].filter(Boolean).join(' — ');
+    return reply ? question+'\n'+reply : '';
+  });
+  return [...replies, instruction.trim()].filter(Boolean).join('\n\n');
 }

@@ -95,6 +95,14 @@ class CollaborationModel(Model):
                     self.edit_plan(value)
             elif name == 'scientific_review_report_discussion':
                 value = {'proposal': proposal('scientific_review_report'), 'discussion': discussion()}
+            elif name == 'C2Discussion':
+                packet = next(json.loads(m['content'])['current_c2_analysis'] for m in input
+                              if isinstance(m.get('content'), str) and '"current_c2_analysis":' in m['content'])
+                criterion = packet['decision_criteria'][0]['pointer']
+                row = packet['sealed_fits'][0]['pointer']
+                value = discussion(c2_interpretation={'assessments': [
+                    {'criterion': criterion, 'assessment': 'supports', 'fit_pointers': [row]}],
+                    'selection': 'selected', 'preferred_fit': row})
             else:
                 assert name == 'Discussion'
                 value = discussion()

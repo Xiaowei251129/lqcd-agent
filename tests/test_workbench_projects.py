@@ -256,6 +256,66 @@ def test_run_contributions_bind_observed_head_and_registered_project_evidence(wo
     assert workbench.projects.contributions(project['id'], run={**{k: bound[k] for k in ('host', 'case_id', 'run_id')}, 'run_id': 'different'}) == []
 
 
+def test_c2_correction_binds_the_observed_run_result_and_field(workbench, monkeypatch):
+    from lqcd_agent.research.history import project_history, project_state_view
+    from lqcd_agent.runtime import execute
+    from tests.test_intake_flow import completed_intake, plan_action
+    from tests.test_scientific_codegen import deliver
+
+    prepared, project, _ = completed_intake(workbench.workspace, monkeypatch)
+    finished = deliver(execute(plan_action(prepared, project, 'execute')))
+    http = client(workbench)
+    project_id = project['id']
+    endpoint = f'/api/projects/{project_id}/contributions'
+    runs = workbench.projects.runs(project_id)
+    formal = next(run for run in runs if run['workflow'] == 'scientific')
+    source = next(e['sha256'] for e in formal['evidence'] if e['source'] == 'artifact' and
+                  e['current'] and e['slot'] == 'analysis' and e['name'].endswith('/analysis_outputs/generated_result.json'))
+    bound = {'host': finished['host'], **formal['run_locator'], 'execution_head': formal['execution_head']}
+    target = {'sha256': source, 'pointer': '/fits/0/E0_error'}
+    body = contribution(project, 'correct-error', kind='correction', body='Use the sealed absolute uncertainty.',
+                        evidence_sha256=[source], run=bound, target=target)
+    registered = http.post(endpoint, json=body)
+    assert registered.status_code == 201, registered.text
+    assert registered.json()['target'] == target and registered.json()['author'] == 'operator'
+    assert http.post(endpoint, json=body).json() == registered.json()
+    other_blob = next(e['sha256'] for e in formal['evidence'] if e['name'] == 'root_goal.json')
+    for changes in ({'target': {**target, 'pointer': '/fits/200/E0_error'}},
+                    {'target': {**target, 'pointer': '/fits/0/authority'}},
+                    {'run': None}, {'run': {**bound, 'execution_head': '0'*64}},
+                    {'target': {**target, 'sha256': other_blob}, 'evidence_sha256': [other_blob]},
+                    {'run': {'host': prepared['host'], **prepared['run_locator'],
+                             'execution_head': prepared['execution_head']}}):
+        assert http.post(endpoint, json={**body, 'key': 'invalid-correction', **changes}).status_code == 409
+    assert http.post(endpoint, json={**body, 'target': {**target, 'pointer': '/fits/1/E0_error'}}).status_code == 409
+
+    # Later operators can append a row note against the verified capture when the Host is gone.
+    monkeypatch.setattr(workbench, '_host_missing', lambda _: True)
+    note = http.post(endpoint, json={**body, 'key': 'correct-row', 'target': {**target, 'pointer': '/fits/0'}})
+    assert note.status_code == 201, note.text
+    plain = http.post(endpoint, json=contribution(project, 'ordinary-comment', run=bound,
+                      body='Consider /fits/0/E0_error before reusing the mass.'))
+    assert plain.status_code == 201 and 'target' not in plain.json()
+    assert http.get(endpoint).json() == [registered.json(), note.json(), plain.json()]
+    assert sha256(workbench.projects.evidence(project_id, source)).hexdigest() == source
+    history = project_history(workbench.workspace, project_id)
+    [item] = history['c2_results']
+    assert (item['host'], item['run_locator'], item['result_sha256']) == (bound['host'], formal['run_locator'], source)
+    terminal = next(e['sha256'] for e in formal['evidence'] if e['current'] and e['slot'] == 'terminal' and
+                    e['name'].endswith('/memory_update.json'))
+    assert item['terminal_sha256'] == terminal
+    chain = loads(workbench.projects.evidence(project_id, terminal))['c2_evidence']
+    assert chain['plan_sha256'] == prepared['plan_digest'] and chain['result_sha256'] == source
+    plan = loads(workbench.projects.evidence(project_id, chain['plan_sha256']))['domain_result']['preparation']
+    assert plan['brief']['success_criteria']
+    assert chain['criteria'] == [{'text': rule, 'pointer': f'/domain_result/preparation/brief/success_criteria/{i}',
+                                  'assessment': None, 'fit_pointers': []} for i, rule in enumerate(plan['brief']['success_criteria'])]
+    assert item['corrections'] == [{k: r.json()[k] for k in ('sha256', 'target', 'body', 'author', 'revision')}
+                                   for r in (registered, note)]
+    compact = project_state_view(history)['c2_results'][0]['corrections']
+    assert compact == [{k: row[k] for k in ('sha256', 'target', 'author', 'revision')} for row in item['corrections']]
+
+
 def test_contribution_hash_chain_rejects_tampering_and_concurrent_duplicates(workbench):
     from concurrent.futures import ThreadPoolExecutor
     from lqcd_agent.control.strict_json import ControlIntegrityError

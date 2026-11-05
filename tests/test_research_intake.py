@@ -22,6 +22,7 @@ def fixture_intake_project(workspace):
     path = workspace/'raw_data/correlator.json'
     path.parent.mkdir(exist_ok=True)
     path.write_text(json.dumps({'source_kind': 'synthetic_placeholder', 'nt': 16,
+        'ns': 16, 'pz': 0, 'lattice_spacing_fm': 0.1,
         'configuration_ids': [11, 12, 13, 14], 'configurations': [[937.24681012]*16 for _ in range(4)]}))
     return {'id': 'intake-case', 'goal': 'Compare fit-window sensitivity without changing the declared source.',
         'case_config': {'raw_data_path': 'raw_data/correlator.json',
@@ -144,6 +145,10 @@ def test_intake_sdk_builds_only_host_resolved_contract_and_retains_source_eviden
     assert config['raw_data_path'] == project['case_config']['raw_data_path']
     assert config['case_id'] == context['identity']['case_id'] and config['source_kind'] == 'synthetic_placeholder'
     assert config['generated_program']['python'] == sys.executable
+    snapshot = context['root_goal']['intake']
+    assert preparation['dataset_identity'] == {key: snapshot['dataset_snapshot'][key] for key in ('path', 'exists', 'sha256')}
+    assert preparation['interpreter_identity'] == snapshot['python_identity']
+    assert preparation['profile_sha256'] == digest(snapshot)
     assert config['generated_program']['parameters']['bootstrap_samples'] == 8
     assert 'Retain each requested estimate.' in config['generated_program']['requirements']
     assert not outcome['content']['code_needed'] and outcome['diagnostic']['category'] == 'research_intake'

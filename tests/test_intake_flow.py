@@ -66,8 +66,8 @@ def test_preparation_runs_real_sdk_then_admits_scientific_child_with_original_qu
     assert quota['model_calls'] == 1 and quota['charged_tokens'] == 15
     assert status['next_action'] == 'review_plan' and not status['plan_exhausted']
     assert continue_research(status['host'], parent) is None
-    from lqcd_agent.research.experiments import continuation_pending
-    assert not continuation_pending(snapshot)
+    from lqcd_agent.research.experiments import continuation_state
+    assert continuation_state(snapshot, loads((snapshot.root/'root_goal.json').read_bytes())) == 'settled'
     accept = plan_action(status, project, 'execute')
     with pytest.raises(ControlIntegrityError, match='plan digest changed'):
         runtime.submit(replace(accept, key='stale', plan_digest='0'*64))

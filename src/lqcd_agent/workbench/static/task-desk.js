@@ -1,4 +1,4 @@
-import {planSections, planDiff, planningAccess} from './planning.js';
+import {planSections, planDiff, planningAccess, planDraftKey, planFeedback} from './planning.js';
 /* Read-only navigation and layout. The application owns every control submission. */
 const byId = id => document.getElementById(id);
 const readable = value => String(value ?? '').replaceAll('_', ' ');
@@ -124,7 +124,32 @@ function section(name, values) {
   return group;
 }
 
-function answerField(question, choice, index) {
+export function currentPlanReply() {
+  const answers = [...byId('preparation-questions').querySelectorAll('fieldset')].map(field => ({
+    question: field.dataset.question, choice: field.querySelector('input:checked')?.value || '',
+    note: field.querySelector('textarea').value,
+  }));
+  return {answers, instruction: byId('plan-feedback').value};
+}
+
+export function savePlanDraft() {
+  const key = byId('preparation-panel').dataset.editableDraft;
+  if (!key) return true;
+  const draft = currentPlanReply(), hasText = Boolean(planFeedback(draft));
+  try {
+    if (hasText) localStorage.setItem(key, JSON.stringify(draft));
+    else localStorage.removeItem(key);
+    putText('plan-draft-status', hasText ? 'Unsubmitted draft saved in this browser.' : '');
+    return true;
+  } catch {
+    putText('plan-draft-status', 'Browser storage is unavailable. Keep this page open or copy your answers.');
+    return false;
+  }
+}
+byId('preparation-questions').addEventListener('input', savePlanDraft);
+byId('plan-feedback').addEventListener('input', savePlanDraft);
+
+function answerField(question, choice, index, draft) {
   const field = element('fieldset', undefined, 'plan-question');
   field.dataset.question = question;
   field.append(element('legend', question));
@@ -132,13 +157,14 @@ function answerField(question, choice, index) {
     for (const option of [...choice.options, {label: 'Delegate this choice to the Research Manager', consequence: 'The Research Manager will explain the choice in the revised plan.'}]) {
       const label = element('label', undefined, 'check'), input = element('input');
       input.type = 'radio'; input.name = 'answer-'+index; input.value = option.label;
+      input.checked = draft?.choice === option.label;
       const content = element('span', option.label+(option.label === choice.recommended ? ' (recommended)' : ''));
       content.append(element('small', option.consequence)); label.append(input, content); field.append(label);
     }
   }
   const label = element('label', choice ? 'Your answer or additional context' : 'Supply the missing information');
   const text = element('textarea'); text.id = 'plan-answer-'+index; label.htmlFor = text.id;
-  text.rows = 2; text.maxLength = 3000; field.append(label, text);
+  text.rows = 2; text.maxLength = 3000; text.value = draft?.note || ''; field.append(label, text);
   return field;
 }
 
@@ -162,32 +188,70 @@ function preparation(view, runs, project, onSelect) {
     const facts = profile ? [profile.format, ...Object.entries(profile.shapes || {}).map(([field,shape]) =>
       field+' · '+shape.join(' × ')), ...Object.entries(profile.metadata || {}).map(([name,value]) =>
       name+' = '+JSON.stringify(value))].filter(Boolean) : [];
-    return Object.entries({'Verified input profile':facts, ...sections})
-      .filter(([,values]) => values.length).map(([name, values]) => section(name, values));
+    const items = facts.length ? [section('Verified input profile', facts)] : [];
+    const hashes = [];
+    for (const fields of Object.values(sections)) {
+      for (const [name,values] of Object.entries(fields)) {
+        if (values.length) (name.includes('SHA-256') ? hashes : items).push(section(name, values));
+      }
+    }
+    if (hashes.length) {
+      const details = element('details', undefined, 'fold');
+      details.append(element('summary','Frozen input identities'), ...hashes); items.push(details);
+    }
+    return items;
   });
   updateSection('plan-diff', [current,version,previous?.plan_sha256], () => {
     if (!previous?.proposal || !data) return [];
     const diff = planDiff(previous.proposal, data), details = element('details', undefined, 'fold');
-    details.append(element('summary', 'Changes from previous plan ('+diff.length+')'));
-    for (const change of diff) {
-      const group = element('section'); group.append(element('h3', change.section),
-        section('Previously', change.before.length ? change.before : ['—']),
-        section('Now', change.after.length ? change.after : ['—'])); details.append(group);
+    const summary = diff.map(change => change.section.replace(' SHA-256', ''));
+    details.append(element('summary', diff.length ? 'Changed since previous plan: '+summary.join(', ') :
+      'No changes in the compared plan fields'));
+    for (const name of [...new Set(diff.map(change => change.group))]) {
+      const group = element('section'); group.append(element('h3', name));
+      for (const change of diff.filter(row => row.group === name)) {
+        const item = element('div', undefined, 'plan-section');
+        item.append(element('h4', change.section),
+          element('p', 'Previously: '+(change.before.join(' · ') || 'Not recorded')),
+          element('p', 'Now: '+(change.after.join(' · ') || 'Not recorded')));
+        group.append(item);
+      }
+      details.append(group);
     }
     return [details];
   });
-  updateSection('preparation-questions', [current,version,data?.questions,access.revise], () => {
+  const key = matched && version ? planDraftKey(view.host,project.id,view.run_locator.case_id,view.run_locator.run_id,version) : '';
+  let draft, draftStatus = '';
+  try {
+    draft = key && JSON.parse(localStorage.getItem(key));
+    if (draft) draftStatus = 'Unsubmitted draft saved in this browser.';
+  } catch {
+    draftStatus = 'The local draft could not be read in this browser.';
+  }
+  byId('preparation-panel').dataset.editableDraft = access.revise ? key : '';
+  putText('plan-draft-status', access.revise ? draftStatus : '');
+  updateSection('preparation-questions', [current,version,data?.questions,access.revise,!access.revise && draft], () => {
     const questions = data?.questions || [];
-    if (!questions.length) return [];
-    if (!access.revise) return [section('Recorded questions', questions)];
-    const first = questions.slice(0,3).map((q,i) => answerField(q, data.choices?.find(c => c.question === q), i));
+    if (!access.revise) {
+      const items = questions.length ? [section('Recorded questions', questions)] : [];
+      if (draft) {
+        const details = element('details', undefined, 'fold');
+        details.append(element('summary','Your unsubmitted draft (read-only)'),element('pre',planFeedback(draft)));
+        items.push(details);
+      }
+      return items;
+    }
+    const first = questions.slice(0,3).map((q,i) => answerField(q, data.choices?.find(c => c.question === q), i,
+      draft?.answers?.find(answer => answer.question === q)));
     if (questions.length > 3) first.push(section('Other open prerequisites', questions.slice(3)));
     return first;
   });
   const revision = byId('plan-revision');
-  if (revision.dataset.plan !== current+version) {
-    revision.open = status === 'needs_information'; revision.dataset.plan = current+version;
-    byId('plan-feedback').value = '';
+  const editing = key+'|'+access.revise;
+  if (revision.dataset.plan !== editing) {
+    revision.open = status === 'needs_information' || Boolean(access.revise && draft?.instruction);
+    revision.dataset.plan = editing;
+    byId('plan-feedback').value = access.revise ? draft?.instruction || '' : '';
   }
   byId('plan-actions').hidden = !access.revise && !access.execute && !access.renew;
   byId('plan-execute').hidden = !access.execute;
@@ -216,6 +280,9 @@ export function renderTaskDesk(view, runs, project, onSelect) {
   moveTo('project-editor', edit && !view.archived ? 'clarification-editor' : 'editor-home');
   byId('project-panel').classList.toggle('compact', Boolean(view && project));
   if (!view) {
+    byId('preparation-panel').dataset.editableDraft = '';
+    delete byId('plan-revision').dataset.plan;
+    rendered.delete(byId('preparation-questions'));
     byId('navigation-toggle').setAttribute('aria-expanded', 'false');
     return;
   }
@@ -238,8 +305,8 @@ export function renderTaskDesk(view, runs, project, onSelect) {
   const terminal = view.summaries?.['memory_update.json'];
   const failure = view.execution_failure?.summary || (view.outcome_source === 'control_closure' &&
     'The Host recorded an execution closure without a scientific final report.');
-  const reason = failure || review?.summary || view.summaries?.['scientific_review_report.json']?.summary ||
-    terminal?.classification_reason;
+  const reason = failure || (terminal?.c2_evidence && terminal.classification_reason) ||
+    review?.summary || view.summaries?.['scientific_review_report.json']?.summary || terminal?.classification_reason;
   const outstanding = (review?.issues || []).filter(issue => ['open','blocked'].includes(issue.status));
   const show = Boolean(!intake && closed(view) && (reason || outstanding.length));
   byId('conclusion-box').hidden = !show;

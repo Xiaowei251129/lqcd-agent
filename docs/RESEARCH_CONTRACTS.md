@@ -39,6 +39,10 @@ The Research Worker can test its current source with `run_numerical_trial`. Its 
 
 Research can end without a Human Response. Terminal artifacts distinguish `supported`, `qualified` and `inconclusive` outcomes, actual decision provenance and remaining limitations. Optional operator input is scientific evidence, not execution authorization. Additional authority uses the original scoped pause/response mechanism.
 
+For C2 outputs that pass Host validation or carry warnings, Reviewer and Research Manager receive the selected criteria and the registered fit rows. The Manager can cite fit rows as supporting, limiting or contradicting a criterion. A preferred fit requires a supporting criterion citing that row. Explicitly declining to select a fit and leaving the question unassessed are separate outcomes. The Host resolves the pointers and renders the stored estimate, uncertainty and replica counts in the terminal report. Each role’s interpretation retains its attribution.
+
+A workbench correction cites a closed Project Run, its current formal result SHA-256 and a fit row or field such as `/fits/1/E0_error`. The Project appends the operator’s note and preserves the original report. Later investigations can read both records in Project history. A C2 conclusion with an attached correction is withheld from automatic reuse. Older free-text reports remain accessible as evidence.
+
 The Research Manager's final review discussion can include `next_experiment`, with `question`, `rationale`, `parameter_changes` (a list of `name` and JSON-string `value_json`) and `method_ids`. In auto mode, supported changes create a linked Run through the existing Host. In review-first mode, a proposal that changes the reviewed scope is recorded for a new plan. The Host binds dataset bytes, physical metadata, interpreter and permissions to the original authorization. Selected methods must be reviewed local sources. Every child consumes the original shared task quota. Unsupported scope, repeated parameters, or exhausted resources leave a recorded unexecuted-proposal reason. Existing results remain immutable.
 
 ## Acquiring and reviewing assets

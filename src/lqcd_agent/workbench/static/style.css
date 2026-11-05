@@ -29,6 +29,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere }
 .eyebrow { font-size: .74rem; letter-spacing: .095em; font-weight: 650; text-transform: uppercase; color: var(--accent) }
 .top { background: var(--surface); border-bottom: 1px solid var(--border); min-height: 60px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .7rem clamp(1rem,3vw,2rem) }
 .brand { display: inline-flex; align-items: center; gap: .35rem; text-decoration: none; color: var(--ink); font-weight: 650 }
+#refresh-view { margin-inline-start: auto }
 .brand strong { font-weight: 450 }
 .brand-mark { background: var(--ink); color: var(--surface); border-radius: 6px; width: 31px; height: 31px; display: grid; place-items: center; font: italic 26px/1 Georgia,serif; margin-inline-end: .4rem }
 .connection { color: var(--muted); font-size: .83rem; display: inline-flex; align-items: center; gap: .5rem }

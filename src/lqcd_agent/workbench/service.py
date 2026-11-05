@@ -90,6 +90,7 @@ class Workbench:
         self.projects = ProjectStore(self.workspace)
         self.library = Library(self.workspace)
         self._process = None
+        self._settled = set()
         self._lock = threading.Lock()
 
     @classmethod
@@ -154,7 +155,8 @@ class Workbench:
         return self.projects.revise(project_id, **body)
 
     def contribute(self, project_id, body):
-        closed(body, ('expected_digest', 'key', 'kind', 'body', 'evidence_sha256', 'run'))
+        target_field = ('target',) if type(body) is dict and body.get('kind') == 'correction' else ()
+        closed(body, ('expected_digest', 'key', 'kind', 'body', 'evidence_sha256', 'run', *target_field))
         if any(row['key'] == body['key'] for row in self.projects.contributions(project_id)):
             return self.projects.contribute(project_id, **body)
         if body['run'] is not None:
@@ -480,4 +482,4 @@ class Workbench:
         with self._lock:
             if self._process is not None and self._process.poll() is None:
                 return
-            self._process = launch_worker(self.host, self.workspace)
+            self._process = launch_worker(self.host, self.workspace, settled=self._settled)

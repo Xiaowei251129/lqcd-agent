@@ -338,7 +338,9 @@ def test_crash_after_atomic_child_reservation_recovers_exact_start_when_quota_is
         assert coordinator.connection.execute('SELECT 1 FROM run_controls WHERE run_key=?',(digest(child),)).fetchone() is None
         witness=coordinator.snapshot(operation['operation_id'])
         assert witness['run_creation_binding']['operation_id']==operation['operation_id']
-    assert experiments.continuation_pending(read_snapshot(host_root(host),parent))
+    parent_snapshot = read_snapshot(host_root(host), parent)
+    parent_goal = loads((parent_snapshot.root/'root_goal.json').read_bytes())
+    assert experiments.continuation_state(parent_snapshot, parent_goal) == 'ready'
     original=source.read_bytes()
     try:
         # Recovery materializes the original frozen admission; changed data must
@@ -356,7 +358,7 @@ def test_crash_after_atomic_child_reservation_recovers_exact_start_when_quota_is
         current=coordinator.lookup_key('public_control',key)
         assert current['operation_id']==operation['operation_id'] and current['status']=='committed'
     assert continue_research(host,parent) is None
-    assert not experiments.continuation_pending(read_snapshot(host_root(host),parent))
+    assert experiments.continuation_state(parent_snapshot, parent_goal) == 'settled'
 
 
 @pytest.mark.parametrize('quota_host',[4],indirect=True)

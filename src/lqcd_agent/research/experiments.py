@@ -199,32 +199,34 @@ def continue_research(host, locator):
     return child
 
 
-def continuation_pending(snapshot):
-    """Identify recoverable, budgeted follow-up admission without changing state."""
-    if snapshot.state['run_status'] != 'completed':
-        return False
-    goal = loads(read_regular(snapshot.root / 'root_goal.json'))
-    if 'research_task' not in goal or proposal(snapshot) is None:
-        return False
+def continuation_state(snapshot, goal):
+    """Classify follow-up scheduling. Only an immutable terminal decision can settle a Run."""
+    status = snapshot.state['run_status']
+    if status != 'completed':
+        return 'settled' if status in ('failed', 'halted') else 'waiting'
+    if 'research_task' not in goal or goal.get('workflow') == 'intake' and goal['plan_mode'] != 'auto':
+        return 'settled'
+    selected = proposal(snapshot)
+    if selected is None:
+        return 'settled'
     from lqcd_agent.control.research_budget import inspect_budget
     account = inspect_budget(snapshot.host, snapshot.locator)
     if digest(snapshot.locator) in account['unexecuted_experiments']:
-        return False
+        return 'settled'
     from lqcd_agent.inspection import read_operation
-    request, evidence_sha = proposal(snapshot)
+    request, evidence_sha = selected
     if goal['workflow'] == 'intake':
-        if goal['plan_mode'] != 'auto':
-            return False
         key = 'preparation-' + digest([snapshot.locator, evidence_sha])
     else:
         key = 'experiment-' + digest([snapshot.locator, evidence_sha, request])
     existing = read_operation(snapshot.host, key)
     if existing is not None:
-        return existing['status'] == 'in_progress'
+        return 'ready' if existing['status'] == 'in_progress' else 'settled'
     if goal['workflow'] == 'intake' and any(row['parent'] == snapshot.locator for row in account['runs']):
-        return False
-    now = HostClock().now().monotonic_seconds if goal['live'] else 0
-    return not plan_exhausted(account, now)
+        return 'settled'
+    # Even an exhausted proposal needs the driver's durable decline. Admission
+    # rechecks the original quota before a child can consume any resources.
+    return 'ready'
 
 
 def select_plan(request, project, workspace, intake):

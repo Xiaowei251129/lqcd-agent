@@ -1,7 +1,7 @@
-import {planFeedback} from './planning.js';
-import {renderTaskList, renderTaskDesk} from './task-desk.js';
+import {planFeedback, planDraftKey} from './planning.js';
+import {currentPlanReply, savePlanDraft, renderTaskList, renderTaskDesk} from './task-desk.js';
 import {submissionSlot, sendControl, sendContribution} from './submissions.js';
-import {renderResults} from './results.js';
+import {formalResultSource, renderC2Conclusion, renderResults} from './results.js';
 import {renderComparison} from './comparison.js';
 import {referencedMember, summaryMember, evidenceButton, evidenceReader} from './evidence.js';
 
@@ -20,7 +20,7 @@ const endpoint = locator => locator.project_id && locator.project_run_key ? proj
 const roleNames = {research_manager: 'Research Manager', reviewer: 'Independent Reviewer', method_planner: 'Method plan', code_agent: 'Research Worker', analysis_engineer: 'Host numerical analysis', scientific_reviewer: 'Scientific review', human_gate: 'Authorization', memory_report: 'Report'};
 const revisions = new Map();
 const drafts = new Map();
-let draftKey, navigation = 0, refreshing = false, refreshAgain = false;
+let draftKey, correctionTarget, navigation = 0, refreshing = false, refreshAgain = false;
 const reader = evidenceReader({
   getView: () => ({view: state.view, locator: state.selected, verified: state.verified}),
   load: (view, locator, item) => api((view.archived ? projectEndpoint(locator.project_id) : runEndpoint(locator))+'/evidence/'+encodeURIComponent(item.id)),
@@ -83,7 +83,7 @@ function leaveRun() {
   revisions.clear(); state.tab = 'overview'; showTab('overview');
   $('respond').disabled = true; $('cancel').disabled = true; disablePlanControls(true);
   $('gate').hidden = true; $('cancel-box').hidden = true; $('comparison').hidden = true; $('empty').hidden = true;
-  $('participation').hidden = true; $('contribution-list').replaceChildren();
+  $('participation').hidden = true; $('contribution-list').replaceChildren(); $('run-corrections').replaceChildren();
   $('investigation').hidden = true;
   renderTaskDesk(null, [], state.project, openRun);
 }
@@ -120,6 +120,14 @@ async function finishControl(pending, replay, version) {
     return;
   }
   forgetControlOption(controlSlot.read());
+  if (result && pending.feedback && pending.payload.plan_action === 'revise') {
+    const key = planDraftKey(pending.target.host, pending.target.project_id, pending.payload.case,
+      pending.payload.intake_parent, pending.payload.plan_digest);
+    try {
+      const saved = JSON.parse(localStorage.getItem(key));
+      if (saved && planFeedback(saved) === pending.feedback.body) localStorage.removeItem(key);
+    } catch { /* The Host already committed. A local storage failure cannot undo the revision. */ }
+  }
   if (result && version === navigation) {
     notice(replay ? 'The original submission was reconciled using its retained key.' : 'Control action committed.');
     try { await select({...pending.target, ...result}); }
@@ -211,6 +219,16 @@ async function contributions() {
       () => reader.openSaved(project.id, hash, 'Evidence cited by input '+entry.revision)));
     return item;
   }));
+  const source = state.view && formalResultSource(state.view);
+  const corrections = entries.filter(entry => entry.kind === 'correction' && source && entry.target?.sha256 === source.sha256 &&
+    entry.run?.host === state.view.host && entry.run.case_id === state.view.run_locator.case_id &&
+    entry.run.run_id === state.view.run_locator.run_id);
+  rows($('run-corrections'), corrections.length ? [node('h3', 'Subsequent corrections'), ...corrections.map(entry => {
+    const article = node('article', undefined, 'contribution');
+    article.append(node('strong', readable(entry.author)+' · input '+entry.revision), node('p', entry.body),
+      evidenceButton('Inspect corrected field · '+entry.target.pointer, () => reader.open(source, 'Original Analysis record', entry.target.pointer)));
+    return article;
+  })] : []);
   const selected = state.selected?.project_id === project.id && state.verified;
   const clarification = selected && state.view.workflow === 'intake' && state.view.preparation?.status === 'needs_information';
   $('contribution-run-option').hidden = !selected || clarification;
@@ -280,7 +298,7 @@ function switchDraft() {
   const key = JSON.stringify([state.project?.id, state.selected?.host, state.selected?.run_locator]);
   if (draftKey === key) return;
   if (draftKey) drafts.set(draftKey, {body: $('contribution-body').value, kind: $('contribution-kind').value,
-    evidence_sha256: selectedEvidence(), scoped: $('contribution-run').checked});
+    evidence_sha256: selectedEvidence(), scoped: $('contribution-run').checked, target: correctionTarget});
   draftKey = key;
   const pending = inputSlot.read();
   const run = pending?.payload.run;
@@ -288,18 +306,32 @@ function switchDraft() {
     (run.host === state.selected?.host && run.run_id === state.selected?.run_locator.run_id && run.case_id === state.selected?.run_locator.case_id));
   const draft = restore ? {...pending.payload, scoped: Boolean(run)} : drafts.get(key);
   $('contribution-form').reset();
+  setCorrection(draft?.target || null);
   $('contribution-body').value = draft?.body || '';
   $('contribution-kind').value = draft?.kind || 'question';
   $('contribution-run').checked = Boolean(draft?.scoped);
   attachmentPicker(draft?.evidence_sha256 || []);
 }
 
-function attachEvidence(item, context) {
+function setCorrection(target) {
+  correctionTarget = target;
+  $('correction-kind').hidden = $('correction-kind').disabled = !target;
+  $('contribution-run').disabled = Boolean(target);
+  $('correction-target').hidden = !target;
+  if (target) {
+    $('contribution-kind').value = 'correction';
+    $('contribution-run').checked = true;
+    text('correction-target', target.pointer+' · SHA-256 '+target.sha256);
+  }
+}
+
+function attachEvidence(item, context, pointer) {
   if (!state.verified || !state.project || state.project.id !== state.selected?.project_id ||
       !state.view.evidence.some(row => row.id === item.id && row.sha256 === item.sha256)) return;
   if (inputSlot.read()) { notice('Reconcile the unconfirmed scientific input before attaching more evidence.'); return; }
   reader.close(false);
   attachmentPicker([...new Set([...selectedEvidence(), item.sha256])]);
+  if (pointer) setCorrection({sha256: item.sha256, pointer});
   const body = $('contribution-body');
   if (context && !body.value.split('\n').includes(context)) body.value = [body.value, context].filter(Boolean).join('\n');
   $('contribution-run').checked = state.view.preparation?.status !== 'needs_information';
@@ -386,7 +418,10 @@ function summaries(view) {
       'Scientific summaries appear when the Host registers them.';
   rows($('summary'), values.length ? values : [node('p', empty, 'muted')]);
   if (view.execution_failure) $('summary').append(node('p', view.execution_failure.summary+' · '+view.execution_failure.source, 'muted'));
+  renderC2Conclusion($('c2-conclusion'), view, reader);
   renderResults($('charts'), view, {openEvidence: reader.open,
+    correct: state.verified && state.selected?.project_id && state.selected.project_id === view.project_id &&
+      ['completed','failed','halted'].includes(view.run_status) ? (item, pointer) => attachEvidence(item, '', pointer) : null,
     contribute: view.project_id && state.selected?.project_id === view.project_id ? attachEvidence : null});
 
 }
@@ -431,9 +466,9 @@ function render(view, detailChanged) {
   if (job) text('backend-progress', 'Codex: '+readable(job.status)+' · '+(job.tool_count ?? '—')+' observed tool calls · original timeout and budget apply');
   if (changed('budget', [view.budget, view.research_task, view.archived])) renderBudget(view);
   renderAuthorization(view, newPause);
-  if (detailChanged) {
-    attachmentPicker(); summaries(view); showTab(state.tab);
-  }
+  if (detailChanged) attachmentPicker();
+  if (changed('summaries', [view.detail_revision, closed, view.project_id])) summaries(view);
+  if (detailChanged) showTab(state.tab);
   renderComparison($('comparison'), view, state.runs, loadRun, openRun);
 }
 
@@ -479,8 +514,25 @@ function renderAuthorization(view, newPause) {
 
 }
 
-async function refresh() {
-  if (refreshing) { refreshAgain = true; return; }
+function settledSelection() {
+  const view = state.view;
+  if (!state.verified || !view) return false;
+  if (view.archived) return true;
+  if (!['completed', 'halted', 'failed'].includes(view.run_status)) return false;
+  if (!view.managed || !view.compatible || view.run_status !== 'completed') return true;
+  const same = (a,b) => a && b && a.case_id === b.case_id && a.run_id === b.run_id;
+  if (view.workflow === 'intake') {
+    if (view.plan_successor) return state.runs.some(run => run.host === view.host && same(run.run_locator,view.plan_successor));
+    return view.plan_exhausted;
+  }
+  if (!view.research_task || !view.collaboration?.some(item=>item.current && item.slot === 'review' && item.next_experiment)) return true;
+  return Object.values(view.research_task.unexecuted_experiments).some(item=>same(item.parent,view.run_locator)) ||
+    state.runs.some(run=>run.host === view.host && same((run.task_binding || run.research_task)?.parent,view.run_locator));
+}
+
+async function refresh(periodic = false) {
+  if (periodic && (document.hidden || settledSelection())) return;
+  if (refreshing) { if (!periodic) refreshAgain = true; return; }
   refreshing = true;
   const version = navigation, project = state.project, selected = state.selected;
   try {
@@ -563,14 +615,19 @@ $('contribution-form').addEventListener('submit', async event => {
   const originalDraft = draftKey, projectId = state.project.id;
   const run = $('contribution-run').checked ? {host: state.view.host,
     ...state.view.run_locator, execution_head: state.view.execution_head} : null;
+  const hashes = selectedEvidence();
+  if (correctionTarget && (!run || formalResultSource(state.view)?.sha256 !== correctionTarget.sha256)) {
+    notice('Reopen the original Analysis result to correct this field.'); return;
+  }
+  if (correctionTarget && !hashes.includes(correctionTarget.sha256)) hashes.push(correctionTarget.sha256);
   const payload = {expected_digest: state.project.sha256, kind: $('contribution-kind').value,
-    body: $('contribution-body').value, evidence_sha256: selectedEvidence(), run};
+    body: $('contribution-body').value, evidence_sha256: hashes, run, ...(correctionTarget ? {target: correctionTarget} : {})};
   $('contribution-save').disabled = true;
   try {
     const {record: pending} = await inputSlot.claim({project: projectId, payload: {...payload, key: crypto.randomUUID()}});
     if (pending.project !== projectId || Boolean(pending.payload.run) !== Boolean(run) ||
         run && ['host', 'case_id', 'run_id'].some(k => pending.payload.run[k] !== run[k]) ||
-        ['kind', 'body', 'evidence_sha256'].some(k => JSON.stringify(pending.payload[k]) !== JSON.stringify(payload[k]))) {
+        ['kind', 'body', 'evidence_sha256', 'target'].some(k => JSON.stringify(pending.payload[k]) !== JSON.stringify(payload[k]))) {
       forgetInputOption(pending);
       notice('An unconfirmed scientific input is retained. Restore its Project to retry, or forget its browser form before submitting a new input.');
       return;
@@ -578,8 +635,8 @@ $('contribution-form').addEventListener('submit', async event => {
     await sendContribution(inputSlot, pending, api);
     drafts.delete(originalDraft);
     if (draftKey !== originalDraft) return;
-    $('contribution-form').reset(); attachmentPicker([]);
-    notice('Scientific input recorded for the next research checkpoint.');
+    $('contribution-form').reset(); setCorrection(null); attachmentPicker([]);
+    notice(payload.target ? 'Correction recorded alongside the original conclusion.' : 'Scientific input recorded for the next research checkpoint.');
     await contributions();
   } catch (error) {
     notice(error.status === 409 ? 'The Project or Run changed. Refresh before submitting again.' : error.message);
@@ -635,10 +692,7 @@ function actOnPlan(action) {
       !view.compatible || !view.managed || state.selected?.project_id !== project.id) return;
   let feedback;
   if (action === 'revise') {
-    const answers = [...$('preparation-questions').querySelectorAll('fieldset')].map(field => ({
-      question: field.dataset.question, answer: [field.querySelector('input:checked')?.value,
-        field.querySelector('textarea').value.trim()].filter(Boolean).join(' — ')}));
-    const body = planFeedback(answers, $('plan-feedback').value);
+    const body = planFeedback(currentPlanReply());
     if (body.length > 16000) { notice('Keep this batch of answers within 16,000 characters.'); return; }
     if (body) feedback = {expected_digest: project.sha256, key: crypto.randomUUID(), kind: 'scientific_comment',
       body, evidence_sha256:[view.plan_digest], run: {host:view.host, ...view.run_locator, execution_head:view.execution_head}};
@@ -651,9 +705,9 @@ for (const action of ['revise','execute','renew']) {
   $('plan-'+action).addEventListener('click', () => actOnPlan(action));
 }
 $('plan-later').addEventListener('click', () => {
-  if (state.project && state.view?.project_id === state.project.id) {
+  if (state.project && state.view?.project_id === state.project.id && savePlanDraft()) {
     const id = state.project.id;
-    chooseProject(id).then(() => notice('The recorded plan is saved in this Project.')).catch(error => notice(error.message));
+    chooseProject(id).then(() => notice('Reopen this preparation to resume reviewing its plan.')).catch(error => notice(error.message));
   }
 });
 $('refresh-project').addEventListener('click', () => { if (state.project) loadProject(state.project.id).catch(error => notice(error.message)); });
@@ -688,12 +742,22 @@ $('cancel').addEventListener('click', () => {
   const view = state.view;
   mutation(runEndpoint(state.selected)+'/cancel', {pause: view.active_pause.pause_id, head: view.execution_head}, state.selected);
 });
+$('contribution-kind').addEventListener('change', () => {
+  if ($('contribution-kind').value !== 'correction') setCorrection(null);
+});
 $('contribution-evidence').addEventListener('change', attachmentSummary);
 $('tabs').addEventListener('click', event => {
   const tab = event.target.closest('[data-tab]')?.dataset.tab;
   if (tab) { reader.close(false); showTab(tab); }
 });
-document.addEventListener('visibilitychange', () => { if (!document.hidden && state.token) refresh(); });
+let foregroundCheck;
+function recheckOnReturn() {
+  clearTimeout(foregroundCheck);
+  if (!document.hidden && state.token) foregroundCheck = setTimeout(() => refresh(), 100);
+}
+document.addEventListener('visibilitychange', recheckOnReturn);
+window.addEventListener('focus', recheckOnReturn);
+$('refresh-view').addEventListener('click', () => refresh());
 async function restoreSelection() {
   const params = new URL(location.href).searchParams;
   const direct = ['host','case','run'].some(key => params.has(key));
@@ -727,7 +791,7 @@ async function init() {
     notice('Could not open the saved selection. '+error.message);
   }
   switchDraft(); await reconcile(); await refresh();
-  setInterval(() => { if (!document.hidden) refresh(); }, 2000);
+  setInterval(() => refresh(true), 2000);
 }
 init().catch(error => {
   text('connection', error.network ? 'Disconnected' : 'Workspace unavailable');

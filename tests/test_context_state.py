@@ -5,8 +5,8 @@ from lqcd_agent.control.strict_json import canonical_bytes, digest
 from lqcd_agent.research.history import project_history, project_state_view
 
 
-def evidence_fixture(monkeypatch, observations):
-    rows, blobs = [], {}
+def evidence_fixture(monkeypatch, observations, *, extra_blobs=None, contributions=()):
+    rows, blobs = [], extra_blobs if extra_blobs is not None else {}
     for index, (outcome, revision, collaboration) in enumerate(observations):
         identifier = digest(collaboration)
         blobs[identifier] = canonical_bytes(collaboration)
@@ -20,6 +20,9 @@ def evidence_fixture(monkeypatch, observations):
     class Store:
         def __init__(self, workspace):
             pass
+
+        def contributions(self, project_id):
+            return contributions
 
         def runs(self, project_id):
             assert project_id == 'project'
@@ -107,3 +110,36 @@ def test_conflicting_answered_units_remain_open_with_original_responses(monkeypa
     assert {variant['issue']['response'] for variant in variants} == {first['response'], second['response']}
     assert {tuple(variant['issue']['evidence_references']) for variant in variants} == {('lattice-proof',), ('physical-proof',)}
     assert all(variant['sources'][0]['evidence_sha256'] for variant in variants)
+
+
+def test_c2_reuse_requires_sealed_conclusion_and_keeps_corrections_attributed(monkeypatch):
+    summary = {'summary': 'Role claimed an incorrect uncertainty of 99.', 'issues': []}
+    blobs, notes = {}, []
+    [run] = evidence_fixture(monkeypatch, [('qualified', 1, summary)], extra_blobs=blobs, contributions=notes)
+    def entry(name, slot, value):
+        identifier = digest(value)
+        blobs[identifier] = canonical_bytes(value)
+        return {'slot': slot, 'source': 'input' if slot is None else 'artifact', 'current': True,
+                'name': name, 'sha256': identifier}
+    goal = entry('root_goal.json', None, {'case_config': {'generated_program': {'result_kind': 'c2'}}})
+    result = entry('analysis/analysis_outputs/generated_result.json', 'analysis', {'fits': []})
+    terminal = entry('terminal/memory_update.json', 'terminal', {})
+    run['evidence'].extend([goal, result, terminal])
+    legacy = project_history('workspace', 'project')
+    assert not legacy['conclusions'] and legacy['c2_results'][0]['selection']['status'] == 'unassessed'
+    chain = {'result_sha256': result['sha256'], 'fits': [{'pointer': '/fits/0', 'nstates': 1,
+             'tmin': 4, 'tmax': 8, 'estimate': 'aE₀ = 0.2 ± 0.01'}],
+             'selection': {'status': 'selected', 'fit_pointer': '/fits/0'}}
+    terminal.update(entry(terminal['name'], 'terminal', {'c2_evidence': chain}))
+    state = project_history('workspace', 'project')
+    [claim] = state['conclusions']
+    assert '0.2 ± 0.01' in claim['statement'] and claim['sources'][0]['evidence_sha256'] == terminal['sha256']
+    notes.append({'kind': 'correction', 'author': 'operator', 'revision': 1, 'sha256': digest('note'),
+                  'target': {'sha256': result['sha256'], 'pointer': '/fits/0/E0_error'},
+                  'run': {**run['run_locator'], 'host': run['host']}, 'body': 'Check the resampling method.'})
+    corrected = project_history('workspace', 'project')
+    assert not corrected['conclusions']
+    [item] = project_state_view(corrected)['c2_results']
+    assert item['selection'] == chain['selection'] and item['corrections'] == [
+        {k: notes[0][k] for k in ('sha256', 'target', 'author', 'revision')}]
+    assert corrected['c2_results'][0]['corrections'][0]['body'] == notes[0]['body']

@@ -120,6 +120,15 @@ def test_scientific_codegen_delivers_real_output_to_autonomous_report(tmp_path,m
     from lqcd_agent.science import ScientificAgent
     review_contexts, attempted_mutations = [], []
     original_run = ScientificAgent.run
+    role_calls = []
+    if family == 'c2':
+        from lqcd_agent.research.agent_runtime import ResearchAgentRuntime
+        from lqcd_agent.research.collaboration import CollaborationAgent
+        from tests.test_research_collaboration import CollaborationModel
+        monkeypatch.setattr('lqcd_agent.runtime.scientific_agent', lambda host, config, _, workspace:
+            CollaborationAgent(host, config, workspace=workspace, request_timeout_seconds=30,
+                runtime_factory=lambda: ResearchAgentRuntime(CollaborationModel(role_calls, code_needed=True,
+                    read_sections=()), max_output_tokens=2048)))
     def observe_and_mutate(agent, node, context, *, timeout_seconds):
         if node == 'scientific_reviewer':
             review_contexts.append(deepcopy(context))
@@ -166,7 +175,23 @@ def test_scientific_codegen_delivers_real_output_to_autonomous_report(tmp_path,m
     assert reference in review_contexts[0]['current_evidence']
     review=loads(Path(index['review']['state_paths']['scientific_review_report_path']).read_bytes())['domain_result']['report']
     assert review['generated_diagnostics']['status']=='pass' and review['generated_diagnostics']['findings']
+    memory = loads((root/'memory_update.json').read_bytes())
+    assert ('c2_evidence' in memory) == (family == 'c2')
     if family=='c2':
+        chain = memory['c2_evidence']
+        [criterion] = chain['criteria']
+        assert criterion == {'text': 'All inputs attributable',
+            'pointer': '/collaboration/exchanges/0/brief/success_criteria/0', 'assessment': 'supports',
+            'fit_pointers': ['/fits/0']}
+        assert chain['selection'] == {'status': 'selected', 'fit_pointer': '/fits/0'}
+        assert chain['plan_sha256'] == next(m['sha256'] for m in index['plan']['members']
+                                           if m['logical_name'] == 'method_plan.json')
+        assert chain['result_sha256'] == numeric_member['sha256'] and reference in memory['evidence']
+        assert [r['schema'] for r in role_calls] == [
+            'method_plan_discussion', 'scientific_review_report_discussion', 'C2Discussion']
+        report_text = (root/'final_report.md').read_text()
+        assert chain['fits'][0]['estimate'] == 'aE₀ = 0.27 ± 1e+20'
+        assert chain['fits'][0]['estimate'] in report_text and '/fits/0/E0_error' in report_text
         result=loads(result_path.read_bytes())
         assert result['fits'][0]['E0_error']==1e20 and type(result['fits'][0]['E0_error']) is float
         finding=next(item for item in review['generated_diagnostics']['findings'] if 'error=1e+20' in item)

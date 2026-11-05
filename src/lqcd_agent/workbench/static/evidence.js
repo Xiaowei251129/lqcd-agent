@@ -33,7 +33,7 @@ export function evidenceReader({getView, load, loadSaved, attach, onError}) {
     if (restoreFocus && trigger?.isConnected) trigger.focus();
   }
 
-  async function show(item, context, read, attachable) {
+  async function show(item, context, read, attachable, pointer) {
     const entry = {item, context, trigger: document.activeElement};
     opened = entry;
     pane.hidden = false;
@@ -47,7 +47,19 @@ export function evidenceReader({getView, load, loadSaved, attach, onError}) {
       if (opened !== entry) return;
       if (content.sha256 !== item.sha256) throw new Error('The evidence identity changed. Refresh this investigation.');
       const name = item.name || content.name;
-      byId('preview-text').textContent = content.text;
+      let preview = content.text;
+      if (pointer) {
+        // Retain original numeric tokens, including replica IDs beyond Number's safe range.
+        const preserve = typeof JSON.rawJSON === 'function';
+        let field = JSON.parse(content.text, preserve ? (_, value, token) =>
+          typeof value === 'number' ? JSON.rawJSON(token.source) : value : undefined);
+        for (const key of pointer.slice(1).split('/').map(part => part.replaceAll('~1','/').replaceAll('~0','~'))) {
+          if (!field || typeof field !== 'object' || !Object.hasOwn(field,key)) throw new Error('The cited field is absent: '+pointer);
+          field = field[key];
+        }
+        preview = pointer+'\n'+(preserve ? JSON.stringify(field,null,2)+'\n\n' : '')+'Full registered source\n'+content.text;
+      }
+      byId('preview-text').textContent = preview;
       byId('preview-hash').textContent = name+' · SHA-256 '+content.sha256;
       entry.attachable = attachable;
       byId('preview-comment').hidden = !attachable;
@@ -58,14 +70,14 @@ export function evidenceReader({getView, load, loadSaved, attach, onError}) {
     }
   }
 
-  function open(item, context = '') {
+  function open(item, context = '', pointer) {
     const {view, locator, verified} = getView();
     if (!verified || !view?.evidence.some(row => row.id === item.id && row.sha256 === item.sha256)) return;
-    return show(item, context, () => load(view, locator, item), Boolean(locator.project_id));
+    return show(item, context, () => load(view, locator, item), Boolean(locator.project_id), pointer);
   }
 
-  function openSaved(project, hash, context) {
-    return show({sha256: hash}, context, () => loadSaved(project, hash), false);
+  function openSaved(project, hash, context, pointer) {
+    return show({sha256: hash}, context, () => loadSaved(project, hash), false, pointer);
   }
 
   byId('preview-back').addEventListener('click', () => close());

@@ -8,6 +8,8 @@ The development version supports autonomous project-based lattice QCD research c
 
 - Project research begins with one Research Manager preparing a versioned plan. Review-first is the default; auto mode admits an executable plan without a user selection. Preparation can inspect declared data and named evidence, and cannot dispatch the Research Worker or numerical trials.
 - Each revision freezes the input profile, Project and scientific feedback. The formal Run registers the selected plan and code requirements. The Host checks current inputs, permissions, version and shared budget. An explicit renewal after expiry creates a new account, references the original plan and rechecks authority.
+- The workbench compares scientific and execution changes between plan versions and restores browser-local answers for the matching version. A concluded formal Run stops automatic page requests once any proposed follow-up is accounted for. Foreground and manual refresh recheck the Host.
+- New C2 reports can link each selected-plan criterion and the Manager’s interpretation to sealed fit rows. The Host renders the numerical values. A later operator correction cites the exact field and result digest; it stays visible alongside the conclusion and in Project history.
 - The Research Worker has a controlled `run_numerical_trial` tool over the existing private gateway. It executes the current candidate with small model-supplied synthetic JSON using the existing isolated numerical executor and original interpreter/time/tool authority. Exact source, input, output and failure evidence enter the code bundle. Trials expose no production raw-data file or withheld reference; final sealed Analysis and scientific review remain required.
 
 - The Research Manager plans the investigation. The Research Worker implements the selected method with the native Codex SDK. The Host executes the numerical program. The independent Reviewer examines the evidence before the Research Manager draws a conclusion. The Host owns admission, execution authority, leases, fencing, cancellation, budgets and publication. Role separation does not establish independent model-family agreement or physical correctness.
@@ -31,9 +33,16 @@ The development version supports autonomous project-based lattice QCD research c
 
 The packaged [control declaration](../src/lqcd_agent/control/protocol.json) retains the byte identity of the prior build. It is the single source for runtime lookups and the build fingerprint. The method-plan and code evidence slots retain their sealed field layout.
 
+- Native macOS build `d16227dd307f`, integration source `1a58e960c7c2`: all 520 tests passed in one run with zero skips, including the sealed C2 evidence chain, archived corrections and driver recovery. All nine numerical benchmark cases, all 19 Node workbench tests and Ruff passed.
+- Headless Chrome restored a version-scoped plan draft across browser restarts, kept other versions isolated, and displayed expired answers read-only. These interaction checks used synthetic Host responses.
+- In a separate fresh offline C2 Project, Chrome opened the selected criterion by its plan digest, submitted an operator correction to `/fits/1/E0_error`, then reopened the original value and full numerical source by digest. The visible concluded page made zero API requests over 60 seconds. Manual refresh made four requests. Browser checks with a pending follow-up continued until a child or a decline for that parent appeared.
+- Read-only checks opened the three saved Runs of the previous private C2 Project and verified the formal result containing six fits. Its earlier text reports do not supply structured fit selections for reuse. The current research prompts and output contract have not undergone a new paid private C2 validation.
+
+## Prior qualification on build `dd528b6c`
+
 - Native macOS build `dd528b6c`, integration source `664f021713ed`: all 517 tests passed with zero skips, as did all nine numerical benchmark cases. All 17 Node workbench tests and Ruff passed. Headless Chrome opened a fresh Project and verified the Research Manager and Research Worker labels and review/automatic mode selection.
 - An isolated sdist-to-wheel build and fresh installation loaded the packaged protocol and its original digest. Both distributions exclude the repository test suite and test-only model provider. Read-only inspection of the prior private C2 Host verified both preparation Runs and its formal analysis as completed with committed closure.
-- This build has offline regression and packaging coverage. Its renamed prompts have not undergone a new paid private C2 run.
+- That build has offline regression and packaging coverage. Its renamed prompts have not undergone a new paid private C2 run.
 
 ## Prior qualification on build `78c30e9e`
 

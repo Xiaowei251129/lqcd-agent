@@ -24,4 +24,9 @@ test('cited evidence preserves exact numeric text and a late read cannot replace
   assert.equal(byId('preview-text').textContent, text);
   assert.equal(byId('preview-name').textContent, 'Second citation');
   assert.equal(byId('preview-comment').hidden, true);
+  await reader.openSaved('project', 'current', 'Cited sample ID', '/sample_id');
+  const excerpt = byId('preview-text').textContent;
+  assert.match(excerpt, /^\/sample_id\n/);
+  assert(excerpt.includes(text));
+  if (JSON.rawJSON) assert.match(excerpt, /^\/sample_id\n9007199254740993\n/);
 });

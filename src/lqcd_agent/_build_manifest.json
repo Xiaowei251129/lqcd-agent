@@ -1,6 +1,6 @@
 {
   "schema_version": "1",
-  "application_build": "dd528b6cee11e94b23599892598edb9c2c0e9cfce9a7d12772980c82c13cd716",
+  "application_build": "d16227dd307f52cc6d97726d20a8d5142a950d6573feb6726bb738d91374c91d",
   "graph_topology": "620b1c9b14d3dda8a2dd7ac6f989b3b6595f0b5da5b1a390349f140b26d93e39",
   "sources": {
     "__init__.py": "9b5bb33e92d3d054a6fb2d77000986a6424654046b455baeb2810e0d4113a598",
@@ -69,7 +69,7 @@
     "diagnostics.py": "663c41060208296277164148409171acde5bd1acf5cba5dcf42db7fbbf287819",
     "examples.py": "3919bec755f46daaec9104f1de43c7df206c9f30288cb34a97dcffccca699b29",
     "graph/analysis_graph.py": "620b1c9b14d3dda8a2dd7ac6f989b3b6595f0b5da5b1a390349f140b26d93e39",
-    "graph/nodes.py": "4e47fb827b70e064ce52c3aad46e1efe9d32c02f3f65d5baf215a49308d2f703",
+    "graph/nodes.py": "9560d299241146d31c052fa15a03d1663c9b06171115b843e7f266d0e5e88e45",
     "graph/routing.py": "eb2413a75ab58c24b36c286a414ba6baee20a22ccdde49843933018be4cc5202",
     "graph/state.py": "03efb60fca6825c8c90f66cebf181b5fc25668c6164ed72517137ef0ee7abff2",
     "inspection.py": "4cd75c9d33369622cae0caaa9376b562a9f68b1ed3067a1c2e4d5f54b182de3f",
@@ -83,18 +83,19 @@
     "memory/store.py": "d8762d275a1d72b9298f6156a04096f367f3b9e1aabc30ef3085aeb99cdfd083",
     "research/__init__.py": "c8ac447107f509068a5860a8164daca24323dbdd64454ff87088e3cceb3b1961",
     "research/agent_runtime.py": "c355ff135bc8ccb81792ed49417e95c60be6a8ba7ecff9af0c08daffcd3dcacb",
-    "research/collaboration.py": "069a95f56c9ff212f185120664f94b9d3386f10b1003f6e6b8dea84b8cb853ae",
+    "research/c2_evidence.py": "aa2f6c267c1cf21e0cc1ac481ef54f0d77e12c3473bb25d5686ae83b4e77c23e",
+    "research/collaboration.py": "1e74a87d000a188e27f6292cce125ec5c9d64817c373d693ef8ec6476d081099",
     "research/context_window.py": "4d93c2038db6adc6abcfaa4ebbff48a6b5e30da490282a9937fb1ebd9b3e6804",
-    "research/experiments.py": "ebd2400aa1a2126cd00f76df3545ea1fce467bfe32d62619630731c73f286215",
+    "research/experiments.py": "8685aafca325626eecc792f45737a9b85b8170e318b3ad764637ad5085c11dcf",
     "research/files.py": "9c89da6d23b9f0c8c4137eaa3ab6bd1a54fe82e0bbe2c5e55ad09ea87306fdfd",
-    "research/history.py": "5ee0f95330a356dd27f1aef98d526b8b3bc2395a49e8023520e549da902f7554",
-    "research/intake.py": "c86261cd8db4c070334924444e4cf9437b7c92bc9db38d34eab439113d717cf6",
+    "research/history.py": "e9c2f386d306d8e398ce76d2363a0ba2c2d19e917166cfb907ff1f53493cf83a",
+    "research/intake.py": "3e1ab02631f59d2b318c5a88fd93a39cd5a8f15c4d78d6de7926610db3c50f18",
     "research/library.py": "636ab2245814f58356ea817fc448641c5a2d395dfd543b21ef032505ea11bc49",
     "research/meter.py": "1039ee54f42317c5fd183bf57a93675f4fab453781469a3fdddb973dbfd0ece5",
     "research/methods.py": "1000f161f40d631386b8f5b311c79eb5cf36eb4c02e6f54d2092654d24980a42",
     "research/observable_contract.py": "244b68dda8b37330f884812477db7bfc7fea0b1663e9e04939ec53a3d6c7aa18",
-    "research/projects.py": "7bec2359d0372b91352924bd55380b1058e9ebfc69293aefaf70b4b164c42403",
-    "research/tools.py": "65e941e4befdf93f272216b916949ca270f45dd29cdd9b0a80b66cebec8b382f",
+    "research/projects.py": "4a1fed8ddb44e2c93259a055881e02d2016577dcc51dffa5e1d6e1b58e4b151d",
+    "research/tools.py": "65d3df15e7231f5ea987d4af6b4765de12e909a69a09b4b013529581529def2c",
     "research/workspace.py": "fcfa2a0a9f6cc12a0d5795d897b6d4a5151aa834fc97dcefd25afb2a02d1fd0e",
     "research_cases.py": "465cf026c9e4436ce52ec42d435065f0df4f3a1658b0a6c2943cc8739c292dfe",
     "research_codegen.py": "a226ee215f8cd2b419c0d89e110b20373d2dd9a919e81cb944c14bc804af27de",
@@ -109,7 +110,7 @@
     "tools/repo_inventory.py": "3e3e8658835f03cd00eae0bf78f7e56c377c91e3395d7cf2e7f72203fb96a6b6",
     "workbench/__init__.py": "5d8620a7d20df8425b4751c6fa3396e1ef8f0e844e245b3c689640dea4ecf819",
     "workbench/server.py": "28c246daa3499d407b103230f9b165688cd5227c083136b65e342ef8203cfda6",
-    "workbench/service.py": "c0d7e6088fba3e364aed99d691546d5c4d2ad26e683c0f3eea5c177a6c9a06b2",
-    "workbench/worker.py": "15c7e469755701e4e474697e0afdfcede2c36996f1c7d8e494d1f30f6b4d2632"
+    "workbench/service.py": "40cb59aebe73a6ae20bdd9502880031930c5dfa736e6870a0fa72c86dfc762ab",
+    "workbench/worker.py": "3cdb493a99399c75c619c0f00079cead5be2af14be582bafe87543d2b73b20e9"
   }
 }

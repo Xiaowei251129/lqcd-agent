@@ -175,7 +175,7 @@ def test_evidence_inventory_hash_scope_and_workspace_are_enforced(workbench, tmp
     assert http.get(url(status)+'/evidence/'+item['id']).status_code == 409
 
 
-def test_worker_reopens_admitted_run_and_concludes_without_human_response(workbench):
+def test_worker_reopens_admitted_run_and_concludes_without_human_response(workbench, monkeypatch):
     body = {'case':'example','goal':'Offline browser acceptance','live':False,'key':'restart-worker'}
     status = client(workbench).post('/api/runs', json=body).json()
     command = [sys.executable,'-B','-m','lqcd_agent.workbench.worker',workbench.host]
@@ -195,7 +195,13 @@ def test_worker_reopens_admitted_run_and_concludes_without_human_response(workbe
     snapshot = read_snapshot(host_root(workbench.host), status['run_locator'])
     assert snapshot.state['run_status'] == 'completed' and snapshot.state.get('active_pause') is None
     assert not any(r['record_type'] == 'human_response' for r in snapshot.records.values)
-    assert launch_worker(workbench.host, workbench.workspace) is None
+    settled = set()
+    assert launch_worker(workbench.host, workbench.workspace, settled=settled) is None
+    assert len(settled) == 1
+    with monkeypatch.context() as patch:
+        patch.setattr('lqcd_agent.workbench.worker.read_snapshot',
+                      lambda *_: pytest.fail('Idle supervisor replayed a settled Run'))
+        assert launch_worker(workbench.host, workbench.workspace, settled=settled) is None
     before = read_regular(snapshot.root/'execution_history.jsonl')
     assert subprocess.run([sys.executable,'-B','-m','lqcd_agent.workbench.worker',workbench.host],capture_output=True,timeout=30).returncode == 0
     assert read_regular(snapshot.root/'execution_history.jsonl') == before

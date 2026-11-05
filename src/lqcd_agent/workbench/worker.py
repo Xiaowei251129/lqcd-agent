@@ -34,21 +34,32 @@ def worker_active(host):
         os.close(descriptor)
 
 
-def launch_worker(host, workspace):
+def launch_worker(host, workspace, *, settled=None):
     """Start the one native Host driver after canonical admission, for CLI or HTTP."""
     workspace = workspace_root(workspace)
     root = host_root(host)
     if worker_active(host):
         return None
-    from lqcd_agent.research.experiments import continuation_pending
+    from lqcd_agent.research.experiments import continuation_state
     pending = False
+    fingerprint = runtime_fingerprint()
+    build = digest(fingerprint)
     for locator in list_runs(root):
+        identity = (build, locator['case_id'], locator['run_id'])
+        if settled is not None and identity in settled:
+            continue
         snapshot = read_snapshot(root, locator)
         goal = loads(read_regular(snapshot.root/'root_goal.json'))
         require(goal['workspace'] == str(workspace), 'Driver workspace does not match the admitted Run')
         pause = snapshot.state.get('active_pause')
-        if snapshot.fingerprint == runtime_fingerprint() and (snapshot.can_advance or
-            pause is not None and pause['reason'] == 'external_result' or continuation_pending(snapshot)):
+        if snapshot.fingerprint != fingerprint:
+            if settled is not None and snapshot.state['run_status'] in ('completed', 'failed', 'halted'):
+                settled.add(identity)
+            continue
+        follow_up = continuation_state(snapshot, goal)
+        if settled is not None and follow_up == 'settled':
+            settled.add(identity)
+        if snapshot.can_advance or pause is not None and pause['reason'] == 'external_result' or follow_up == 'ready':
             pending = True
             break
     if not pending:

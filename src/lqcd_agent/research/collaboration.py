@@ -19,7 +19,8 @@ from lqcd_agent.llm.schemas import validate_proposal
 from lqcd_agent.science import ScientificAgent
 from .agent_runtime import ResearchAgentRuntime
 from .meter import ResearchMeter
-from .tools import build_tools, c2_review_reference
+from .tools import build_tools
+from .c2_evidence import bind_c2_interpretation, c2_facts, c2_review_reference
 
 
 Nonempty = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -63,6 +64,24 @@ class Discussion(BaseModel):
     issues: list[Issue]
     decision: Literal['recommend_proceed', 'revise', 'need_information']
     next_experiment: ExperimentProposal | None = None
+
+
+class CriterionAssessment(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    criterion: Nonempty
+    assessment: Literal['supports', 'limits', 'contradicts']
+    fit_pointers: list[Nonempty]
+
+
+class C2Interpretation(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    assessments: list[CriterionAssessment]
+    selection: Literal['selected', 'no_preference', 'unassessed']
+    preferred_fit: Nonempty | None
+
+
+class C2Discussion(Discussion):
+    c2_interpretation: C2Interpretation | None
 
 
 class ResearchBrief(BaseModel):
@@ -333,8 +352,19 @@ class _RoleProvider:
         instructions = '\n'.join(m['content'] for m in request.messages if m['role'] == 'system')
         inputs = [dict(m) for m in request.messages if m['role'] != 'system']
         c2_output = c2_review_reference(self.agent.host, self.context, request.context_sources)
+        plan = (self.agent._artifact(self.context, 'method_plan.json')
+                if self.node == 'scientific_reviewer' else None)
+        facts = None
         if c2_output is not None:
+            diagnostics = request.context_sources['review_evidence']['generated_diagnostics']
+            if diagnostics.get('status') in ('pass', 'warning'):
+                identity = self.context['identity']
+                root = self.agent.host / identity['case_id'] / identity['run_id']
+                plan_sha = next(ref['sha256'] for ref in self.context['current_evidence']
+                                if ref['member'].endswith('/method_plan.json'))
+                facts = c2_facts(root, self.context['root_goal'], plan, plan_sha, c2_output)
             inputs.append({'role': 'user', 'content': json.dumps({'current_c2_analysis': {
+                'decision_criteria': facts['criteria'] if facts else [], 'sealed_fits': facts['fits'] if facts else [],
                 'sha256': c2_output['sha256'], 'read_context': {'section': digest(c2_output), 'offset': 0},
                 'review': 'Start with this registered numerical result and the named method_plan section. '
                           'Inspect the window comparisons, covariance diagnostics and fit limitations. '
@@ -346,8 +376,6 @@ class _RoleProvider:
                 'scope': 'These are the earlier preparation assumptions, not numerical evidence. '
                          'Read research_preparation for its complete source. Assess the sealed analysis against '
                          'the selected scientific plan and its declared criteria.'})})
-        plan = (self.agent._artifact(self.context, 'method_plan.json')
-                if self.node == 'scientific_reviewer' else None)
         issues = _prior_issues(self.context, plan)
         (self.output/'human_contributions.json').write_text(json.dumps(
             self.context.get('human_contributions', []), sort_keys=True, indent=2)+'\n')
@@ -394,10 +422,23 @@ class _RoleProvider:
             exchanges.append({'role': 'reviewer', **review.output})
             inputs.append({'role': 'user', 'content': json.dumps({'independent_review': review.output,
                                                                'issues': issues})})
-            final = self._run('research_manager', ROLE_POLICY+'\nAs Research Manager, synthesize the independent review against Host evidence. '
-                'You may ask further questions, request a scientific revision or recommend human assessment. '
-                'You cannot rewrite the independent review or remove Host numerical warnings.', inputs, ResearchOutput(Discussion), tools)
+            policy = (ROLE_POLICY+'\nAs Research Manager, synthesize the independent review against Host evidence. '
+                      'You may ask further questions, request a scientific revision or recommend human assessment. '
+                      'You cannot rewrite the independent review or remove Host numerical warnings.')
+            if facts is not None:
+                policy += (' For c2_interpretation cite exact decision criterion pointers and fit row pointers '
+                           'from current_c2_analysis. Omit unassessed criteria. State whether you selected a fit, '
+                           'explicitly recommend no preference, or did not assess selection. A selected fit needs '
+                           'a supporting criterion citing it. Describe physical interpretation and limitations; '
+                           'the Host renders numerical estimates and uncertainties from your references.')
+            final = self._run('research_manager', policy, inputs,
+                              ResearchOutput(C2Discussion if facts is not None else Discussion), tools)
             discussion = final.output
+            if facts is not None:
+                try:
+                    bind_c2_interpretation(facts, discussion['c2_interpretation'])
+                except ControlIntegrityError as error:
+                    raise ModelBehaviorError('Invalid C2 scientific evidence citation') from error
             issues = merge(discussion)
             exchanges.append({'role': 'research_manager', 'discussion': discussion})
         challenges = [item['question'] for item in issues if item['status'] != 'addressed']

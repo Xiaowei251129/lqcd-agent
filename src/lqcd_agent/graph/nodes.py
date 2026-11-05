@@ -362,7 +362,7 @@ def product_final_report(root, context, index, classification, response):
                 classification['scientific_outcome'], classification['classification_reason'],
                 'Decision origin: ' + classification['decision_origin'] + '.',
                 '## Research question', context['root_goal'].get('goal', '')]
-    documents = {}
+    documents, sources = {}, {}
     for slot, kind in (('plan', 'method_planner'), ('analysis', 'analysis_engineer'),
                        ('review', 'scientific_reviewer'), ('decision', 'decision_coordinator')):
         pointer = index['current'][slot]
@@ -373,6 +373,7 @@ def product_final_report(root, context, index, classification, response):
         require(sha256(raw).hexdigest() == member['sha256'], 'Final report source changed')
         documents[slot] = loads(raw)
         reference = {'artifact_id': pointer['artifact_id'], 'member': member['canonical_path'], 'sha256': member['sha256']}
+        sources[slot] = reference
         if reference not in evidence:
             evidence.append(reference)
 
@@ -380,6 +381,26 @@ def product_final_report(root, context, index, classification, response):
         if value:
             rendered = value if type(value) is str else json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
             sections.extend(['## ' + title, rendered])
+
+    from lqcd_agent.research.c2_evidence import bind_c2_interpretation, c2_facts, c2_report, c2_review_reference
+    facts = None
+    analysis = documents.get('analysis', {}).get('domain_result', {}).get('run_result', {})
+    review = documents.get('review', {})
+    report = review.get('domain_result', {}).get('report', {})
+    if ((analysis.get('generated_execution') or {}).get('result_kind') == 'c2' and
+            report.get('generated_diagnostics', {}).get('status') in ('pass', 'warning')):
+        pointer = index['current']['analysis']
+        candidates = [{'artifact_id': pointer['artifact_id'], 'member': m['canonical_path'], 'sha256': m['sha256']}
+                      for m in pointer['members'] if m['logical_name'] == 'analysis_outputs/generated_result.json']
+        reference = c2_review_reference(root.parent.parent, {**context, 'current_evidence': candidates},
+                                        {'run_result': analysis, 'review_evidence': report})
+        require(reference is not None, 'C2 review does not witness the current numerical result')
+        evidence.append(reference)
+        facts = c2_facts(root, context['root_goal'], documents['plan'], sources['plan']['sha256'], reference)
+        manager = next((item['discussion'] for item in reversed(review.get('collaboration', {}).get('exchanges', []))
+                        if item['role'] == 'research_manager'), {})
+        bind_c2_interpretation(facts, manager.get('c2_interpretation'))
+        include('C2 decision criteria and numerical evidence', c2_report(facts))
 
     preparation = documents.get('plan', {}).get('domain_result', {}).get('preparation')
     if preparation is not None:
@@ -407,7 +428,7 @@ def product_final_report(root, context, index, classification, response):
             discussion = exchange.get('discussion', exchange.get('brief', {}).get('discussion', {}))
             label = {'research_manager': 'Research Manager', 'reviewer': 'Independent Reviewer'}[role]
             if discussion.get('summary'):
-                include(label + (' — planning' if slot == 'plan' else ' — review'), discussion['summary'])
+                include(label + (' — planning' if slot == 'plan' else ' — review') + (' (role interpretation)' if facts else ''), discussion['summary'])
             if role == 'reviewer':
                 include('Independent Reviewer conclusion', exchange.get('proposal', {}).get('summary'))
         include('Collaboration recommendation — ' + slot, collaboration.get('summary'))
@@ -420,7 +441,7 @@ def product_final_report(root, context, index, classification, response):
     sections.extend(['## Traceable evidence', '\n'.join('- `' + item['member'] + '` · artifact `' +
         item['artifact_id'] + '` · SHA-256 `' + item['sha256'] + '`' for item in evidence)])
     sections.append('This report assembles recorded evidence and recommendations. It does not add an independent physics validation.')
-    return '\n\n'.join(sections) + '\n', evidence
+    return '\n\n'.join(sections) + '\n', evidence, facts
 
 class ProductNode:
     """Host wrapper; the Agent receives only context and returns domain facts."""
@@ -499,8 +520,10 @@ class ProductNode:
                 classification.update(accepted_result=False, scientific_outcome='inconclusive',
                     preparation_status=selected[0]['status'] if selected else 'failed',
                     classification_reason='Research preparation only; no numerical result or physics acceptance is asserted.')
-            report_text, report_evidence = product_final_report(self.root, context, index, classification, response)
+            report_text, report_evidence, c2 = product_final_report(self.root, context, index, classification, response)
             payload = {'schema_version': '0.1', **identity, 'producer': node, 'status': classification['memory_status'], **classification, 'evidence': report_evidence}
+            if c2 is not None:
+                payload['c2_evidence'] = c2
             memory = port.write_member('memory_update.json', canonical_bytes(payload))
             report = port.write_member('final_report.md', report_text.encode())
             terminal_decision = None

@@ -14,7 +14,7 @@ from tests.test_async_resources import resource_host as resource_host
 
 def test_c2_review_reads_only_the_witnessed_producer_in_larger_pages(tmp_path):
     from hashlib import sha256
-    from lqcd_agent.research.tools import c2_review_reference
+    from lqcd_agent.research.c2_evidence import c2_review_reference
     host = tmp_path/'host'
     payload = json.dumps({'diagnostics':'x' * 51000})
     checksum = sha256(payload.encode()).hexdigest()
@@ -45,6 +45,25 @@ def test_c2_review_reads_only_the_witnessed_producer_in_larger_pages(tmp_path):
     assert first['text']+last['text']==payload and first['sha256']==last['sha256']==checksum
     witness['value']='0'*64
     assert c2_review_reference(host,context,sources) is None
+
+
+def test_c2_selection_requires_a_cited_supporting_criterion_and_distinguishes_no_preference():
+    from copy import deepcopy
+    from lqcd_agent.research.c2_evidence import bind_c2_interpretation
+    criterion = '/domain_result/preparation/brief/success_criteria/1'
+    facts = {'criteria': [{'pointer': criterion, 'assessment': None, 'fit_pointers': []}],
+             'fits': [{'pointer': '/fits/0'}], 'selection': {'status': 'unassessed', 'fit_pointer': None}}
+    assert bind_c2_interpretation(deepcopy(facts), None) == facts
+    selected = {'criterion': criterion, 'assessment': 'supports', 'fit_pointers': ['/fits/0']}
+    for rows in ([], [selected, selected], [{**selected, 'criterion': '/absent'}],
+                 [{**selected, 'assessment': 'limits'}], [{**selected, 'fit_pointers': ['/fits/99']}]):
+        with pytest.raises(ControlIntegrityError):
+            bind_c2_interpretation(deepcopy(facts), {'assessments': rows,
+                                   'selection': 'selected', 'preferred_fit': '/fits/0'})
+    explicit = bind_c2_interpretation(deepcopy(facts), {'assessments': [], 'selection': 'no_preference',
+                                                        'preferred_fit': None})
+    assert explicit['selection'] == {'status': 'no_preference', 'fit_pointer': None}
+    assert explicit['criteria'] == facts['criteria']
 
 
 def test_public_literature_reader_paginates_and_retains_exact_source(tmp_path):
